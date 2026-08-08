@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rgaa-core",
+    "crates/rgaa-rules",
+    "crates/rgaa-holo",
+    "crates/rgaa-browser",
+    "crates/rgaa-orchestrator",
+    "crates/rgaa-storage",
+    "crates/rgaa-api",
+]
+
+[workspace.dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

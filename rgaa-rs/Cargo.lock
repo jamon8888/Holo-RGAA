@@ -562,7 +562,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -666,6 +666,15 @@ version = "0.1.0"
 [[package]]
 name = "rgaa-browser"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rgaa-core",
+ "rgaa-rules",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "rgaa-core"
@@ -680,10 +689,8 @@ dependencies = [
 name = "rgaa-holo"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "regex-lite",
  "reqwest",
- "rgaa-core",
  "serde",
  "serde_json",
  "tokio",

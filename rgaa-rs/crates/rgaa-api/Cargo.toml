@@ -2,3 +2,21 @@
 name = "rgaa-api"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "rgaa-api"
+path = "src/main.rs"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+rgaa-storage = { path = "../rgaa-storage" }
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres"] }
+uuid = { version = "1.0", features = ["v4"] }
+tower-http = { version = "0.5", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"

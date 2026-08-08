@@ -1,7 +1,17 @@
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
+use tokio::time::timeout;
 use tracing::{info, warn};
+
+fn escape_js_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
 
 pub struct PlaywrightBridge;
 
@@ -11,6 +21,7 @@ impl PlaywrightBridge {
     }
 
     pub async fn run_axe(&self, url: &str) -> Result<String, String> {
+        let url = escape_js_string(url);
         let script = format!(
             r#"
 const {{ chromium }} = require('playwright');
@@ -40,6 +51,7 @@ const {{ chromium }} = require('playwright');
         url: &str,
         snippets: &HashMap<String, &str>,
     ) -> Result<HashMap<String, serde_json::Value>, String> {
+        let url = escape_js_string(url);
         let mut results = HashMap::new();
         for (criterion_id, snippet) in snippets {
             let script = format!(
@@ -74,11 +86,13 @@ const {{ chromium }} = require('playwright');
         &self,
         url: &str,
     ) -> Result<HashMap<String, serde_json::Value>, String> {
+        let url = escape_js_string(url);
         let js_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("src")
             .join("js")
             .join("interaction.js");
-        let js_code = std::fs::read_to_string(&js_path)
+        let js_code = tokio::fs::read_to_string(&js_path)
+            .await
             .map_err(|e| format!("Failed to read interaction.js: {e}"))?;
 
         let script = format!(
@@ -103,6 +117,7 @@ const {{ chromium }} = require('playwright');
     }
 
     pub async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String> {
+        let url = escape_js_string(url);
         let script = format!(
             r#"
 const {{ chromium }} = require('playwright');
@@ -134,14 +149,18 @@ const {{ chromium }} = require('playwright');
 
     async fn run_node_script(&self, script: &str) -> Result<String, String> {
         info!("Running Node.js script");
-        let output = Command::new("node")
-            .arg("-e")
-            .arg(script)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| format!("Failed to spawn node: {e}"))?;
+        let output = timeout(Duration::from_secs(60), async {
+            Command::new("node")
+                .arg("-e")
+                .arg(script)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await
+                .map_err(|e| format!("Failed to spawn node: {e}"))
+        })
+        .await
+        .map_err(|_| "Node.js script timed out after 60s".to_string())??;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

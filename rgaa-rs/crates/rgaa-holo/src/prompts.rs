@@ -200,7 +200,7 @@ impl PromptBuilder {
         let prefix = criterion_id.split('-').next().unwrap_or(criterion_id);
         let base_criterion = Self::get_base_criterion(prefix);
 
-        if base_criterion != criterion_id {
+        if base_criterion != prefix {
             format!(
                 "{}\n\nNote: Ce critère fait partie du groupe {}. Concentre-toi sur {}.",
                 Self::build(criterion_id, context),

@@ -38,23 +38,6 @@ struct ChatRequest {
     max_tokens: u32,
 }
 
-#[derive(Debug, Deserialize)]
-struct ChatResponse {
-    choices: Vec<Choice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Choice {
-    message: MessageContent,
-}
-
-#[derive(Debug, Deserialize)]
-struct MessageContent {
-    content: Option<String>,
-    #[serde(default)]
-    reasoning: Option<String>,
-}
-
 pub struct HoloClient {
     api_key: String,
     http_client: Client,

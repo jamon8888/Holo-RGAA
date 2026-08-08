@@ -53,9 +53,9 @@ impl Orchestrator {
             let prompt = PromptBuilder::build(criterion.id, &page_context);
             match holo_client.evaluate(&prompt).await {
                 Ok(response) => {
-                    let status = match response.verdict.as_str() {
-                        "CONFORME" => CriterionStatus::Pass,
-                        "NON_CONFORME" => CriterionStatus::Fail,
+                    let status = match response.verdict.to_lowercase().as_str() {
+                        "pass" | "conforme" => CriterionStatus::Pass,
+                        "fail" | "non_conforme" => CriterionStatus::Fail,
                         _ => CriterionStatus::Na,
                     };
                     holo_results.insert(criterion.id.to_string(), CriterionResult {

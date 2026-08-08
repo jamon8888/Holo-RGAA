@@ -1,0 +1,1386 @@
+{
+  "timestamp": "2026-08-07T21:26:50.909Z",
+  "urls": [
+    "https://example.com",
+    "https://httpbin.org/html"
+  ],
+  "comparisons": [
+    {
+      "url": "https://example.com",
+      "criteria": [
+        {
+          "criterion": "1.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "2.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "3.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "3.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.13",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "6.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "6.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "7.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "7.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "7.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "9.1",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "9.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "9.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.13",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.14",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.13",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.1",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.4",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.6",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        }
+      ],
+      "summary": {
+        "bothFail": 0,
+        "onlyAxeFail": 4,
+        "onlyAsqaFail": 0,
+        "bothPass": 73,
+        "falsePositives": 4,
+        "falseNegatives": 0
+      }
+    },
+    {
+      "url": "https://httpbin.org/html",
+      "criteria": [
+        {
+          "criterion": "1.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "1.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "2.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "3.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "3.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "4.13",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "5.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "6.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "6.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "7.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "7.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "7.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.2",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "html-has-lang",
+              "impact": "serious",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.3",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "html-has-lang",
+              "impact": "serious",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "8.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "9.1",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 2
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "9.3",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "9.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.13",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "10.14",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.4",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.6",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "11.13",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.1",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 2
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.4",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 2
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.6",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "nodes": 2
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "12.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.1",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.2",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.3",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "document-title",
+              "impact": "serious",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.4",
+          "axeStatus": "FAIL",
+          "asqatasunStatus": "PASS",
+          "category": "ONLY_AXE_FAIL",
+          "axeViolations": [
+            {
+              "rule": "document-title",
+              "impact": "serious",
+              "nodes": 1
+            }
+          ],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.5",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.7",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.8",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.9",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.10",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.11",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        },
+        {
+          "criterion": "13.12",
+          "axeStatus": "PASS",
+          "asqatasunStatus": "PASS",
+          "category": "BOTH_PASS",
+          "axeViolations": [],
+          "asqatasunErrors": 0
+        }
+      ],
+      "summary": {
+        "bothFail": 0,
+        "onlyAxeFail": 8,
+        "onlyAsqaFail": 0,
+        "bothPass": 69,
+        "falsePositives": 8,
+        "falseNegatives": 0
+      }
+    }
+  ],
+  "summary": {
+    "totalCriteria": 154,
+    "falsePositives": 12,
+    "falseNegatives": 0,
+    "fpRate": 7.792207792207792,
+    "fnRate": 0
+  }
+}

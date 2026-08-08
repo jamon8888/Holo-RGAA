@@ -1,0 +1,20 @@
+{
+  "totalCrawled": 1,
+  "templatesDetected": 1,
+  "pagesToAudit": [
+    {
+      "url": "https://example.com",
+      "template": "template_1",
+      "pageCount": 1,
+      "title": "Example Domain"
+    }
+  ],
+  "clusters": [
+    {
+      "template": "template_1",
+      "representativeUrl": "https://example.com",
+      "pageCount": 1,
+      "similarity": 1
+    }
+  ]
+}

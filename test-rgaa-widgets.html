@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Test ARIA Widgets</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .accordion-trigger { padding: 10px; margin: 5px 0; cursor: pointer; border: 1px solid #ccc; width: 100%; text-align: left; background: #f5f5f5; }
+    .accordion-panel { padding: 10px; border: 1px solid #ccc; display: none; }
+    .accordion-panel[aria-hidden="false"] { display: block; }
+    [role="tablist"] { display: flex; border-bottom: 2px solid #ccc; }
+    [role="tab"] { padding: 10px 20px; cursor: pointer; border: 1px solid #ccc; background: #f5f5f5; margin-right: 2px; }
+    [role="tab"][aria-selected="true"] { background: #fff; border-bottom: 2px solid #fff; margin-bottom: -2px; }
+    [role="tabpanel"] { padding: 15px; border: 1px solid #ccc; }
+    [role="menu"] { list-style: none; padding: 0; margin: 5px 0; border: 1px solid #ccc; }
+    [role="menuitem"] { padding: 8px 15px; cursor: pointer; }
+    [role="menuitem"]:focus { background: #0066cc; color: white; outline: 2px solid #0066cc; }
+    [role="tree"] { list-style: none; padding-left: 0; }
+    [role="treeitem"] { padding: 5px 10px; cursor: pointer; }
+    [role="treeitem"]:focus { background: #e0e0ff; outline: 2px solid #0066cc; }
+    [role="combobox"] { padding: 8px; width: 200px; }
+    [role="listbox"] { border: 1px solid #ccc; position: absolute; background: white; display: none; z-index: 10; }
+    [role="listbox"]:not([hidden]) { display: block; }
+    [role="option"] { padding: 8px; cursor: pointer; }
+    [role="option"]:focus { background: #0066cc; color: white; }
+    [role="option"][aria-selected="true"] { background: #e0e0ff; }
+  </style>
+</head>
+<body>
+  <h1>Test ARIA Widgets</h1>
+
+  <!-- ACCORDION -->
+  <h2>Accordéon</h2>
+  <div id="accordion">
+    <button class="accordion-trigger" aria-expanded="true" aria-controls="panel-1">Section 1</button>
+    <div id="panel-1" class="accordion-panel" role="region" aria-hidden="false">
+      <p>Contenu de la section 1</p>
+    </div>
+    <button class="accordion-trigger" aria-expanded="false" aria-controls="panel-2">Section 2</button>
+    <div id="panel-2" class="accordion-panel" role="region" aria-hidden="true">
+      <p>Contenu de la section 2</p>
+    </div>
+    <button class="accordion-trigger" aria-expanded="false" aria-controls="panel-3">Section 3</button>
+    <div id="panel-3" class="accordion-panel" role="region" aria-hidden="true">
+      <p>Contenu de la section 3</p>
+    </div>
+  </div>
+
+  <!-- TABLIST -->
+  <h2>Tablist</h2>
+  <div role="tablist">
+    <button role="tab" aria-selected="true" aria-controls="tab-panel-1" id="tab-1">Onglet 1</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-panel-2" id="tab-2" tabindex="-1">Onglet 2</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-panel-3" id="tab-3" tabindex="-1">Onglet 3</button>
+  </div>
+  <div role="tabpanel" id="tab-panel-1" aria-labelledby="tab-1">
+    <p>Contenu onglet 1</p>
+  </div>
+  <div role="tabpanel" id="tab-panel-2" aria-labelledby="tab-2" hidden>
+    <p>Contenu onglet 2</p>
+  </div>
+  <div role="tabpanel" id="tab-panel-3" aria-labelledby="tab-3" hidden>
+    <p>Contenu onglet 3</p>
+  </div>
+
+  <!-- COMBOBOX -->
+  <h2>Combobox</h2>
+  <div style="position: relative;">
+    <input role="combobox" aria-expanded="false" aria-controls="combo-listbox" aria-autocomplete="list" aria-activedescendant="" />
+    <div role="listbox" id="combo-listbox" hidden>
+      <div role="option" id="opt-1" aria-selected="false">Option 1</div>
+      <div role="option" id="opt-2" aria-selected="false">Option 2</div>
+      <div role="option" id="opt-3" aria-selected="false">Option 3</div>
+    </div>
+  </div>
+
+  <!-- MENU -->
+  <h2>Menu</h2>
+  <div role="menu">
+    <div role="menuitem" tabindex="0">Action 1</div>
+    <div role="menuitem" tabindex="-1">Action 2</div>
+    <div role="menuitem" tabindex="-1">Action 3</div>
+  </div>
+
+  <!-- TREE -->
+  <h2>Tree</h2>
+  <div role="tree">
+    <div role="treeitem" aria-expanded="true" aria-level="1">
+      Dossier 1
+      <div role="treegroup">
+        <div role="treeitem" aria-level="2">Fichier 1.1</div>
+        <div role="treeitem" aria-expanded="false" aria-level="2">
+          Dossier 1.2
+          <div role="treegroup" hidden>
+            <div role="treeitem" aria-level="3">Fichier 1.2.1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div role="treeitem" aria-expanded="false" aria-level="1">
+      Dossier 2
+      <div role="treegroup" hidden>
+        <div role="treeitem" aria-level="2">Fichier 2.1</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Accordion behavior
+    document.querySelectorAll('.accordion-trigger').forEach(trigger => {
+      trigger.addEventListener('click', () => {
+        const expanded = trigger.getAttribute('aria-expanded') === 'true';
+        const panelId = trigger.getAttribute('aria-controls');
+        const panel = document.getElementById(panelId);
+        trigger.setAttribute('aria-expanded', String(!expanded));
+        panel.setAttribute('aria-hidden', String(expanded));
+      });
+    });
+
+    // Tablist behavior
+    document.querySelectorAll('[role="tab"]').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('[role="tab"]').forEach(t => {
+          t.setAttribute('aria-selected', 'false');
+          t.setAttribute('tabindex', '-1');
+          document.getElementById(t.getAttribute('aria-controls')).hidden = true;
+        });
+        tab.setAttribute('aria-selected', 'true');
+        tab.setAttribute('tabindex', '0');
+        document.getElementById(tab.getAttribute('aria-controls')).hidden = false;
+      });
+    });
+
+    // Combobox behavior
+    const combobox = document.querySelector('[role="combobox"]');
+    const listbox = document.getElementById('combo-listbox');
+    const options = listbox.querySelectorAll('[role="option"]');
+    
+    combobox.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        listbox.hidden = false;
+        combobox.setAttribute('aria-expanded', 'true');
+        options[0]?.focus();
+      } else if (e.key === 'Escape') {
+        listbox.hidden = true;
+        combobox.setAttribute('aria-expanded', 'false');
+      }
+    });
+    
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        combobox.value = opt.textContent;
+        listbox.hidden = true;
+        combobox.setAttribute('aria-expanded', 'false');
+        combobox.focus();
+      });
+    });
+
+    // Menu behavior
+    const menuItems = document.querySelectorAll('[role="menuitem"]');
+    menuItems.forEach((item, i) => {
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          menuItems[(i + 1) % menuItems.length].focus();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          menuItems[(i - 1 + menuItems.length) % menuItems.length].focus();
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          menuItems[0].focus();
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          menuItems[menuItems.length - 1].focus();
+        } else if (e.key === 'Escape') {
+          combobox.focus();
+        }
+      });
+    });
+
+    // Tree behavior
+    const treeItems = document.querySelectorAll('[role="treeitem"]');
+    treeItems.forEach((item, i) => {
+      item.addEventListener('keydown', (e) => {
+        const visibleItems = Array.from(document.querySelectorAll('[role="treeitem"]'))
+          .filter(el => el.offsetParent !== null || el === item);
+        const idx = visibleItems.indexOf(item);
+        
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (idx < visibleItems.length - 1) visibleItems[idx + 1].focus();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (idx > 0) visibleItems[idx - 1].focus();
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          const expanded = item.getAttribute('aria-expanded');
+          const group = item.querySelector('[role="treegroup"]');
+          if (expanded === 'false' && group) {
+            item.setAttribute('aria-expanded', 'true');
+            group.hidden = false;
+            const firstChild = group.querySelector('[role="treeitem"]');
+            if (firstChild) firstChild.focus();
+          } else if (expanded === 'true' && group) {
+            const firstChild = group.querySelector('[role="treeitem"]');
+            if (firstChild) firstChild.focus();
+          }
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const expanded = item.getAttribute('aria-expanded');
+          const group = item.querySelector('[role="treegroup"]');
+          if (expanded === 'true' && group) {
+            item.setAttribute('aria-expanded', 'false');
+            group.hidden = true;
+          }
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          const firstTreeItem = document.querySelector('[role="treeitem"]');
+          if (firstTreeItem) firstTreeItem.focus();
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          const lastTreeItem = visibleItems[visibleItems.length - 1];
+          if (lastTreeItem) lastTreeItem.focus();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

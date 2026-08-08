@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Page Test RGAA - Non Conforme</title>
+  <style>
+    .error { color: red; }
+    .hidden { display: none; }
+    input:focus { outline: none; }
+  </style>
+</head>
+<body>
+  <!-- 1.1 Pas d'alt sur image informative -->
+  <img src="chart.png" width="300" height="200">
+  
+  <!-- 1.2 Image décorative sans alt vide -->
+  <img src="decor.png" alt="image décorative">
+  
+  <!-- 2.1 Iframe sans title -->
+  <iframe src="https://example.com"></iframe>
+  
+  <!-- 3.2 Contraste insuffisant -->
+  <p style="color: #999; background: #fff;">Texte gris clair sur fond blanc - contraste 2.8:1</p>
+  
+  <!-- 5.1 Tableau complexe sans résumé ni headers -->
+  <table>
+    <tr><td>Cellule 1</td><td>Cellule 2</td></tr>
+    <tr><td>Cellule 3</td><td>Cellule 4</td></tr>
+  </table>
+  
+  <!-- 6.1 Lien non explicite -->
+  <a href="/page1">Cliquez ici</a>
+  <a href="/page2">Lien</a>
+  
+  <!-- 8.3 Pas de langue -->
+  <!-- <html> sans lang -->
+  
+  <!-- 8.5 Pas de titre -->
+  <!-- <title> manquant -->
+  
+  <!-- 9.1 Pas de structure de titres -->
+  <h3>Sous-titre sans h1 ni h2 parent</h3>
+  <h1>Titre principal après h3</h1>
+  
+  <!-- 10.7 Focus invisible -->
+  <button>Bouton sans focus visible</button>
+  
+  <!-- 11.1 Champ sans étiquette -->
+  <input type="text" placeholder="Email">
+  <input type="password">
+  
+  <!-- 11.4 Étiquette non accolée -->
+  <label>Nom:</label>
+  <div><input type="text"></div>
+  
+  <!-- 12.7 Pas de skip link -->
+  <nav><a href="/">Accueil</a> | <a href="/contact">Contact</a></nav>
+  <main><p>Contenu principal</p></main>
+  
+  <!-- 13.1 Pas de contrôle temps -->
+  <meta http-equiv="refresh" content="30">
+  
+  <!-- 13.2 Ouverture fenêtre auto -->
+  <script>window.open('https://example.com', '_blank');</script>
+</body>
+</html>

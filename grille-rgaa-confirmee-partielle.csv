@@ -1,0 +1,20 @@
+thematique,critere_id,titre,classification,justification
+Images,1.1,Chaque image porteuse d'information a-t-elle une alternative textuelle ?,DETERMINISTE,Présence/absence d'attribut alt/aria-label/aria-labelledby/title -- structurel
+Images,1.2,Chaque image de décoration est-elle correctement ignorée par les technologies d'assistance ?,DETERMINISTE,Présence alt vide / aria-hidden / role=presentation -- structurel
+Images,1.3,"Pour chaque image porteuse d'information ayant une alternative textuelle, cette alternative est-elle pertinente ?",IA_ASSISTE,Jugement sémantique de pertinence -- candidat Holo3/GLiNER (comparaison alt vs contenu visuel réel)
+Images,1.4,Pour chaque image utilisée comme CAPTCHA ou image-test ayant une alternative textuelle cette alternative permet-elle d'identifier la nature et la fonction de l'image ?,IA_ASSISTE,Jugement sémantique de pertinence contextuelle
+Images,1.5,Pour chaque image utilisée comme CAPTCHA une solution d'accès alternatif est-elle présente ?,DETERMINISTE,Présence d'un mécanisme alternatif -- structurel (détection de pattern CAPTCHA + alternative)
+Images,1.6,"Chaque image porteuse d'information a-t-elle, si nécessaire, une description détaillée ?",DETERMINISTE,Présence de longdesc/lien adjacent/aria-describedby -- structurel
+Images,1.7,"Pour chaque image porteuse d'information ayant une description détaillée, cette description est-elle pertinente ?",IA_ASSISTE,Jugement sémantique de pertinence
+Images,1.8,Chaque image texte porteuse d'information doit si possible être remplacée par du texte stylé -- règle respectée ?,DETERMINISTE,Détection structurelle image-texte vs texte CSS + cas particuliers listés (logo etc.) -- limite : la détection des cas particuliers demande un peu de jugement visuel, IA_ASSISTE en renfort possible
+Images,1.9,Chaque légende d'image est-elle correctement reliée à l'image correspondante ?,DETERMINISTE,Structure figure/figcaption/aria-label -- structurel
+Cadres,2.1,Chaque cadre a-t-il un titre de cadre ?,DETERMINISTE,Présence attribut title sur iframe/frame -- structurel
+Cadres,2.2,"Pour chaque cadre ayant un titre de cadre, ce titre est-il pertinent ?",IA_ASSISTE,Jugement sémantique de pertinence
+Couleurs,3.1,"L'information ne doit pas être donnée uniquement par la couleur, cette règle est-elle respectée ?",IA_ASSISTE,Nécessite d'identifier si une information est *donnée* par la couleur -- jugement contextuel partiel malgré tests structurables (Holo3 utile en renfort visuel)
+Couleurs,3.2,Le contraste texte/arrière-plan est-il suffisamment élevé ?,DETERMINISTE,Calcul de ratio de contraste (APCA/WCAG) -- entièrement automatisable, déjà dans le marché
+Couleurs,3.3,Les couleurs des composants d'interface ou éléments graphiques porteurs d'information sont-elles suffisamment contrastées ?,DETERMINISTE,Calcul de ratio de contraste sur composants/éléments graphiques -- automatisable avec détection de bordure/état
+Multimedia,4.1,"Chaque média temporel pré-enregistré a-t-il, si nécessaire, une transcription ou audiodescription ?",DETERMINISTE,Présence de piste/lien -- structurel (le "si nécessaire" et les cas particuliers demandent une classification de contenu -- limite documentée)
+Multimedia,4.2,"Pour chaque média ayant une transcription/audiodescription, celles-ci sont-elles pertinentes ?",IA_ASSISTE,"Cross-check ASR (whisper.cpp, Phase 5) vs transcription déclarée -- objectivement automatisable, classé IA_ASSISTE par prudence sur la nuance ""pertinent"" au sens RGAA"
+Multimedia,4.3,"Chaque média synchronisé pré-enregistré a-t-il, si nécessaire, des sous-titres synchronisés ?",DETERMINISTE,Présence de piste track kind=captions -- structurel
+Multimedia,4.4,"Pour chaque média ayant des sous-titres synchronisés, ces sous-titres sont-ils pertinents ?",IA_ASSISTE,Cross-check ASR (Phase 5) -- diff transcription réelle vs sous-titres déclarés
+Multimedia,4.5,"Chaque média pré-enregistré a-t-il, si nécessaire, une audiodescription synchronisée ?",DETERMINISTE,Présence de piste -- structurel

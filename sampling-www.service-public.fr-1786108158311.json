@@ -1,0 +1,80 @@
+{
+  "totalCrawled": 8,
+  "templatesDetected": 6,
+  "pagesToAudit": [
+    {
+      "url": "https://www.service-public.fr",
+      "template": "template_1",
+      "pageCount": 3,
+      "title": "Accueil | Service Public"
+    },
+    {
+      "url": "https://www.service-public.gouv.fr/compte/se-connecter",
+      "template": "template_2",
+      "pageCount": 1,
+      "title": "Se connecter | Service Public"
+    },
+    {
+      "url": "https://entreprendre.service-public.gouv.fr/",
+      "template": "template_3",
+      "pageCount": 1,
+      "title": "Accueil | Service Public Entreprendre"
+    },
+    {
+      "url": "https://www.service-public.gouv.fr/particuliers/actualites",
+      "template": "template_4",
+      "pageCount": 1,
+      "title": "Actualité de vos droits et démarches | Service Public"
+    },
+    {
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14128",
+      "template": "template_5",
+      "pageCount": 1,
+      "title": "Je déménage en France | Service Public"
+    },
+    {
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F17556",
+      "template": "template_6",
+      "pageCount": 1,
+      "title": "Je recherche un emploi | Service Public"
+    }
+  ],
+  "clusters": [
+    {
+      "template": "template_1",
+      "representativeUrl": "https://www.service-public.fr",
+      "pageCount": 3,
+      "similarity": 1
+    },
+    {
+      "template": "template_2",
+      "representativeUrl": "https://www.service-public.gouv.fr/compte/se-connecter",
+      "pageCount": 1,
+      "similarity": 1
+    },
+    {
+      "template": "template_3",
+      "representativeUrl": "https://entreprendre.service-public.gouv.fr/",
+      "pageCount": 1,
+      "similarity": 1
+    },
+    {
+      "template": "template_4",
+      "representativeUrl": "https://www.service-public.gouv.fr/particuliers/actualites",
+      "pageCount": 1,
+      "similarity": 1
+    },
+    {
+      "template": "template_5",
+      "representativeUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F14128",
+      "pageCount": 1,
+      "similarity": 1
+    },
+    {
+      "template": "template_6",
+      "representativeUrl": "https://www.service-public.gouv.fr/particuliers/vosdroits/F17556",
+      "pageCount": 1,
+      "similarity": 1
+    }
+  ]
+}

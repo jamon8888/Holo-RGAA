@@ -1,0 +1,581 @@
+{
+  "url": "https://example.com",
+  "timestamp": "2026-08-07T13:14:35.297Z",
+  "sampleMode": false,
+  "pagesAudited": 1,
+  "results": [
+    {
+      "url": "https://example.com",
+      "total": 77,
+      "pass": 60,
+      "fail": 4,
+      "na": 13,
+      "compliance": 93.8,
+      "failures": [
+        {
+          "criterion": "9.1",
+          "rule": "landmark-one-main",
+          "impact": "moderate",
+          "description": "Ensure the document has a main landmark",
+          "help": "Document should have one main landmark",
+          "nodes": 1
+        },
+        {
+          "criterion": "12.1",
+          "rule": "landmark-one-main",
+          "impact": "moderate",
+          "description": "Ensure the document has a main landmark",
+          "help": "Document should have one main landmark",
+          "nodes": 1
+        },
+        {
+          "criterion": "12.4",
+          "rule": "landmark-one-main",
+          "impact": "moderate",
+          "description": "Ensure the document has a main landmark",
+          "help": "Document should have one main landmark",
+          "nodes": 1
+        },
+        {
+          "criterion": "12.6",
+          "rule": "landmark-one-main",
+          "impact": "moderate",
+          "description": "Ensure the document has a main landmark",
+          "help": "Document should have one main landmark",
+          "nodes": 1
+        }
+      ],
+      "rgaaResults": {
+        "1.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 2
+        },
+        "1.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 2
+        },
+        "1.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "1.6": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "1.8": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "1.9": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "2.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "3.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "3.3": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "4.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.3": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "4.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.7": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.8": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.10": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.11": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.12": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "4.13": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "5.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "5.4": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "5.6": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "5.7": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 2
+        },
+        "5.8": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "6.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "6.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "7.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "7.3": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "7.4": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "8.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "8.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 2,
+          "inapplicable": 0
+        },
+        "8.3": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "8.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "8.7": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "8.9": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "8.10": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "9.1": {
+          "status": "FAIL",
+          "violations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "description": "Ensure the document has a main landmark",
+              "help": "Document should have one main landmark",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "description": "Ensure all page content is contained by landmarks",
+              "help": "All page content should be contained by landmarks",
+              "nodes": 1
+            }
+          ],
+          "passes": 2,
+          "inapplicable": 0
+        },
+        "9.3": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 2
+        },
+        "9.4": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 1
+        },
+        "10.4": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "10.6": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "10.7": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.8": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "10.9": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 1
+        },
+        "10.11": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.12": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.13": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "10.14": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "11.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 3
+        },
+        "11.4": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "11.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "11.6": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "11.11": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "11.12": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "11.13": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "12.1": {
+          "status": "FAIL",
+          "violations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "description": "Ensure the document has a main landmark",
+              "help": "Document should have one main landmark",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "description": "Ensure all page content is contained by landmarks",
+              "help": "All page content should be contained by landmarks",
+              "nodes": 1
+            }
+          ],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "12.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "12.4": {
+          "status": "FAIL",
+          "violations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "description": "Ensure the document has a main landmark",
+              "help": "Document should have one main landmark",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "description": "Ensure all page content is contained by landmarks",
+              "help": "All page content should be contained by landmarks",
+              "nodes": 1
+            }
+          ],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "12.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "12.6": {
+          "status": "FAIL",
+          "violations": [
+            {
+              "rule": "landmark-one-main",
+              "impact": "moderate",
+              "description": "Ensure the document has a main landmark",
+              "help": "Document should have one main landmark",
+              "nodes": 1
+            },
+            {
+              "rule": "region",
+              "impact": "moderate",
+              "description": "Ensure all page content is contained by landmarks",
+              "help": "All page content should be contained by landmarks",
+              "nodes": 1
+            }
+          ],
+          "passes": 2,
+          "inapplicable": 0
+        },
+        "12.7": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 1
+        },
+        "12.9": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "12.10": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "12.11": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.1": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.2": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.3": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "13.4": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 1,
+          "inapplicable": 0
+        },
+        "13.5": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 1
+        },
+        "13.7": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.8": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.9": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.10": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.11": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        },
+        "13.12": {
+          "status": "PASS",
+          "violations": [],
+          "passes": 0,
+          "inapplicable": 0
+        }
+      }
+    }
+  ],
+  "summary": {
+    "totalCriteria": 77,
+    "totalPass": 60,
+    "totalFail": 4,
+    "totalNa": 13,
+    "avgCompliance": 93.8
+  }
+}

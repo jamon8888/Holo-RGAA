@@ -2,3 +2,13 @@
 name = "rgaa-holo"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+regex-lite = "0.1"

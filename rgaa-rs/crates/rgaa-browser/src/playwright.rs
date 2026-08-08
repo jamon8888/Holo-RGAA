@@ -15,6 +15,12 @@ fn escape_js_string(s: &str) -> String {
 
 pub struct PlaywrightBridge;
 
+impl Default for PlaywrightBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlaywrightBridge {
     pub fn new() -> Self {
         Self

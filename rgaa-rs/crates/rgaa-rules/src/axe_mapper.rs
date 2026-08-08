@@ -15,7 +15,7 @@ impl AxeMapper {
         let mut results: HashMap<String, CriterionResult> = HashMap::new();
 
         // Initialize all axe-mapped criteria as PASS
-        for (rgaa_id, _) in &mapping {
+        for rgaa_id in mapping.keys() {
             results.insert(rgaa_id.clone(), CriterionResult {
                 criterion_id: rgaa_id.clone(),
                 title: String::new(),

@@ -38,3 +38,42 @@ jobs:
           path: |
             *.json
             !node_modules/**
+
+  rust:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+          
+      - name: Install Node.js and Playwright
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install npm dependencies
+        run: |
+          npm install
+          npx playwright install chromium
+          
+      - name: Run cargo check
+        working-directory: rgaa-rs
+        run: cargo check --workspace
+        
+      - name: Run cargo clippy
+        working-directory: rgaa-rs
+        run: cargo clippy --workspace -- -D warnings
+        
+      - name: Run cargo test
+        working-directory: rgaa-rs
+        run: cargo test --workspace

@@ -16,7 +16,7 @@ impl RgaaCriteria {
             Criterion { id: "1.1", title: "Alternative textuelle présente", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
             Criterion { id: "1.2", title: "Image décorative ignorée", classification: Classification::Deterministe, wcag_refs: "1.1.1, 4.1.2" },
             Criterion { id: "1.3", title: "Alternative textuelle pertinente", classification: Classification::IaAssiste, wcag_refs: "1.1.1, 4.1.2" },
-            Criterion { id: "1.4", title: "Alternative CAPTCHA/image-test", classification: Classification::IaAssiste, wcag_refs: "1.1.1" },
+            Criterion { id: "1.4", title: "Alternative CAPTCHA/image-test", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
             Criterion { id: "1.5", title: "Solution accès alternatif CAPTCHA", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
             Criterion { id: "1.6", title: "Description détaillée présente", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
             Criterion { id: "1.7", title: "Description détaillée pertinente", classification: Classification::IaAssiste, wcag_refs: "1.1.1" },

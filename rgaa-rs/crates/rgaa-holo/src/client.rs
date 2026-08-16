@@ -5,8 +5,8 @@ use tracing::{error, info, warn};
 
 const API_URL: &str = "https://api.hcompany.ai/v1/chat/completions";
 const MODEL: &str = "holo3-1-35b-a3b";
-const MAX_RETRIES: u32 = 5;
-const INITIAL_BACKOFF_MS: u64 = 1000;
+const MAX_RETRIES: u32 = 3;
+const INITIAL_BACKOFF_MS: u64 = 500;
 
 const SYSTEM_PROMPT: &str = "Tu es un expert en accessibilité web RGAA 4.1.2 (Référentiel Général d'Amélioration de l'Accessibilité). Tu évalues des critères d'accessibilité sur des pages web.
 
@@ -40,20 +40,28 @@ struct ChatRequest {
 
 pub struct HoloClient {
     api_key: String,
+    base_url: String,
     http_client: Client,
 }
 
 impl HoloClient {
     pub fn new(api_key: String) -> Self {
         let http_client = Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(30))
             .build()
             .expect("Failed to create HTTP client");
 
         Self {
             api_key,
+            base_url: API_URL.to_string(),
             http_client,
         }
+    }
+
+    /// Override the API base URL. Primarily used by tests against a mock server.
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
     }
 
     pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, String> {
@@ -70,7 +78,7 @@ impl HoloClient {
                 },
             ],
             temperature: 0.1,
-            max_tokens: 2048,
+            max_tokens: 512,
         };
 
         let mut last_error = String::new();
@@ -84,7 +92,7 @@ impl HoloClient {
 
             match self
                 .http_client
-                .post(API_URL)
+                .post(&self.base_url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&request)
@@ -112,12 +120,13 @@ impl HoloClient {
                         }
                     } else if status.as_u16() == 429 {
                         let backoff = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
+                        let sleep_ms = backoff + Self::jitter_for(backoff);
                         warn!(
                             attempt,
-                            backoff_ms = backoff,
+                            backoff_ms = sleep_ms,
                             "Rate limited, backing off"
                         );
-                        tokio::time::sleep(Duration::from_millis(backoff)).await;
+                        tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                         last_error = "Rate limited (429)".to_string();
                     } else {
                         let body = response.text().await.unwrap_or_default();
@@ -135,7 +144,7 @@ impl HoloClient {
 
                     if attempt < MAX_RETRIES {
                         let backoff = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
-                        tokio::time::sleep(Duration::from_millis(backoff)).await;
+                        tokio::time::sleep(Duration::from_millis(backoff + Self::jitter_for(backoff))).await;
                     }
                 }
             }
@@ -165,6 +174,16 @@ impl HoloClient {
         }
 
         None
+    }
+
+    /// Cheap, dependency-free jitter (0..=backoff/2) to spread 429 retries and
+    /// avoid a thundering herd when many evaluations run concurrently.
+    fn jitter_for(backoff: u64) -> u64 {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64)
+            .unwrap_or(0);
+        seed % (backoff / 2 + 1)
     }
 
     fn extract_from_code_block(text: &str) -> Option<String> {
@@ -233,5 +252,85 @@ mod tests {
         let text = "No JSON here";
         let result = HoloClient::extract_json(text);
         assert!(result.is_none());
+    }
+
+    /// Minimal HTTP server that answers every request with a fixed Holo3-style
+    /// JSON body. Used to validate parsing and concurrent execution without
+    /// touching the real API.
+    fn spawn_mock_server(body: &'static str) -> (String, std::sync::Arc<std::thread::JoinHandle<()>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(mut s) => {
+                        std::thread::spawn(move || {
+                            let mut buf = [0u8; 4096];
+                            let _ = s.read(&mut buf);
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = s.write_all(response.as_bytes());
+                            let _ = s.flush();
+                        });
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        (addr.to_string(), std::sync::Arc::new(handle))
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_parses_via_mock_server() {
+        let (addr, handle) = spawn_mock_server(
+            r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#,
+        );
+        let client = HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+
+        let res = client.evaluate("prompt").await;
+        assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
+        let r = res.unwrap();
+        assert_eq!(r.verdict, "pass");
+        assert_eq!(r.confidence, 0.9);
+        drop(handle);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_concurrent_send() {
+        let (addr, handle) = spawn_mock_server(
+            r#"{"verdict":"na","confidence":1.0,"justification":"n/a"}"#,
+        );
+        let client = std::sync::Arc::new(
+            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}")),
+        );
+
+        let start = std::time::Instant::now();
+        let mut set = tokio::task::JoinSet::new();
+        for i in 0..10u32 {
+            let c = std::sync::Arc::clone(&client);
+            set.spawn(async move {
+                let r = c.evaluate(&format!("prompt-{i}")).await;
+                (i, r)
+            });
+        }
+
+        let mut ok = 0;
+        while let Some(joined) = set.join_next().await {
+            let (_i, r) = joined.expect("Holo3 task panicked");
+            if r.is_ok() {
+                ok += 1;
+            }
+        }
+        let elapsed = start.elapsed();
+
+        assert_eq!(ok, 10, "all concurrent calls should succeed");
+        assert!(elapsed.as_secs() < 10, "concurrent calls unexpectedly slow: {elapsed:?}");
+        drop(handle);
     }
 }

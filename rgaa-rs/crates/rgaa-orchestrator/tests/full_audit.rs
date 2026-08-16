@@ -12,7 +12,9 @@ async fn test_full_audit_example_com() {
 
     let result = Orchestrator::run("https://example.com", &config).await;
 
-    assert!(result.is_ok(), "Audit should complete without error");
+    eprintln!("Audit result: {:?}", result);
+
+    assert!(result.is_ok(), "Audit should complete without error: {:?}", result.err());
 
     let audit = result.unwrap();
 

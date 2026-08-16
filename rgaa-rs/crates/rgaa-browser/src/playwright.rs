@@ -36,10 +36,6 @@ const {{ chromium }} = require('playwright');
   const page = await browser.newPage();
   await page.goto('{url}', {{ waitUntil: 'networkidle', timeout: 30000 }});
   await page.addScriptTag({{ path: require.resolve('axe-core') }});
-  const results = await page.evaluate(async () => {{
-    await axe.run();
-    return axe.getRules().map(r => r.ruleId);
-  }});
   const violations = await page.evaluate(async () => {{
     const axeResults = await axe.run();
     return axeResults.violations;

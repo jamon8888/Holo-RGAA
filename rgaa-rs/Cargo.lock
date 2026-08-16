@@ -1429,20 +1429,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rgaa-browser"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rgaa-core",
- "rgaa-rules",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "rgaa-core"
 version = "0.1.0"
 dependencies = [
@@ -1485,7 +1471,6 @@ name = "rgaa-orchestrator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "rgaa-browser",
  "rgaa-core",
  "rgaa-holo",
  "rgaa-obscura",

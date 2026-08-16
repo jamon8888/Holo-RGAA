@@ -3,17 +3,11 @@ name = "rgaa-orchestrator"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["browser-playwright"]
-browser-playwright = ["rgaa-browser"]
-browser-obscura = ["rgaa-obscura"]
-
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
 rgaa-rules = { path = "../rgaa-rules" }
 rgaa-holo = { path = "../rgaa-holo" }
-rgaa-browser = { path = "../rgaa-browser", optional = true }
-rgaa-obscura = { path = "../rgaa-obscura", optional = true }
+rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-storage = { path = "../rgaa-storage" }
 tokio = { workspace = true }
 serde = { workspace = true }

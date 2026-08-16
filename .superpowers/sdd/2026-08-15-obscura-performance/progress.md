@@ -45,3 +45,17 @@ Files: `crates/rgaa-holo/src/client.rs` (consts, `with_base_url` test hook, jitt
 Tests: added `crates/rgaa-holo/src/client.rs` mock-server tests `test_evaluate_parses_via_mock_server` and `test_evaluate_concurrent_send` (network-free, validate parse + concurrent Send). `cargo test -p rgaa-holo` -> 10 passed/0 failed. Orchestrator builds under default and `browser-obscura`; `cargo test -p rgaa-orchestrator --features browser-obscura --no-run` green. rgaa-obscura tests still 5 passed (unchanged).
 
 Note: the e2e orchestrator audit (`tests/obscura_audit.rs`) still depends on live Holo3 network/API; not executed here (would require valid API key + is slow). The parallel path is verified via compile + unit tests.
+
+## Playwright bridge removal — Obscura is now the sole backend (2026-08-16)
+
+User chose option B: delete `rgaa-browser` entirely, make Obscura the only browser backend.
+
+- `crates/rgaa-orchestrator/src/pipeline.rs`: removed the `#[cfg(...)]` Playwright imports, the `AuditBridge` trait + both `impl AuditBridge` blocks (Playwright + Obscura); collapsed the two feature-gated `run_batch` variants into a single Obscura `run_batch`; changed `audit_one<B: AuditBridge>` to `audit_one(bridge: &ObscuraBridge, …)`.
+- `crates/rgaa-orchestrator/tests/obscura_audit.rs`: removed the `#![cfg(feature = "browser-obscura")]` gate (test now always compiled).
+- `rgaa-rs/Cargo.toml`: removed `"crates/rgaa-browser"` from `members`.
+- `crates/rgaa-orchestrator/Cargo.toml`: deleted the `[features]` block; dropped the `rgaa-browser` optional dep; made `rgaa-obscura` a non-optional dependency.
+- Deleted `crates/rgaa-browser/` (Cargo.toml + src/lib.rs + src/playwright.rs + src/js/interaction.js) via `git rm`.
+
+Verification: `cargo build -p rgaa-orchestrator` green; `cargo test -p rgaa-obscura` 6 passed/0 failed; `cargo test -p rgaa-orchestrator --test obscura_audit` 1 passed; `cargo build --workspace` + `cargo test --workspace --no-run` green (no dangling references to the removed feature). `full_audit.rs` now runs an Obscura audit by default.
+
+Out of scope: hardcoded `HOLO3_API_KEY` in `pipeline.rs` left as-is (pre-existing).

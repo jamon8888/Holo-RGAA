@@ -11,59 +11,7 @@ use tracing::{info, error};
 /// don't trip API rate limits while still parallelizing the 27 IA_ASSISTE calls.
 const HOLO3_CONCURRENCY: usize = 12;
 
-#[cfg(all(feature = "browser-playwright", not(feature = "browser-obscura")))]
-use rgaa_browser::PlaywrightBridge;
-
-#[cfg(feature = "browser-obscura")]
 use rgaa_obscura::ObscuraBridge;
-
-/// Common interface used by the per-URL audit pipeline.
-///
-/// Implemented for the active browser bridge so [`audit_one`] can be written
-/// generically without duplicating the audit logic per feature configuration.
-trait AuditBridge {
-    async fn run_axe(&self, url: &str) -> Result<String, String>;
-    async fn run_gap_fix(
-        &self,
-        url: &str,
-        snippets: &HashMap<String, &str>,
-    ) -> Result<HashMap<String, serde_json::Value>, String>;
-    async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String>;
-}
-
-#[cfg(all(feature = "browser-playwright", not(feature = "browser-obscura")))]
-impl AuditBridge for PlaywrightBridge {
-    async fn run_axe(&self, url: &str) -> Result<String, String> {
-        PlaywrightBridge::run_axe(self, url).await
-    }
-    async fn run_gap_fix(
-        &self,
-        url: &str,
-        snippets: &HashMap<String, &str>,
-    ) -> Result<HashMap<String, serde_json::Value>, String> {
-        PlaywrightBridge::run_gap_fix(self, url, snippets).await
-    }
-    async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String> {
-        PlaywrightBridge::extract_page_context(self, url).await
-    }
-}
-
-#[cfg(feature = "browser-obscura")]
-impl AuditBridge for ObscuraBridge {
-    async fn run_axe(&self, url: &str) -> Result<String, String> {
-        ObscuraBridge::run_axe(self, url).await
-    }
-    async fn run_gap_fix(
-        &self,
-        url: &str,
-        snippets: &HashMap<String, &str>,
-    ) -> Result<HashMap<String, serde_json::Value>, String> {
-        ObscuraBridge::run_gap_fix(self, url, snippets).await
-    }
-    async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String> {
-        ObscuraBridge::extract_page_context(self, url).await
-    }
-}
 
 pub struct Orchestrator;
 
@@ -77,31 +25,9 @@ impl Orchestrator {
             .ok_or_else(|| format!("audit result missing for {url}"))
     }
 
-    /// Audit multiple URLs sequentially, returning one [`AuditResult`] per URL
-    /// keyed by the URL. The browser server (when required) is started once
-    /// before the loop and stopped on drop after the loop completes.
-    #[cfg(not(feature = "browser-obscura"))]
-    pub async fn run_batch(
-        urls: &[String],
-        config: &CrawlConfig,
-    ) -> Result<HashMap<String, AuditResult>, String> {
-        let bridge = PlaywrightBridge::new();
-        let api_key = std::env::var("HOLO3_API_KEY")
-            .unwrap_or_else(|_| "hk-a73b030c64aac335fc3651c280c95694beb8df95c4a5d8b1".into());
-        let holo = Arc::new(HoloClient::new(api_key));
-        let mut results = HashMap::new();
-        for url in urls {
-            let audit = audit_one(&bridge, &holo, url, config).await?;
-            results.insert(url.clone(), audit);
-        }
-        Ok(results)
-    }
-
-    /// Audit multiple URLs sequentially, returning one [`AuditResult`] per URL
-    /// keyed by the URL. The Obscura CDP server is started once before the loop
-    /// (required by the single-URL methods) and stopped via [`ObscuraBridge`]
-    /// `Drop` after the loop completes.
-    #[cfg(feature = "browser-obscura")]
+    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the URL.
+    /// The Obscura CDP server is started once before the loop and stopped via
+    /// [`ObscuraBridge`] `Drop` after the loop completes.
     pub async fn run_batch(
         urls: &[String],
         config: &CrawlConfig,
@@ -128,8 +54,8 @@ impl Orchestrator {
 /// This is the single source of truth for the audit logic; both [`Orchestrator::run`]
 /// and [`Orchestrator::run_batch`] route through it so a single URL produces
 /// identical results regardless of entry point.
-async fn audit_one<B: AuditBridge>(
-    bridge: &B,
+async fn audit_one(
+    bridge: &ObscuraBridge,
     holo_client: &Arc<HoloClient>,
     url: &str,
     _config: &CrawlConfig,

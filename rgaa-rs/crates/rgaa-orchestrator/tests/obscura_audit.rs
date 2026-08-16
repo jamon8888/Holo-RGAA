@@ -1,5 +1,3 @@
-#![cfg(feature = "browser-obscura")]
-
 // End-to-end check of the Obscura-backed audit path. Requires the `obscura`
 // binary and `obscura-worker` on PATH, and network access to example.com.
 

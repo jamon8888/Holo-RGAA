@@ -159,7 +159,13 @@ async fn audit_one(
     all_results.extend(gap_results);
     all_results.extend(holo_results);
 
-    // 6. Add MANUEL criteria (7.5) as INDETERMINE
+    // 6. Ensure every criterion has an entry.
+    //
+    // Déterministe criteria not flagged by axe-core/gap-fix (and not already
+    // present from Holo3) are conforming for the automated checks -> Pass, so
+    // the compliance rate reflects the full 106-criterion catalog instead of
+    // only the criteria that produced a violation.
+    // Manuel criteria always require human review -> Na.
     let all_criteria = RgaaCriteria::all();
     for criterion in &all_criteria {
         if criterion.classification == Classification::Manuel {
@@ -172,6 +178,17 @@ async fn audit_one(
                 confidence: None,
                 justification: Some("Manual verification required".into()),
                 source: "manual".into(),
+            });
+        } else if !all_results.contains_key(&criterion.id.to_string()) {
+            all_results.entry(criterion.id.to_string()).or_insert_with(|| CriterionResult {
+                criterion_id: criterion.id.to_string(),
+                title: criterion.title.to_string(),
+                classification: criterion.classification.clone(),
+                status: CriterionStatus::Pass,
+                violations: vec![],
+                confidence: None,
+                justification: Some("No violation detected by automated checks (axe-core + gap-fix)".into()),
+                source: "automated".into(),
             });
         }
     }

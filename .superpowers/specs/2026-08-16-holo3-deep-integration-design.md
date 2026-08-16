@@ -124,8 +124,11 @@ body; the model returns schema-validated JSON in `content`).
   build a multimodal `content` array:
   `[{type:"text",...}, {type:"image_url", image_url:{url:"data:image/png;base64,..."}}]`.
 - `pipeline.rs` captures **one** screenshot per URL (before the Holo3 loop) and
-  passes it for visual criteria (contrast/color/layout/image — a curated id
-  set). Non-visual criteria stay text-only to save tokens.
+  passes it for visual criteria. Initial visual set (by `IA_ASSISTE` id):
+  contrast/colors `3.1`–`3.3`, images `1.1`–`1.4`/`1.6`/`1.7`, `1.9`
+  (text/image adjacency), `10.1`–`10.3` (presentation/layout), `11.1`–`11.4`
+  (forms/labels visibility). Non-visual criteria stay text-only to save tokens.
+  The set is a constant in `pipeline.rs` and easy to extend.
 - Privacy: Holo3 defaults to **zero data retention**; page content + screenshot
   are not persisted by H Company.
 

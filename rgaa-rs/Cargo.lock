@@ -1487,6 +1487,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-remediation"
+version = "0.1.0"
+dependencies = [
+ "rgaa-core",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "rgaa-rules"
 version = "0.1.0"
 dependencies = [

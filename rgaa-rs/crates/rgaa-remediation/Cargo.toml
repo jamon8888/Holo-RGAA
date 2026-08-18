@@ -1,0 +1,9 @@
+[package]
+name = "rgaa-remediation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+serde = { workspace = true }
+thiserror = "2"

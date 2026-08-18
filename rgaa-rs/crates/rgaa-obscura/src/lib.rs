@@ -23,8 +23,8 @@ pub use config::{
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
-    GuidedAction, GuidedExecutor, GuidedObservation, GuidedRunResult, GuidedStep, GuidedTest,
-    TerminationReason,
+    is_stable_accessibility_reference, GuidedAction, GuidedExecutor, GuidedObservation,
+    GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
 pub use results::{AnalyzePageResult, ObscuraError};
 use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
@@ -283,12 +283,14 @@ impl ObscuraBridge {
         &self,
         test: &GuidedTest,
     ) -> Result<GuidedRunResult, ObscuraError> {
-        let mut executor = guided::ObscuraGuidedExecutor::new(self);
+        let mut executor = guided::ObscuraGuidedExecutor::connect(self).await?;
         let root = std::env::temp_dir()
             .join("rgaa-guided-evidence")
             .join(&test.id);
         let store = EvidenceStore::new(root);
-        test.run(&mut executor, Some(&store)).await
+        let result = test.run(&mut executor, Some(&store)).await;
+        executor.close().await;
+        result
     }
 
     fn classify_error(error: String) -> ObscuraError {

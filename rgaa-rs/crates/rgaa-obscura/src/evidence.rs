@@ -43,6 +43,15 @@ impl EvidenceStore {
         })?;
         let digest = Sha256::digest(&evidence.bytes);
         let hash = format!("sha256:{digest:x}");
+        if evidence.kind == "screenshot"
+            && !evidence
+                .bytes
+                .starts_with(&[137, 80, 78, 71, 13, 10, 26, 10])
+        {
+            return Err(ObscuraError::Evidence(
+                "screenshot evidence is not a PNG image".into(),
+            ));
+        }
         let extension = match evidence.kind.as_str() {
             "screenshot" => "png",
             "tree" | "state" => "json",
@@ -50,7 +59,9 @@ impl EvidenceStore {
         };
         let destination = self.root.join(format!("{digest:x}.{extension}"));
         if !destination.exists() {
-            let temporary = self.root.join(format!(".{digest:x}.tmp"));
+            let temporary = self
+                .root
+                .join(format!(".{digest:x}.{}.tmp", uuid::Uuid::new_v4()));
             let mut file = OpenOptions::new()
                 .create_new(true)
                 .write(true)
@@ -64,9 +75,17 @@ impl EvidenceStore {
                     "failed to write evidence: {error}"
                 )));
             }
-            fs::rename(&temporary, &destination).map_err(|error| {
-                ObscuraError::Evidence(format!("failed to commit evidence: {error}"))
-            })?;
+            if let Err(error) = fs::rename(&temporary, &destination) {
+                let _ = fs::remove_file(&temporary);
+                return Err(ObscuraError::Evidence(format!(
+                    "failed to commit evidence: {error}"
+                )));
+            }
+            if let Err(error) = File::open(&self.root).and_then(|directory| directory.sync_all()) {
+                return Err(ObscuraError::Evidence(format!(
+                    "failed to sync evidence directory: {error}"
+                )));
+            }
         }
         Ok(EvidenceRef {
             kind: evidence.kind,

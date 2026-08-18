@@ -1,6 +1,6 @@
 use rgaa_obscura::{
-    EvidenceArtifact, EvidenceStore, GuidedExecutor, GuidedObservation, GuidedRunResult,
-    GuidedStep, GuidedTest, TerminationReason,
+    is_stable_accessibility_reference, EvidenceArtifact, EvidenceStore, GuidedExecutor,
+    GuidedObservation, GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
 use rgaa_obscura::{GuidedAction, ObscuraError};
 use std::collections::VecDeque;
@@ -9,6 +9,26 @@ use std::path::PathBuf;
 struct FakeExecutor {
     calls: Vec<GuidedAction>,
     results: VecDeque<Result<GuidedObservation, ObscuraError>>,
+}
+
+struct StatefulExecutor {
+    value: Option<String>,
+}
+
+impl GuidedExecutor for StatefulExecutor {
+    async fn execute(&mut self, action: &GuidedAction) -> Result<GuidedObservation, ObscuraError> {
+        match action {
+            GuidedAction::FillRef { value, .. } => {
+                self.value = Some(value.clone());
+                Ok(GuidedObservation::default())
+            }
+            GuidedAction::AssertState { .. } => Ok(GuidedObservation {
+                state: Some(serde_json::json!({"value": self.value})),
+                ..Default::default()
+            }),
+            _ => Ok(GuidedObservation::default()),
+        }
+    }
 }
 
 impl FakeExecutor {
@@ -40,6 +60,11 @@ fn test_case(steps: Vec<GuidedStep>) -> GuidedTest {
     }
 }
 
+fn no_required_evidence(mut test: GuidedTest) -> GuidedTest {
+    test.evidence_requirements.clear();
+    test
+}
+
 #[tokio::test]
 async fn mutating_actions_are_followed_by_observation() {
     let mut executor = FakeExecutor::new([
@@ -47,11 +72,11 @@ async fn mutating_actions_are_followed_by_observation() {
         Ok(GuidedObservation::tree(["dialog-close"])),
         Ok(GuidedObservation::default()),
     ]);
-    let test = test_case(vec![
+    let test = no_required_evidence(test_case(vec![
         GuidedStep::PressKey { key: "Tab".into() },
         GuidedStep::AccessibilityTree,
         GuidedStep::Screenshot,
-    ]);
+    ]));
 
     let result = test.run(&mut executor, None).await.expect("run succeeds");
 
@@ -88,7 +113,15 @@ async fn missing_reference_is_incomplete_and_records_unanalyzed_target() {
         result.terminated_reason,
         TerminationReason::MissingReference
     );
-    assert_eq!(result.unanalyzed_elements, vec!["save-button"]);
+    assert_eq!(
+        result.unanalyzed_elements,
+        vec![
+            "save-button",
+            "accessibility-tree",
+            "evidence:tree",
+            "evidence:screenshot"
+        ]
+    );
     assert!(result.manual_review_required);
 }
 
@@ -118,6 +151,116 @@ async fn assertion_failure_cannot_serialize_as_pass() {
     assert!(!serde_json::to_string(&result)
         .expect("result serializes")
         .contains("\"status\":\"pass\""));
+}
+
+#[tokio::test]
+async fn observed_state_mismatch_preserves_assertion_failure() {
+    let mut executor = FakeExecutor::new([Ok(GuidedObservation {
+        state: Some(serde_json::json!({"actual": true})),
+        ..Default::default()
+    })]);
+    let test = test_case(vec![GuidedStep::AssertState {
+        expected: serde_json::json!({"expected": true}),
+    }]);
+
+    let result = test
+        .run(&mut executor, None)
+        .await
+        .expect("run returns envelope");
+
+    assert_eq!(result.terminated_reason, TerminationReason::AssertionFailed);
+    assert!(!result.is_pass());
+}
+
+#[tokio::test]
+async fn stateful_executor_preserves_typed_values_between_steps() {
+    let mut executor = StatefulExecutor { value: None };
+    let mut test = test_case(vec![
+        GuidedStep::FillRef {
+            reference: "ax:42".into(),
+            value: "Ada".into(),
+        },
+        GuidedStep::AssertState {
+            expected: serde_json::json!({"value": "Ada"}),
+        },
+    ]);
+    test.evidence_requirements.clear();
+
+    let result = test.run(&mut executor, None).await.expect("run succeeds");
+
+    assert!(result.is_pass());
+    assert_eq!(executor.value.as_deref(), Some("Ada"));
+}
+
+#[test]
+fn accessibility_references_are_stable_backend_node_ids() {
+    assert!(is_stable_accessibility_reference("ax:42"));
+    assert!(!is_stable_accessibility_reference("#save-button"));
+    assert!(!is_stable_accessibility_reference("button:3"));
+}
+
+#[tokio::test]
+async fn invalid_action_ordering_is_incomplete() {
+    let mut executor = FakeExecutor::new([]);
+    let test = test_case(vec![GuidedStep::ClickRef {
+        reference: "ax:42".into(),
+    }]);
+
+    let result = test
+        .run(&mut executor, None)
+        .await
+        .expect("run returns envelope");
+
+    assert_eq!(result.terminated_reason, TerminationReason::InvalidOrdering);
+    assert!(!result.is_pass());
+    assert!(executor.calls.is_empty());
+}
+
+#[tokio::test]
+async fn failed_step_marks_all_remaining_steps_unanalyzed() {
+    let mut executor =
+        FakeExecutor::new([Err(ObscuraError::Navigation("navigation failed".into()))]);
+    let test = test_case(vec![
+        GuidedStep::Navigate {
+            url: "https://example.test".into(),
+        },
+        GuidedStep::AccessibilityTree,
+        GuidedStep::PressKey { key: "Tab".into() },
+        GuidedStep::AccessibilityTree,
+        GuidedStep::ClickRef {
+            reference: "ax:42".into(),
+        },
+        GuidedStep::AccessibilityTree,
+    ]);
+
+    let result = test
+        .run(&mut executor, None)
+        .await
+        .expect("run returns envelope");
+
+    assert_eq!(result.terminated_reason, TerminationReason::NavigationError);
+    assert_eq!(result.unanalyzed_elements.len(), 6);
+}
+
+#[test]
+fn screenshot_evidence_requires_a_real_png_signature() {
+    let root = std::env::temp_dir().join(format!("rgaa-png-{}", uuid::Uuid::new_v4()));
+    let store = EvidenceStore::new(root.clone());
+    let invalid = store.write(EvidenceArtifact::new("screenshot", b"html".to_vec()));
+    assert!(matches!(invalid, Err(ObscuraError::Evidence(_))));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn required_evidence_is_part_of_pass_semantics() {
+    let test = test_case(vec![]);
+    let result = GuidedRunResult {
+        terminated_reason: TerminationReason::Completed,
+        criterion_mapping: test.criterion_mapping,
+        evidence_requirements: test.evidence_requirements,
+        ..Default::default()
+    };
+    assert!(!result.is_pass());
 }
 
 #[tokio::test]
@@ -151,7 +294,10 @@ async fn keyboard_trap_and_timeout_are_incomplete() {
 fn evidence_store_writes_content_hashes_and_replays_deterministically() {
     let root = std::env::temp_dir().join(format!("rgaa-evidence-{}", uuid::Uuid::new_v4()));
     let store = EvidenceStore::new(root.clone());
-    let artifact = EvidenceArtifact::new("screenshot", b"png-bytes".to_vec());
+    let artifact = EvidenceArtifact::new(
+        "screenshot",
+        [vec![137, 80, 78, 71, 13, 10, 26, 10], b"png-bytes".to_vec()].concat(),
+    );
 
     let first = store.write(artifact.clone()).expect("write evidence");
     let second = store.write(artifact).expect("replay evidence");
@@ -160,6 +306,9 @@ fn evidence_store_writes_content_hashes_and_replays_deterministically() {
     assert_eq!(first.path, second.path);
     assert!(PathBuf::from(&first.path).exists());
     assert!(first.sha256.starts_with("sha256:"));
+    assert!(std::fs::read(&first.path)
+        .expect("read screenshot")
+        .starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
     std::fs::remove_dir_all(root).expect("remove test evidence");
 }
 

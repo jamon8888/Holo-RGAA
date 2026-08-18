@@ -229,7 +229,11 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
 
 #[tokio::test]
 async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
-    let bridge = ObscuraBridge::new();
+    let mut bridge = ObscuraBridge::new().with_port(9228);
+    bridge
+        .start_server()
+        .await
+        .expect("failed to start guided-test CDP server");
     let test = GuidedTest {
         id: "worker-keyboard-flow".into(),
         version: 1,
@@ -249,6 +253,7 @@ async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
         .run_guided_test(&test)
         .await
         .expect("guided run returns an envelope");
+    bridge.stop_server().await;
 
     assert_eq!(result.terminated_reason, TerminationReason::Completed);
     assert_eq!(result.action_trace.len(), 3);
@@ -261,4 +266,12 @@ async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
         .evidence
         .iter()
         .any(|evidence| evidence.kind == "screenshot"));
+    let screenshot = result
+        .evidence
+        .iter()
+        .find(|evidence| evidence.kind == "screenshot")
+        .expect("screenshot evidence");
+    assert!(std::fs::read(&screenshot.path)
+        .expect("read screenshot evidence")
+        .starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
 }

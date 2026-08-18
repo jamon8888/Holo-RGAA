@@ -16,6 +16,14 @@ pub enum RgaaError {
     Storage(String),
     #[error("Invalid criterion ID: {0}")]
     InvalidCriterion(String),
+    #[error("missing required ID: {0}")]
+    MissingId(String),
+    #[error("duplicate finding ID: {0}")]
+    DuplicateFindingId(String),
+    #[error("invalid status: {0}")]
+    InvalidStatus(String),
+    #[error("incomplete evidence for {0}")]
+    IncompleteEvidence(String),
     #[error("Timeout after {0}ms")]
     Timeout(u64),
 }

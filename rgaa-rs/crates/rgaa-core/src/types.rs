@@ -8,14 +8,19 @@ pub enum Classification {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum CriterionStatus {
     Pass,
     Fail,
-    Na,
+    NotApplicable,
     Error,
+    NeedsReview,
+    NotTested,
+    #[serde(rename = "na")]
+    Na,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CriterionResult {
     pub criterion_id: String,
     pub title: String,
@@ -27,7 +32,7 @@ pub struct CriterionResult {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Violation {
     pub rule_id: String,
     pub impact: String,
@@ -35,7 +40,7 @@ pub struct Violation {
     pub nodes_affected: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PageResult {
     pub url: String,
     pub title: Option<String>,
@@ -44,7 +49,7 @@ pub struct PageResult {
     pub crawl_depth: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditResult {
     pub audit_id: String,
     pub url: String,
@@ -63,6 +68,30 @@ pub struct CrawlConfig {
     pub max_depth: u32,
     pub respect_robots: bool,
     pub sample_mode: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn criterion_statuses_have_stable_json_names() {
+        let statuses = [
+            (CriterionStatus::Pass, "pass"),
+            (CriterionStatus::Fail, "fail"),
+            (CriterionStatus::NotApplicable, "not_applicable"),
+            (CriterionStatus::Error, "error"),
+            (CriterionStatus::NeedsReview, "needs_review"),
+            (CriterionStatus::NotTested, "not_tested"),
+        ];
+
+        for (status, expected) in statuses {
+            assert_eq!(
+                serde_json::to_string(&status).unwrap(),
+                format!("\"{expected}\"")
+            );
+        }
+    }
 }
 
 impl Default for CrawlConfig {

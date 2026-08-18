@@ -2,7 +2,7 @@ use rgaa_core::{EvidenceRef, Finding, PageError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ObscuraError {
     #[error("failed to start obscura: {0}")]
     ProcessStartup(String),

@@ -1,5 +1,6 @@
 use rgaa_obscura::ObscuraBridge;
 use rgaa_obscura::{AnalyzeConfig, AnalyzeRequest, PreScanAction, ScreenshotPolicy, Viewport};
+use rgaa_obscura::{GuidedStep, GuidedTest, TerminationReason};
 
 #[tokio::test]
 async fn test_obscura_bridge_sync() {
@@ -220,6 +221,42 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
         .evidence
         .iter()
         .any(|evidence| evidence.kind == "dom_snapshot"));
+    assert!(result
+        .evidence
+        .iter()
+        .any(|evidence| evidence.kind == "screenshot"));
+}
+
+#[tokio::test]
+async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
+    let bridge = ObscuraBridge::new();
+    let test = GuidedTest {
+        id: "worker-keyboard-flow".into(),
+        version: 1,
+        preconditions: vec!["page is reachable".into()],
+        steps: vec![
+            GuidedStep::Navigate {
+                url: "https://example.com".into(),
+            },
+            GuidedStep::AccessibilityTree,
+            GuidedStep::Screenshot,
+        ],
+        criterion_mapping: vec!["12.9".into()],
+        evidence_requirements: vec!["tree".into(), "screenshot".into()],
+    };
+
+    let result = bridge
+        .run_guided_test(&test)
+        .await
+        .expect("guided run returns an envelope");
+
+    assert_eq!(result.terminated_reason, TerminationReason::Completed);
+    assert_eq!(result.action_trace.len(), 3);
+    assert_eq!(result.criterion_mapping, vec!["12.9"]);
+    assert!(result
+        .evidence
+        .iter()
+        .any(|evidence| evidence.kind == "tree"));
     assert!(result
         .evidence
         .iter()

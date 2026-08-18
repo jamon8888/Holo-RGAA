@@ -13,11 +13,18 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 use tracing::{error, info, warn};
 
 pub mod config;
+pub mod evidence;
+pub mod guided;
 pub mod results;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, NeedsReviewPolicy,
     PreScanAction, ScreenshotPolicy, Viewport,
+};
+pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
+pub use guided::{
+    GuidedAction, GuidedExecutor, GuidedObservation, GuidedRunResult, GuidedStep, GuidedTest,
+    TerminationReason,
 };
 pub use results::{AnalyzePageResult, ObscuraError};
 use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
@@ -269,6 +276,19 @@ impl ObscuraBridge {
             completed,
             duration_ms: started.elapsed().as_millis() as u64,
         })
+    }
+
+    /// Execute a versioned guided test through the Obscura browser adapter.
+    pub async fn run_guided_test(
+        &self,
+        test: &GuidedTest,
+    ) -> Result<GuidedRunResult, ObscuraError> {
+        let mut executor = guided::ObscuraGuidedExecutor::new(self);
+        let root = std::env::temp_dir()
+            .join("rgaa-guided-evidence")
+            .join(&test.id);
+        let store = EvidenceStore::new(root);
+        test.run(&mut executor, Some(&store)).await
     }
 
     fn classify_error(error: String) -> ObscuraError {

@@ -44,6 +44,10 @@ pub enum RemediationError {
     UnsupportedFramework { issue_id: String },
     #[error("source location not available for issue {issue_id}")]
     MissingSourceLocation { issue_id: String },
+    #[error("proposal for issue {issue_id} has not been approved")]
+    MissingApproval { issue_id: String },
+    #[error("approval for issue {issue_id} is invalid")]
+    InvalidApproval { issue_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

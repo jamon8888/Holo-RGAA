@@ -46,6 +46,7 @@ pub enum RemediationErrorCode {
     NeedsReview,
     UnsupportedFramework,
     MissingSourceLocation,
+    MissingApproval,
     ModelFailure,
 }
 
@@ -67,6 +68,14 @@ pub struct PatchProposal {
     pub validation_commands: Vec<String>,
     pub expected_effect: String,
     pub proposal_hash: String,
+    pub approval: ApprovalState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ApprovalState {
+    Required,
+    NotRequired,
+    Approved { approver: String, token: String },
 }
 
 impl PatchProposal {
@@ -91,9 +100,44 @@ impl PatchProposal {
             validation_commands,
             expected_effect: expected_effect.into(),
             proposal_hash: String::new(),
+            approval: ApprovalState::Required,
         };
         proposal.proposal_hash = proposal.compute_hash();
         proposal
+    }
+
+    pub fn set_approval_required(&mut self, required: bool) {
+        self.approval = if required {
+            ApprovalState::Required
+        } else {
+            ApprovalState::NotRequired
+        };
+    }
+
+    pub fn requires_approval(&self) -> bool {
+        matches!(self.approval, ApprovalState::Required)
+    }
+
+    pub fn approve(&mut self, approver: &str, token: &str) -> Result<(), RemediationError> {
+        if approver.trim().is_empty() || token.trim().is_empty() {
+            return Err(RemediationError::InvalidApproval {
+                issue_id: self.finding_ids.first().cloned().unwrap_or_default(),
+            });
+        }
+        self.approval = ApprovalState::Approved {
+            approver: approver.to_owned(),
+            token: token.to_owned(),
+        };
+        Ok(())
+    }
+
+    pub fn ensure_approved(&self) -> Result<(), RemediationError> {
+        if matches!(self.approval, ApprovalState::Required) {
+            return Err(RemediationError::MissingApproval {
+                issue_id: self.finding_ids.first().cloned().unwrap_or_default(),
+            });
+        }
+        Ok(())
     }
 
     pub fn compute_hash(&self) -> String {
@@ -131,14 +175,17 @@ pub fn remediate(
         .iter()
         .map(|issue| match policy.check(issue) {
             Ok(()) => match adapter.propose(issue, &issue.element_html) {
-                Ok(proposal) => RemediationOutcome::Ok(RemediationGuidance {
-                    issue_id: issue.id.clone(),
-                    explanation: issue.summary.clone(),
-                    steps: vec![issue.remediation.clone()],
-                    confidence: "high".into(),
-                    criteria: issue.criteria.clone(),
-                    proposal,
-                }),
+                Ok(mut proposal) => {
+                    proposal.set_approval_required(policy.require_approval);
+                    RemediationOutcome::Ok(RemediationGuidance {
+                        issue_id: issue.id.clone(),
+                        explanation: issue.summary.clone(),
+                        steps: vec![issue.remediation.clone()],
+                        confidence: "high".into(),
+                        criteria: issue.criteria.clone(),
+                        proposal,
+                    })
+                }
                 Err(error) => error_outcome(issue, error),
             },
             Err(error) => error_outcome(issue, error),
@@ -165,6 +212,9 @@ fn error_outcome(issue: &RemediationIssue, error: RemediationError) -> Remediati
             RemediationErrorCode::MissingSourceLocation,
             error.to_string(),
         ),
+        RemediationError::MissingApproval { .. } | RemediationError::InvalidApproval { .. } => {
+            (RemediationErrorCode::MissingApproval, error.to_string())
+        }
         RemediationError::InvalidTransition { .. } | RemediationError::InvalidBatchSize { .. } => {
             (RemediationErrorCode::ModelFailure, error.to_string())
         }

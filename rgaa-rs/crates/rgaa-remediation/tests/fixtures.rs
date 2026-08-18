@@ -31,17 +31,40 @@ fn framework_fixtures_produce_deterministic_proposals() {
         (Framework::Vue, include_str!("fixtures/vue/src/App.vue")),
         (
             Framework::Angular,
-            include_str!("fixtures/angular/src/app.component.html"),
+            include_str!("fixtures/angular/src/app.component.ts"),
         ),
     ];
     for (framework, source) in fixtures {
         let adapter = adapter_for(framework);
-        let proposal = adapter.propose(&issue("fixture", framework, "image-alt"), source);
-        if framework != Framework::Next {
-            let proposal = proposal.expect("high-confidence fixture proposal");
-            assert_eq!(proposal.proposal_hash, proposal.compute_hash());
-        }
+        assert_eq!(adapter.detect(source), Some(framework));
+        let rule = if framework == Framework::Next {
+            "button-name"
+        } else {
+            "image-alt"
+        };
+        let proposal = adapter
+            .propose(&issue("fixture", framework, rule), source)
+            .expect("high-confidence fixture proposal");
+        assert_ne!(proposal.diff, source);
+        assert!(proposal.diff.contains(if framework == Framework::Next {
+            "aria-label"
+        } else {
+            "alt"
+        }));
+        assert_eq!(proposal.proposal_hash, proposal.compute_hash());
     }
+}
+
+#[test]
+fn fixture_control_proposal_adds_an_accessible_name() {
+    let source = include_str!("fixtures/react/src/App.tsx");
+    let mut issue = issue("control", Framework::React, "label");
+    issue.element_html = "<input id=\"email\">".into();
+    let proposal = adapter_for(Framework::React)
+        .propose(&issue, source)
+        .expect("control proposal");
+    assert_ne!(proposal.diff, source);
+    assert!(proposal.diff.contains("aria-label=\"email\""));
 }
 
 #[test]

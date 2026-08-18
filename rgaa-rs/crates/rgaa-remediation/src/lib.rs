@@ -105,21 +105,125 @@ mod contract_tests {
     #[test]
     fn adapters_detect_frameworks_and_propose_fixture_fixes() {
         let fixtures = [
-            ("<img src=\"hero.png\">", Framework::React, "alt"),
-            ("<img src=\"hero.png\">", Framework::Vue, "alt"),
-            ("<img src=\"hero.png\">", Framework::Angular, "alt"),
+            (
+                "import React from \"react\"; <img src=\"hero.png\">",
+                Framework::React,
+                "alt",
+            ),
+            (
+                "'use client'; <button></button>",
+                Framework::Next,
+                "aria-label",
+            ),
+            (
+                "<template><img src=\"hero.png\"></template>",
+                Framework::Vue,
+                "alt",
+            ),
+            (
+                "@Component({template: '<img src=\"hero.png\">'})",
+                Framework::Angular,
+                "alt",
+            ),
         ];
         for (source, framework, expected) in fixtures {
             let adapter = adapter_for(framework);
-            assert_eq!(adapter.detect(source), framework);
-            let proposal = adapter
-                .propose(&issue("fixture"), source)
-                .expect("proposal");
+            assert_eq!(adapter.detect(source), Some(framework));
+            let mut fixture_issue = issue("fixture");
+            fixture_issue.framework = Some(framework);
+            fixture_issue.rule = if framework == Framework::Next {
+                "button-name".into()
+            } else {
+                "image-alt".into()
+            };
+            let proposal = adapter.propose(&fixture_issue, source).expect("proposal");
             assert!(proposal.diff.contains(expected));
+            assert_ne!(proposal.diff, source);
         }
+        assert_eq!(
+            ReactAdapter.detect("<template><img src=\"x\"></template>"),
+            None
+        );
+        assert_eq!(VueAdapter.detect("arbitrary source"), None);
         assert!(matches!(
             ReactAdapter.propose(&issue("ambiguous"), "<img src={value} />"),
             Err(RemediationError::NeedsReview { .. })
         ));
+    }
+
+    #[test]
+    fn approval_is_required_until_explicitly_granted() {
+        let policy = RemediationPolicy::default();
+        let mut outcomes = remediate(&[issue("approval")], &policy, &ReactAdapter).expect("batch");
+        let RemediationOutcome::Ok(guidance) = &mut outcomes[0] else {
+            panic!("expected proposal")
+        };
+        assert!(guidance.proposal.requires_approval());
+        assert!(guidance.proposal.ensure_approved().is_err());
+        guidance
+            .proposal
+            .approve("reviewer", "approval-token")
+            .expect("approve");
+        assert!(guidance.proposal.ensure_approved().is_ok());
+    }
+
+    #[test]
+    fn proposals_reject_mismatched_framework_and_unsafe_sources() {
+        let mut mismatched = issue("mismatch");
+        mismatched.framework = Some(Framework::Vue);
+        assert!(matches!(
+            ReactAdapter.propose(&mismatched, "import React from \"react\"; <img src=\"x\">"),
+            Err(RemediationError::UnsupportedFramework { .. })
+        ));
+
+        let mut control = issue("control");
+        control.framework = Some(Framework::Angular);
+        control.rule = "label".into();
+        control.element_html = "<input [value]=\"name\">".into();
+        assert!(
+            matches!(AngularAdapter.propose(&control, &control.element_html), Err(RemediationError::NeedsReview { reason, .. }) if reason.contains("dynamic"))
+        );
+        assert!(matches!(
+            ReactAdapter.propose(&issue("empty"), ""),
+            Err(RemediationError::NeedsReview { .. })
+        ));
+        let mut labeled = issue("labeled");
+        labeled.rule = "label".into();
+        labeled.element_html = "<label for=\"email\">Email</label><input id=\"email\">".into();
+        assert!(matches!(
+            ReactAdapter.propose(&labeled, &labeled.element_html),
+            Err(RemediationError::NeedsReview { reason, .. }) if reason.contains("ambiguous")
+        ));
+    }
+
+    #[test]
+    fn dynamic_image_bindings_need_review_in_each_framework_syntax() {
+        let cases = [
+            (Framework::React, "<img src={image} />"),
+            (Framework::Vue, "<img :src=\"image\">"),
+            (Framework::Angular, "<img [src]=\"image\">"),
+        ];
+        for (framework, source) in cases {
+            let mut image = issue("dynamic-image");
+            image.framework = Some(framework);
+            assert!(matches!(
+                adapter_for(framework).propose(&image, source),
+                Err(RemediationError::NeedsReview { reason, .. }) if reason.contains("dynamic")
+            ));
+        }
+    }
+
+    #[test]
+    fn policy_can_make_approval_optional_without_marking_required() {
+        let policy = RemediationPolicy {
+            require_approval: false,
+            ..Default::default()
+        };
+        let outcomes = remediate(&[issue("optional")], &policy, &ReactAdapter).expect("batch");
+        let RemediationOutcome::Ok(guidance) = &outcomes[0] else {
+            panic!("expected proposal")
+        };
+        assert!(!guidance.proposal.requires_approval());
+        guidance.proposal.ensure_approved().expect("not required");
     }
 }

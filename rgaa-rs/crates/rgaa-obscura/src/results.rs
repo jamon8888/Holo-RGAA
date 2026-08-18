@@ -20,18 +20,25 @@ pub enum ObscuraError {
     Evidence(String),
     #[error("invalid JSON: {0}")]
     Json(String),
+    #[error("unsupported analysis configuration: {0}")]
+    UnsupportedConfiguration(String),
+    #[error("analysis policy denied: {0}")]
+    PolicyDenied(String),
 }
 
 impl ObscuraError {
     pub fn page_error(&self) -> PageError {
         let code = match self {
             Self::Navigation(_) => "navigation",
-            Self::Evaluation(_) | Self::Json(_) => "evaluation",
+            Self::Evaluation(_) => "evaluation",
             Self::Timeout(_) => "timeout",
             Self::Evidence(_) => "evidence",
             Self::CdpTransport(_) => "cdp_transport",
             Self::ProcessStartup(_) => "process_startup",
             Self::Validation(_) => "validation",
+            Self::Json(_) => "json",
+            Self::UnsupportedConfiguration(_) => "unsupported_configuration",
+            Self::PolicyDenied(_) => "policy_denied",
         };
         PageError {
             code: code.into(),
@@ -61,6 +68,10 @@ impl AnalyzePageResult {
             duration_ms,
         }
     }
+
+    pub fn is_clean_complete(&self) -> bool {
+        self.completed && self.errors.is_empty() && !self.evidence.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -79,5 +90,39 @@ mod tests {
         assert_eq!(result.errors[0].code, "navigation");
         let json = serde_json::to_string(&result).expect("result serializes");
         assert!(json.contains("unreachable"));
+    }
+
+    #[test]
+    fn all_typed_errors_keep_distinct_serialized_codes() {
+        let errors = [
+            (ObscuraError::ProcessStartup("x".into()), "process_startup"),
+            (ObscuraError::CdpTransport("x".into()), "cdp_transport"),
+            (ObscuraError::Navigation("x".into()), "navigation"),
+            (ObscuraError::Json("x".into()), "json"),
+            (ObscuraError::Evaluation("x".into()), "evaluation"),
+            (ObscuraError::Timeout("x".into()), "timeout"),
+            (ObscuraError::Evidence("x".into()), "evidence"),
+            (
+                ObscuraError::UnsupportedConfiguration("x".into()),
+                "unsupported_configuration",
+            ),
+            (ObscuraError::PolicyDenied("x".into()), "policy_denied"),
+        ];
+        for (error, code) in errors {
+            assert_eq!(error.page_error().code, code);
+        }
+    }
+
+    #[test]
+    fn clean_result_requires_evidence() {
+        let result = AnalyzePageResult {
+            url: "https://example.test".into(),
+            findings: Vec::new(),
+            evidence: Vec::new(),
+            errors: Vec::new(),
+            completed: true,
+            duration_ms: 1,
+        };
+        assert!(!result.is_clean_complete());
     }
 }

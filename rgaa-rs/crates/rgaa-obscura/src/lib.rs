@@ -1,3 +1,4 @@
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -19,15 +20,132 @@ pub use config::{
     PreScanAction, ScreenshotPolicy, Viewport,
 };
 pub use results::{AnalyzePageResult, ObscuraError};
-use rgaa_core::{CriterionStatus, Finding};
+use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
 use rgaa_rules::AxeMapper;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
+
+#[derive(Debug, Deserialize)]
+struct AxeViolationPayload {
+    id: String,
+    impact: Option<String>,
+    description: String,
+    help: Option<String>,
+    nodes: Vec<AxeNodePayload>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AxeNodePayload {
+    target: Vec<String>,
+    html: String,
+    #[serde(rename = "failureSummary")]
+    failure_summary: Option<String>,
+}
+
+fn validate_axe_payload(
+    value: &serde_json::Value,
+) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
+    let array = value
+        .as_array()
+        .ok_or_else(|| ObscuraError::Json("axe violations must be an array".into()))?;
+    let mut payload = Vec::with_capacity(array.len());
+    for (index, item) in array.iter().enumerate() {
+        let violation =
+            serde_json::from_value::<AxeViolationPayload>(item.clone()).map_err(|error| {
+                ObscuraError::Json(format!("invalid axe violation at index {index}: {error}"))
+            })?;
+        if violation.id.trim().is_empty()
+            || violation.description.trim().is_empty()
+            || violation.nodes.is_empty()
+        {
+            return Err(ObscuraError::Json(format!(
+                "invalid axe violation at index {index}: required fields are empty"
+            )));
+        }
+        if violation
+            .nodes
+            .iter()
+            .any(|node| node.target.is_empty() || node.html.trim().is_empty())
+        {
+            return Err(ObscuraError::Json(format!(
+                "invalid axe violation at index {index}: malformed node"
+            )));
+        }
+        payload.push(violation);
+    }
+    Ok(payload)
+}
+
+fn findings_from_axe(
+    url: &str,
+    value: &serde_json::Value,
+    evidence: &[rgaa_core::EvidenceRef],
+) -> Result<Vec<Finding>, ObscuraError> {
+    let payload = validate_axe_payload(value)?;
+    let normalized =
+        serde_json::to_string(value).map_err(|error| ObscuraError::Json(error.to_string()))?;
+    let mapped = AxeMapper::map(&normalized);
+    let mut findings = Vec::new();
+    for violation in payload {
+        let mut criteria = mapped
+            .iter()
+            .filter(|(_, criterion)| {
+                criterion
+                    .violations
+                    .iter()
+                    .any(|item| item.rule_id == violation.id)
+            })
+            .map(|(criterion_id, _)| criterion_id.clone())
+            .collect::<Vec<_>>();
+        criteria.sort();
+        if criteria.is_empty() {
+            criteria.push("unmapped".into());
+        }
+        for (node_index, node) in violation.nodes.iter().enumerate() {
+            for criterion_id in &criteria {
+                let target = node.target.join(" | ");
+                let mut finding =
+                    Finding::new(format!("rgaa-{criterion_id}-{}-{node_index}", violation.id));
+                finding.rule = violation.id.clone();
+                finding.criterion_id = (criterion_id != "unmapped").then(|| criterion_id.clone());
+                finding.url = url.into();
+                finding.target = target;
+                finding.html = Some(node.html.clone());
+                finding.details = node
+                    .failure_summary
+                    .clone()
+                    .or_else(|| Some(violation.description.clone()));
+                finding.status = CriterionStatus::Fail;
+                finding.severity = violation.impact.clone().or_else(|| Some("unknown".into()));
+                finding.description = Some(violation.description.clone());
+                finding.remediation = violation.help.clone();
+                finding.evidence = evidence.to_vec();
+                finding.source = "axe-core".into();
+                findings.push(finding);
+            }
+        }
+    }
+    findings.sort_by_key(|finding| {
+        (
+            finding.id.clone(),
+            FindingFingerprint::from_finding(finding),
+        )
+    });
+    Ok(findings)
+}
 
 pub struct ObscuraBridge {
     binary_path: String,
     server_port: u16,
     server_process: Option<Child>,
+}
+
+impl Default for ObscuraBridge {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ObscuraBridge {
@@ -61,29 +179,67 @@ impl ObscuraBridge {
         &self,
         request: &AnalyzeRequest,
     ) -> Result<AnalyzePageResult, ObscuraError> {
-        request.validate()?;
+        request.validate_supported()?;
         let started = Instant::now();
-        let axe_source = match self.fetch_axe_source().await {
-            Ok(source) => source,
-            Err(error) => {
+        let axe_source = match timeout(
+            Duration::from_millis(request.config.timeout_ms),
+            self.fetch_axe_source(),
+        )
+        .await
+        {
+            Ok(Ok(source)) => source,
+            Ok(Err(error)) => {
                 return Ok(AnalyzePageResult::failed(
                     &request.url,
                     Self::classify_error(error),
                     started.elapsed().as_millis() as u64,
                 ))
             }
-        };
-        let raw = match self.run_axe_with_script(&request.url, &axe_source).await {
-            Ok(raw) => raw,
-            Err(error) => {
+            Err(_) => {
                 return Ok(AnalyzePageResult::failed(
                     &request.url,
-                    Self::classify_error(error),
+                    ObscuraError::Timeout("timed out fetching axe-core".into()),
                     started.elapsed().as_millis() as u64,
                 ))
             }
         };
-        let violations = match serde_json::from_str::<Vec<serde_json::Value>>(&raw) {
+        let mut attempt = 0;
+        let (raw, evidence) = loop {
+            let result = timeout(
+                Duration::from_millis(request.config.timeout_ms),
+                self.run_configured_axe(request, &axe_source),
+            )
+            .await;
+            match result {
+                Ok(Ok(result)) => break result,
+                Ok(Err(_error)) if attempt < usize::from(request.config.retry_limit) => {
+                    attempt += 1;
+                    continue;
+                }
+                Ok(Err(error)) => {
+                    return Ok(AnalyzePageResult::failed(
+                        &request.url,
+                        error,
+                        started.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(_) if attempt < usize::from(request.config.retry_limit) => {
+                    attempt += 1;
+                    continue;
+                }
+                Err(_) => {
+                    return Ok(AnalyzePageResult::failed(
+                        &request.url,
+                        ObscuraError::Timeout(format!(
+                            "analysis timed out after {} ms",
+                            request.config.timeout_ms
+                        )),
+                        started.elapsed().as_millis() as u64,
+                    ))
+                }
+            }
+        };
+        let violations = match serde_json::from_str::<serde_json::Value>(&raw) {
             Ok(violations) => violations,
             Err(error) => {
                 return Ok(AnalyzePageResult::failed(
@@ -93,49 +249,24 @@ impl ObscuraBridge {
                 ))
             }
         };
-        let normalized = match serde_json::to_string(&violations) {
-            Ok(normalized) => normalized,
+        let findings = match findings_from_axe(&request.url, &violations, &evidence) {
+            Ok(findings) => findings,
             Err(error) => {
                 return Ok(AnalyzePageResult::failed(
                     &request.url,
-                    ObscuraError::Json(error.to_string()),
+                    error,
                     started.elapsed().as_millis() as u64,
                 ))
             }
         };
-        let mapped = AxeMapper::map(&normalized);
-        let findings = mapped
-            .values()
-            .filter(|criterion| criterion.status == CriterionStatus::Fail)
-            .flat_map(|criterion| {
-                criterion
-                    .violations
-                    .iter()
-                    .enumerate()
-                    .map(|(index, violation)| {
-                        let mut finding =
-                            Finding::new(format!("{}-{index}", criterion.criterion_id));
-                        finding.rule = violation.rule_id.clone();
-                        finding.url = request.url.clone();
-                        finding.target = request
-                            .config
-                            .selector
-                            .clone()
-                            .unwrap_or_else(|| "document".into());
-                        finding.status = CriterionStatus::Fail;
-                        finding.severity = Some(violation.impact.clone());
-                        finding.description = Some(violation.description.clone());
-                        finding
-                    })
-            })
-            .collect();
 
+        let completed = !evidence.is_empty();
         Ok(AnalyzePageResult {
             url: request.url.clone(),
             findings,
-            evidence: Vec::new(),
+            evidence,
             errors: Vec::new(),
-            completed: true,
+            completed,
             duration_ms: started.elapsed().as_millis() as u64,
         })
     }
@@ -150,9 +281,276 @@ impl ObscuraBridge {
             ObscuraError::CdpTransport(error)
         } else if lower.contains("json") || lower.contains("result") {
             ObscuraError::Json(error)
+        } else if lower.contains("screenshot")
+            || lower.contains("evidence")
+            || lower.contains("dom evidence")
+        {
+            ObscuraError::Evidence(error)
+        } else if lower.contains("missing secret") || lower.contains("policy") {
+            ObscuraError::PolicyDenied(error)
+        } else if lower.contains("unsupported") {
+            ObscuraError::UnsupportedConfiguration(error)
+        } else if lower.contains("failed to spawn") {
+            ObscuraError::ProcessStartup(error)
         } else {
             ObscuraError::Evaluation(error)
         }
+    }
+
+    async fn run_configured_axe(
+        &self,
+        request: &AnalyzeRequest,
+        axe_source: &str,
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>), ObscuraError> {
+        let ws_url = self
+            .get_browser_ws_url()
+            .await
+            .map_err(Self::classify_error)?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|error| ObscuraError::CdpTransport(error.to_string()))?;
+        let target_id = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": request.url}),
+        )
+        .await
+        .map_err(Self::classify_error)?
+        .get("targetId")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
+        .to_owned();
+        let session_id = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await
+        .map_err(Self::classify_error)?
+        .get("sessionId")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| ObscuraError::CdpTransport("missing session id".into()))?
+        .to_owned();
+
+        let outcome = self
+            .run_axe_core_configured(&mut ws, &session_id, request, axe_source)
+            .await;
+        let _ = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Target.detachFromTarget",
+            serde_json::json!({"sessionId": session_id}),
+        )
+        .await;
+        let _ = Self::cdp_send(
+            &mut ws,
+            "Target.closeTarget",
+            serde_json::json!({"targetId": target_id}),
+        )
+        .await;
+        let _ = ws.close(None).await;
+        outcome.map_err(Self::classify_error)
+    }
+
+    async fn run_axe_core_configured(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+        axe_source: &str,
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>), String> {
+        Self::wait_for_load(
+            ws,
+            session_id,
+            Duration::from_millis(request.config.timeout_ms),
+        )
+        .await?;
+        Self::cdp_send_session(
+            ws,
+            session_id,
+            "Emulation.setDeviceMetricsOverride",
+            serde_json::json!({
+                "width": request.config.viewport.width,
+                "height": request.config.viewport.height,
+                "deviceScaleFactor": 1,
+                "mobile": request.config.profile == "mobile"
+            }),
+        )
+        .await?;
+        self.apply_cookies(ws, session_id, request).await?;
+        self.apply_pre_scan_actions(ws, session_id, request).await?;
+        let inject = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": format!("(function() {{ {} }})()", axe_source)}),
+        )
+        .await?;
+        if inject.get("exceptionDetails").is_some() {
+            return Err("axe-core injection threw an exception".into());
+        }
+        let axe_argument = request
+            .config
+            .selector
+            .as_ref()
+            .map(|selector| serde_json::to_string(selector).map_err(|error| error.to_string()))
+            .transpose()?;
+        let expression = match axe_argument {
+            Some(selector) => format!("axe.run({selector})"),
+            None => "axe.run()".into(),
+        };
+        let result = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": expression, "awaitPromise": true, "returnByValue": true}),
+        )
+        .await?;
+        let raw = Self::validate_axe_result(&result)?;
+        let violations = serde_json::from_str::<serde_json::Value>(&raw)
+            .map_err(|error| format!("invalid axe JSON: {error}"))?;
+        let evidence = self
+            .capture_evidence(ws, session_id, request, &violations)
+            .await?;
+        Ok((raw, evidence))
+    }
+
+    async fn apply_cookies(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+    ) -> Result<(), String> {
+        if request.config.cookie_references.is_empty() {
+            return Ok(());
+        }
+        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({})).await?;
+        for cookie in &request.config.cookie_references {
+            let key = cookie
+                .name
+                .chars()
+                .map(|character| {
+                    if character.is_ascii_alphanumeric() {
+                        character.to_ascii_uppercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>();
+            let value = std::env::var(format!("RGAA_COOKIE_{key}"))
+                .map_err(|_| format!("missing secret for cookie reference '{}'", cookie.name))?;
+            let mut params = serde_json::json!({
+                "name": cookie.name,
+                "value": value,
+                "url": request.url,
+            });
+            if let Some(domain) = &cookie.domain {
+                params["domain"] = serde_json::Value::String(domain.clone());
+            }
+            let result =
+                Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
+            if result.get("success").and_then(|value| value.as_bool()) == Some(false) {
+                return Err(format!(
+                    "browser rejected cookie reference '{}'",
+                    cookie.name
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn apply_pre_scan_actions(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+    ) -> Result<(), String> {
+        for action in &request.config.pre_scan_actions {
+            let (selector, body) = match action {
+                PreScanAction::Click { selector } => {
+                    (selector, "element.click(); return true;".to_string())
+                }
+                PreScanAction::Fill { selector, value } => {
+                    let value = serde_json::to_string(value).map_err(|error| error.to_string())?;
+                    (
+                        selector,
+                        format!(
+                            "element.value = {value}; element.dispatchEvent(new Event('input', {{bubbles:true}})); element.dispatchEvent(new Event('change', {{bubbles:true}})); return true;"
+                        ),
+                    )
+                }
+            };
+            let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
+            let expression = format!(
+                "(() => {{ const element = document.querySelector({selector}); if (!element) throw new Error('pre-scan selector not found'); {body} }})()"
+            );
+            let result = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Runtime.evaluate",
+                serde_json::json!({"expression": expression, "returnByValue": true}),
+            )
+            .await?;
+            if result.get("exceptionDetails").is_some() {
+                return Err("pre-scan action evaluation failed".into());
+            }
+        }
+        Ok(())
+    }
+
+    async fn capture_evidence(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+        violations: &serde_json::Value,
+    ) -> Result<Vec<rgaa_core::EvidenceRef>, String> {
+        let dom = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": "document.documentElement.outerHTML",
+                "returnByValue": true
+            }),
+        )
+        .await?;
+        let dom = dom
+            .get("result")
+            .and_then(|value| value.get("value"))
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| "DOM evidence was not returned by the browser".to_string())?;
+        let mut evidence = vec![Self::evidence_ref("dom_snapshot", dom.as_bytes())];
+        let should_screenshot = match request.config.screenshot_policy {
+            ScreenshotPolicy::None => false,
+            ScreenshotPolicy::Always => true,
+            ScreenshotPolicy::OnFailure => {
+                violations.as_array().is_some_and(|items| !items.is_empty())
+            }
+        };
+        if should_screenshot {
+            let screenshot = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Page.captureScreenshot",
+                serde_json::json!({"format": "png"}),
+            )
+            .await?;
+            let data = screenshot
+                .get("data")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "screenshot evidence was not returned by the browser".to_string())?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map_err(|error| format!("invalid screenshot evidence: {error}"))?;
+            evidence.push(Self::evidence_ref("screenshot", &bytes));
+        }
+        Ok(evidence)
+    }
+
+    fn evidence_ref(kind: &str, bytes: &[u8]) -> rgaa_core::EvidenceRef {
+        let digest = Sha256::digest(bytes);
+        rgaa_core::EvidenceRef::new(kind, format!("sha256:{digest:x}"))
     }
 
     /// Start the obscura CDP server as a background process
@@ -825,7 +1223,7 @@ impl ObscuraBridge {
             msg["sessionId"] = serde_json::Value::String(sid.to_string());
         }
 
-        ws.send(Message::Text(msg.to_string().into()))
+        ws.send(Message::Text(msg.to_string()))
             .await
             .map_err(|e| format!("CDP send failed: {e}"))?;
 
@@ -974,5 +1372,38 @@ mod tests {
 
         assert!(!result.completed);
         assert_eq!(result.errors[0].code, "timeout");
+    }
+
+    #[test]
+    fn malformed_axe_items_are_rejected_before_mapping() {
+        let payload = serde_json::json!([{}]);
+        assert!(matches!(
+            validate_axe_payload(&payload),
+            Err(ObscuraError::Json(_))
+        ));
+    }
+
+    #[test]
+    fn axe_findings_preserve_context_and_have_stable_order() {
+        let payload = serde_json::json!([{
+            "id": "image-alt",
+            "impact": "critical",
+            "description": "Images must have alternate text",
+            "help": "Ensure alt text",
+            "nodes": [{"target": ["#z"], "html": "<img id=\"z\">"}, {"target": ["#a"], "html": "<img id=\"a\">"}]
+        }]);
+        let evidence = vec![rgaa_core::EvidenceRef::new("dom_snapshot", "sha256:x")];
+        let findings = findings_from_axe("https://example.test", &payload, &evidence)
+            .expect("valid axe payload");
+        assert_eq!(findings.len(), 14);
+        assert!(findings.windows(2).all(|pair| pair[0].id <= pair[1].id));
+        let finding = findings
+            .iter()
+            .find(|finding| finding.target == "#a")
+            .expect("target preserved");
+        assert_eq!(finding.html.as_deref(), Some("<img id=\"a\">"));
+        assert_eq!(finding.criterion_id.as_deref(), Some("1.1"));
+        assert_eq!(finding.source, "axe-core");
+        assert_eq!(finding.evidence, evidence);
     }
 }

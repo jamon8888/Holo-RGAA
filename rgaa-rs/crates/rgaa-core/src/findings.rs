@@ -15,6 +15,12 @@ pub struct Finding {
     pub severity: Option<String>,
     pub description: Option<String>,
     pub remediation: Option<String>,
+    #[serde(default)]
+    pub html: Option<String>,
+    #[serde(default)]
+    pub details: Option<String>,
+    #[serde(default)]
+    pub source: String,
 }
 
 impl Finding {
@@ -31,6 +37,9 @@ impl Finding {
             severity: None,
             description: None,
             remediation: None,
+            html: None,
+            details: None,
+            source: String::new(),
         }
     }
 }

@@ -32,44 +32,29 @@ pub struct CookieReference {
     pub domain: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ScreenshotPolicy {
+    #[default]
     None,
     OnFailure,
     Always,
 }
 
-impl Default for ScreenshotPolicy {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AdvancedRulePolicy {
+    #[default]
     Disabled,
     Enabled,
 }
 
-impl Default for AdvancedRulePolicy {
-    fn default() -> Self {
-        Self::Disabled
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum NeedsReviewPolicy {
+    #[default]
     Record,
     Fail,
-}
-
-impl Default for NeedsReviewPolicy {
-    fn default() -> Self {
-        Self::Record
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -182,6 +167,36 @@ impl AnalyzeRequest {
         }
         Ok(())
     }
+
+    pub fn validate_supported(&self) -> Result<(), ObscuraError> {
+        self.validate()?;
+        if !matches!(
+            self.config.profile.as_str(),
+            "default" | "desktop" | "mobile"
+        ) {
+            return Err(ObscuraError::UnsupportedConfiguration(format!(
+                "unknown profile '{}'",
+                self.config.profile
+            )));
+        }
+        if self.config.concurrency != 1 {
+            return Err(ObscuraError::UnsupportedConfiguration(
+                "analyze handles one page; concurrency greater than 1 requires a batch API".into(),
+            ));
+        }
+        if self.config.advanced_rule_policy == AdvancedRulePolicy::Enabled {
+            return Err(ObscuraError::UnsupportedConfiguration(
+                "advanced rules are not available in the local axe runner".into(),
+            ));
+        }
+        if self.config.needs_review_policy == NeedsReviewPolicy::Fail {
+            return Err(ObscuraError::PolicyDenied(
+                "needs-review fail policy requires a manual-review sink not provided by analyze"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -201,10 +216,12 @@ mod tests {
 
     #[test]
     fn accepts_mobile_viewport_override() {
-        let mut config = AnalyzeConfig::default();
-        config.viewport = Viewport {
-            width: 375,
-            height: 812,
+        let config = AnalyzeConfig {
+            viewport: Viewport {
+                width: 375,
+                height: 812,
+            },
+            ..Default::default()
         };
         assert!(AnalyzeRequest {
             url: "https://example.test".into(),
@@ -253,5 +270,25 @@ mod tests {
             AnalyzeConfig::default().screenshot_policy,
             ScreenshotPolicy::None
         );
+    }
+
+    #[test]
+    fn rejects_configuration_that_analyze_cannot_execute() {
+        let mut request = AnalyzeRequest {
+            url: "https://example.test".into(),
+            config: AnalyzeConfig::default(),
+        };
+        request.config.advanced_rule_policy = AdvancedRulePolicy::Enabled;
+        assert!(matches!(
+            request.validate_supported(),
+            Err(ObscuraError::UnsupportedConfiguration(_))
+        ));
+
+        request.config.advanced_rule_policy = AdvancedRulePolicy::Disabled;
+        request.config.concurrency = 2;
+        assert!(matches!(
+            request.validate_supported(),
+            Err(ObscuraError::UnsupportedConfiguration(_))
+        ));
     }
 }

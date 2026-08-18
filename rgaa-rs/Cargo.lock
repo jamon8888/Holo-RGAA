@@ -1454,12 +1454,14 @@ name = "rgaa-obscura"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "futures-util",
  "reqwest",
  "rgaa-core",
  "rgaa-rules",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",

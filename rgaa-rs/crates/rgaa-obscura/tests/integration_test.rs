@@ -1,4 +1,5 @@
 use rgaa_obscura::ObscuraBridge;
+use rgaa_obscura::{AnalyzeConfig, AnalyzeRequest, PreScanAction, ScreenshotPolicy, Viewport};
 
 #[tokio::test]
 async fn test_obscura_bridge_sync() {
@@ -173,4 +174,54 @@ async fn test_obscura_bridge_axe_batch_performance() {
         elapsed.as_secs() < 60,
         "axe batch unexpectedly slow: {elapsed:?}"
     );
+}
+
+#[tokio::test]
+async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
+    let mut bridge = ObscuraBridge::new().with_port(9227);
+    assert!(
+        bridge.start_server().await.is_ok(),
+        "failed to start CDP server"
+    );
+
+    let config = AnalyzeConfig {
+        viewport: Viewport {
+            width: 375,
+            height: 812,
+        },
+        selector: Some("body".into()),
+        pre_scan_actions: vec![PreScanAction::Click {
+            selector: "body".into(),
+        }],
+        screenshot_policy: ScreenshotPolicy::Always,
+        timeout_ms: 30_000,
+        retry_limit: 1,
+        ..Default::default()
+    };
+    let request = AnalyzeRequest {
+        url: "https://example.com".into(),
+        config,
+    };
+
+    let result = bridge.analyze(&request).await;
+    bridge.stop_server().await;
+
+    let result = result.expect("structured analysis request should be accepted");
+    assert!(
+        result.completed,
+        "configured analysis must complete with evidence: {result:?}"
+    );
+    assert!(
+        result.errors.is_empty(),
+        "configured analysis returned errors: {:?}",
+        result.errors
+    );
+    assert!(result
+        .evidence
+        .iter()
+        .any(|evidence| evidence.kind == "dom_snapshot"));
+    assert!(result
+        .evidence
+        .iter()
+        .any(|evidence| evidence.kind == "screenshot"));
 }

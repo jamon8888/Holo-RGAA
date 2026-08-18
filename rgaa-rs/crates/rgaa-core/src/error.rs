@@ -18,6 +18,10 @@ pub enum RgaaError {
     InvalidCriterion(String),
     #[error("missing required ID: {0}")]
     MissingId(String),
+    #[error("missing required field: {0}")]
+    MissingField(String),
+    #[error("unsupported schema version: {0}")]
+    UnsupportedSchemaVersion(String),
     #[error("duplicate finding ID: {0}")]
     DuplicateFindingId(String),
     #[error("invalid status: {0}")]

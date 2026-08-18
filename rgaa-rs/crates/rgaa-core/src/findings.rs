@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 use serde::{Deserialize, Serialize};
 
 use crate::EvidenceRef;
@@ -37,21 +35,45 @@ impl Finding {
     }
 }
 
+/// Stable persisted fingerprint format: `rgaa-fp-v1-` followed by a 16-digit
+/// lowercase hexadecimal FNV-1a hash of length-prefixed UTF-8 fields.
 pub struct FindingFingerprint;
 
 impl FindingFingerprint {
     pub fn from_finding(finding: &Finding) -> String {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        finding.rule.hash(&mut hasher);
-        finding.url.hash(&mut hasher);
-        finding.target.hash(&mut hasher);
-        finding.component_path.hash(&mut hasher);
+        let mut hash = 0xcbf29ce484222325_u64;
+        hash = hash_field(hash, Some(&finding.rule));
+        hash = hash_field(hash, Some(&finding.url));
+        hash = hash_field(hash, Some(&finding.target));
+        hash = hash_field(hash, finding.component_path.as_deref());
+        hash = hash_field(hash, Some(&finding.evidence.len().to_string()));
         for evidence in &finding.evidence {
-            evidence.kind.hash(&mut hasher);
-            evidence.hash.hash(&mut hasher);
+            hash = hash_field(hash, Some(&evidence.kind));
+            hash = hash_field(hash, Some(&evidence.hash));
+            hash = hash_field(hash, evidence.location.as_deref());
         }
-        format!("{:016x}", hasher.finish())
+        format!("rgaa-fp-v1-{hash:016x}")
     }
+}
+
+fn hash_field(mut hash: u64, field: Option<&str>) -> u64 {
+    match field {
+        None => fnv_byte(hash, 0),
+        Some(value) => {
+            hash = fnv_byte(hash, 1);
+            for byte in (value.len() as u64).to_le_bytes() {
+                hash = fnv_byte(hash, byte);
+            }
+            for &byte in value.as_bytes() {
+                hash = fnv_byte(hash, byte);
+            }
+            hash
+        }
+    }
+}
+
+fn fnv_byte(hash: u64, byte: u8) -> u64 {
+    (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
 }
 
 #[cfg(test)]
@@ -72,5 +94,35 @@ mod tests {
             FindingFingerprint::from_finding(&left),
             FindingFingerprint::from_finding(&right)
         );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_evidence_location_changes() {
+        let mut finding = valid_finding();
+        finding.evidence = vec![EvidenceRef {
+            kind: "screenshot".into(),
+            hash: "sha256:abc".into(),
+            location: Some("before.png".into()),
+        }];
+        let first = FindingFingerprint::from_finding(&finding);
+        finding.evidence[0].location = Some("after.png".into());
+
+        assert_ne!(first, FindingFingerprint::from_finding(&finding));
+    }
+
+    #[test]
+    fn fingerprint_uses_stable_persistence_format() {
+        let fingerprint = FindingFingerprint::from_finding(&valid_finding());
+
+        assert!(fingerprint.starts_with("rgaa-fp-v1-"));
+        assert_eq!(fingerprint.len(), 27);
+    }
+
+    fn valid_finding() -> Finding {
+        let mut finding = Finding::new("finding-1");
+        finding.rule = "rgaa-1.1".into();
+        finding.url = "https://example.test".into();
+        finding.target = "#main".into();
+        finding
     }
 }

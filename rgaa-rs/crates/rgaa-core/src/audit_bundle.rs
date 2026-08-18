@@ -85,6 +85,11 @@ impl AuditBundle {
         if self.schema_version.trim().is_empty() {
             return Err(RgaaError::MissingId("schema_version".into()));
         }
+        if self.schema_version != CURRENT_SCHEMA_VERSION {
+            return Err(RgaaError::UnsupportedSchemaVersion(
+                self.schema_version.clone(),
+            ));
+        }
 
         for page in &self.pages {
             if page.page_id.trim().is_empty() {
@@ -101,15 +106,21 @@ impl AuditBundle {
             }
         }
 
-        let mut finding_ids = HashSet::with_capacity(self.findings.len());
+        let mut finding_ids: HashSet<String> = HashSet::with_capacity(
+            self.findings.len()
+                + self
+                    .pages
+                    .iter()
+                    .map(|page| page.findings.len())
+                    .sum::<usize>(),
+        );
         for finding in &self.findings {
-            if finding.id.trim().is_empty() {
-                return Err(RgaaError::MissingId("finding.id".into()));
+            validate_finding(finding, &mut finding_ids)?;
+        }
+        for page in &self.pages {
+            for finding in &page.findings {
+                validate_finding(finding, &mut finding_ids)?;
             }
-            if !finding_ids.insert(&finding.id) {
-                return Err(RgaaError::DuplicateFindingId(finding.id.clone()));
-            }
-            validate_status(&finding.status)?;
         }
 
         for checkpoint in &self.checkpoints {
@@ -120,10 +131,16 @@ impl AuditBundle {
                 return Err(RgaaError::MissingId("criterion_id".into()));
             }
             validate_status(&checkpoint.status)?;
-            if checkpoint.status == CriterionStatus::Pass && checkpoint.evidence.is_empty() {
-                return Err(RgaaError::IncompleteEvidence(
-                    checkpoint.checkpoint_id.clone(),
-                ));
+            if checkpoint.status == CriterionStatus::Pass {
+                if checkpoint.evidence.is_empty()
+                    || checkpoint.evidence.iter().any(|evidence| {
+                        evidence.kind.trim().is_empty() || evidence.hash.trim().is_empty()
+                    })
+                {
+                    return Err(RgaaError::IncompleteEvidence(
+                        checkpoint.checkpoint_id.clone(),
+                    ));
+                }
             }
         }
 
@@ -138,9 +155,27 @@ fn validate_status(status: &CriterionStatus) -> Result<(), RgaaError> {
         | CriterionStatus::NotApplicable
         | CriterionStatus::Error
         | CriterionStatus::NeedsReview
-        | CriterionStatus::NotTested
-        | CriterionStatus::Na => Ok(()),
+        | CriterionStatus::NotTested => Ok(()),
     }
+}
+
+fn validate_finding(finding: &Finding, finding_ids: &mut HashSet<String>) -> Result<(), RgaaError> {
+    if finding.id.trim().is_empty() {
+        return Err(RgaaError::MissingId("finding.id".into()));
+    }
+    if !finding_ids.insert(finding.id.clone()) {
+        return Err(RgaaError::DuplicateFindingId(finding.id.clone()));
+    }
+    for field in [
+        ("finding.rule", finding.rule.as_str()),
+        ("finding.url", finding.url.as_str()),
+        ("finding.target", finding.target.as_str()),
+    ] {
+        if field.1.trim().is_empty() {
+            return Err(RgaaError::MissingField(field.0.into()));
+        }
+    }
+    validate_status(&finding.status)
 }
 
 #[cfg(test)]
@@ -158,10 +193,22 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_schema_versions_are_rejected() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        bundle.schema_version = "2.0".into();
+
+        assert!(matches!(
+            bundle.validate(),
+            Err(RgaaError::UnsupportedSchemaVersion(_))
+        ));
+    }
+
+    #[test]
     fn duplicate_finding_ids_are_rejected() {
         let mut bundle =
             AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
-        bundle.findings = vec![Finding::new("finding-1"), Finding::new("finding-1")];
+        bundle.findings = vec![valid_finding("finding-1"), valid_finding("finding-1")];
 
         assert!(matches!(
             bundle.validate(),
@@ -174,5 +221,67 @@ mod tests {
         let bundle = AuditBundle::new("", "https://example.test", AuditConfig::default());
 
         assert!(matches!(bundle.validate(), Err(RgaaError::MissingId(_))));
+    }
+
+    #[test]
+    fn duplicate_ids_are_rejected_across_page_and_top_level_findings() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        bundle.findings.push(valid_finding("finding-1"));
+        bundle.pages.push(PageAudit {
+            page_id: "page-1".into(),
+            url: "https://example.test/page".into(),
+            title: None,
+            criteria: Vec::new(),
+            findings: vec![valid_finding("finding-1")],
+            errors: Vec::new(),
+            completed: true,
+            duration_ms: 1,
+        });
+
+        assert!(matches!(
+            bundle.validate(),
+            Err(RgaaError::DuplicateFindingId(_))
+        ));
+    }
+
+    #[test]
+    fn duplicate_ids_are_rejected_between_pages() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        for page_id in ["page-1", "page-2"] {
+            bundle.pages.push(PageAudit {
+                page_id: page_id.into(),
+                url: format!("https://example.test/{page_id}"),
+                title: None,
+                criteria: Vec::new(),
+                findings: vec![valid_finding("finding-1")],
+                errors: Vec::new(),
+                completed: true,
+                duration_ms: 1,
+            });
+        }
+
+        assert!(matches!(
+            bundle.validate(),
+            Err(RgaaError::DuplicateFindingId(_))
+        ));
+    }
+
+    #[test]
+    fn findings_require_rule_url_and_target() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        bundle.findings.push(Finding::new("finding-1"));
+
+        assert!(matches!(bundle.validate(), Err(RgaaError::MissingField(_))));
+    }
+
+    fn valid_finding(id: &str) -> Finding {
+        let mut finding = Finding::new(id);
+        finding.rule = "rgaa-1.1".into();
+        finding.url = "https://example.test".into();
+        finding.target = "#main".into();
+        finding
     }
 }

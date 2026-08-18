@@ -16,8 +16,6 @@ pub enum CriterionStatus {
     Error,
     NeedsReview,
     NotTested,
-    #[serde(rename = "na")]
-    Na,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -91,6 +89,8 @@ mod tests {
                 format!("\"{expected}\"")
             );
         }
+
+        assert!(serde_json::from_str::<CriterionStatus>("\"na\"").is_err());
     }
 }
 

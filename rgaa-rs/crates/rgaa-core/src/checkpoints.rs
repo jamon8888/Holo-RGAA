@@ -42,6 +42,30 @@ mod tests {
     }
 
     #[test]
+    fn passing_checkpoint_rejects_malformed_evidence() {
+        for evidence in [
+            EvidenceRef::new("", "sha256:abc"),
+            EvidenceRef::new("screenshot", ""),
+        ] {
+            let checkpoint = CheckpointResult {
+                checkpoint_id: "checkpoint-1".into(),
+                criterion_id: "1.1".into(),
+                status: CriterionStatus::Pass,
+                evidence: vec![evidence],
+                summary: "verified".into(),
+            };
+            let mut bundle =
+                AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+            bundle.checkpoints.push(checkpoint);
+
+            assert!(matches!(
+                bundle.validate(),
+                Err(RgaaError::IncompleteEvidence(_))
+            ));
+        }
+    }
+
+    #[test]
     fn page_errors_are_explicitly_serialized() {
         let error = PageError {
             code: "navigation".into(),

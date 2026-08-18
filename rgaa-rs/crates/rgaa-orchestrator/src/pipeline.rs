@@ -124,7 +124,7 @@ async fn audit_one(
                 let status = match response.verdict.to_lowercase().as_str() {
                     "pass" | "conforme" => CriterionStatus::Pass,
                     "fail" | "non_conforme" => CriterionStatus::Fail,
-                    _ => CriterionStatus::Na,
+                    _ => CriterionStatus::NotApplicable,
                 };
                 holo_results.insert(criterion_id.clone(), CriterionResult {
                     criterion_id,
@@ -173,7 +173,7 @@ async fn audit_one(
                 criterion_id: criterion.id.to_string(),
                 title: criterion.title.to_string(),
                 classification: Classification::Manuel,
-                status: CriterionStatus::Na,
+                status: CriterionStatus::NotApplicable,
                 violations: vec![],
                 confidence: None,
                 justification: Some("Manual verification required".into()),
@@ -197,7 +197,10 @@ async fn audit_one(
     let criteria: Vec<CriterionResult> = all_results.into_values().collect();
     let pass_count = criteria.iter().filter(|c| c.status == CriterionStatus::Pass).count();
     let fail_count = criteria.iter().filter(|c| c.status == CriterionStatus::Fail).count();
-    let na_count = criteria.iter().filter(|c| c.status == CriterionStatus::Na).count();
+    let na_count = criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::NotApplicable)
+        .count();
     let error_count = criteria.iter().filter(|c| c.status == CriterionStatus::Error).count();
     let total = RgaaCriteria::count();
     let compliance = if total - na_count > 0 {

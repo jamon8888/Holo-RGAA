@@ -7,6 +7,7 @@ members = [
     "crates/rgaa-orchestrator",
     "crates/rgaa-storage",
     "crates/rgaa-api",
+    "crates/rgaa-obscura",
 ]
 
 [workspace.package]

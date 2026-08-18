@@ -1,15 +1,26 @@
+use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Instant};
-use tracing::{info, warn, error};
-use futures_util::{SinkExt, StreamExt};
-use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tracing::{error, info, warn};
+
+pub mod config;
+pub mod results;
+
+pub use config::{
+    AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, NeedsReviewPolicy,
+    PreScanAction, ScreenshotPolicy, Viewport,
+};
+pub use results::{AnalyzePageResult, ObscuraError};
+use rgaa_core::{CriterionStatus, Finding};
+use rgaa_rules::AxeMapper;
 
 const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
 
@@ -41,6 +52,109 @@ impl ObscuraBridge {
         self
     }
 
+    /// Analyze one page using the structured audit contract.
+    ///
+    /// Request validation failures are returned as [`ObscuraError`]. Browser
+    /// failures are returned in the page envelope so callers cannot mistake a
+    /// failed page for a clean page.
+    pub async fn analyze(
+        &self,
+        request: &AnalyzeRequest,
+    ) -> Result<AnalyzePageResult, ObscuraError> {
+        request.validate()?;
+        let started = Instant::now();
+        let axe_source = match self.fetch_axe_source().await {
+            Ok(source) => source,
+            Err(error) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    Self::classify_error(error),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+        let raw = match self.run_axe_with_script(&request.url, &axe_source).await {
+            Ok(raw) => raw,
+            Err(error) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    Self::classify_error(error),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+        let violations = match serde_json::from_str::<Vec<serde_json::Value>>(&raw) {
+            Ok(violations) => violations,
+            Err(error) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    ObscuraError::Json(error.to_string()),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+        let normalized = match serde_json::to_string(&violations) {
+            Ok(normalized) => normalized,
+            Err(error) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    ObscuraError::Json(error.to_string()),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+        let mapped = AxeMapper::map(&normalized);
+        let findings = mapped
+            .values()
+            .filter(|criterion| criterion.status == CriterionStatus::Fail)
+            .flat_map(|criterion| {
+                criterion
+                    .violations
+                    .iter()
+                    .enumerate()
+                    .map(|(index, violation)| {
+                        let mut finding =
+                            Finding::new(format!("{}-{index}", criterion.criterion_id));
+                        finding.rule = violation.rule_id.clone();
+                        finding.url = request.url.clone();
+                        finding.target = request
+                            .config
+                            .selector
+                            .clone()
+                            .unwrap_or_else(|| "document".into());
+                        finding.status = CriterionStatus::Fail;
+                        finding.severity = Some(violation.impact.clone());
+                        finding.description = Some(violation.description.clone());
+                        finding
+                    })
+            })
+            .collect();
+
+        Ok(AnalyzePageResult {
+            url: request.url.clone(),
+            findings,
+            evidence: Vec::new(),
+            errors: Vec::new(),
+            completed: true,
+            duration_ms: started.elapsed().as_millis() as u64,
+        })
+    }
+
+    fn classify_error(error: String) -> ObscuraError {
+        let lower = error.to_ascii_lowercase();
+        if lower.contains("timed out") || lower.contains("timeout") {
+            ObscuraError::Timeout(error)
+        } else if lower.contains("navigation") || lower.contains("load") {
+            ObscuraError::Navigation(error)
+        } else if lower.contains("websocket") || lower.contains("cdp") {
+            ObscuraError::CdpTransport(error)
+        } else if lower.contains("json") || lower.contains("result") {
+            ObscuraError::Json(error)
+        } else {
+            ObscuraError::Evaluation(error)
+        }
+    }
+
     /// Start the obscura CDP server as a background process
     pub async fn start_server(&mut self) -> Result<(), String> {
         info!(port = self.server_port, "Starting Obscura CDP server");
@@ -59,7 +173,12 @@ impl ObscuraBridge {
 
         // Wait for server to be ready
         for i in 0..50 {
-            if let Ok(resp) = reqwest::get(&format!("http://127.0.0.1:{}/json/version", self.server_port)).await {
+            if let Ok(resp) = reqwest::get(&format!(
+                "http://127.0.0.1:{}/json/version",
+                self.server_port
+            ))
+            .await
+            {
                 if resp.status().is_success() {
                     info!(attempt = i, "Obscura CDP server ready");
                     return Ok(());
@@ -81,15 +200,20 @@ impl ObscuraBridge {
 
     /// Get the browser-level WebSocket URL from /json/version
     async fn get_browser_ws_url(&self) -> Result<String, String> {
-        let resp = reqwest::get(&format!("http://127.0.0.1:{}/json/version", self.server_port))
-            .await
-            .map_err(|e| format!("Failed to get CDP version: {e}"))?;
+        let resp = reqwest::get(&format!(
+            "http://127.0.0.1:{}/json/version",
+            self.server_port
+        ))
+        .await
+        .map_err(|e| format!("Failed to get CDP version: {e}"))?;
 
-        let version: serde_json::Value = resp.json()
+        let version: serde_json::Value = resp
+            .json()
             .await
             .map_err(|e| format!("Failed to parse CDP version: {e}"))?;
 
-        version["webSocketDebuggerUrl"].as_str()
+        version["webSocketDebuggerUrl"]
+            .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "No webSocketDebuggerUrl in /json/version".to_string())
     }
@@ -116,7 +240,11 @@ impl ObscuraBridge {
     ///
     /// This avoids re-downloading axe-core per URL when batching. The created CDP
     /// target is always detached/closed on every exit path (success or error).
-    pub(crate) async fn run_axe_with_script(&self, url: &str, axe_source: &str) -> Result<String, String> {
+    pub(crate) async fn run_axe_with_script(
+        &self,
+        url: &str,
+        axe_source: &str,
+    ) -> Result<String, String> {
         // 1. Connect to browser-level WebSocket
         let ws_url = self.get_browser_ws_url().await?;
         let (mut ws, _) = connect_async(&ws_url)
@@ -125,9 +253,14 @@ impl ObscuraBridge {
 
         // 2. Create a new target and get its ID
         let target_id = {
-            let resp = Self::cdp_send(&mut ws, "Target.createTarget", serde_json::json!({
-                "url": url,
-            })).await?;
+            let resp = Self::cdp_send(
+                &mut ws,
+                "Target.createTarget",
+                serde_json::json!({
+                    "url": url,
+                }),
+            )
+            .await?;
             resp.get("targetId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "No targetId in createTarget response".to_string())?
@@ -136,10 +269,15 @@ impl ObscuraBridge {
 
         // 3. Attach to the target and get session ID
         let session_id = {
-            let resp = Self::cdp_send(&mut ws, "Target.attachToTarget", serde_json::json!({
-                "targetId": target_id,
-                "flatten": true,
-            })).await?;
+            let resp = Self::cdp_send(
+                &mut ws,
+                "Target.attachToTarget",
+                serde_json::json!({
+                    "targetId": target_id,
+                    "flatten": true,
+                }),
+            )
+            .await?;
             resp.get("sessionId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
@@ -150,12 +288,23 @@ impl ObscuraBridge {
         let outcome = self.run_axe_core(&mut ws, &session_id, axe_source).await;
 
         // Best-effort cleanup: detach then close the target, then close the socket.
-        let _ = Self::cdp_send_session(&mut ws, &session_id, "Target.detachFromTarget", serde_json::json!({
-            "sessionId": session_id,
-        })).await;
-        let _ = Self::cdp_send(&mut ws, "Target.closeTarget", serde_json::json!({
-            "targetId": target_id,
-        })).await;
+        let _ = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Target.detachFromTarget",
+            serde_json::json!({
+                "sessionId": session_id,
+            }),
+        )
+        .await;
+        let _ = Self::cdp_send(
+            &mut ws,
+            "Target.closeTarget",
+            serde_json::json!({
+                "targetId": target_id,
+            }),
+        )
+        .await;
         let _ = ws.close(None).await;
 
         outcome
@@ -172,20 +321,32 @@ impl ObscuraBridge {
         Self::wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
 
         // 5. Inject axe-core via script source
-        let inject = Self::cdp_send_session(ws, session_id, "Runtime.evaluate", serde_json::json!({
-            "expression": format!("(function() {{ {} }})()", axe_source),
-        })).await?;
+        let inject = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": format!("(function() {{ {} }})()", axe_source),
+            }),
+        )
+        .await?;
 
         if inject.get("exceptionDetails").is_some() {
             return Err("axe-core injection threw an exception".to_string());
         }
 
         // 6. Run axe.run() and capture the resolved value directly.
-        let result = Self::cdp_send_session(ws, session_id, "Runtime.evaluate", serde_json::json!({
-            "expression": "axe.run()",
-            "awaitPromise": true,
-            "returnByValue": true,
-        })).await?;
+        let result = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": "axe.run()",
+                "awaitPromise": true,
+                "returnByValue": true,
+            }),
+        )
+        .await?;
 
         Self::validate_axe_result(&result)
     }
@@ -243,16 +404,24 @@ impl ObscuraBridge {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err("timed out waiting for page load (loadEventFired / readyState)".to_string());
+                return Err(
+                    "timed out waiting for page load (loadEventFired / readyState)".to_string(),
+                );
             }
 
             // Issue a readyState poll when none is outstanding and the interval elapsed.
             if pending_readystate.is_none() && last_poll.elapsed() >= poll_interval {
                 last_poll = Instant::now();
-                let id = Self::cdp_issue(ws, "Runtime.evaluate", serde_json::json!({
-                    "expression": "document.readyState",
-                    "returnByValue": true,
-                }), Some(session_id)).await?;
+                let id = Self::cdp_issue(
+                    ws,
+                    "Runtime.evaluate",
+                    serde_json::json!({
+                        "expression": "document.readyState",
+                        "returnByValue": true,
+                    }),
+                    Some(session_id),
+                )
+                .await?;
                 pending_readystate = Some(id);
             }
 
@@ -297,10 +466,14 @@ impl ObscuraBridge {
                     return Err("CDP WebSocket closed while waiting for page load".to_string());
                 }
                 Ok(Some(Err(e))) => {
-                    return Err(format!("CDP WebSocket error while waiting for page load: {e}"));
+                    return Err(format!(
+                        "CDP WebSocket error while waiting for page load: {e}"
+                    ));
                 }
                 Ok(None) => {
-                    return Err("CDP WebSocket stream ended while waiting for page load".to_string());
+                    return Err(
+                        "CDP WebSocket stream ended while waiting for page load".to_string()
+                    );
                 }
                 Err(_) => {
                     // Timed out waiting for a message; re-check deadline and retry.
@@ -314,7 +487,11 @@ impl ObscuraBridge {
     ///
     /// Fetches axe-core once, then bounds concurrent `run_axe_with_script` calls
     /// with a semaphore sized by `concurrency` (treated as 1 when 0).
-    pub async fn run_axe_batch(&self, urls: &[String], concurrency: usize) -> Result<HashMap<String, String>, String> {
+    pub async fn run_axe_batch(
+        &self,
+        urls: &[String],
+        concurrency: usize,
+    ) -> Result<HashMap<String, String>, String> {
         if urls.is_empty() {
             return Ok(HashMap::new());
         }
@@ -323,8 +500,7 @@ impl ObscuraBridge {
 
         info!(
             urls = urls.len(),
-            concurrency,
-            "Running batch axe-core audit via CDP"
+            concurrency, "Running batch axe-core audit via CDP"
         );
 
         // Fetch axe-core once for the whole batch.
@@ -342,10 +518,7 @@ impl ObscuraBridge {
             let sem = Arc::clone(&sem);
 
             tokio::spawn(async move {
-                let _permit = sem
-                    .acquire()
-                    .await
-                    .expect("semaphore closed unexpectedly");
+                let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
 
                 let bridge = ObscuraBridge {
                     binary_path,
@@ -363,8 +536,12 @@ impl ObscuraBridge {
         let mut results = HashMap::new();
         while let Some((url, result)) = rx.recv().await {
             match result {
-                Ok(violations) => { results.insert(url, violations); }
-                Err(e) => { warn!(url = %url, error = %e, "axe-core failed"); }
+                Ok(violations) => {
+                    results.insert(url, violations);
+                }
+                Err(e) => {
+                    warn!(url = %url, error = %e, "axe-core failed");
+                }
             }
         }
 
@@ -503,7 +680,10 @@ impl ObscuraBridge {
     ) -> Result<HashMap<String, serde_json::Value>, String> {
         let script = Self::build_page_context_script();
 
-        info!(urls = urls.len(), concurrency, "Running batch page context extraction via CLI");
+        info!(
+            urls = urls.len(),
+            concurrency, "Running batch page context extraction via CLI"
+        );
 
         let output = timeout(Duration::from_secs(300), async {
             Command::new(&self.binary_path)
@@ -662,7 +842,10 @@ impl ObscuraBridge {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err(format!("CDP timeout waiting for response id={}", expected_id));
+                return Err(format!(
+                    "CDP timeout waiting for response id={}",
+                    expected_id
+                ));
             }
 
             match tokio::time::timeout(remaining, ws.next()).await {
@@ -674,7 +857,10 @@ impl ObscuraBridge {
                                 if let Some(error) = value.get("error") {
                                     return Err(format!("CDP error: {}", error));
                                 }
-                                return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
+                                return Ok(value
+                                    .get("result")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null));
                             }
                         }
                         // Otherwise it's an event, skip it
@@ -683,7 +869,12 @@ impl ObscuraBridge {
                 Ok(Some(Ok(Message::Close(_)))) => return Err("CDP WebSocket closed".to_string()),
                 Ok(Some(Err(e))) => return Err(format!("CDP WebSocket error: {e}")),
                 Ok(None) => return Err("CDP WebSocket stream ended".to_string()),
-                Err(_) => return Err(format!("CDP timeout waiting for response id={}", expected_id)),
+                Err(_) => {
+                    return Err(format!(
+                        "CDP timeout waiting for response id={}",
+                        expected_id
+                    ))
+                }
                 _ => {}
             }
         }
@@ -746,7 +937,9 @@ mod tests {
         // A broken axe source throws during injection, which must surface as Err
         // rather than being silently treated as a clean (empty) result.
         let broken = "throw new Error('boom')";
-        let result = bridge.run_axe_with_script("https://example.com", broken).await;
+        let result = bridge
+            .run_axe_with_script("https://example.com", broken)
+            .await;
 
         bridge.stop_server().await;
 
@@ -755,5 +948,31 @@ mod tests {
             "broken evaluation should surface an Err, got: {:?}",
             result.ok()
         );
+    }
+
+    #[tokio::test]
+    async fn analyze_rejects_invalid_request_before_starting_browser_work() {
+        let bridge = ObscuraBridge::new();
+        let request = AnalyzeRequest {
+            url: "file:///secret.html".into(),
+            config: AnalyzeConfig::default(),
+        };
+
+        assert!(matches!(
+            bridge.analyze(&request).await,
+            Err(ObscuraError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn browser_failures_are_classified_as_page_errors() {
+        let result = AnalyzePageResult::failed(
+            "https://unreachable.test",
+            ObscuraBridge::classify_error("timed out waiting for page load".into()),
+            1,
+        );
+
+        assert!(!result.completed);
+        assert_eq!(result.errors[0].code, "timeout");
     }
 }

@@ -1,0 +1,161 @@
+diff --git a/rgaa-rs/crates/rgaa-browser/src/lib.rs b/rgaa-rs/crates/rgaa-browser/src/lib.rs
+index 4bcccdd..6231695 100644
+--- a/rgaa-rs/crates/rgaa-browser/src/lib.rs
++++ b/rgaa-rs/crates/rgaa-browser/src/lib.rs
+@@ -1 +1,3 @@
+ pub mod playwright;
++
++pub use playwright::PlaywrightBridge;
+diff --git a/rgaa-rs/crates/rgaa-browser/src/playwright.rs b/rgaa-rs/crates/rgaa-browser/src/playwright.rs
+index b5bdaee..1a5d557 100644
+--- a/rgaa-rs/crates/rgaa-browser/src/playwright.rs
++++ b/rgaa-rs/crates/rgaa-browser/src/playwright.rs
+@@ -1,23 +1,34 @@
+ use std::collections::HashMap;
+ use std::process::Stdio;
++use std::time::Duration;
+ use tokio::process::Command;
++use tokio::time::timeout;
+ use tracing::{info, warn};
+ 
++fn escape_js_string(s: &str) -> String {
++    s.replace('\\', "\\\\")
++        .replace('\'', "\\'")
++        .replace('"', "\\\"")
++        .replace('\n', "\\n")
++        .replace('\r', "\\r")
++}
++
+ pub struct PlaywrightBridge;
+ 
+ impl PlaywrightBridge {
+     pub fn new() -> Self {
+         Self
+     }
+ 
+     pub async fn run_axe(&self, url: &str) -> Result<String, String> {
++        let url = escape_js_string(url);
+         let script = format!(
+             r#"
+ const {{ chromium }} = require('playwright');
+ (async () => {{
+   const browser = await chromium.launch({{ headless: true }});
+   const page = await browser.newPage();
+   await page.goto('{url}', {{ waitUntil: 'networkidle', timeout: 30000 }});
+   await page.addScriptTag({{ path: require.resolve('axe-core') }});
+   const results = await page.evaluate(async () => {{
+     await axe.run();
+@@ -33,20 +44,21 @@ const {{ chromium }} = require('playwright');
+ "#
+         );
+         self.run_node_script(&script).await
+     }
+ 
+     pub async fn run_gap_fix(
+         &self,
+         url: &str,
+         snippets: &HashMap<String, &str>,
+     ) -> Result<HashMap<String, serde_json::Value>, String> {
++        let url = escape_js_string(url);
+         let mut results = HashMap::new();
+         for (criterion_id, snippet) in snippets {
+             let script = format!(
+                 r#"
+ const {{ chromium }} = require('playwright');
+ (async () => {{
+   const browser = await chromium.launch({{ headless: true }});
+   const page = await browser.newPage();
+   await page.goto('{url}', {{ waitUntil: 'networkidle', timeout: 30000 }});
+   try {{
+@@ -67,25 +79,27 @@ const {{ chromium }} = require('playwright');
+                 serde_json::from_str(&output).map_err(|e| e.to_string())?;
+             results.insert(criterion_id.clone(), value);
+         }
+         Ok(results)
+     }
+ 
+     pub async fn run_interaction(
+         &self,
+         url: &str,
+     ) -> Result<HashMap<String, serde_json::Value>, String> {
++        let url = escape_js_string(url);
+         let js_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+             .join("src")
+             .join("js")
+             .join("interaction.js");
+-        let js_code = std::fs::read_to_string(&js_path)
++        let js_code = tokio::fs::read_to_string(&js_path)
++            .await
+             .map_err(|e| format!("Failed to read interaction.js: {e}"))?;
+ 
+         let script = format!(
+             r#"
+ const {{ chromium }} = require('playwright');
+ {js_code}
+ (async () => {{
+   const browser = await chromium.launch({{ headless: true }});
+   const page = await browser.newPage();
+   const results = await runInteractionTests(page, '{url}');
+@@ -96,20 +110,21 @@ const {{ chromium }} = require('playwright');
+         );
+         let output = self.run_node_script(&script).await?;
+         let value: serde_json::Value =
+             serde_json::from_str(&output).map_err(|e| e.to_string())?;
+         let map: HashMap<String, serde_json::Value> =
+             serde_json::from_value(value).map_err(|e| e.to_string())?;
+         Ok(map)
+     }
+ 
+     pub async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String> {
++        let url = escape_js_string(url);
+         let script = format!(
+             r#"
+ const {{ chromium }} = require('playwright');
+ (async () => {{
+   const browser = await chromium.launch({{ headless: true }});
+   const page = await browser.newPage();
+   await page.goto('{url}', {{ waitUntil: 'networkidle', timeout: 30000 }});
+   const context = await page.evaluate(() => {{
+     const title = document.title;
+     const lang = document.documentElement.lang;
+@@ -127,28 +142,32 @@ const {{ chromium }} = require('playwright');
+   await browser.close();
+ }})();
+ "#
+         );
+         let output = self.run_node_script(&script).await?;
+         serde_json::from_str(&output).map_err(|e| e.to_string())
+     }
+ 
+     async fn run_node_script(&self, script: &str) -> Result<String, String> {
+         info!("Running Node.js script");
+-        let output = Command::new("node")
+-            .arg("-e")
+-            .arg(script)
+-            .stdout(Stdio::piped())
+-            .stderr(Stdio::piped())
+-            .output()
+-            .await
+-            .map_err(|e| format!("Failed to spawn node: {e}"))?;
++        let output = timeout(Duration::from_secs(60), async {
++            Command::new("node")
++                .arg("-e")
++                .arg(script)
++                .stdout(Stdio::piped())
++                .stderr(Stdio::piped())
++                .output()
++                .await
++                .map_err(|e| format!("Failed to spawn node: {e}"))
++        })
++        .await
++        .map_err(|_| "Node.js script timed out after 60s".to_string())??;
+ 
+         if !output.status.success() {
+             let stderr = String::from_utf8_lossy(&output.stderr);
+             warn!(stderr = %stderr, "Node.js script failed");
+             return Err(format!("Node script failed: {stderr}"));
+         }
+ 
+         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+         Ok(stdout)
+     }

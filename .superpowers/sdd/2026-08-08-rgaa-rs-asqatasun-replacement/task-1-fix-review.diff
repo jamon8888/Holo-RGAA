@@ -1,0 +1,52 @@
+diff --git a/rgaa-rs/Cargo.toml b/rgaa-rs/Cargo.toml
+index 180da1c..b661aab 100644
+--- a/rgaa-rs/Cargo.toml
++++ b/rgaa-rs/Cargo.toml
+@@ -3,17 +3,20 @@ resolver = "2"
+ members = [
+     "crates/rgaa-core",
+     "crates/rgaa-rules",
+     "crates/rgaa-holo",
+     "crates/rgaa-browser",
+     "crates/rgaa-orchestrator",
+     "crates/rgaa-storage",
+     "crates/rgaa-api",
+ ]
+ 
++[workspace.package]
++rust-version = "1.80"
++
+ [workspace.dependencies]
+ tokio = { version = "1.0", features = ["full"] }
+ serde = { version = "1.0", features = ["derive"] }
+ serde_json = "1.0"
+ anyhow = "1.0"
+ tracing = "0.1"
+ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+diff --git a/rgaa-rs/crates/rgaa-core/src/criteria.rs b/rgaa-rs/crates/rgaa-core/src/criteria.rs
+index 22eafea..c1c820e 100644
+--- a/rgaa-rs/crates/rgaa-core/src/criteria.rs
++++ b/rgaa-rs/crates/rgaa-core/src/criteria.rs
+@@ -9,21 +9,21 @@ pub struct Criterion {
+ }
+ 
+ pub struct RgaaCriteria;
+ 
+ impl RgaaCriteria {
+     pub fn all() -> Vec<Criterion> {
+         vec![
+             Criterion { id: "1.1", title: "Alternative textuelle présente", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
+             Criterion { id: "1.2", title: "Image décorative ignorée", classification: Classification::Deterministe, wcag_refs: "1.1.1, 4.1.2" },
+             Criterion { id: "1.3", title: "Alternative textuelle pertinente", classification: Classification::IaAssiste, wcag_refs: "1.1.1, 4.1.2" },
+-            Criterion { id: "1.4", title: "Alternative CAPTCHA/image-test", classification: Classification::IaAssiste, wcag_refs: "1.1.1" },
++            Criterion { id: "1.4", title: "Alternative CAPTCHA/image-test", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
+             Criterion { id: "1.5", title: "Solution accès alternatif CAPTCHA", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
+             Criterion { id: "1.6", title: "Description détaillée présente", classification: Classification::Deterministe, wcag_refs: "1.1.1" },
+             Criterion { id: "1.7", title: "Description détaillée pertinente", classification: Classification::IaAssiste, wcag_refs: "1.1.1" },
+             Criterion { id: "1.8", title: "Image texte remplacée par texte stylé", classification: Classification::Deterministe, wcag_refs: "1.4.5" },
+             Criterion { id: "1.9", title: "Légende reliée à l'image", classification: Classification::Deterministe, wcag_refs: "1.1.1, 4.1.2" },
+             Criterion { id: "2.1", title: "Cadre a un titre", classification: Classification::Deterministe, wcag_refs: "4.1.2" },
+             Criterion { id: "2.2", title: "Titre de cadre pertinent", classification: Classification::IaAssiste, wcag_refs: "4.1.2" },
+             Criterion { id: "3.1", title: "Information non donnée uniquement par couleur", classification: Classification::IaAssiste, wcag_refs: "1.3.1, 1.4.1" },
+             Criterion { id: "3.2", title: "Contraste texte/fond suffisant", classification: Classification::Deterministe, wcag_refs: "1.4.3" },
+             Criterion { id: "3.3", title: "Contraste composants graphiques suffisant", classification: Classification::Deterministe, wcag_refs: "1.4.11" },

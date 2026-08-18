@@ -1,0 +1,31 @@
+diff --git a/rgaa-rs/crates/rgaa-orchestrator/src/pipeline.rs b/rgaa-rs/crates/rgaa-orchestrator/src/pipeline.rs
+index fe4539a..0d9b2a8 100644
+--- a/rgaa-rs/crates/rgaa-orchestrator/src/pipeline.rs
++++ b/rgaa-rs/crates/rgaa-orchestrator/src/pipeline.rs
+@@ -46,23 +46,23 @@ impl Orchestrator {
+ 
+         // 4. Run Holo3 for all IA_ASSISTE criteria (27 criteria)
+         info!("Running Holo3 IA_ASSISTE evaluation");
+         let ia_criteria = RgaaCriteria::ia_assiste();
+         let mut holo_results = HashMap::new();
+ 
+         for criterion in &ia_criteria {
+             let prompt = PromptBuilder::build(criterion.id, &page_context);
+             match holo_client.evaluate(&prompt).await {
+                 Ok(response) => {
+-                    let status = match response.verdict.as_str() {
+-                        "CONFORME" => CriterionStatus::Pass,
+-                        "NON_CONFORME" => CriterionStatus::Fail,
++                    let status = match response.verdict.to_lowercase().as_str() {
++                        "pass" | "conforme" => CriterionStatus::Pass,
++                        "fail" | "non_conforme" => CriterionStatus::Fail,
+                         _ => CriterionStatus::Na,
+                     };
+                     holo_results.insert(criterion.id.to_string(), CriterionResult {
+                         criterion_id: criterion.id.to_string(),
+                         title: criterion.title.to_string(),
+                         classification: Classification::IaAssiste,
+                         status,
+                         violations: vec![],
+                         confidence: Some(response.confidence),
+                         justification: Some(response.justification),

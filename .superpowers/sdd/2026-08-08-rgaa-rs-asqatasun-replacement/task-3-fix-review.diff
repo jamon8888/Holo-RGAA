@@ -1,0 +1,130 @@
+diff --git a/.superpowers/sdd/2026-08-08-rgaa-rs-asqatasun-replacement/task-3-fix-report.md b/.superpowers/sdd/2026-08-08-rgaa-rs-asqatasun-replacement/task-3-fix-report.md
+new file mode 100644
+index 0000000..39d21e8
+--- /dev/null
++++ b/.superpowers/sdd/2026-08-08-rgaa-rs-asqatasun-replacement/task-3-fix-report.md
+@@ -0,0 +1,36 @@
++# Task 3 Fix Report
++
++## Status: COMPLETE
++
++## Changes Made
++
++### 1. Bug Fix: prompts.rs comparison logic (Issue 1)
++
++**File:** `rgaa-rs/crates/rgaa-holo/src/prompts.rs:203`
++
++**Bug:** `build_for_criterion` compared `get_base_criterion(prefix)` (always a short string like `"1"`) against the full `criterion_id` (e.g. `"1.1"`), making the condition always true. The "group note" was appended to every criterion unconditionally.
++
++**Fix:** Changed `base_criterion != criterion_id` → `base_criterion != prefix`. Now the comparison correctly checks whether the criterion's prefix is a base criterion (single number) vs. a sub-criterion (number.number).
++
++### 2. Dead Code Removal: client.rs (Issue 2)
++
++**File:** `rgaa-rs/crates/rgaa-holo/src/client.rs:41-56`
++
++**Removed:** `ChatResponse`, `Choice`, `MessageContent` structs — unused response types that were never deserialized or referenced in production code.
++
++### 3. Unused Dependencies: Cargo.toml
++
++**File:** `rgaa-rs/crates/rgaa-holo/Cargo.toml`
++
++**Removed:**
++- `rgaa-core` — not imported anywhere in the crate
++- `anyhow` — not imported anywhere in the crate
++
++## Verification
++
++- `cargo check -p rgaa-holo` — clean (no errors)
++- `cargo test -p rgaa-holo` — 8/8 tests pass
++
++## Commits
++
++- Commit: `fix: prompt builder comparison bug + remove dead code`
+diff --git a/rgaa-rs/crates/rgaa-holo/Cargo.toml b/rgaa-rs/crates/rgaa-holo/Cargo.toml
+index 186f399..2c74803 100644
+--- a/rgaa-rs/crates/rgaa-holo/Cargo.toml
++++ b/rgaa-rs/crates/rgaa-holo/Cargo.toml
+@@ -1,14 +1,12 @@
+ [package]
+ name = "rgaa-holo"
+ version = "0.1.0"
+ edition = "2021"
+ 
+ [dependencies]
+-rgaa-core = { path = "../rgaa-core" }
+ tokio = { workspace = true }
+ serde = { workspace = true }
+ serde_json = { workspace = true }
+ reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+ tracing = { workspace = true }
+-anyhow = { workspace = true }
+ regex-lite = "0.1"
+diff --git a/rgaa-rs/crates/rgaa-holo/src/client.rs b/rgaa-rs/crates/rgaa-holo/src/client.rs
+index 3f9f286..37340c4 100644
+--- a/rgaa-rs/crates/rgaa-holo/src/client.rs
++++ b/rgaa-rs/crates/rgaa-holo/src/client.rs
+@@ -31,37 +31,20 @@ struct ChatMessage {
+ }
+ 
+ #[derive(Debug, Serialize)]
+ struct ChatRequest {
+     model: String,
+     messages: Vec<ChatMessage>,
+     temperature: f64,
+     max_tokens: u32,
+ }
+ 
+-#[derive(Debug, Deserialize)]
+-struct ChatResponse {
+-    choices: Vec<Choice>,
+-}
+-
+-#[derive(Debug, Deserialize)]
+-struct Choice {
+-    message: MessageContent,
+-}
+-
+-#[derive(Debug, Deserialize)]
+-struct MessageContent {
+-    content: Option<String>,
+-    #[serde(default)]
+-    reasoning: Option<String>,
+-}
+-
+ pub struct HoloClient {
+     api_key: String,
+     http_client: Client,
+ }
+ 
+ impl HoloClient {
+     pub fn new(api_key: String) -> Self {
+         let http_client = Client::builder()
+             .timeout(Duration::from_secs(60))
+             .build()
+diff --git a/rgaa-rs/crates/rgaa-holo/src/prompts.rs b/rgaa-rs/crates/rgaa-holo/src/prompts.rs
+index 091f7da..8b393af 100644
+--- a/rgaa-rs/crates/rgaa-holo/src/prompts.rs
++++ b/rgaa-rs/crates/rgaa-holo/src/prompts.rs
+@@ -193,21 +193,21 @@ impl PromptBuilder {
+             criterion_id
+         ));
+ 
+         prompt
+     }
+ 
+     pub fn build_for_criterion(criterion_id: &str, context: &PageContext) -> String {
+         let prefix = criterion_id.split('-').next().unwrap_or(criterion_id);
+         let base_criterion = Self::get_base_criterion(prefix);
+ 
+-        if base_criterion != criterion_id {
++        if base_criterion != prefix {
+             format!(
+                 "{}\n\nNote: Ce critère fait partie du groupe {}. Concentre-toi sur {}.",
+                 Self::build(criterion_id, context),
+                 base_criterion,
+                 Self::get_criterion_focus(criterion_id)
+             )
+         } else {
+             Self::build(criterion_id, context)
+         }
+     }

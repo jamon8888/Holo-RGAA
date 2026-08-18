@@ -2,6 +2,7 @@ use crate::evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 use crate::ObscuraError;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
@@ -71,6 +72,7 @@ pub fn is_stable_accessibility_reference(reference: &str) -> bool {
     reference
         .strip_prefix("ax:")
         .is_some_and(|value| value.parse::<u64>().is_ok())
+        || (reference.starts_with("ax-role=") && reference.contains(";name="))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -98,6 +100,26 @@ pub struct GuidedRunResult {
     pub criterion_mapping: Vec<String>,
     #[serde(default)]
     pub evidence_requirements: Vec<String>,
+}
+
+fn state_matches(expected: &serde_json::Value, actual: &serde_json::Value) -> bool {
+    match (expected, actual) {
+        (serde_json::Value::Object(expected), serde_json::Value::Object(actual)) => {
+            expected.iter().all(|(key, value)| {
+                actual
+                    .get(key)
+                    .is_some_and(|candidate| state_matches(value, candidate))
+            })
+        }
+        (serde_json::Value::Array(expected), serde_json::Value::Array(actual)) => {
+            expected.len() == actual.len()
+                && expected
+                    .iter()
+                    .zip(actual)
+                    .all(|(expected, actual)| state_matches(expected, actual))
+        }
+        _ => expected == actual,
+    }
 }
 
 impl GuidedRunResult {
@@ -162,7 +184,11 @@ impl GuidedTest {
                         }
                     }
                     if let GuidedStep::AssertState { expected } = step {
-                        if observation.state.as_ref() != Some(expected) {
+                        if !observation
+                            .state
+                            .as_ref()
+                            .is_some_and(|actual| state_matches(expected, actual))
+                        {
                             result.terminated_reason = TerminationReason::AssertionFailed;
                             result.issues.push("assertion failed".into());
                             result.manual_review_required = true;
@@ -298,6 +324,7 @@ pub(crate) struct ObscuraGuidedExecutor {
     target_id: String,
     session_id: String,
     current_url: Option<String>,
+    accessibility_refs: HashMap<String, u64>,
 }
 
 impl ObscuraGuidedExecutor {
@@ -348,24 +375,14 @@ impl ObscuraGuidedExecutor {
             target_id,
             session_id,
             current_url: None,
+            accessibility_refs: HashMap::new(),
         })
     }
 
-    pub(crate) async fn close(&mut self) {
-        let _ = crate::ObscuraBridge::cdp_send_session(
-            &mut self.ws,
-            &self.session_id,
-            "Target.detachFromTarget",
-            serde_json::json!({"sessionId": self.session_id}),
-        )
-        .await;
-        let _ = crate::ObscuraBridge::cdp_send(
-            &mut self.ws,
-            "Target.closeTarget",
-            serde_json::json!({"targetId": self.target_id}),
-        )
-        .await;
-        let _ = self.ws.close(None).await;
+    pub(crate) async fn close(&mut self) -> Result<(), ObscuraError> {
+        crate::ObscuraBridge::cleanup_target(&mut self.ws, &self.session_id, &self.target_id)
+            .await
+            .map_err(crate::ObscuraBridge::classify_error)
     }
 
     async fn send(
@@ -417,6 +434,7 @@ impl ObscuraGuidedExecutor {
         let backend_node_id = reference
             .strip_prefix("ax:")
             .and_then(|value| value.parse::<u64>().ok())
+            .or_else(|| self.accessibility_refs.get(reference).copied())
             .filter(|_| is_stable_accessibility_reference(reference))
             .ok_or_else(|| {
                 ObscuraError::Evaluation(format!(
@@ -504,9 +522,16 @@ impl GuidedExecutor for ObscuraGuidedExecutor {
                     .and_then(serde_json::Value::as_array)
                     .into_iter()
                     .flatten()
-                    .filter_map(|node| node.get("backendDOMNodeId"))
-                    .filter_map(serde_json::Value::as_u64)
-                    .map(|id| format!("ax:{id}"));
+                    .filter_map(|node| {
+                        let backend_id = node.get("backendDOMNodeId")?.as_u64()?;
+                        let role = node.get("role")?.get("value")?.as_str()?;
+                        let name = node.get("name")?.get("value")?.as_str()?;
+                        if !role.is_empty() && !name.is_empty() {
+                            self.accessibility_refs
+                                .insert(format!("ax-role={role};name={name}"), backend_id);
+                        }
+                        Some(format!("ax:{backend_id}"))
+                    });
                 let tree_refs = refs.collect::<Vec<_>>();
                 let evidence = serde_json::to_vec(&value)
                     .map_err(|error| ObscuraError::Json(error.to_string()))?;

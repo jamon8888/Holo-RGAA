@@ -275,3 +275,54 @@ async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
         .expect("read screenshot evidence")
         .starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
 }
+
+#[tokio::test]
+async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
+    let mut bridge = ObscuraBridge::new().with_port(9229);
+    bridge
+        .start_server()
+        .await
+        .expect("failed to start stateful guided-test CDP server");
+    let url = "data:text/html,%3C!doctype%20html%3E%3Cform%3E%3Clabel%3EName%3Cinput%20aria-label%3D%22Name%22%20name%3D%22name%22%3E%3C/label%3E%3C/form%3E";
+    let test = GuidedTest {
+        id: "worker-stateful-fill".into(),
+        version: 1,
+        preconditions: vec!["form is loaded".into()],
+        steps: vec![
+            GuidedStep::Navigate { url: url.into() },
+            GuidedStep::AccessibilityTree,
+            GuidedStep::FillRef {
+                reference: "ax-role=textbox;name=Name".into(),
+                value: "Ada".into(),
+            },
+            GuidedStep::AssertState {
+                expected: serde_json::json!({
+                    "values": [{"id": "", "name": "name", "value": "Ada"}]
+                }),
+            },
+        ],
+        criterion_mapping: vec!["11.1".into()],
+        evidence_requirements: vec!["tree".into()],
+    };
+
+    let result = bridge
+        .run_guided_test(&test)
+        .await
+        .expect("stateful guided run returns an envelope");
+    let targets: serde_json::Value = reqwest::get("http://127.0.0.1:9229/json/list")
+        .await
+        .expect("read CDP targets")
+        .json()
+        .await
+        .expect("parse CDP targets");
+    bridge.stop_server().await;
+
+    assert!(result.is_pass(), "state did not persist: {result:?}");
+    assert_eq!(result.completed_steps, 4);
+    assert_eq!(result.terminated_reason, TerminationReason::Completed);
+    assert!(!targets
+        .as_array()
+        .expect("target list is an array")
+        .iter()
+        .any(|target| target.get("url").and_then(serde_json::Value::as_str) == Some(url)));
+}

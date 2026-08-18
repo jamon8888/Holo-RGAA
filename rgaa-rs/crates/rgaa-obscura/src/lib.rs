@@ -289,8 +289,12 @@ impl ObscuraBridge {
             .join(&test.id);
         let store = EvidenceStore::new(root);
         let result = test.run(&mut executor, Some(&store)).await;
-        executor.close().await;
-        result
+        let cleanup = executor.close().await;
+        match (result, cleanup) {
+            (Ok(result), Ok(())) => Ok(result),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), _) => Err(error),
+        }
     }
 
     fn classify_error(error: String) -> ObscuraError {
@@ -357,21 +361,12 @@ impl ObscuraBridge {
         let outcome = self
             .run_axe_core_configured(&mut ws, &session_id, request, axe_source)
             .await;
-        let _ = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Target.detachFromTarget",
-            serde_json::json!({"sessionId": session_id}),
-        )
-        .await;
-        let _ = Self::cdp_send(
-            &mut ws,
-            "Target.closeTarget",
-            serde_json::json!({"targetId": target_id}),
-        )
-        .await;
-        let _ = ws.close(None).await;
-        outcome.map_err(Self::classify_error)
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome.map_err(Self::classify_error), cleanup) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(error)) => Err(Self::classify_error(error)),
+            (Err(error), _) => Err(error),
+        }
     }
 
     async fn run_axe_core_configured(
@@ -707,27 +702,12 @@ impl ObscuraBridge {
         // 4. Run the actual evaluation, then always clean up the target.
         let outcome = self.run_axe_core(&mut ws, &session_id, axe_source).await;
 
-        // Best-effort cleanup: detach then close the target, then close the socket.
-        let _ = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Target.detachFromTarget",
-            serde_json::json!({
-                "sessionId": session_id,
-            }),
-        )
-        .await;
-        let _ = Self::cdp_send(
-            &mut ws,
-            "Target.closeTarget",
-            serde_json::json!({
-                "targetId": target_id,
-            }),
-        )
-        .await;
-        let _ = ws.close(None).await;
-
-        outcome
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome, cleanup) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), _) => Err(error),
+        }
     }
 
     /// Inner axe-core evaluation: wait for navigation, inject axe, then run it.
@@ -1221,6 +1201,30 @@ impl ObscuraBridge {
     ) -> Result<serde_json::Value, String> {
         let id = Self::cdp_issue(ws, method, params, Some(session_id)).await?;
         Self::cdp_wait_response(ws, id).await
+    }
+
+    async fn cleanup_target(
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        target_id: &str,
+    ) -> Result<(), String> {
+        let detach = Self::cdp_send(
+            ws,
+            "Target.detachFromTarget",
+            serde_json::json!({"sessionId": session_id}),
+        )
+        .await
+        .map(|_| ());
+        let close = Self::cdp_send(
+            ws,
+            "Target.closeTarget",
+            serde_json::json!({"targetId": target_id}),
+        )
+        .await
+        .map(|_| ());
+        let socket = ws.close(None).await.map_err(|error| error.to_string());
+
+        detach.and(close).and(socket)
     }
 
     /// Build and send a CDP message, returning the generated request id.

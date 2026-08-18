@@ -195,6 +195,9 @@ async fn stateful_executor_preserves_typed_values_between_steps() {
 #[test]
 fn accessibility_references_are_stable_backend_node_ids() {
     assert!(is_stable_accessibility_reference("ax:42"));
+    assert!(is_stable_accessibility_reference(
+        "ax-role=textbox;name=Name"
+    ));
     assert!(!is_stable_accessibility_reference("#save-button"));
     assert!(!is_stable_accessibility_reference("button:3"));
 }

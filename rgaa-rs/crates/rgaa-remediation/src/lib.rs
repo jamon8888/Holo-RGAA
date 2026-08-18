@@ -16,7 +16,7 @@ mod contract_tests {
         RemediationIssue {
             id: id.into(),
             rule: "image-alt".into(),
-            element_html: "<img src=\"hero.png\">".into(),
+            element_html: "import React from \"react\"; <img src=\"hero.png\">".into(),
             page_url: "https://example.test".into(),
             source_locations: vec![SourceLocation {
                 file: "src/App.tsx".into(),
@@ -160,9 +160,10 @@ mod contract_tests {
         };
         assert!(guidance.proposal.requires_approval());
         assert!(guidance.proposal.ensure_approved().is_err());
+        let token = guidance.proposal.approval_token();
         guidance
             .proposal
-            .approve("reviewer", "approval-token")
+            .approve("reviewer", &token)
             .expect("approve");
         assert!(guidance.proposal.ensure_approved().is_ok());
     }
@@ -179,7 +180,7 @@ mod contract_tests {
         let mut control = issue("control");
         control.framework = Some(Framework::Angular);
         control.rule = "label".into();
-        control.element_html = "<input [value]=\"name\">".into();
+        control.element_html = "@Component({template: '<input [value]=\"name\">'})".into();
         assert!(
             matches!(AngularAdapter.propose(&control, &control.element_html), Err(RemediationError::NeedsReview { reason, .. }) if reason.contains("dynamic"))
         );
@@ -189,7 +190,9 @@ mod contract_tests {
         ));
         let mut labeled = issue("labeled");
         labeled.rule = "label".into();
-        labeled.element_html = "<label for=\"email\">Email</label><input id=\"email\">".into();
+        labeled.element_html =
+            "import React from \"react\"; <label for=\"email\">Email</label><input id=\"email\">"
+                .into();
         assert!(matches!(
             ReactAdapter.propose(&labeled, &labeled.element_html),
             Err(RemediationError::NeedsReview { reason, .. }) if reason.contains("ambiguous")
@@ -199,9 +202,26 @@ mod contract_tests {
     #[test]
     fn dynamic_image_bindings_need_review_in_each_framework_syntax() {
         let cases = [
-            (Framework::React, "<img src={image} />"),
-            (Framework::Vue, "<img :src=\"image\">"),
-            (Framework::Angular, "<img [src]=\"image\">"),
+            (
+                Framework::React,
+                "import React from \"react\"; <img src = { image } />",
+            ),
+            (
+                Framework::Vue,
+                "<template><img :src = \"image\"></template>",
+            ),
+            (
+                Framework::Vue,
+                "<template><img v-bind:src = \"image\"></template>",
+            ),
+            (
+                Framework::Angular,
+                "@Component({template: '<img [src] = \"image\">'})",
+            ),
+            (
+                Framework::Angular,
+                "@Component({template: '<img bind-src = \"image\">'})",
+            ),
         ];
         for (framework, source) in cases {
             let mut image = issue("dynamic-image");
@@ -209,6 +229,48 @@ mod contract_tests {
             assert!(matches!(
                 adapter_for(framework).propose(&image, source),
                 Err(RemediationError::NeedsReview { reason, .. }) if reason.contains("dynamic")
+            ));
+        }
+
+        let dynamic_controls = [
+            (
+                Framework::React,
+                "import React from \"react\"; <input value = { value } />",
+                "label",
+            ),
+            (
+                Framework::Vue,
+                "<template><input v-model = \"value\"></template>",
+                "label",
+            ),
+            (
+                Framework::Angular,
+                "@Component({template: '<input [value] = \"value\">'})",
+                "label",
+            ),
+            (
+                Framework::React,
+                "import React from \"react\"; <button>{ label }</button>",
+                "button-name",
+            ),
+            (
+                Framework::Vue,
+                "<template><button>{{ label }}</button></template>",
+                "button-name",
+            ),
+            (
+                Framework::Angular,
+                "@Component({template: '<button *ngIf = \"show\"></button>'})",
+                "button-name",
+            ),
+        ];
+        for (framework, source, rule) in dynamic_controls {
+            let mut dynamic = issue("dynamic-control");
+            dynamic.framework = Some(framework);
+            dynamic.rule = rule.into();
+            assert!(matches!(
+                adapter_for(framework).propose(&dynamic, source),
+                Err(RemediationError::NeedsReview { .. })
             ));
         }
     }
@@ -225,5 +287,84 @@ mod contract_tests {
         };
         assert!(!guidance.proposal.requires_approval());
         guidance.proposal.ensure_approved().expect("not required");
+    }
+
+    #[test]
+    fn detection_is_ordered_and_non_overlapping() {
+        let next_react =
+            "\"use client\"; import React from \"react\"; export default function Page() {}";
+        assert_eq!(detect_framework(next_react), Some(Framework::Next));
+        assert_eq!(NextAdapter.detect(next_react), Some(Framework::Next));
+        assert_eq!(ReactAdapter.detect(next_react), None);
+        assert_eq!(detect_framework("random source"), None);
+    }
+
+    #[test]
+    fn omitted_framework_deserializes_and_requires_safe_detection() {
+        let json = r#"{"id":"f","rule":"image-alt","element_html":"<img src=\"x\">","page_url":"https://x.test","source_locations":[{"file":"x.tsx","line":1}],"summary":"missing alt","remediation":"add alt","criteria":[]}"#;
+        let parsed: RemediationIssue = serde_json::from_str(json).expect("compatible issue");
+        assert_eq!(parsed.framework, None);
+        let policy = RemediationPolicy::default();
+        let outcomes = remediate(&[parsed], &policy, &ReactAdapter).expect("batch");
+        assert!(
+            matches!(&outcomes[0], RemediationOutcome::Error(error) if error.code == RemediationErrorCode::NeedsReview)
+        );
+        let mut safe_issue = issue("safe-omitted");
+        safe_issue.framework = None;
+        let safe = remediate(&[safe_issue], &policy, &ReactAdapter).expect("batch");
+        assert!(matches!(&safe[0], RemediationOutcome::Ok(_)));
+    }
+
+    #[test]
+    fn approval_token_is_bound_to_proposal_identity() {
+        let mut proposal = PatchProposal::new(
+            "p",
+            vec!["f".into()],
+            "diff",
+            vec!["file".into()],
+            "why",
+            vec![],
+            vec![],
+            "effect",
+        );
+        assert!(proposal.approve("reviewer", "wrong-token").is_err());
+        let token = proposal.approval_token();
+        proposal.approve("reviewer", &token).expect("valid token");
+        proposal.proposal_id = "changed".into();
+        assert!(proposal.ensure_approved().is_err());
+        let mut changed = PatchProposal::new(
+            "p",
+            vec!["f".into()],
+            "diff",
+            vec!["file".into()],
+            "why",
+            vec![],
+            vec![],
+            "effect",
+        );
+        let changed_token = changed.approval_token();
+        changed
+            .approve("reviewer", &changed_token)
+            .expect("valid token");
+        changed.diff = "different diff".into();
+        assert!(changed.ensure_approved().is_err());
+    }
+
+    #[test]
+    fn malformed_markup_returns_review_without_panicking() {
+        let cases = [
+            ("image-alt", "import React from \"react\"; <img src=\"x\""),
+            ("label", "import React from \"react\"; <input id=\"x\""),
+            ("button-name", "import React from \"react\"; <button>"),
+        ];
+        for (rule, source) in cases {
+            let mut issue = issue("malformed");
+            issue.rule = rule.into();
+            issue.element_html = source.into();
+            assert!(matches!(
+                ReactAdapter.propose(&issue, source),
+                Err(RemediationError::NeedsReview { .. })
+            ));
+        }
     }
 }

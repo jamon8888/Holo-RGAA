@@ -18,6 +18,7 @@ pub struct RemediationIssue {
     pub summary: String,
     pub remediation: String,
     pub criteria: Vec<String>,
+    #[serde(default)]
     pub framework: Option<Framework>,
 }
 
@@ -68,14 +69,19 @@ pub struct PatchProposal {
     pub validation_commands: Vec<String>,
     pub expected_effect: String,
     pub proposal_hash: String,
-    pub approval: ApprovalState,
+    approval: ApprovalState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ApprovalState {
     Required,
     NotRequired,
-    Approved { approver: String, token: String },
+    Approved {
+        proposal_id: String,
+        proposal_hash: String,
+        approver: String,
+        token: String,
+    },
 }
 
 impl PatchProposal {
@@ -106,7 +112,7 @@ impl PatchProposal {
         proposal
     }
 
-    pub fn set_approval_required(&mut self, required: bool) {
+    pub(crate) fn set_approval_required(&mut self, required: bool) {
         self.approval = if required {
             ApprovalState::Required
         } else {
@@ -118,26 +124,54 @@ impl PatchProposal {
         matches!(self.approval, ApprovalState::Required)
     }
 
+    pub fn approval_state(&self) -> &ApprovalState {
+        &self.approval
+    }
+
     pub fn approve(&mut self, approver: &str, token: &str) -> Result<(), RemediationError> {
-        if approver.trim().is_empty() || token.trim().is_empty() {
+        if approver.trim().is_empty() || token != self.approval_token() {
             return Err(RemediationError::InvalidApproval {
                 issue_id: self.finding_ids.first().cloned().unwrap_or_default(),
             });
         }
         self.approval = ApprovalState::Approved {
+            proposal_id: self.proposal_id.clone(),
+            proposal_hash: self.proposal_hash.clone(),
             approver: approver.to_owned(),
             token: token.to_owned(),
         };
         Ok(())
     }
 
+    pub fn approval_token(&self) -> String {
+        format!(
+            "rgaa-approval-v1-{}-{}",
+            self.proposal_id, self.proposal_hash
+        )
+    }
+
     pub fn ensure_approved(&self) -> Result<(), RemediationError> {
-        if matches!(self.approval, ApprovalState::Required) {
-            return Err(RemediationError::MissingApproval {
+        match &self.approval {
+            ApprovalState::NotRequired => Ok(()),
+            ApprovalState::Required => Err(RemediationError::MissingApproval {
                 issue_id: self.finding_ids.first().cloned().unwrap_or_default(),
-            });
+            }),
+            ApprovalState::Approved {
+                proposal_id,
+                proposal_hash,
+                token,
+                ..
+            } if proposal_id == &self.proposal_id
+                && proposal_hash == &self.proposal_hash
+                && self.compute_hash() == self.proposal_hash
+                && token == &self.approval_token() =>
+            {
+                Ok(())
+            }
+            ApprovalState::Approved { .. } => Err(RemediationError::MissingApproval {
+                issue_id: self.finding_ids.first().cloned().unwrap_or_default(),
+            }),
         }
-        Ok(())
     }
 
     pub fn compute_hash(&self) -> String {

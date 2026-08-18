@@ -40,9 +40,16 @@ fn propose_for(
     issue: &RemediationIssue,
     source: &str,
 ) -> Result<PatchProposal, RemediationError> {
-    if issue.framework != Some(framework) {
+    let detected = detect_framework(source);
+    if issue.framework != Some(framework) && issue.framework.is_some() {
         return Err(RemediationError::UnsupportedFramework {
             issue_id: issue.id.clone(),
+        });
+    }
+    if detected != Some(framework) {
+        return Err(RemediationError::NeedsReview {
+            issue_id: issue.id.clone(),
+            reason: "source does not safely identify the requested framework".into(),
         });
     }
     let trimmed = source.trim();
@@ -58,11 +65,14 @@ fn propose_for(
             issue_id: issue.id.clone(),
             reason: "image source is incomplete".into(),
         })?;
-        if tag.contains("[src")
-            || tag.contains(":src")
-            || tag.contains("v-bind:src")
-            || tag.contains("src={")
-            || tag.contains("{{")
+        let compact_tag = compact(tag);
+        if compact_tag.contains("[src")
+            || compact_tag.contains(":src")
+            || compact_tag.contains("v-bind:src")
+            || compact_tag.contains("src={")
+            || compact_tag.contains("{{")
+            || compact_tag.contains("bind:src")
+            || compact_tag.contains("bind-src")
         {
             return Err(RemediationError::NeedsReview {
                 issue_id: issue.id.clone(),
@@ -78,7 +88,7 @@ fn propose_for(
                 reason: "image already has an accessible name".into(),
             });
         }
-        insert_attribute(source, "img", " alt=\"\"")
+        insert_attribute(source, "img", " alt=\"\"", &issue.id)?
     } else if issue.rule.contains("label")
         || issue.rule.contains("input")
         || issue.rule.contains("control")
@@ -91,14 +101,24 @@ fn propose_for(
                 issue_id: issue.id.clone(),
                 reason: "control element is ambiguous".into(),
             })?;
-        let tag = opening_tag(trimmed, tag_name).unwrap_or_default();
-        if tag.contains('[') || tag.contains(':') || tag.contains("v-") || tag.contains("{{") {
+        let tag = opening_tag(trimmed, tag_name).ok_or_else(|| RemediationError::NeedsReview {
+            issue_id: issue.id.clone(),
+            reason: "control source is incomplete".into(),
+        })?;
+        let compact_tag = compact(tag);
+        if compact_tag.contains('[')
+            || compact_tag.contains(':')
+            || compact_tag.contains("v-")
+            || compact_tag.contains("bind-")
+            || compact_tag.contains("{{")
+            || (compact_tag.contains('=') && compact_tag.contains('{'))
+        {
             return Err(RemediationError::NeedsReview {
                 issue_id: issue.id.clone(),
                 reason: "control uses a dynamic binding and its label is ambiguous".into(),
             });
         }
-        if tag.contains("aria-label=")
+        if compact_tag.contains("aria-label=")
             || tag.contains("aria-labelledby=")
             || (trimmed.contains("<label") && tag.contains("id="))
         {
@@ -113,19 +133,33 @@ fn propose_for(
                 issue_id: issue.id.clone(),
                 reason: "control has no stable name for an accessible label".into(),
             })?;
-        insert_attribute(source, tag_name, &format!(" aria-label=\"{name}\""))
+        insert_attribute(
+            source,
+            tag_name,
+            &format!(" aria-label=\"{name}\""),
+            &issue.id,
+        )?
     } else if issue.rule.contains("button") && trimmed.contains("<button") {
-        let tag = opening_tag(trimmed, "button").unwrap_or_default();
-        let body = trimmed
-            .split_once('>')
-            .and_then(|(_, rest)| rest.split_once("</button>").map(|(body, _)| body))
-            .unwrap_or_default();
-        if tag.contains("aria-label=")
+        let tag = opening_tag(trimmed, "button").ok_or_else(|| RemediationError::NeedsReview {
+            issue_id: issue.id.clone(),
+            reason: "button source is incomplete".into(),
+        })?;
+        let body = button_body(trimmed).ok_or_else(|| RemediationError::NeedsReview {
+            issue_id: issue.id.clone(),
+            reason: "button closing tag is missing".into(),
+        })?;
+        let compact_tag = compact(tag);
+        let compact_body = compact(body);
+        if compact_tag.contains("aria-label=")
             || tag.contains("aria-labelledby=")
             || tag.contains("title=")
-            || body.contains('{')
-            || body.contains("{{")
-            || body.contains("v-")
+            || compact_body.contains('{')
+            || compact_body.contains("{{")
+            || compact_body.contains("v-")
+            || compact_tag.contains('[')
+            || compact_tag.contains(':')
+            || compact_tag.contains("bind-")
+            || compact_tag.contains("*ng")
         {
             return Err(RemediationError::NeedsReview {
                 issue_id: issue.id.clone(),
@@ -138,7 +172,7 @@ fn propose_for(
                 reason: "button already has rendered content".into(),
             });
         }
-        insert_attribute(source, "button", " aria-label=\"Submit\"")
+        insert_attribute(source, "button", " aria-label=\"Submit\"", &issue.id)?
     } else {
         return Err(RemediationError::NeedsReview {
             issue_id: issue.id.clone(),
@@ -179,17 +213,33 @@ fn opening_tag<'a>(source: &'a str, name: &str) -> Option<&'a str> {
     source.split(&format!("<{name}")).nth(1)?.split('>').next()
 }
 
-fn insert_attribute(source: &str, name: &str, attribute: &str) -> String {
+fn insert_attribute(
+    source: &str,
+    name: &str,
+    attribute: &str,
+    issue_id: &str,
+) -> Result<String, RemediationError> {
     let marker = format!("<{name}");
-    let start = source.find(&marker).expect("opening tag was checked");
-    let end = source[start..].find('>').expect("opening tag was checked") + start;
-    format!(
+    let start = source
+        .find(&marker)
+        .ok_or_else(|| RemediationError::NeedsReview {
+            issue_id: issue_id.into(),
+            reason: "opening tag is missing".into(),
+        })?;
+    let end = source[start..]
+        .find('>')
+        .map(|offset| offset + start)
+        .ok_or_else(|| RemediationError::NeedsReview {
+            issue_id: issue_id.into(),
+            reason: "opening tag is incomplete".into(),
+        })?;
+    Ok(format!(
         "{}{}{}{}",
         &source[..end],
         attribute,
         &source[end..end + 1],
         &source[end + 1..]
-    )
+    ))
 }
 
 fn attribute_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
@@ -199,33 +249,49 @@ fn attribute_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
-fn detects(framework: Framework, source: &str) -> Option<Framework> {
-    let found = match framework {
-        Framework::React => {
-            source.contains("from \"react\"")
-                || source.contains("from 'react'")
-                || source.contains("className=")
-                || source.contains("import React")
-        }
-        Framework::Next => {
-            source.contains("\"use client\"")
-                || source.contains("'use client'")
-                || source.contains("from \"next/")
-                || source.contains("from 'next/")
-        }
-        Framework::Vue => {
-            source.contains("<template")
-                || source.contains("v-model")
-                || source.contains("<script setup")
-        }
-        Framework::Angular => {
-            source.contains("@Component")
-                || source.contains("[ngModel]")
-                || source.contains("[(ngModel)]")
-                || source.contains("*ngIf")
-        }
-    };
-    found.then_some(framework)
+fn compact(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
+}
+
+fn button_body(source: &str) -> Option<&str> {
+    let start = source.find("<button")?;
+    let opening_end = source[start..].find('>')? + start + 1;
+    let close = source[opening_end..].find("</button>")? + opening_end;
+    Some(&source[opening_end..close])
+}
+
+pub fn detect_framework(source: &str) -> Option<Framework> {
+    if source.contains("\"use client\"")
+        || source.contains("'use client'")
+        || source.contains("from \"next/")
+        || source.contains("from 'next/")
+    {
+        return Some(Framework::Next);
+    }
+    if source.contains("from \"react\"")
+        || source.contains("from 'react'")
+        || source.contains("className=")
+        || source.contains("import React")
+    {
+        return Some(Framework::React);
+    }
+    if source.contains("<template")
+        || source.contains("v-model")
+        || source.contains("<script setup")
+    {
+        return Some(Framework::Vue);
+    }
+    if source.contains("@Component")
+        || source.contains("[ngModel]")
+        || source.contains("[(ngModel)]")
+        || source.contains("*ngIf")
+    {
+        return Some(Framework::Angular);
+    }
+    None
 }
 
 macro_rules! adapter_impl {
@@ -235,7 +301,7 @@ macro_rules! adapter_impl {
                 $framework
             }
             fn detect(&self, source: &str) -> Option<Framework> {
-                detects($framework, source)
+                (detect_framework(source) == Some($framework)).then_some($framework)
             }
             fn locate(&self, _source: &str, issue: &RemediationIssue) -> Vec<SourceLocation> {
                 issue.source_locations.clone()

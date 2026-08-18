@@ -7,3 +7,6 @@ edition = "2021"
 rgaa-core = { path = "../rgaa-core" }
 serde = { workspace = true }
 thiserror = "2"
+
+[dev-dependencies]
+serde_json = { workspace = true }

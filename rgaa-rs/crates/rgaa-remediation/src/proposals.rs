@@ -69,11 +69,13 @@ pub struct PatchProposal {
     pub validation_commands: Vec<String>,
     pub expected_effect: String,
     pub proposal_hash: String,
+    #[serde(skip)]
     approval: ApprovalState,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ApprovalState {
+    #[default]
     Required,
     NotRequired,
     Approved {

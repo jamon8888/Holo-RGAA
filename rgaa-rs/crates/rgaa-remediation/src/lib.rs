@@ -351,6 +351,26 @@ mod contract_tests {
     }
 
     #[test]
+    fn deserialized_not_required_state_cannot_bypass_approval() {
+        let proposal = PatchProposal::new(
+            "serialized",
+            vec!["finding".into()],
+            "diff",
+            vec!["file".into()],
+            "why",
+            vec![],
+            vec![],
+            "effect",
+        );
+        let mut payload = serde_json::to_value(proposal).expect("serialize proposal");
+        payload["approval"] = serde_json::json!("NotRequired");
+        let restored: PatchProposal =
+            serde_json::from_value(payload).expect("deserialize proposal");
+        assert!(restored.requires_approval());
+        assert!(restored.ensure_approved().is_err());
+    }
+
+    #[test]
     fn malformed_markup_returns_review_without_panicking() {
         let cases = [
             ("image-alt", "import React from \"react\"; <img src=\"x\""),

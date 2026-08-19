@@ -1,0 +1,13 @@
+standards:
+  wcag: true
+  rgai: true
+  enhanced: false
+
+policy:
+  min_compliance: 80.0
+  required_criteria: []
+  auto_remediate: false
+
+evidence_dir: .rgaa/evidence
+remote_endpoint: null
+upload_consent: false

@@ -73,12 +73,120 @@ pub struct CookieReferenceInput {
     pub domain: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CriterionStatusDto {
+    Pass,
+    Fail,
+    NotApplicable,
+    Error,
+    NeedsReview,
+    NotTested,
+}
+
+impl From<rgaa_core::CriterionStatus> for CriterionStatusDto {
+    fn from(status: rgaa_core::CriterionStatus) -> Self {
+        match status {
+            rgaa_core::CriterionStatus::Pass => Self::Pass,
+            rgaa_core::CriterionStatus::Fail => Self::Fail,
+            rgaa_core::CriterionStatus::NotApplicable => Self::NotApplicable,
+            rgaa_core::CriterionStatus::Error => Self::Error,
+            rgaa_core::CriterionStatus::NeedsReview => Self::NeedsReview,
+            rgaa_core::CriterionStatus::NotTested => Self::NotTested,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct EvidenceRefDto {
+    pub kind: String,
+    pub hash: String,
+    pub location: Option<String>,
+}
+
+impl From<rgaa_core::EvidenceRef> for EvidenceRefDto {
+    fn from(evidence: rgaa_core::EvidenceRef) -> Self {
+        Self {
+            kind: evidence.kind,
+            hash: evidence.hash,
+            location: evidence.location,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct FindingDto {
+    pub id: String,
+    pub rule: String,
+    pub criterion_id: Option<String>,
+    pub url: String,
+    pub target: String,
+    pub component_path: Option<String>,
+    pub evidence: Vec<EvidenceRefDto>,
+    pub status: CriterionStatusDto,
+    pub severity: Option<String>,
+    pub description: Option<String>,
+    pub remediation: Option<String>,
+    pub html: Option<String>,
+    pub details: Option<String>,
+    pub source: String,
+}
+
+impl From<rgaa_core::Finding> for FindingDto {
+    fn from(finding: rgaa_core::Finding) -> Self {
+        Self {
+            id: finding.id,
+            rule: finding.rule,
+            criterion_id: finding.criterion_id,
+            url: finding.url,
+            target: finding.target,
+            component_path: finding.component_path,
+            evidence: finding.evidence.into_iter().map(Into::into).collect(),
+            status: finding.status.into(),
+            severity: finding.severity,
+            description: finding.description,
+            remediation: finding.remediation,
+            html: finding.html,
+            details: finding.details,
+            source: finding.source,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct PageErrorDto {
+    pub code: String,
+    pub message: String,
+}
+
+impl From<rgaa_core::PageError> for PageErrorDto {
+    fn from(error: rgaa_core::PageError) -> Self {
+        Self {
+            code: error.code,
+            message: error.message,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct AnalyzeResponse {
     pub url: String,
-    pub findings: Vec<serde_json::Value>,
-    pub evidence: Vec<serde_json::Value>,
-    pub errors: Vec<serde_json::Value>,
+    pub findings: Vec<FindingDto>,
+    pub evidence: Vec<EvidenceRefDto>,
+    pub errors: Vec<PageErrorDto>,
     pub completed: bool,
     pub duration_ms: u64,
+}
+
+impl From<rgaa_obscura::AnalyzePageResult> for AnalyzeResponse {
+    fn from(result: rgaa_obscura::AnalyzePageResult) -> Self {
+        Self {
+            url: result.url,
+            findings: result.findings.into_iter().map(Into::into).collect(),
+            evidence: result.evidence.into_iter().map(Into::into).collect(),
+            errors: result.errors.into_iter().map(Into::into).collect(),
+            completed: result.completed,
+            duration_ms: result.duration_ms,
+        }
+    }
 }

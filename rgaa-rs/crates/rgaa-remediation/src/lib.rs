@@ -1,9 +1,13 @@
 mod adapters;
+mod baseline;
+mod dedup;
 mod lifecycle;
 mod policy;
 mod proposals;
 
 pub use adapters::*;
+pub use baseline::*;
+pub use dedup::*;
 pub use lifecycle::*;
 pub use policy::*;
 pub use proposals::*;

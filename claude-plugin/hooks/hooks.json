@@ -1,0 +1,13 @@
+{
+  "hooks": [
+    {
+      "matcher": "SessionStart",
+      "handler": "scripts/check-runtime.sh"
+    },
+    {
+      "matcher": "PostToolUse",
+      "pattern": "Edit|Write",
+      "handler": "scripts/check-runtime.sh"
+    }
+  ]
+}

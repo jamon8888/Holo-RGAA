@@ -1,0 +1,47 @@
+{
+  "name": "rgaa-audit",
+  "version": "0.1.0",
+  "description": "RGAA accessibility audit plugin for Claude Code",
+  "author": "RGAA Team",
+  "license": "MIT",
+  "keywords": ["accessibility", "rgaa", "wcag", "audit", "claude-code"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jamon8888/Holo-RGAA"
+  },
+  "engines": {
+    "claude": ">=1.0.0"
+  },
+  "permissions": {
+    "read": true,
+    "write": true,
+    "execute": true,
+    "network": true
+  },
+  "commands": {
+    "audit": {
+      "description": "Run RGAA accessibility audit",
+      "handler": "skills/audit/SKILL.md"
+    },
+    "triage": {
+      "description": "Triage accessibility findings",
+      "handler": "skills/triage/SKILL.md"
+    },
+    "remediate": {
+      "description": "Generate remediation proposals",
+      "handler": "skills/remediate/SKILL.md"
+    },
+    "verify": {
+      "description": "Verify remediation effectiveness",
+      "handler": "skills/verify/SKILL.md"
+    },
+    "report": {
+      "description": "Generate compliance reports",
+      "handler": "skills/report/SKILL.md"
+    },
+    "guided-test": {
+      "description": "Run intelligent guided accessibility tests",
+      "handler": "skills/guided-test/SKILL.md"
+    }
+  }
+}

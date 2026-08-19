@@ -1,12 +1,25 @@
+url_profiles:
+  default:
+    url: https://example.test
+    viewport: desktop
+
+viewport_profiles:
+  desktop:
+    width: 1000
+    height: 1080
+  mobile:
+    width: 375
+    height: 812
+
+guided_tests: []
+
 standards:
-  wcag: true
-  rgai: true
-  enhanced: false
+  - wcag
+  - rgai
 
 policy:
   min_compliance: 80.0
   required_criteria: []
-  auto_remediate: false
 
 evidence_dir: .rgaa/evidence
 remote_endpoint: null

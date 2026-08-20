@@ -131,16 +131,15 @@ impl AuditBundle {
                 return Err(RgaaError::MissingId("criterion_id".into()));
             }
             validate_status(&checkpoint.status)?;
-            if checkpoint.status == CriterionStatus::Pass {
-                if checkpoint.evidence.is_empty()
+            if checkpoint.status == CriterionStatus::Pass
+                && (checkpoint.evidence.is_empty()
                     || checkpoint.evidence.iter().any(|evidence| {
                         evidence.kind.trim().is_empty() || evidence.hash.trim().is_empty()
-                    })
-                {
-                    return Err(RgaaError::IncompleteEvidence(
-                        checkpoint.checkpoint_id.clone(),
-                    ));
-                }
+                    }))
+            {
+                return Err(RgaaError::IncompleteEvidence(
+                    checkpoint.checkpoint_id.clone(),
+                ));
             }
         }
 

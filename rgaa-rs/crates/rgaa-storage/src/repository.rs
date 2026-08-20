@@ -226,12 +226,20 @@ impl Repository {
         self.get_audit(id).await
     }
 
-    pub async fn list_audits_paginated(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<AuditRow>> {
+    pub async fn list_audits_paginated(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<AuditRow>> {
         self.list_audits(limit, offset).await
     }
 
     // API key validation
-    pub async fn validate_api_key(&self, api_key: &str, required_scope: &str) -> anyhow::Result<Option<ApiKeyRow>> {
+    pub async fn validate_api_key(
+        &self,
+        api_key: &str,
+        required_scope: &str,
+    ) -> anyhow::Result<Option<ApiKeyRow>> {
         let key_hash = hash_api_key(api_key);
         let row = sqlx::query_as::<_, ApiKeyRow>(
             r#"
@@ -243,7 +251,9 @@ impl Repository {
         .await?;
 
         if let Some(key_row) = row {
-            if key_row.scopes.contains(&required_scope.to_string()) || key_row.scopes.contains(&"*".to_string()) {
+            if key_row.scopes.contains(&required_scope.to_string())
+                || key_row.scopes.contains(&"*".to_string())
+            {
                 // Update last_used_at
                 sqlx::query("UPDATE api_keys SET last_used_at = NOW() WHERE id = $1")
                     .bind(key_row.id)
@@ -258,7 +268,12 @@ impl Repository {
         }
     }
 
-    pub async fn create_api_key(&self, name: &str, scopes: &[String], expires_at: Option<DateTime<Utc>>) -> anyhow::Result<(Uuid, String)> {
+    pub async fn create_api_key(
+        &self,
+        name: &str,
+        scopes: &[String],
+        expires_at: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<(Uuid, String)> {
         let key = Uuid::new_v4().to_string();
         let key_hash = hash_api_key(&key);
         let id = Uuid::new_v4();
@@ -347,11 +362,11 @@ impl Repository {
             .bind(&finding.url)
             .bind(&finding.target)
             .bind(&finding.component_path)
-            .bind(&format!("{:?}", finding.status))  // Convert CriterionStatus to string
+            .bind(format!("{:?}", finding.status))
             .bind(&finding.severity)
-            .bind(&rgaa_core::FindingFingerprint::from_finding(finding))  // Compute fingerprint
-            .bind(&finding.evidence.iter().map(|e| e.kind.clone()).collect::<Vec<_>>())
-            .bind(&finding.evidence.iter().map(|e| e.hash.clone()).collect::<Vec<_>>())
+            .bind(rgaa_core::FindingFingerprint::from_finding(finding))
+            .bind(finding.evidence.iter().map(|e| e.kind.clone()).collect::<Vec<_>>())
+            .bind(finding.evidence.iter().map(|e| e.hash.clone()).collect::<Vec<_>>())
             .bind(&finding.source)
             .bind(serde_json::to_value(&finding.details)?)
             .execute(&mut *tx)
@@ -375,7 +390,7 @@ impl Repository {
             .bind(audit_id)
             .bind(&checkpoint.checkpoint_id)
             .bind(&checkpoint.criterion_id)
-            .bind(&format!("{:?}", checkpoint.status))  // Convert CriterionStatus to string
+            .bind(format!("{:?}", checkpoint.status))
             .bind(serde_json::to_value(&checkpoint.evidence)?)
             .bind(&checkpoint.summary)
             .execute(&mut *tx)
@@ -456,7 +471,12 @@ impl Repository {
         Ok(rows)
     }
 
-    pub async fn store_policy_evaluation(&self, eval: &rgaa_remediation::PolicyResult, audit_id: Uuid, baseline_id: Option<Uuid>) -> anyhow::Result<()> {
+    pub async fn store_policy_evaluation(
+        &self,
+        eval: &rgaa_remediation::PolicyResult,
+        audit_id: Uuid,
+        baseline_id: Option<Uuid>,
+    ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
             INSERT INTO policy_evaluations (id, audit_id, baseline_id, passed, failures, warnings, counts, evaluated_at)
@@ -484,7 +504,10 @@ pub fn hash_api_key(key: &str) -> String {
 }
 
 fn compute_audit_status(bundle: &rgaa_core::AuditBundle) -> String {
-    let total = bundle.summary.passed + bundle.summary.failed + bundle.summary.needs_review + bundle.summary.errors;
+    let total = bundle.summary.passed
+        + bundle.summary.failed
+        + bundle.summary.needs_review
+        + bundle.summary.errors;
     if total == 0 {
         "completed".to_string()
     } else if bundle.summary.failed > 0 || bundle.summary.errors > 0 {

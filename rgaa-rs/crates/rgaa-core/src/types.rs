@@ -68,6 +68,17 @@ pub struct CrawlConfig {
     pub sample_mode: bool,
 }
 
+impl Default for CrawlConfig {
+    fn default() -> Self {
+        Self {
+            max_pages: 50,
+            max_depth: 5,
+            respect_robots: true,
+            sample_mode: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,16 +102,5 @@ mod tests {
         }
 
         assert!(serde_json::from_str::<CriterionStatus>("\"na\"").is_err());
-    }
-}
-
-impl Default for CrawlConfig {
-    fn default() -> Self {
-        Self {
-            max_pages: 50,
-            max_depth: 5,
-            respect_robots: true,
-            sample_mode: false,
-        }
     }
 }

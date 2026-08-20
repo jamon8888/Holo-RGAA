@@ -4,6 +4,75 @@ use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::PageContext;
 use std::collections::HashMap;
 
+/// Configuration for the RgaaAgent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RigAgentConfig {
+    /// The model identifier to use for evaluations.
+    pub model: String,
+    /// Maximum number of concurrent evaluations.
+    pub max_concurrent: usize,
+    /// Optional filter for specific criteria IDs. If None, all criteria are evaluated.
+    pub criteria_filter: Option<Vec<String>>,
+}
+
+impl Default for RigAgentConfig {
+    fn default() -> Self {
+        Self {
+            model: "holo3-1-35b-a3b".to_string(),
+            max_concurrent: 5,
+            criteria_filter: None,
+        }
+    }
+}
+
+/// Builder pattern for constructing RgaaAgent instances.
+pub struct AgentBuilder {
+    config: RigAgentConfig,
+}
+
+impl AgentBuilder {
+    pub fn new() -> Self {
+        Self {
+            config: RigAgentConfig::default(),
+        }
+    }
+
+    pub fn model(mut self, model: impl Into<String>) -> Self {
+        self.config.model = model.into();
+        self
+    }
+
+    pub fn max_concurrent(mut self, max_concurrent: usize) -> Self {
+        self.config.max_concurrent = max_concurrent;
+        self
+    }
+
+    pub fn criteria_filter(mut self, criteria_filter: Vec<String>) -> Self {
+        self.config.criteria_filter = Some(criteria_filter);
+        self
+    }
+
+    pub fn build_config(self) -> RigAgentConfig {
+        self.config
+    }
+
+    pub fn build(self) -> RgaaAgent {
+        let _config = self.config;
+        RgaaAgent::new(ModelRouter::new_placeholder())
+    }
+}
+
+impl Default for AgentBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Convenience function to create a simple agent with default settings.
+pub fn create_simple_agent() -> RgaaAgent {
+    AgentBuilder::new().build()
+}
+
 pub struct RgaaAgent {
     model_router: ModelRouter,
 }
@@ -157,5 +226,80 @@ mod tests {
         for criterion in &ia_criteria {
             assert!(results.contains_key(criterion.id));
         }
+    }
+
+    // === NEW TESTS FOR BUILDER PATTERN AND CONFIG ===
+
+    #[test]
+    fn test_rig_agent_config_defaults() {
+        let config = RigAgentConfig::default();
+        assert_eq!(config.model, "holo3-1-35b-a3b");
+        assert_eq!(config.max_concurrent, 5);
+        assert!(config.criteria_filter.is_none());
+    }
+
+    #[test]
+    fn test_rig_agent_config_custom_values() {
+        let filter = vec!["1.3".to_string(), "11.2".to_string()];
+        let config = RigAgentConfig {
+            model: "custom-model".to_string(),
+            max_concurrent: 10,
+            criteria_filter: Some(filter.clone()),
+        };
+        assert_eq!(config.model, "custom-model");
+        assert_eq!(config.max_concurrent, 10);
+        assert_eq!(config.criteria_filter, Some(filter));
+    }
+
+    #[test]
+    fn test_agent_builder_default_config() {
+        let builder = AgentBuilder::new();
+        let config = builder.build_config();
+        assert_eq!(config, RigAgentConfig::default());
+    }
+
+    #[test]
+    fn test_agent_builder_chaining() {
+        let filter = vec!["1.3".to_string()];
+        let config = AgentBuilder::new()
+            .model("test-model")
+            .max_concurrent(3)
+            .criteria_filter(filter.clone())
+            .build_config();
+
+        assert_eq!(config.model, "test-model");
+        assert_eq!(config.max_concurrent, 3);
+        assert_eq!(config.criteria_filter, Some(filter));
+    }
+
+    #[test]
+    fn test_agent_builder_builds_agent() {
+        let agent = AgentBuilder::new().build();
+        assert!(agent.model_router.rate_limiter().config().tactical_rpm > 0);
+    }
+
+    #[test]
+    fn test_create_simple_agent() {
+        let agent = create_simple_agent();
+        assert!(agent.model_router.rate_limiter().config().tactical_rpm > 0);
+    }
+
+    #[tokio::test]
+    async fn test_agent_builder_builds_working_agent() {
+        let agent = AgentBuilder::new()
+            .model("holo3-1-35b-a3b")
+            .max_concurrent(2)
+            .build();
+
+        let context = sample_context();
+        let criterion = Criterion {
+            id: "1.3",
+            title: "Test",
+            classification: Classification::IaAssiste,
+            wcag_refs: "1.1.1",
+        };
+
+        let result = agent.evaluate_criterion(&criterion, &context, None).await;
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
     }
 }

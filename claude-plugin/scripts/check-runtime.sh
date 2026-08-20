@@ -50,7 +50,7 @@ if [[ "${HOOK_EVENT:-}" == "SessionStart" ]]; then
   framework=$(detect_framework "$CLAUDE_PROJECT_DIR")
   log "Detected framework: $framework"
   # Export for downstream skills/agents
-  echo "RGAa_FRAMEWORK=$framework" >> "${CLAUDE_PROJECT_DIR}/.rgaa/env"
+  echo "RGAA_FRAMEWORK=$framework" >> "${CLAUDE_PROJECT_DIR}/.rgaa/env"
   if [[ -f "${CLAUDE_PROJECT_DIR}/.rgaa/config.yaml" ]]; then
     log "Found .rgaa/config.yaml"
   else

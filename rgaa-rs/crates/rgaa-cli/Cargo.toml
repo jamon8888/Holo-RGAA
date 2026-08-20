@@ -6,15 +6,10 @@ edition = "2021"
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
 rgaa-obscura = { path = "../rgaa-obscura" }
-rgaa-rules = { path = "../rgaa-rules" }
-thiserror = { workspace = true }
+rgaa-remediation = { path = "../rgaa-remediation" }
 clap = { workspace = true }
-anyhow = { workspace = true }
+thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { version = "1.0", features = ["full"] }
 serde_yaml = "0.9"
-uuid = { version = "1.0", features = ["v4"] }
-
-[dev-dependencies]
-indicatif = "0.17"
+tokio = { workspace = true }

@@ -1,54 +1,175 @@
-use clap::{Command, Arg, Args, builder::PossibleValue};
+use std::path::PathBuf;
 
-/// Test the Commands enum parsing by using Command builder
-#[test]
-fn test_commands_enum_discriminants() {
-    // Test that all command variants are valid
-    use rgaa_cli::Commands::Analyze;
-    use rgaa_cli::Commands::Igt;
-    use rgaa_cli::Commands::Verify;
-    use rgaa_cli::Commands::Report;
-    use rgaa_cli::Commands::Policy;
-    
-    // Just verify the enum values exist
-    let _ = Analyze;
-    let _ = Igt;
-    let _ = Verify;
-    let _ = Report;
-    let _ = Policy;
+use rgaa_cli::commands::policy::PolicyArgs;
+use rgaa_cli::commands::report::ReportArgs;
+use rgaa_cli::commands::verify::VerifyArgs;
+use rgaa_cli::commands::CommonArgs;
+use rgaa_cli::commands::{policy, report, verify};
+use rgaa_cli::CliError;
+use rgaa_core::{AuditBundle, AuditConfig, CriterionStatus};
+
+fn temp_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("rgaa-cli-test-{name}-{}", std::process::id()))
 }
 
-#[test]
-fn test_format_value_variants() {
-    // Test that format strings are valid
-    let formats = ["json", "markdown", "sarif", "junit"];
-    for f in &formats {
-        let _ = std::ffi::CString::new(*f);
+fn write_json(path: &PathBuf, value: &impl serde::Serialize) {
+    std::fs::write(path, serde_json::to_string_pretty(value).unwrap()).unwrap();
+}
+
+fn sample_bundle(failed: usize, errors: usize) -> AuditBundle {
+    let mut bundle = AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+    bundle.summary.total_pages = 1;
+    bundle.summary.completed_pages = 1;
+    for i in 0..failed {
+        let mut finding = rgaa_core::Finding::new(format!("finding-{i}"));
+        finding.rule = "rgaa-1.1".into();
+        finding.url = "https://example.test".into();
+        finding.target = "#main".into();
+        finding.status = CriterionStatus::Fail;
+        finding.severity = Some("critical".into());
+        finding.description = Some("missing alternative text".into());
+        bundle.findings.push(finding);
+    }
+    bundle.summary.total_findings = failed + errors;
+    bundle.summary.failed = failed;
+    bundle.summary.errors = errors;
+    bundle
+}
+
+fn common() -> CommonArgs {
+    CommonArgs {
+        config: None,
+        output: None,
+        format: None,
+        audit_id: None,
     }
 }
 
 #[test]
-fn test_path_exists_check() {
-    let path = std::path::PathBuf::from("/tmp");
-    assert!(path.exists() || true); // /tmp may not exist, that's ok
+fn report_renders_each_format_without_failing() {
+    let bundle_path = temp_path("bundle.json");
+    write_json(&bundle_path, &sample_bundle(1, 0));
+
+    for format in ["json", "markdown", "sarif", "junit"] {
+        let args = ReportArgs {
+            common: CommonArgs {
+                format: Some(format.into()),
+                ..common()
+            },
+            input: bundle_path.clone(),
+        };
+        assert_eq!(
+            report::run(args).unwrap(),
+            0,
+            "format {format} should render"
+        );
+    }
 }
 
 #[test]
-fn test_criterion_count() {
-    use rgaa_core::RgaaCriteria;
-    assert_eq!(RgaaCriteria::count(), 106);
+fn report_rejects_invalid_bundle_as_invalid_input() {
+    let path = temp_path("invalid.json");
+    std::fs::write(&path, "{not json}").unwrap();
+    let args = ReportArgs {
+        common: common(),
+        input: path,
+    };
+    let error = report::run(args).expect_err("invalid bundle");
+    assert_eq!(error.exit_code(), 2);
 }
 
 #[test]
-fn test_deterministic_criteria() {
-    use rgaa_core::RgaaCriteria;
-    let criteria = RgaaCriteria::deterministic();
-    assert!(!criteria.is_empty());
+fn report_missing_file_is_execution_error() {
+    let args = ReportArgs {
+        common: common(),
+        input: PathBuf::from("/nonexistent/bundle.json"),
+    };
+    let error = report::run(args).expect_err("missing file");
+    assert_eq!(error.exit_code(), 3);
 }
 
 #[test]
-fn test_ia_assiste_criteria() {
-    use rgaa_core::RgaaCriteria;
-    let criteria = RgaaCriteria::ia_assiste();
-    assert!(!criteria.is_empty());
+fn policy_passes_when_compliance_meets_threshold() {
+    let path = temp_path("pass.json");
+    write_json(&path, &sample_bundle(0, 0));
+    let args = PolicyArgs {
+        common: common(),
+        input: path,
+    };
+    assert_eq!(policy::run(args).unwrap(), 0);
+}
+
+#[test]
+fn policy_fails_when_compliance_is_below_threshold() {
+    let path = temp_path("fail.json");
+    write_json(&path, &sample_bundle(1, 0));
+    let args = PolicyArgs {
+        common: common(),
+        input: path,
+    };
+    assert_eq!(policy::run(args).unwrap(), 1);
+}
+
+#[test]
+fn verify_requires_one_to_twenty_five_issues() {
+    let empty = temp_path("empty.json");
+    write_json(&empty, &Vec::<rgaa_remediation::RemediationIssue>::new());
+    let args = VerifyArgs {
+        common: common(),
+        issues: empty,
+    };
+    assert_eq!(verify::run(args).expect_err("empty").exit_code(), 2);
+}
+
+#[test]
+fn verify_reports_success_for_valid_issues() {
+    let issue = rgaa_remediation::RemediationIssue {
+        id: "a".into(),
+        rule: "image-alt".into(),
+        element_html: "import React from \"react\"; <img src=\"hero.png\">".into(),
+        page_url: "https://example.test".into(),
+        source_locations: vec![rgaa_remediation::SourceLocation {
+            file: "src/App.tsx".into(),
+            line: 1,
+            column: None,
+        }],
+        summary: "missing alternative text".into(),
+        remediation: "add alt".into(),
+        criteria: vec!["RGAA-1.1".into()],
+        framework: Some(rgaa_remediation::Framework::React),
+    };
+    let path = temp_path("issues.json");
+    write_json(&path, &vec![issue]);
+    let args = VerifyArgs {
+        common: common(),
+        issues: path,
+    };
+    assert_eq!(verify::run(args).unwrap(), 0);
+}
+
+#[test]
+fn exit_codes_match_the_contract() {
+    assert_eq!(CliError::policy("x").exit_code(), 1);
+    assert_eq!(CliError::invalid_input("x").exit_code(), 2);
+    assert_eq!(CliError::execution("x").exit_code(), 3);
+}
+
+#[test]
+fn config_loads_valid_yaml_and_rejects_invalid() {
+    let dir = temp_path("config");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".rgaa")).unwrap();
+    let config_path = dir.join(".rgaa").join("config.yaml");
+    std::fs::write(
+        &config_path,
+        "policy:\n  min_compliance: 90.0\nupload_consent: true\n",
+    )
+    .unwrap();
+
+    let config = rgaa_cli::Config::load(Some(&config_path)).expect("valid config");
+    assert_eq!(config.policy.min_compliance, 90.0);
+    assert!(config.upload_consent);
+
+    std::fs::write(&config_path, "not: [valid").unwrap();
+    assert!(rgaa_cli::Config::load(Some(&config_path)).is_err());
 }

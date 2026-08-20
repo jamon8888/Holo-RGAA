@@ -1,3 +1,4 @@
+use rgaa_agent::models::{ModelRouter, SelectedTier};
 use rgaa_agent::prompts::PromptBuilder;
 use rgaa_agent::ratelimit::{ModelTier, RateLimiter, RateLimitConfig};
 use rgaa_holo::PageContext;
@@ -90,4 +91,22 @@ async fn rate_limiter_reset_restores_tokens() {
     let start = std::time::Instant::now();
     limiter.acquire(ModelTier::Tactical).await;
     assert!(start.elapsed() < Duration::from_secs(1), "reset should restore tokens");
+}
+
+#[test]
+fn visual_criteria_routed_to_reasoning() {
+    let router = ModelRouter::new_placeholder();
+    assert!(router.select_tier_for("1.3").is_reasoning());
+    assert!(router.select_tier_for("3.1").is_reasoning());
+    assert!(router.select_tier_for("11.2").is_reasoning());
+    assert!(router.select_tier_for("12.8").is_reasoning());
+}
+
+#[test]
+fn text_criteria_routed_to_tactical() {
+    let router = ModelRouter::new_placeholder();
+    assert!(router.select_tier_for("2.2").is_tactical());
+    assert!(router.select_tier_for("4.2").is_tactical());
+    assert!(router.select_tier_for("8.6").is_tactical());
+    assert!(router.select_tier_for("9.2").is_tactical());
 }

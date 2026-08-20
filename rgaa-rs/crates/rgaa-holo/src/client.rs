@@ -38,6 +38,7 @@ struct ChatRequest {
     max_tokens: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct HoloClient {
     api_key: String,
     base_url: String,

@@ -2127,6 +2127,7 @@ name = "rgaa-orchestrator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "rgaa-agent",
  "rgaa-core",
  "rgaa-holo",
  "rgaa-obscura",

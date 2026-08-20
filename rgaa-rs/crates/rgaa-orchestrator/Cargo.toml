@@ -8,6 +8,7 @@ rgaa-core = { path = "../rgaa-core" }
 rgaa-rules = { path = "../rgaa-rules" }
 rgaa-holo = { path = "../rgaa-holo" }
 rgaa-obscura = { path = "../rgaa-obscura" }
+rgaa-agent = { path = "../rgaa-agent" }
 rgaa-storage = { path = "../rgaa-storage" }
 tokio = { workspace = true }
 serde = { workspace = true }

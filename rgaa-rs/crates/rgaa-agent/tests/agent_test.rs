@@ -1,7 +1,9 @@
 use rgaa_agent::models::{ModelRouter, SelectedTier};
 use rgaa_agent::prompts::PromptBuilder;
 use rgaa_agent::ratelimit::{ModelTier, RateLimiter, RateLimitConfig};
-use rgaa_holo::PageContext;
+use rgaa_agent::verify::{map_verdict, CONFIDENCE_THRESHOLD};
+use rgaa_core::CriterionStatus;
+use rgaa_holo::{HoloResponse, PageContext};
 use std::time::Duration;
 
 fn sample_context() -> PageContext {
@@ -118,4 +120,59 @@ fn list_available_models_returns_both_tiers() {
     assert_eq!(models.len(), 2);
     assert!(models.iter().any(|m| m.id == "holo3-1-35b-a3b" && m.tier == SelectedTier::Tactical));
     assert!(models.iter().any(|m| m.id == "holo3-122b-a10b" && m.tier == SelectedTier::Reasoning));
+}
+
+#[test]
+fn high_confidence_pass_maps_to_pass() {
+    let response = HoloResponse {
+        verdict: "pass".to_string(),
+        confidence: 0.9,
+        justification: "OK".to_string(),
+    };
+    assert_eq!(map_verdict(response), CriterionStatus::Pass);
+}
+
+#[test]
+fn high_confidence_fail_maps_to_fail() {
+    let response = HoloResponse {
+        verdict: "fail".to_string(),
+        confidence: 0.85,
+        justification: "Missing alt".to_string(),
+    };
+    assert_eq!(map_verdict(response), CriterionStatus::Fail);
+}
+
+#[test]
+fn low_confidence_maps_to_needs_review() {
+    let response = HoloResponse {
+        verdict: "pass".to_string(),
+        confidence: 0.3,
+        justification: "Uncertain".to_string(),
+    };
+    assert_eq!(map_verdict(response), CriterionStatus::NeedsReview);
+}
+
+#[test]
+fn threshold_is_0_6() {
+    assert_eq!(CONFIDENCE_THRESHOLD, 0.6);
+}
+
+#[test]
+fn exactly_at_threshold_maps_to_verdict() {
+    let response = HoloResponse {
+        verdict: "fail".to_string(),
+        confidence: 0.6,
+        justification: "Borderline".to_string(),
+    };
+    assert_eq!(map_verdict(response), CriterionStatus::Fail);
+}
+
+#[test]
+fn unknown_verdict_maps_to_needs_review() {
+    let response = HoloResponse {
+        verdict: "uncertain".to_string(),
+        confidence: 0.9,
+        justification: "Model unsure".to_string(),
+    };
+    assert_eq!(map_verdict(response), CriterionStatus::NeedsReview);
 }

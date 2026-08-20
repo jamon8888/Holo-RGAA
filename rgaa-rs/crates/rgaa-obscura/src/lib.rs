@@ -1,22 +1,158 @@
+use base64::Engine;
+use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Instant};
-use tracing::{info, warn, error};
-use futures_util::{SinkExt, StreamExt};
-use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tracing::{error, info, warn};
+
+pub mod config;
+pub mod evidence;
+pub mod guided;
+pub mod results;
+
+pub use config::{
+    AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, NeedsReviewPolicy,
+    PreScanAction, ScreenshotPolicy, Viewport,
+};
+pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
+pub use guided::{
+    is_stable_accessibility_reference, GuidedAction, GuidedExecutor, GuidedObservation,
+    GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
+};
+pub use results::{AnalyzePageResult, ObscuraError};
+use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
+use rgaa_rules::AxeMapper;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
+
+#[derive(Debug, Deserialize)]
+struct AxeViolationPayload {
+    id: String,
+    impact: Option<String>,
+    description: String,
+    help: Option<String>,
+    nodes: Vec<AxeNodePayload>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AxeNodePayload {
+    target: Vec<String>,
+    html: String,
+    #[serde(rename = "failureSummary")]
+    failure_summary: Option<String>,
+}
+
+fn validate_axe_payload(
+    value: &serde_json::Value,
+) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
+    let array = value
+        .as_array()
+        .ok_or_else(|| ObscuraError::Json("axe violations must be an array".into()))?;
+    let mut payload = Vec::with_capacity(array.len());
+    for (index, item) in array.iter().enumerate() {
+        let violation =
+            serde_json::from_value::<AxeViolationPayload>(item.clone()).map_err(|error| {
+                ObscuraError::Json(format!("invalid axe violation at index {index}: {error}"))
+            })?;
+        if violation.id.trim().is_empty()
+            || violation.description.trim().is_empty()
+            || violation.nodes.is_empty()
+        {
+            return Err(ObscuraError::Json(format!(
+                "invalid axe violation at index {index}: required fields are empty"
+            )));
+        }
+        if violation
+            .nodes
+            .iter()
+            .any(|node| node.target.is_empty() || node.html.trim().is_empty())
+        {
+            return Err(ObscuraError::Json(format!(
+                "invalid axe violation at index {index}: malformed node"
+            )));
+        }
+        payload.push(violation);
+    }
+    Ok(payload)
+}
+
+fn findings_from_axe(
+    url: &str,
+    value: &serde_json::Value,
+    evidence: &[rgaa_core::EvidenceRef],
+) -> Result<Vec<Finding>, ObscuraError> {
+    let payload = validate_axe_payload(value)?;
+    let normalized =
+        serde_json::to_string(value).map_err(|error| ObscuraError::Json(error.to_string()))?;
+    let mapped = AxeMapper::map(&normalized);
+    let mut findings = Vec::new();
+    for violation in payload {
+        let mut criteria = mapped
+            .iter()
+            .filter(|(_, criterion)| {
+                criterion
+                    .violations
+                    .iter()
+                    .any(|item| item.rule_id == violation.id)
+            })
+            .map(|(criterion_id, _)| criterion_id.clone())
+            .collect::<Vec<_>>();
+        criteria.sort();
+        if criteria.is_empty() {
+            criteria.push("unmapped".into());
+        }
+        for (node_index, node) in violation.nodes.iter().enumerate() {
+            for criterion_id in &criteria {
+                let target = node.target.join(" | ");
+                let mut finding =
+                    Finding::new(format!("rgaa-{criterion_id}-{}-{node_index}", violation.id));
+                finding.rule = violation.id.clone();
+                finding.criterion_id = (criterion_id != "unmapped").then(|| criterion_id.clone());
+                finding.url = url.into();
+                finding.target = target;
+                finding.html = Some(node.html.clone());
+                finding.details = node
+                    .failure_summary
+                    .clone()
+                    .or_else(|| Some(violation.description.clone()));
+                finding.status = CriterionStatus::Fail;
+                finding.severity = violation.impact.clone().or_else(|| Some("unknown".into()));
+                finding.description = Some(violation.description.clone());
+                finding.remediation = violation.help.clone();
+                finding.evidence = evidence.to_vec();
+                finding.source = "axe-core".into();
+                findings.push(finding);
+            }
+        }
+    }
+    findings.sort_by_key(|finding| {
+        (
+            finding.id.clone(),
+            FindingFingerprint::from_finding(finding),
+        )
+    });
+    Ok(findings)
+}
 
 pub struct ObscuraBridge {
     binary_path: String,
     server_port: u16,
     server_process: Option<Child>,
+}
+
+impl Default for ObscuraBridge {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ObscuraBridge {
@@ -41,6 +177,399 @@ impl ObscuraBridge {
         self
     }
 
+    /// Analyze one page using the structured audit contract.
+    ///
+    /// Request validation failures are returned as [`ObscuraError`]. Browser
+    /// failures are returned in the page envelope so callers cannot mistake a
+    /// failed page for a clean page.
+    pub async fn analyze(
+        &self,
+        request: &AnalyzeRequest,
+    ) -> Result<AnalyzePageResult, ObscuraError> {
+        request.validate_supported()?;
+        let started = Instant::now();
+        let axe_source = match timeout(
+            Duration::from_millis(request.config.timeout_ms),
+            self.fetch_axe_source(),
+        )
+        .await
+        {
+            Ok(Ok(source)) => source,
+            Ok(Err(error)) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    Self::classify_error(error),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+            Err(_) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    ObscuraError::Timeout("timed out fetching axe-core".into()),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+        let mut attempt = 0;
+        let (raw, evidence) = loop {
+            let result = timeout(
+                Duration::from_millis(request.config.timeout_ms),
+                self.run_configured_axe(request, &axe_source),
+            )
+            .await;
+            match result {
+                Ok(Ok(result)) => break result,
+                Ok(Err(_error)) if attempt < usize::from(request.config.retry_limit) => {
+                    attempt += 1;
+                    continue;
+                }
+                Ok(Err(error)) => {
+                    return Ok(AnalyzePageResult::failed(
+                        &request.url,
+                        error,
+                        started.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(_) if attempt < usize::from(request.config.retry_limit) => {
+                    attempt += 1;
+                    continue;
+                }
+                Err(_) => {
+                    return Ok(AnalyzePageResult::failed(
+                        &request.url,
+                        ObscuraError::Timeout(format!(
+                            "analysis timed out after {} ms",
+                            request.config.timeout_ms
+                        )),
+                        started.elapsed().as_millis() as u64,
+                    ))
+                }
+            }
+        };
+        let violations = match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(violations) => violations,
+            Err(error) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    ObscuraError::Json(error.to_string()),
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+        let findings = match findings_from_axe(&request.url, &violations, &evidence) {
+            Ok(findings) => findings,
+            Err(error) => {
+                return Ok(AnalyzePageResult::failed(
+                    &request.url,
+                    error,
+                    started.elapsed().as_millis() as u64,
+                ))
+            }
+        };
+
+        let completed = !evidence.is_empty();
+        Ok(AnalyzePageResult {
+            url: request.url.clone(),
+            findings,
+            evidence,
+            errors: Vec::new(),
+            completed,
+            duration_ms: started.elapsed().as_millis() as u64,
+        })
+    }
+
+    /// Execute a versioned guided test through the Obscura browser adapter.
+    pub async fn run_guided_test(
+        &self,
+        test: &GuidedTest,
+    ) -> Result<GuidedRunResult, ObscuraError> {
+        let mut executor = guided::ObscuraGuidedExecutor::connect(self).await?;
+        let root = std::env::temp_dir()
+            .join("rgaa-guided-evidence")
+            .join(&test.id);
+        let store = EvidenceStore::new(root);
+        let result = test.run(&mut executor, Some(&store)).await;
+        let cleanup = executor.close().await;
+        match (result, cleanup) {
+            (Ok(result), Ok(())) => Ok(result),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), _) => Err(error),
+        }
+    }
+
+    fn classify_error(error: String) -> ObscuraError {
+        let lower = error.to_ascii_lowercase();
+        if lower.contains("timed out") || lower.contains("timeout") {
+            ObscuraError::Timeout(error)
+        } else if lower.contains("navigation") || lower.contains("load") {
+            ObscuraError::Navigation(error)
+        } else if lower.contains("websocket") || lower.contains("cdp") {
+            ObscuraError::CdpTransport(error)
+        } else if lower.contains("json") || lower.contains("result") {
+            ObscuraError::Json(error)
+        } else if lower.contains("screenshot")
+            || lower.contains("evidence")
+            || lower.contains("dom evidence")
+        {
+            ObscuraError::Evidence(error)
+        } else if lower.contains("missing secret") || lower.contains("policy") {
+            ObscuraError::PolicyDenied(error)
+        } else if lower.contains("unsupported") {
+            ObscuraError::UnsupportedConfiguration(error)
+        } else if lower.contains("failed to spawn") {
+            ObscuraError::ProcessStartup(error)
+        } else {
+            ObscuraError::Evaluation(error)
+        }
+    }
+
+    async fn run_configured_axe(
+        &self,
+        request: &AnalyzeRequest,
+        axe_source: &str,
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>), ObscuraError> {
+        let ws_url = self
+            .get_browser_ws_url()
+            .await
+            .map_err(Self::classify_error)?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|error| ObscuraError::CdpTransport(error.to_string()))?;
+        let target_id = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": request.url}),
+        )
+        .await
+        .map_err(Self::classify_error)?
+        .get("targetId")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
+        .to_owned();
+        let session_id = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await
+        .map_err(Self::classify_error)?
+        .get("sessionId")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| ObscuraError::CdpTransport("missing session id".into()))?
+        .to_owned();
+
+        let outcome = self
+            .run_axe_core_configured(&mut ws, &session_id, request, axe_source)
+            .await;
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome.map_err(Self::classify_error), cleanup) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(error)) => Err(Self::classify_error(error)),
+            (Err(error), _) => Err(error),
+        }
+    }
+
+    async fn run_axe_core_configured(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+        axe_source: &str,
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>), String> {
+        Self::wait_for_load(
+            ws,
+            session_id,
+            Duration::from_millis(request.config.timeout_ms),
+        )
+        .await?;
+        Self::cdp_send_session(
+            ws,
+            session_id,
+            "Emulation.setDeviceMetricsOverride",
+            serde_json::json!({
+                "width": request.config.viewport.width,
+                "height": request.config.viewport.height,
+                "deviceScaleFactor": 1,
+                "mobile": request.config.profile == "mobile"
+            }),
+        )
+        .await?;
+        self.apply_cookies(ws, session_id, request).await?;
+        self.apply_pre_scan_actions(ws, session_id, request).await?;
+        let inject = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": format!("(function() {{ {} }})()", axe_source)}),
+        )
+        .await?;
+        if inject.get("exceptionDetails").is_some() {
+            return Err("axe-core injection threw an exception".into());
+        }
+        let axe_argument = request
+            .config
+            .selector
+            .as_ref()
+            .map(|selector| serde_json::to_string(selector).map_err(|error| error.to_string()))
+            .transpose()?;
+        let expression = match axe_argument {
+            Some(selector) => format!("axe.run({selector})"),
+            None => "axe.run()".into(),
+        };
+        let result = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": expression, "awaitPromise": true, "returnByValue": true}),
+        )
+        .await?;
+        let raw = Self::validate_axe_result(&result)?;
+        let violations = serde_json::from_str::<serde_json::Value>(&raw)
+            .map_err(|error| format!("invalid axe JSON: {error}"))?;
+        let evidence = self
+            .capture_evidence(ws, session_id, request, &violations)
+            .await?;
+        Ok((raw, evidence))
+    }
+
+    async fn apply_cookies(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+    ) -> Result<(), String> {
+        if request.config.cookie_references.is_empty() {
+            return Ok(());
+        }
+        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({})).await?;
+        for cookie in &request.config.cookie_references {
+            let key = cookie
+                .name
+                .chars()
+                .map(|character| {
+                    if character.is_ascii_alphanumeric() {
+                        character.to_ascii_uppercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>();
+            let value = std::env::var(format!("RGAA_COOKIE_{key}"))
+                .map_err(|_| format!("missing secret for cookie reference '{}'", cookie.name))?;
+            let mut params = serde_json::json!({
+                "name": cookie.name,
+                "value": value,
+                "url": request.url,
+            });
+            if let Some(domain) = &cookie.domain {
+                params["domain"] = serde_json::Value::String(domain.clone());
+            }
+            let result =
+                Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
+            if result.get("success").and_then(|value| value.as_bool()) == Some(false) {
+                return Err(format!(
+                    "browser rejected cookie reference '{}'",
+                    cookie.name
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn apply_pre_scan_actions(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+    ) -> Result<(), String> {
+        for action in &request.config.pre_scan_actions {
+            let (selector, body) = match action {
+                PreScanAction::Click { selector } => {
+                    (selector, "element.click(); return true;".to_string())
+                }
+                PreScanAction::Fill { selector, value } => {
+                    let value = serde_json::to_string(value).map_err(|error| error.to_string())?;
+                    (
+                        selector,
+                        format!(
+                            "element.value = {value}; element.dispatchEvent(new Event('input', {{bubbles:true}})); element.dispatchEvent(new Event('change', {{bubbles:true}})); return true;"
+                        ),
+                    )
+                }
+            };
+            let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
+            let expression = format!(
+                "(() => {{ const element = document.querySelector({selector}); if (!element) throw new Error('pre-scan selector not found'); {body} }})()"
+            );
+            let result = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Runtime.evaluate",
+                serde_json::json!({"expression": expression, "returnByValue": true}),
+            )
+            .await?;
+            if result.get("exceptionDetails").is_some() {
+                return Err("pre-scan action evaluation failed".into());
+            }
+        }
+        Ok(())
+    }
+
+    async fn capture_evidence(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+        violations: &serde_json::Value,
+    ) -> Result<Vec<rgaa_core::EvidenceRef>, String> {
+        let dom = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": "document.documentElement.outerHTML",
+                "returnByValue": true
+            }),
+        )
+        .await?;
+        let dom = dom
+            .get("result")
+            .and_then(|value| value.get("value"))
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| "DOM evidence was not returned by the browser".to_string())?;
+        let mut evidence = vec![Self::evidence_ref("dom_snapshot", dom.as_bytes())];
+        let should_screenshot = match request.config.screenshot_policy {
+            ScreenshotPolicy::None => false,
+            ScreenshotPolicy::Always => true,
+            ScreenshotPolicy::OnFailure => {
+                violations.as_array().is_some_and(|items| !items.is_empty())
+            }
+        };
+        if should_screenshot {
+            let screenshot = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Page.captureScreenshot",
+                serde_json::json!({"format": "png"}),
+            )
+            .await?;
+            let data = screenshot
+                .get("data")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "screenshot evidence was not returned by the browser".to_string())?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map_err(|error| format!("invalid screenshot evidence: {error}"))?;
+            evidence.push(Self::evidence_ref("screenshot", &bytes));
+        }
+        Ok(evidence)
+    }
+
+    fn evidence_ref(kind: &str, bytes: &[u8]) -> rgaa_core::EvidenceRef {
+        let digest = Sha256::digest(bytes);
+        rgaa_core::EvidenceRef::new(kind, format!("sha256:{digest:x}"))
+    }
+
     /// Start the obscura CDP server as a background process
     pub async fn start_server(&mut self) -> Result<(), String> {
         info!(port = self.server_port, "Starting Obscura CDP server");
@@ -59,7 +588,12 @@ impl ObscuraBridge {
 
         // Wait for server to be ready
         for i in 0..50 {
-            if let Ok(resp) = reqwest::get(&format!("http://127.0.0.1:{}/json/version", self.server_port)).await {
+            if let Ok(resp) = reqwest::get(&format!(
+                "http://127.0.0.1:{}/json/version",
+                self.server_port
+            ))
+            .await
+            {
                 if resp.status().is_success() {
                     info!(attempt = i, "Obscura CDP server ready");
                     return Ok(());
@@ -81,15 +615,20 @@ impl ObscuraBridge {
 
     /// Get the browser-level WebSocket URL from /json/version
     async fn get_browser_ws_url(&self) -> Result<String, String> {
-        let resp = reqwest::get(&format!("http://127.0.0.1:{}/json/version", self.server_port))
-            .await
-            .map_err(|e| format!("Failed to get CDP version: {e}"))?;
+        let resp = reqwest::get(&format!(
+            "http://127.0.0.1:{}/json/version",
+            self.server_port
+        ))
+        .await
+        .map_err(|e| format!("Failed to get CDP version: {e}"))?;
 
-        let version: serde_json::Value = resp.json()
+        let version: serde_json::Value = resp
+            .json()
             .await
             .map_err(|e| format!("Failed to parse CDP version: {e}"))?;
 
-        version["webSocketDebuggerUrl"].as_str()
+        version["webSocketDebuggerUrl"]
+            .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "No webSocketDebuggerUrl in /json/version".to_string())
     }
@@ -116,7 +655,11 @@ impl ObscuraBridge {
     ///
     /// This avoids re-downloading axe-core per URL when batching. The created CDP
     /// target is always detached/closed on every exit path (success or error).
-    pub(crate) async fn run_axe_with_script(&self, url: &str, axe_source: &str) -> Result<String, String> {
+    pub(crate) async fn run_axe_with_script(
+        &self,
+        url: &str,
+        axe_source: &str,
+    ) -> Result<String, String> {
         // 1. Connect to browser-level WebSocket
         let ws_url = self.get_browser_ws_url().await?;
         let (mut ws, _) = connect_async(&ws_url)
@@ -125,9 +668,14 @@ impl ObscuraBridge {
 
         // 2. Create a new target and get its ID
         let target_id = {
-            let resp = Self::cdp_send(&mut ws, "Target.createTarget", serde_json::json!({
-                "url": url,
-            })).await?;
+            let resp = Self::cdp_send(
+                &mut ws,
+                "Target.createTarget",
+                serde_json::json!({
+                    "url": url,
+                }),
+            )
+            .await?;
             resp.get("targetId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "No targetId in createTarget response".to_string())?
@@ -136,10 +684,15 @@ impl ObscuraBridge {
 
         // 3. Attach to the target and get session ID
         let session_id = {
-            let resp = Self::cdp_send(&mut ws, "Target.attachToTarget", serde_json::json!({
-                "targetId": target_id,
-                "flatten": true,
-            })).await?;
+            let resp = Self::cdp_send(
+                &mut ws,
+                "Target.attachToTarget",
+                serde_json::json!({
+                    "targetId": target_id,
+                    "flatten": true,
+                }),
+            )
+            .await?;
             resp.get("sessionId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
@@ -149,16 +702,12 @@ impl ObscuraBridge {
         // 4. Run the actual evaluation, then always clean up the target.
         let outcome = self.run_axe_core(&mut ws, &session_id, axe_source).await;
 
-        // Best-effort cleanup: detach then close the target, then close the socket.
-        let _ = Self::cdp_send_session(&mut ws, &session_id, "Target.detachFromTarget", serde_json::json!({
-            "sessionId": session_id,
-        })).await;
-        let _ = Self::cdp_send(&mut ws, "Target.closeTarget", serde_json::json!({
-            "targetId": target_id,
-        })).await;
-        let _ = ws.close(None).await;
-
-        outcome
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome, cleanup) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), _) => Err(error),
+        }
     }
 
     /// Inner axe-core evaluation: wait for navigation, inject axe, then run it.
@@ -172,20 +721,32 @@ impl ObscuraBridge {
         Self::wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
 
         // 5. Inject axe-core via script source
-        let inject = Self::cdp_send_session(ws, session_id, "Runtime.evaluate", serde_json::json!({
-            "expression": format!("(function() {{ {} }})()", axe_source),
-        })).await?;
+        let inject = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": format!("(function() {{ {} }})()", axe_source),
+            }),
+        )
+        .await?;
 
         if inject.get("exceptionDetails").is_some() {
             return Err("axe-core injection threw an exception".to_string());
         }
 
         // 6. Run axe.run() and capture the resolved value directly.
-        let result = Self::cdp_send_session(ws, session_id, "Runtime.evaluate", serde_json::json!({
-            "expression": "axe.run()",
-            "awaitPromise": true,
-            "returnByValue": true,
-        })).await?;
+        let result = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": "axe.run()",
+                "awaitPromise": true,
+                "returnByValue": true,
+            }),
+        )
+        .await?;
 
         Self::validate_axe_result(&result)
     }
@@ -243,16 +804,24 @@ impl ObscuraBridge {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err("timed out waiting for page load (loadEventFired / readyState)".to_string());
+                return Err(
+                    "timed out waiting for page load (loadEventFired / readyState)".to_string(),
+                );
             }
 
             // Issue a readyState poll when none is outstanding and the interval elapsed.
             if pending_readystate.is_none() && last_poll.elapsed() >= poll_interval {
                 last_poll = Instant::now();
-                let id = Self::cdp_issue(ws, "Runtime.evaluate", serde_json::json!({
-                    "expression": "document.readyState",
-                    "returnByValue": true,
-                }), Some(session_id)).await?;
+                let id = Self::cdp_issue(
+                    ws,
+                    "Runtime.evaluate",
+                    serde_json::json!({
+                        "expression": "document.readyState",
+                        "returnByValue": true,
+                    }),
+                    Some(session_id),
+                )
+                .await?;
                 pending_readystate = Some(id);
             }
 
@@ -297,10 +866,14 @@ impl ObscuraBridge {
                     return Err("CDP WebSocket closed while waiting for page load".to_string());
                 }
                 Ok(Some(Err(e))) => {
-                    return Err(format!("CDP WebSocket error while waiting for page load: {e}"));
+                    return Err(format!(
+                        "CDP WebSocket error while waiting for page load: {e}"
+                    ));
                 }
                 Ok(None) => {
-                    return Err("CDP WebSocket stream ended while waiting for page load".to_string());
+                    return Err(
+                        "CDP WebSocket stream ended while waiting for page load".to_string()
+                    );
                 }
                 Err(_) => {
                     // Timed out waiting for a message; re-check deadline and retry.
@@ -314,7 +887,11 @@ impl ObscuraBridge {
     ///
     /// Fetches axe-core once, then bounds concurrent `run_axe_with_script` calls
     /// with a semaphore sized by `concurrency` (treated as 1 when 0).
-    pub async fn run_axe_batch(&self, urls: &[String], concurrency: usize) -> Result<HashMap<String, String>, String> {
+    pub async fn run_axe_batch(
+        &self,
+        urls: &[String],
+        concurrency: usize,
+    ) -> Result<HashMap<String, String>, String> {
         if urls.is_empty() {
             return Ok(HashMap::new());
         }
@@ -323,8 +900,7 @@ impl ObscuraBridge {
 
         info!(
             urls = urls.len(),
-            concurrency,
-            "Running batch axe-core audit via CDP"
+            concurrency, "Running batch axe-core audit via CDP"
         );
 
         // Fetch axe-core once for the whole batch.
@@ -342,10 +918,7 @@ impl ObscuraBridge {
             let sem = Arc::clone(&sem);
 
             tokio::spawn(async move {
-                let _permit = sem
-                    .acquire()
-                    .await
-                    .expect("semaphore closed unexpectedly");
+                let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
 
                 let bridge = ObscuraBridge {
                     binary_path,
@@ -363,8 +936,12 @@ impl ObscuraBridge {
         let mut results = HashMap::new();
         while let Some((url, result)) = rx.recv().await {
             match result {
-                Ok(violations) => { results.insert(url, violations); }
-                Err(e) => { warn!(url = %url, error = %e, "axe-core failed"); }
+                Ok(violations) => {
+                    results.insert(url, violations);
+                }
+                Err(e) => {
+                    warn!(url = %url, error = %e, "axe-core failed");
+                }
             }
         }
 
@@ -503,7 +1080,10 @@ impl ObscuraBridge {
     ) -> Result<HashMap<String, serde_json::Value>, String> {
         let script = Self::build_page_context_script();
 
-        info!(urls = urls.len(), concurrency, "Running batch page context extraction via CLI");
+        info!(
+            urls = urls.len(),
+            concurrency, "Running batch page context extraction via CLI"
+        );
 
         let output = timeout(Duration::from_secs(300), async {
             Command::new(&self.binary_path)
@@ -623,6 +1203,30 @@ impl ObscuraBridge {
         Self::cdp_wait_response(ws, id).await
     }
 
+    async fn cleanup_target(
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        target_id: &str,
+    ) -> Result<(), String> {
+        let detach = Self::cdp_send(
+            ws,
+            "Target.detachFromTarget",
+            serde_json::json!({"sessionId": session_id}),
+        )
+        .await
+        .map(|_| ());
+        let close = Self::cdp_send(
+            ws,
+            "Target.closeTarget",
+            serde_json::json!({"targetId": target_id}),
+        )
+        .await
+        .map(|_| ());
+        let socket = ws.close(None).await.map_err(|error| error.to_string());
+
+        detach.and(close).and(socket)
+    }
+
     /// Build and send a CDP message, returning the generated request id.
     async fn cdp_issue(
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -645,7 +1249,7 @@ impl ObscuraBridge {
             msg["sessionId"] = serde_json::Value::String(sid.to_string());
         }
 
-        ws.send(Message::Text(msg.to_string().into()))
+        ws.send(Message::Text(msg.to_string()))
             .await
             .map_err(|e| format!("CDP send failed: {e}"))?;
 
@@ -662,7 +1266,10 @@ impl ObscuraBridge {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err(format!("CDP timeout waiting for response id={}", expected_id));
+                return Err(format!(
+                    "CDP timeout waiting for response id={}",
+                    expected_id
+                ));
             }
 
             match tokio::time::timeout(remaining, ws.next()).await {
@@ -674,7 +1281,10 @@ impl ObscuraBridge {
                                 if let Some(error) = value.get("error") {
                                     return Err(format!("CDP error: {}", error));
                                 }
-                                return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
+                                return Ok(value
+                                    .get("result")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null));
                             }
                         }
                         // Otherwise it's an event, skip it
@@ -683,7 +1293,12 @@ impl ObscuraBridge {
                 Ok(Some(Ok(Message::Close(_)))) => return Err("CDP WebSocket closed".to_string()),
                 Ok(Some(Err(e))) => return Err(format!("CDP WebSocket error: {e}")),
                 Ok(None) => return Err("CDP WebSocket stream ended".to_string()),
-                Err(_) => return Err(format!("CDP timeout waiting for response id={}", expected_id)),
+                Err(_) => {
+                    return Err(format!(
+                        "CDP timeout waiting for response id={}",
+                        expected_id
+                    ))
+                }
                 _ => {}
             }
         }
@@ -746,7 +1361,9 @@ mod tests {
         // A broken axe source throws during injection, which must surface as Err
         // rather than being silently treated as a clean (empty) result.
         let broken = "throw new Error('boom')";
-        let result = bridge.run_axe_with_script("https://example.com", broken).await;
+        let result = bridge
+            .run_axe_with_script("https://example.com", broken)
+            .await;
 
         bridge.stop_server().await;
 
@@ -755,5 +1372,64 @@ mod tests {
             "broken evaluation should surface an Err, got: {:?}",
             result.ok()
         );
+    }
+
+    #[tokio::test]
+    async fn analyze_rejects_invalid_request_before_starting_browser_work() {
+        let bridge = ObscuraBridge::new();
+        let request = AnalyzeRequest {
+            url: "file:///secret.html".into(),
+            config: AnalyzeConfig::default(),
+        };
+
+        assert!(matches!(
+            bridge.analyze(&request).await,
+            Err(ObscuraError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn browser_failures_are_classified_as_page_errors() {
+        let result = AnalyzePageResult::failed(
+            "https://unreachable.test",
+            ObscuraBridge::classify_error("timed out waiting for page load".into()),
+            1,
+        );
+
+        assert!(!result.completed);
+        assert_eq!(result.errors[0].code, "timeout");
+    }
+
+    #[test]
+    fn malformed_axe_items_are_rejected_before_mapping() {
+        let payload = serde_json::json!([{}]);
+        assert!(matches!(
+            validate_axe_payload(&payload),
+            Err(ObscuraError::Json(_))
+        ));
+    }
+
+    #[test]
+    fn axe_findings_preserve_context_and_have_stable_order() {
+        let payload = serde_json::json!([{
+            "id": "image-alt",
+            "impact": "critical",
+            "description": "Images must have alternate text",
+            "help": "Ensure alt text",
+            "nodes": [{"target": ["#z"], "html": "<img id=\"z\">"}, {"target": ["#a"], "html": "<img id=\"a\">"}]
+        }]);
+        let evidence = vec![rgaa_core::EvidenceRef::new("dom_snapshot", "sha256:x")];
+        let findings = findings_from_axe("https://example.test", &payload, &evidence)
+            .expect("valid axe payload");
+        assert_eq!(findings.len(), 14);
+        assert!(findings.windows(2).all(|pair| pair[0].id <= pair[1].id));
+        let finding = findings
+            .iter()
+            .find(|finding| finding.target == "#a")
+            .expect("target preserved");
+        assert_eq!(finding.html.as_deref(), Some("<img id=\"a\">"));
+        assert_eq!(finding.criterion_id.as_deref(), Some("1.1"));
+        assert_eq!(finding.source, "axe-core");
+        assert_eq!(finding.evidence, evidence);
     }
 }

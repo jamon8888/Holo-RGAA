@@ -16,6 +16,14 @@ impl BrowserSession {
         }
     }
 
+    pub fn new_placeholder() -> Self {
+        Self {
+            bridge: ObscuraBridge::new(),
+            last_a11y: None,
+            current_url: None,
+        }
+    }
+
     pub fn bridge(&self) -> &ObscuraBridge {
         &self.bridge
     }

@@ -96,17 +96,26 @@ async fn rate_limiter_reset_restores_tokens() {
 #[test]
 fn visual_criteria_routed_to_reasoning() {
     let router = ModelRouter::new_placeholder();
-    assert!(router.select_tier_for("1.3").is_reasoning());
-    assert!(router.select_tier_for("3.1").is_reasoning());
-    assert!(router.select_tier_for("11.2").is_reasoning());
-    assert!(router.select_tier_for("12.8").is_reasoning());
+    assert!(router.route_for("1.3").is_reasoning());
+    assert!(router.route_for("3.1").is_reasoning());
+    assert!(router.route_for("11.2").is_reasoning());
+    assert!(router.route_for("12.8").is_reasoning());
 }
 
 #[test]
 fn text_criteria_routed_to_tactical() {
     let router = ModelRouter::new_placeholder();
-    assert!(router.select_tier_for("2.2").is_tactical());
-    assert!(router.select_tier_for("4.2").is_tactical());
-    assert!(router.select_tier_for("8.6").is_tactical());
-    assert!(router.select_tier_for("9.2").is_tactical());
+    assert!(router.route_for("2.2").is_tactical());
+    assert!(router.route_for("4.2").is_tactical());
+    assert!(router.route_for("8.6").is_tactical());
+    assert!(router.route_for("9.2").is_tactical());
+}
+
+#[test]
+fn list_available_models_returns_both_tiers() {
+    let router = ModelRouter::new_placeholder();
+    let models = router.list_available_models();
+    assert_eq!(models.len(), 2);
+    assert!(models.iter().any(|m| m.id == "holo3-1-35b-a3b" && m.tier == SelectedTier::Tactical));
+    assert!(models.iter().any(|m| m.id == "holo3-122b-a10b" && m.tier == SelectedTier::Reasoning));
 }

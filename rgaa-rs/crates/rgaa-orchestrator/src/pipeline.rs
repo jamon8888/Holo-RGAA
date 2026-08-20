@@ -1,29 +1,13 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use rgaa_core::{AuditResult, CriterionResult, CriterionStatus, CrawlConfig, PageResult, RgaaCriteria, Classification};
 use rgaa_rules::{AxeMapper, GapFixRules};
-use rgaa_holo::{HoloClient, PromptBuilder, PageContext};
-use tokio::sync::Semaphore;
-use tokio::task::JoinSet;
-use tracing::{info, error};
-
-/// Maximum number of concurrent Holo3 evaluations per audited URL. Bounded so we
-/// don't trip API rate limits while still parallelizing the 27 IA_ASSISTE calls.
-const HOLO3_CONCURRENCY: usize = 12;
+use rgaa_holo::PageContext;
+use rgaa_agent::agent::RgaaAgent;
+use rgaa_agent::models::ModelRouter;
+use rgaa_agent::ratelimit::RateLimiter;
+use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
-
-fn holo3_status(verdict: &str) -> CriterionStatus {
-    if verdict.eq_ignore_ascii_case("pass") || verdict.eq_ignore_ascii_case("conforme") {
-        CriterionStatus::Pass
-    } else if verdict.eq_ignore_ascii_case("fail")
-        || verdict.eq_ignore_ascii_case("non_conforme")
-    {
-        CriterionStatus::Fail
-    } else {
-        CriterionStatus::NeedsReview
-    }
-}
 
 fn manual_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
@@ -72,10 +56,16 @@ impl Orchestrator {
         };
         let api_key = std::env::var("HOLO3_API_KEY")
             .unwrap_or_else(|_| "hk-a73b030c64aac335fc3651c280c95694beb8df95c4a5d8b1".into());
-        let holo = Arc::new(HoloClient::new(api_key));
+        let rate_limiter = RateLimiter::new(10, 20);
+        let model_router = ModelRouter::new(
+            rgaa_holo::HoloClient::new(api_key.clone()),
+            rgaa_holo::HoloClient::new(api_key),
+            rate_limiter,
+        );
+        let agent = RgaaAgent::new(model_router);
         let mut results = HashMap::new();
         for url in urls {
-            let audit = audit_one(&bridge, &holo, url, config).await?;
+            let audit = audit_one(&bridge, &agent, url, config).await?;
             results.insert(url.clone(), audit);
         }
         Ok(results)
@@ -89,7 +79,7 @@ impl Orchestrator {
 /// identical results regardless of entry point.
 async fn audit_one(
     bridge: &ObscuraBridge,
-    holo_client: &Arc<HoloClient>,
+    agent: &RgaaAgent,
     url: &str,
     _config: &CrawlConfig,
 ) -> Result<AuditResult, String> {
@@ -123,63 +113,18 @@ async fn audit_one(
         navigation: vec![],
     });
 
-    // 4. Run Holo3 for all IA_ASSISTE criteria concurrently (bounded).
-    //
-    // The 27 evaluations are independent; running them sequentially was the main
-    // performance bottleneck (each is a network round-trip to the LLM API). We
-    // spawn them all and bound concurrency with a semaphore so we parallelize
-    // without hammering the API into rate limits.
+    // 4. Run agentic evaluation for all IA_ASSISTE criteria
     let ia_criteria = RgaaCriteria::ia_assiste();
-    info!(criteria = ia_criteria.len(), "Running Holo3 IA_ASSISTE evaluation");
-    let sem = Arc::new(Semaphore::new(HOLO3_CONCURRENCY));
-    let mut set = JoinSet::new();
-    for criterion in &ia_criteria {
-        let client = Arc::clone(holo_client);
-        let sem = Arc::clone(&sem);
-        let prompt = PromptBuilder::build(criterion.id, &page_context);
-        let criterion_id = criterion.id.to_string();
-        let title = criterion.title.to_string();
-        set.spawn(async move {
-            let _permit = sem
-                .acquire()
-                .await
-                .expect("Holo3 semaphore closed unexpectedly");
-            let res = client.evaluate(&prompt).await;
-            (criterion_id, title, res)
-        });
-    }
+    info!(
+        criteria = ia_criteria.len(),
+        "Running agentic IA_ASSISTE evaluation"
+    );
+
+    let agent_results = agent.run_ia_assiste(&ia_criteria, &page_context, None).await;
 
     let mut holo_results = HashMap::new();
-    while let Some(joined) = set.join_next().await {
-        let (criterion_id, title, res) = joined.expect("Holo3 task panicked");
-        match res {
-            Ok(response) => {
-                let status = holo3_status(&response.verdict);
-                holo_results.insert(criterion_id.clone(), CriterionResult {
-                    criterion_id,
-                    title,
-                    classification: Classification::IaAssiste,
-                    status,
-                    violations: vec![],
-                    confidence: Some(response.confidence),
-                    justification: Some(response.justification),
-                    source: "holo3".into(),
-                });
-            }
-            Err(e) => {
-                error!(criterion_id = %criterion_id, error = %e, "Holo3 evaluation failed");
-                holo_results.insert(criterion_id.clone(), CriterionResult {
-                    criterion_id,
-                    title,
-                    classification: Classification::IaAssiste,
-                    status: CriterionStatus::Error,
-                    violations: vec![],
-                    confidence: None,
-                    justification: Some(e),
-                    source: "holo3".into(),
-                });
-            }
-        }
+    for (criterion_id, result) in agent_results {
+        holo_results.insert(criterion_id, result);
     }
 
     // 5. Merge results
@@ -266,11 +211,6 @@ async fn audit_one(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn unknown_holo3_verdict_requires_review() {
-        assert_eq!(holo3_status("uncertain"), CriterionStatus::NeedsReview);
-    }
 
     #[test]
     fn manual_criteria_require_review() {

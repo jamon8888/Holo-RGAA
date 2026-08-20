@@ -8,6 +8,7 @@ pub struct ModelInfo {
     pub tier: SelectedTier,
 }
 
+#[derive(Clone)]
 pub struct ModelRouter {
     tactical_client: HoloClient,
     reasoning_client: HoloClient,

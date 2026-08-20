@@ -4,6 +4,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RateLimitConfig {
+    pub tactical_rpm: u32,
+    pub reasoning_rpm: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelTier {
     Tactical,  // holo3-1-35b-a3b, free, 10 RPM
     Reasoning, // holo3-122b-a10b, paid, configurable RPM
@@ -55,6 +61,22 @@ impl RateLimiter {
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
+    }
+
+    pub fn config(&self) -> RateLimitConfig {
+        RateLimitConfig {
+            tactical_rpm: self.inner.tactical_refill,
+            reasoning_rpm: self.inner.reasoning_refill,
+        }
+    }
+
+    pub fn reset(&self) {
+        self.inner
+            .tactical_tokens
+            .store(self.inner.tactical_refill, Ordering::Release);
+        self.inner
+            .reasoning_tokens
+            .store(self.inner.reasoning_refill, Ordering::Release);
     }
 
     async fn refill_if_needed(&self) {

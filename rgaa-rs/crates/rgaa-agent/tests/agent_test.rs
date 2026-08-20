@@ -1,5 +1,5 @@
 use rgaa_agent::prompts::PromptBuilder;
-use rgaa_agent::ratelimit::{ModelTier, RateLimiter};
+use rgaa_agent::ratelimit::{ModelTier, RateLimiter, RateLimitConfig};
 use rgaa_holo::PageContext;
 use std::time::Duration;
 
@@ -61,4 +61,33 @@ async fn rate_limiter_enforces_budget() {
     // (first 10 immediate, next 5 must wait for refill)
     // But for testing, we just verify it doesn't complete instantly
     assert!(elapsed > Duration::from_secs(1), "rate limiter should throttle");
+}
+
+#[test]
+fn rate_limiter_config_returns_tier_limits() {
+    let limiter = RateLimiter::new(10, 20);
+    let config = limiter.config();
+    assert_eq!(config, RateLimitConfig { tactical_rpm: 10, reasoning_rpm: 20 });
+}
+
+#[tokio::test]
+async fn rate_limiter_reset_restores_tokens() {
+    let limiter = RateLimiter::new(5, 10);
+
+    // Exhaust tactical tokens
+    for _ in 0..5 {
+        limiter.acquire(ModelTier::Tactical).await;
+    }
+
+    // Reset restores full capacity
+    limiter.reset();
+
+    let config = limiter.config();
+    assert_eq!(config.tactical_rpm, 5);
+    assert_eq!(config.reasoning_rpm, 10);
+
+    // Acquire should succeed immediately after reset
+    let start = std::time::Instant::now();
+    limiter.acquire(ModelTier::Tactical).await;
+    assert!(start.elapsed() < Duration::from_secs(1), "reset should restore tokens");
 }

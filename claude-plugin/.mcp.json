@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "rgaa-mcp": {
+      "command": "rgaa-mcp",
+      "args": [],
+      "env": {
+        "RGAA_OBSCURA_BIN": "${CLAUDE_PLUGIN_ROOT}/bin/obscura"
+      }
+    }
+  }
+}

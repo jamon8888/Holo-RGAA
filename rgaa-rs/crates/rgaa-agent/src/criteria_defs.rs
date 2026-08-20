@@ -26,152 +26,152 @@ const DEFINITIONS: &[CriterionDefinition] = &[
     CriterionDefinition {
         id: "2.2",
         title: "Titre de cadre pertinent",
-        wcag_refs: "2.4.1",
-        definition: "Pour chaque cadre ayant un titre de cadre, ce titre est-il pertinent ?",
+        wcag_refs: "4.1.2",
+        definition: "Pour chaque cadre (iframe) ayant un titre, ce titre est-il pertinent pour décrire le contenu du cadre ?",
     },
     CriterionDefinition {
         id: "3.1",
-        title: "Information non donnée uniquement par la couleur",
-        wcag_refs: "1.4.1",
-        definition: "L'information ne doit pas être donnée uniquement par la couleur, cette règle est-elle respectée ?",
+        title: "Information non donnée uniquement par couleur",
+        wcag_refs: "1.3.1, 1.4.1",
+        definition: "L'information ne doit pas être donnée uniquement par la couleur. Les différences d'information sont-elles perceptibles par d'autres moyens (texte, icône, motif) ?",
     },
     CriterionDefinition {
         id: "4.2",
-        title: "Transcription ou audiodescription pertinente",
-        wcag_refs: "1.2.3, 1.2.5",
-        definition: "Pour chaque média ayant une transcription ou audiodescription, celles-ci sont-elles pertinentes ?",
+        title: "Transcription/audiodescription pertinente",
+        wcag_refs: "1.2.1, 1.2.3",
+        definition: "Pour chaque média temporel ayant une transcription ou une audiodescription, celles-ci sont-elles pertinentes et complètes ?",
     },
     CriterionDefinition {
         id: "4.4",
-        title: "Sous-titres synchronisés pertinents",
+        title: "Sous-titres pertinents",
         wcag_refs: "1.2.2",
-        definition: "Pour chaque média ayant des sous-titres synchronisés, ces sous-titres sont-ils pertinents ?",
+        definition: "Pour chaque média temporel ayant des sous-titres synchronisés, ces sous-titres sont-ils pertinents et fidèles à l'audio ?",
     },
     CriterionDefinition {
         id: "4.6",
-        title: "Audiodescription synchronisée pertinente",
+        title: "Audiodescription pertinente",
         wcag_refs: "1.2.5",
-        definition: "Pour chaque média ayant une audiodescription synchronisée, celle-ci est-elle pertinente ?",
+        definition: "Pour chaque média temporel ayant une audiodescription synchronisée, celle-ci est-elle pertinente et complète ?",
     },
     CriterionDefinition {
         id: "4.9",
-        title: "Version de remplacement pertinente",
-        wcag_refs: "1.2.8",
-        definition: "Pour chaque média ayant une version de remplacement, celle-ci est-elle pertinente ?",
+        title: "Alternative pertinente média non temporel",
+        wcag_refs: "1.1.1",
+        definition: "Pour chaque média non temporel (image, graphique, schéma) ayant une alternative, celle-ci est-elle pertinente pour comprendre le contenu ?",
     },
     CriterionDefinition {
         id: "5.2",
-        title: "En-têtes de tableau pertinents",
+        title: "Résumé pertinent tableau complexe",
         wcag_refs: "1.3.1",
-        definition: "Pour chaque tableau de données complexe, les en-têtes de tableau sont-ils pertinents ?",
+        definition: "Pour chaque tableau de données complexe ayant un résumé, ce résumé est-il pertinent et décrit-il correctement le tableau ?",
     },
     CriterionDefinition {
         id: "5.3",
-        title: "Titre de tableau pertinent",
-        wcag_refs: "1.3.1",
-        definition: "Pour chaque tableau de données, le titre de tableau est-il pertinent ?",
+        title: "Contenu linéarisé compréhensible",
+        wcag_refs: "1.3.2, 4.1.2",
+        definition: "Le contenu linéarisé doit-il être compréhensible dans un ordre de lecture différent ? L'ordre de lecture est-il cohérent ?",
     },
     CriterionDefinition {
         id: "5.5",
-        title: "Linéarisation pertinente",
-        wcag_refs: "1.3.2",
-        definition: "Pour chaque tableau de données, la linéarisation est-elle pertinente ?",
+        title: "Titre pertinent tableau",
+        wcag_refs: "1.3.1",
+        definition: "Pour chaque tableau de données ayant un titre, ce titre est-il pertinent et décrit-il le contenu du tableau ?",
     },
     CriterionDefinition {
         id: "7.2",
-        title: "Alternatives aux scripts",
-        wcag_refs: "4.1.2",
-        definition: "Pour chaque script qui génère du contenu ou des composants d'interface, alternatives existent-elles ?",
+        title: "Alternative script pertinente",
+        wcag_refs: "1.1.1, 4.1.2",
+        definition: "Pour chaque script qui génère du contenu ou des composants d'interface, une alternative pertinente existe-t-elle ?",
     },
     CriterionDefinition {
         id: "8.4",
-        title: "Langue pertinente",
-        wcag_refs: "3.1.1, 3.1.2",
-        definition: "La langue par défaut est-elle pertinente ? Pour chaque élément avec changement de langue, le changement est-il pertinent ?",
+        title: "Code de langue pertinent",
+        wcag_refs: "3.1.1",
+        definition: "Le code de langue par défaut est-il pertinent et correspond-il à la langue réelle du contenu ?",
     },
     CriterionDefinition {
         id: "8.6",
         title: "Titre de page pertinent",
         wcag_refs: "2.4.2",
-        definition: "Le titre de page est-il pertinent ?",
+        definition: "Le titre de page est-il pertinent et décrit-il le contenu de la page ?",
     },
     CriterionDefinition {
         id: "8.8",
-        title: "Évitement des blocs de contenu répétitifs",
-        wcag_refs: "2.4.1",
-        definition: "Un moyen d'éviter les blocs de contenu répétitifs est-il présent ?",
+        title: "Code de langue changement pertinent",
+        wcag_refs: "3.1.2",
+        definition: "Pour chaque changement de langue dans le document, le code de langue est-il correct et pertinent ?",
     },
     CriterionDefinition {
         id: "9.2",
-        title: "Structure de liste pertinente",
+        title: "Structure document cohérente",
         wcag_refs: "1.3.1",
-        definition: "Chaque liste est-elle structurée de manière pertinente ?",
+        definition: "La structure du document est-elle cohérente et hiérarchique ? Les titres et éléments structurels suivent-ils une logique ?",
     },
     CriterionDefinition {
         id: "10.3",
-        title: "Ordre de lecture pertinent",
+        title: "Information compréhensible sans CSS",
         wcag_refs: "1.3.2, 2.4.3",
-        definition: "L'ordre de lecture est-il pertinent ?",
+        definition: "L'information est-elle compréhensible même sans CSS ? L'ordre de lecture et la hiérarchie sont-ils maintenus ?",
     },
     CriterionDefinition {
         id: "10.10",
-        title: "Contenu positionné par CSS pertinent",
-        wcag_refs: "1.3.2",
-        definition: "Le contenu positionné par CSS est-il dans un ordre de lecture pertinent ?",
+        title: "Implémentation pertinente forme/taille/position",
+        wcag_refs: "1.3.3, 1.4.1",
+        definition: "L'information ne doit pas être donnée uniquement par la forme, la taille ou la position. Ces éléments visuels sont-ils complétés par du contenu textuel ou sémantique ?",
     },
     CriterionDefinition {
         id: "11.2",
-        title: "Étiquette de champ pertinente",
-        wcag_refs: "1.3.1, 4.1.2",
-        definition: "Pour chaque champ de formulaire, l'étiquette est-elle pertinente ?",
+        title: "Étiquette champ pertinente",
+        wcag_refs: "2.4.6, 2.5.3, 3.3.2",
+        definition: "Pour chaque champ de formulaire ayant une étiquette, celle-ci est-elle pertinente et suffisamment descriptive ?",
     },
     CriterionDefinition {
         id: "11.3",
-        title: "Regroupement de champs pertinent",
-        wcag_refs: "1.3.1",
-        definition: "Pour chaque regroupement de champs de formulaire, le regroupement est-il pertinent ?",
+        title: "Étiquettes cohérentes même fonction",
+        wcag_refs: "3.2.4",
+        definition: "Les champs ayant la même fonction utilisent-ils des étiquettes cohérentes sur l'ensemble du site ?",
     },
     CriterionDefinition {
         id: "11.7",
-        title: "Suggestions de correction pertinentes",
-        wcag_refs: "3.3.3",
-        definition: "Pour chaque champ de formulaire ayant une suggestion de correction, la suggestion est-elle pertinente ?",
+        title: "Légende regroupement pertinente",
+        wcag_refs: "1.3.1, 3.3.2",
+        definition: "Pour chaque regroupement de champs de formulaire ayant une légende, celle-ci est-elle pertinente et décrit-elle le groupe ?",
     },
     CriterionDefinition {
         id: "11.8",
-        title: "Identification des erreurs pertinente",
-        wcag_refs: "3.3.1",
-        definition: "Pour chaque champ de formulaire ayant une erreur de saisie, l'erreur est-elle identifiée de manière pertinente ?",
+        title: "Items liste choix regroupés pertinemment",
+        wcag_refs: "1.3.1",
+        definition: "Pour chaque liste de choix ou liste de données, les items sont-ils correctement regroupés et structurés de manière pertinente ?",
     },
     CriterionDefinition {
         id: "11.9",
-        title: "Indication des champs obligatoires pertinente",
-        wcag_refs: "3.3.2",
-        definition: "Pour chaque champ obligatoire, l'indication est-elle pertinente ?",
+        title: "Intitulé bouton pertinent",
+        wcag_refs: "2.5.3, 4.1.2",
+        definition: "Pour chaque bouton, l'intitulé est-il pertinent et décrit-il clairement l'action déclenchée ?",
     },
     CriterionDefinition {
         id: "11.10",
-        title: "Finalité du champ pertinente",
-        wcag_refs: "1.3.5",
-        definition: "Pour chaque champ de formulaire, la finalité du champ est-elle pertinente ?",
+        title: "Contrôle saisie utilisé pertinemment",
+        wcag_refs: "3.3.1, 3.3.2",
+        definition: "Pour chaque contrôle de saisie, le type utilisé est-il approprié pour la nature de la donnée attendue ?",
     },
     CriterionDefinition {
         id: "12.3",
-        title: "Structure de menu pertinente",
-        wcag_refs: "1.3.1",
-        definition: "Chaque menu est-il structuré de manière pertinente ?",
+        title: "Plan du site pertinent",
+        wcag_refs: "2.4.5",
+        definition: "Le plan du site est-il pertinent, à jour et décrit-il correctement l'architecture du site ?",
     },
     CriterionDefinition {
         id: "12.8",
-        title: "Ordre de tabulation pertinent",
+        title: "Ordre tabulation cohérent",
         wcag_refs: "2.4.3",
-        definition: "L'ordre de tabulation est-il pertinent ?",
+        definition: "L'ordre de tabulation est-il cohérent et suit-il la logique de lecture et d'interaction de la page ?",
     },
     CriterionDefinition {
         id: "13.6",
-        title: "Linéarisation des tableaux pertinente",
-        wcag_refs: "1.3.2",
-        definition: "Pour chaque tableau de données, la linéarisation est-elle pertinente ?",
+        title: "Alternative pertinente contenu cryptique",
+        wcag_refs: "1.1.1",
+        definition: "Pour chaque contenu cryptique (CAPTCHA, code, image-test) ayant une alternative, celle-ci est-elle pertinente ?",
     },
 ];
 
@@ -181,14 +181,15 @@ pub const VISUAL_CRITERIA: &[&str] = &[
     "1.3",   // alt text relevance — compare alt vs actual image
     "1.7",   // detailed description relevance
     "3.1",   // color-only information — must SEE the page
-    "10.3",  // reading order — must SEE layout
-    "10.10", // CSS-positioned content — must SEE rendering
+    "5.3",   // content linearization — must SEE reading order
+    "10.3",  // info comprehensible without CSS — must SEE rendering
+    "10.10", // shape/size/position — must SEE visual presentation
     "11.2",  // label relevance — must SEE label next to input
-    "11.3",  // fieldset/legend — must SEE form grouping
-    "11.7",  // error suggestion — complex reasoning
-    "11.8",  // error identification — complex reasoning
-    "11.9",  // mandatory field indication — complex reasoning
-    "11.10", // form field purpose — complex reasoning
+    "11.7",  // fieldset legend relevance — must SEE form grouping
+    "11.8",  // list items grouping — must SEE structure
+    "11.9",  // button label relevance — complex reasoning
+    "11.10", // input control type — complex reasoning
+    "12.3",  // site map relevance — must SEE navigation structure
     "12.8",  // focus order — must INTERACT with page
-    "13.6",  // table linearization — must SEE table rendering
+    "13.6",  // CAPTCHA alternative relevance — complex reasoning
 ];

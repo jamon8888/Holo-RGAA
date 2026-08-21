@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
+schemars = { workspace = true }
 serde = { workspace = true }
 thiserror = "2"
 

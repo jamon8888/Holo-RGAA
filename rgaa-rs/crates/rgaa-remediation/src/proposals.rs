@@ -1,7 +1,8 @@
 use crate::{Framework, FrameworkAdapter, RemediationError, RemediationPolicy};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct SourceLocation {
     pub file: String,
     pub line: u32,

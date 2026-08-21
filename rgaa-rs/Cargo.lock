@@ -2003,7 +2003,9 @@ dependencies = [
  "rgaa-browser-tools",
  "rgaa-core",
  "rgaa-holo",
+ "rgaa-remediation",
  "rig-core",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -2147,6 +2149,7 @@ name = "rgaa-remediation"
 version = "0.1.0"
 dependencies = [
  "rgaa-core",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

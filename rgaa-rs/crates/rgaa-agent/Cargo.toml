@@ -7,9 +7,11 @@ edition = "2021"
 rgaa-core = { path = "../rgaa-core" }
 rgaa-holo = { path = "../rgaa-holo" }
 rgaa-browser-tools = { path = "../rgaa-browser-tools" }
+rgaa-remediation = { path = "../rgaa-remediation" }
 rig-core = { workspace = true, features = ["derive"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+schemars = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }

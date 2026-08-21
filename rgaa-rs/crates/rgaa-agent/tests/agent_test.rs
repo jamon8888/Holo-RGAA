@@ -1,4 +1,7 @@
 use rgaa_agent::agent::HoloProvider;
+use rgaa_agent::remediate::{RemediateArgs, RemediateTool};
+use rgaa_remediation::SourceLocation;
+use rig_core::tool::PortableTool;
 use rgaa_agent::models::{ModelRouter, SelectedTier};
 use rgaa_agent::prompts::PromptBuilder;
 use rgaa_agent::ratelimit::{ModelTier, RateLimitConfig, RateLimiter};
@@ -224,4 +227,89 @@ fn holo_provider_build_tools_returns_all_browser_tools() {
     assert!(tool_names.contains(&"tab_order"));
     assert!(tool_names.contains(&"type_input"));
     assert!(tool_names.contains(&"eval_js"));
+}
+
+#[tokio::test]
+async fn remediate_tool_has_correct_name() {
+    assert_eq!(
+        <RemediateTool as PortableTool>::NAME,
+        "remediate"
+    );
+}
+
+#[tokio::test]
+async fn remediate_tool_description_is_non_empty() {
+    let policy = rgaa_remediation::RemediationPolicy::default();
+    let tool = RemediateTool::new(policy);
+    assert!(!tool.description().is_empty());
+}
+
+#[tokio::test]
+async fn remediate_tool_parameters_is_valid_schema() {
+    let policy = rgaa_remediation::RemediationPolicy::default();
+    let tool = RemediateTool::new(policy);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn remediate_tool_returns_proposal_for_valid_issue() {
+    let policy = rgaa_remediation::RemediationPolicy::default();
+    let tool = RemediateTool::new(policy);
+    let args = RemediateArgs {
+        finding_id: "f-1".into(),
+        rule: "image-alt".into(),
+        element_html: "import React from \"react\"; <img src=\"hero.png\">".into(),
+        page_url: "https://example.test".into(),
+        source_locations: vec![SourceLocation {
+            file: "src/App.tsx".into(),
+            line: 10,
+            column: Some(4),
+        }],
+    };
+    let result = tool.call(args).await;
+    assert!(result.is_ok());
+    let outcome = result.expect("remediation succeeded");
+    assert!(matches!(outcome, rgaa_remediation::RemediationOutcome::Ok(_)));
+}
+
+#[tokio::test]
+async fn remediate_tool_returns_error_for_empty_source_locations() {
+    let policy = rgaa_remediation::RemediationPolicy::default();
+    let tool = RemediateTool::new(policy);
+    let args = RemediateArgs {
+        finding_id: "f-2".into(),
+        rule: "image-alt".into(),
+        element_html: "import React from \"react\"; <img src=\"hero.png\">".into(),
+        page_url: "https://example.test".into(),
+        source_locations: vec![],
+    };
+    let outcome = tool.call(args).await.expect("call should not fail");
+    assert!(matches!(
+        outcome,
+        rgaa_remediation::RemediationOutcome::Error(_)
+    ));
+}
+
+#[tokio::test]
+async fn remediate_tool_proposal_requires_approval_by_default() {
+    let policy = rgaa_remediation::RemediationPolicy::default();
+    let tool = RemediateTool::new(policy);
+    let args = RemediateArgs {
+        finding_id: "f-3".into(),
+        rule: "image-alt".into(),
+        element_html: "import React from \"react\"; <img src=\"hero.png\">".into(),
+        page_url: "https://example.test".into(),
+        source_locations: vec![SourceLocation {
+            file: "src/App.tsx".into(),
+            line: 10,
+            column: None,
+        }],
+    };
+    let outcome = tool.call(args).await.expect("remediation succeeded");
+    if let rgaa_remediation::RemediationOutcome::Ok(guidance) = outcome {
+        assert!(guidance.proposal.requires_approval());
+    } else {
+        panic!("expected Ok outcome");
+    }
 }

@@ -1,6 +1,8 @@
 use rgaa_browser_tools::tools::{
-    A11yTreeTool, AccessibilityTreeLegacy, AssertStateTool, ClickTool, EvalJsTool, NavigateLegacy,
-    NavigateTool, PressKeyTool, ScreenshotLegacy, ScreenshotTool, TabOrderTool, TypeTool,
+    A11yTreeTool, AccessibilityTreeLegacy, AssertStateTool, AssertStateToolLegacy, ClickTool,
+    ClickToolLegacy, EvalJsTool, EvalJsToolLegacy, NavigateLegacy, NavigateTool, PressKeyTool,
+    PressKeyToolLegacy, ScreenshotLegacy, ScreenshotTool, TabOrderTool, TabOrderToolLegacy,
+    TypeTool, TypeToolLegacy,
 };
 use rgaa_browser_tools::{AXNode, AXTree, BrowserSession, ToolContext};
 use rgaa_obscura::ObscuraBridge;
@@ -23,7 +25,7 @@ fn navigate_tool_holds_url() {
 
 #[test]
 fn eval_js_tool_holds_snippet() {
-    let tool = EvalJsTool {
+    let tool = EvalJsToolLegacy {
         snippet: "document.title".to_string(),
     };
     assert_eq!(tool.snippet, "document.title");
@@ -31,7 +33,7 @@ fn eval_js_tool_holds_snippet() {
 
 #[test]
 fn click_tool_holds_ref_id() {
-    let tool = ClickTool {
+    let tool = ClickToolLegacy {
         ref_id: "42".to_string(),
     };
     assert_eq!(tool.ref_id, "42");
@@ -39,7 +41,7 @@ fn click_tool_holds_ref_id() {
 
 #[test]
 fn type_tool_holds_ref_id_and_text() {
-    let tool = TypeTool {
+    let tool = TypeToolLegacy {
         ref_id: "7".to_string(),
         text: "hello".to_string(),
     };
@@ -49,7 +51,7 @@ fn type_tool_holds_ref_id_and_text() {
 
 #[test]
 fn press_key_tool_holds_key() {
-    let tool = PressKeyTool {
+    let tool = PressKeyToolLegacy {
         key: "Tab".to_string(),
     };
     assert_eq!(tool.key, "Tab");
@@ -57,13 +59,13 @@ fn press_key_tool_holds_key() {
 
 #[test]
 fn tab_order_tool_is_unit_struct() {
-    let tool = TabOrderTool;
+    let tool = TabOrderToolLegacy;
     assert!(std::mem::size_of_val(&tool) == 0);
 }
 
 #[test]
 fn assert_state_tool_holds_predicate() {
-    let tool = AssertStateTool {
+    let tool = AssertStateToolLegacy {
         predicate: "document.title === 'Home'".to_string(),
     };
     assert_eq!(tool.predicate, "document.title === 'Home'");
@@ -103,7 +105,7 @@ async fn a11y_tree_tool_execute_without_cdp_returns_err() {
 async fn eval_js_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = EvalJsTool {
+    let tool = EvalJsToolLegacy {
         snippet: "1+1".to_string(),
     };
     let result = tool.execute(&session).await;
@@ -114,7 +116,7 @@ async fn eval_js_tool_execute_without_cdp_returns_err() {
 async fn click_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = ClickTool {
+    let tool = ClickToolLegacy {
         ref_id: "1".to_string(),
     };
     let result = tool.execute(&session).await;
@@ -125,7 +127,7 @@ async fn click_tool_execute_without_cdp_returns_err() {
 async fn type_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = TypeTool {
+    let tool = TypeToolLegacy {
         ref_id: "1".to_string(),
         text: "test".to_string(),
     };
@@ -137,7 +139,7 @@ async fn type_tool_execute_without_cdp_returns_err() {
 async fn press_key_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = PressKeyTool {
+    let tool = PressKeyToolLegacy {
         key: "Tab".to_string(),
     };
     let result = tool.execute(&session).await;
@@ -148,7 +150,7 @@ async fn press_key_tool_execute_without_cdp_returns_err() {
 async fn tab_order_tool_execute_without_a11y_tree_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = TabOrderTool;
+    let tool = TabOrderToolLegacy;
     let result = tool.execute(&session).await;
     assert!(result.is_err());
 }
@@ -157,7 +159,7 @@ async fn tab_order_tool_execute_without_a11y_tree_returns_err() {
 async fn assert_state_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = AssertStateTool {
+    let tool = AssertStateToolLegacy {
         predicate: "true".to_string(),
     };
     let result = tool.execute(&session).await;
@@ -183,6 +185,167 @@ async fn navigate_tool_calls_successfully() {
             .expect("valid args");
     let result = tool.call(args).await;
     assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn click_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = ClickTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.to_lowercase().contains("click"));
+}
+
+#[tokio::test]
+async fn click_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = ClickTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn click_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = ClickTool::new(ctx);
+    let args = rgaa_browser_tools::tools::ClickArgs {
+        ref_id: "42".to_string(),
+    };
+    let result = tool.call(args).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn type_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = TypeTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.to_lowercase().contains("type"));
+}
+
+#[tokio::test]
+async fn type_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = TypeTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn type_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = TypeTool::new(ctx);
+    let args = rgaa_browser_tools::tools::TypeArgs {
+        ref_id: "7".to_string(),
+        text: "hello".to_string(),
+    };
+    let result = tool.call(args).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn press_key_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = PressKeyTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.to_lowercase().contains("press"));
+}
+
+#[tokio::test]
+async fn press_key_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = PressKeyTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn press_key_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = PressKeyTool::new(ctx);
+    let args = rgaa_browser_tools::tools::PressKeyArgs {
+        key: "Tab".to_string(),
+    };
+    let result = tool.call(args).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn tab_order_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = TabOrderTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.contains("tab"));
+}
+
+#[tokio::test]
+async fn tab_order_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = TabOrderTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn tab_order_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = TabOrderTool::new(ctx);
+    let args = rgaa_browser_tools::tools::TabOrderArgs {};
+    let result = tool.call(args).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn eval_js_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = EvalJsTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.contains("JavaScript"));
+}
+
+#[tokio::test]
+async fn eval_js_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = EvalJsTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn eval_js_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = EvalJsTool::new(ctx);
+    let args = rgaa_browser_tools::tools::EvalJsArgs {
+        expression: "1+1".to_string(),
+    };
+    let result = tool.call(args).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn assert_state_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = AssertStateTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.to_lowercase().contains("assert"));
+}
+
+#[tokio::test]
+async fn assert_state_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = AssertStateTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn assert_state_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = AssertStateTool::new(ctx);
+    let args = rgaa_browser_tools::tools::AssertStateArgs {
+        predicate: "dialog-visible".to_string(),
+    };
+    let result = tool.call(args).await;
+    assert!(result.is_err());
 }
 
 #[test]

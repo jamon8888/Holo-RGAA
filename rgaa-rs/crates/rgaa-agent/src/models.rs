@@ -10,7 +10,9 @@ pub struct ModelInfo {
 
 #[derive(Clone)]
 pub struct ModelRouter {
+    #[allow(dead_code)]
     tactical_client: HoloClient,
+    #[allow(dead_code)]
     reasoning_client: HoloClient,
     rate_limiter: RateLimiter,
 }
@@ -32,6 +34,7 @@ impl SelectedTier {
 }
 
 impl ModelRouter {
+    #[must_use]
     pub fn new(
         tactical_client: HoloClient,
         reasoning_client: HoloClient,
@@ -45,6 +48,7 @@ impl ModelRouter {
     }
 
     /// Create a placeholder router for testing without API keys.
+    #[must_use]
     pub fn new_placeholder() -> Self {
         let dummy_key = "test-key".to_string();
         Self::new(
@@ -67,6 +71,7 @@ impl ModelRouter {
         ]
     }
 
+    #[must_use]
     pub fn route_for(&self, criterion_id: &str) -> SelectedTier {
         if VISUAL_CRITERIA.contains(&criterion_id)
             || criterion_id.starts_with("11.")

@@ -46,6 +46,7 @@ pub struct HoloClient {
 }
 
 impl HoloClient {
+    #[must_use]
     pub fn new(api_key: String) -> Self {
         let http_client = Client::builder()
             .timeout(Duration::from_secs(30))

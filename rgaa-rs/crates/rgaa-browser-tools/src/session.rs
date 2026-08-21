@@ -8,6 +8,7 @@ pub struct BrowserSession {
 }
 
 impl BrowserSession {
+    #[must_use]
     pub fn new(bridge: ObscuraBridge) -> Self {
         Self {
             bridge,
@@ -36,6 +37,7 @@ impl BrowserSession {
         self.current_url = Some(url);
     }
 
+    #[must_use]
     pub fn last_a11y(&self) -> Option<&AXTree> {
         self.last_a11y.as_ref()
     }

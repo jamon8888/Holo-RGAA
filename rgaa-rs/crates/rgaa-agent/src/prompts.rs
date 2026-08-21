@@ -23,7 +23,9 @@ impl PromptBuilder {
         prompt.push_str(&format_page_context(context));
 
         prompt.push_str("\n## Instructions\n\n");
-        prompt.push_str("1. Analyse le critère en fonction de la définition et des éléments ci-dessus\n");
+        prompt.push_str(
+            "1. Analyse le critère en fonction de la définition et des éléments ci-dessus\n",
+        );
         prompt.push_str("2. Si une capture d'écran est fournie, utilise-la pour juger\n");
         prompt.push_str("3. Retourne un JSON avec les champs:\n");
         prompt.push_str("   - verdict: \"pass\", \"fail\", ou \"na\"\n");

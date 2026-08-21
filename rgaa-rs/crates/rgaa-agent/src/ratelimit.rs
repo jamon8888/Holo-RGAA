@@ -137,7 +137,7 @@ impl RateLimiter {
         let mut last_refill = self.inner.last_refill.lock().await;
         let now = Instant::now();
         let elapsed = now.duration_since(*last_refill).as_secs_f64();
-        
+
         if elapsed < 0.01 {
             return; // Too soon, skip
         }
@@ -150,12 +150,16 @@ impl RateLimiter {
             // Tactical tokens
             let current = self.inner.tactical_tokens.load(Ordering::Acquire);
             let replenished = (current + tactical_new).min(self.inner.tactical_refill);
-            self.inner.tactical_tokens.store(replenished, Ordering::Release);
+            self.inner
+                .tactical_tokens
+                .store(replenished, Ordering::Release);
 
             // Reasoning tokens
             let current = self.inner.reasoning_tokens.load(Ordering::Acquire);
             let replenished = (current + reasoning_new).min(self.inner.reasoning_refill);
-            self.inner.reasoning_tokens.store(replenished, Ordering::Release);
+            self.inner
+                .reasoning_tokens
+                .store(replenished, Ordering::Release);
 
             // Update last_refill to account for consumed time
             let tokens_used = tactical_new.max(reasoning_new);
@@ -216,6 +220,9 @@ mod tests {
         limiter.acquire(ModelTier::Tactical).await;
         // After acquiring 1, should have refilled some
         let tokens = limiter.tokens(ModelTier::Tactical);
-        assert!(tokens < 10, "tokens should be less than max after acquire, got {tokens}");
+        assert!(
+            tokens < 10,
+            "tokens should be less than max after acquire, got {tokens}"
+        );
     }
 }

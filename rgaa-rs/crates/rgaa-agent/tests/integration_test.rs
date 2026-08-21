@@ -1,10 +1,12 @@
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_agent::models::ModelRouter;
+use rgaa_browser_tools::{BrowserSession, ToolContext};
 
 #[test]
 fn agent_creates_with_placeholder_router() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
     let router = ModelRouter::new_placeholder();
-    let agent = RgaaAgent::new(router);
+    let agent = RgaaAgent::new(router, ctx);
     assert!(std::mem::size_of_val(&agent) > 0);
 }
 
@@ -12,9 +14,8 @@ fn agent_creates_with_placeholder_router() {
 fn criteria_defs_cover_all_27_ia_assiste() {
     use rgaa_agent::criteria_defs::get_criterion_definition;
     let ia_ids = [
-        "1.3", "1.7", "2.2", "3.1", "4.2", "4.4", "4.6", "4.9",
-        "5.2", "5.3", "5.5", "7.2", "8.4", "8.6", "8.8", "9.2",
-        "10.3", "10.10", "11.2", "11.3", "11.7", "11.8", "11.9", "11.10",
+        "1.3", "1.7", "2.2", "3.1", "4.2", "4.4", "4.6", "4.9", "5.2", "5.3", "5.5", "7.2", "8.4",
+        "8.6", "8.8", "9.2", "10.3", "10.10", "11.2", "11.3", "11.7", "11.8", "11.9", "11.10",
         "12.3", "12.8", "13.6",
     ];
     for id in ia_ids {
@@ -32,8 +33,8 @@ fn criteria_defs_cover_all_27_ia_assiste() {
 /// - a definition was added/removed intentionally (update the expected count).
 #[test]
 fn criteria_defs_match_rgaa_core_catalog() {
-    use rgaa_agent::criteria_defs::{VISUAL_CRITERIA, get_criterion_definition};
-    use rgaa_core::{RgaaCriteria, Classification};
+    use rgaa_agent::criteria_defs::{get_criterion_definition, VISUAL_CRITERIA};
+    use rgaa_core::{Classification, RgaaCriteria};
 
     let core_criteria = RgaaCriteria::all();
     let core_map: std::collections::HashMap<&str, _> =
@@ -54,8 +55,9 @@ fn criteria_defs_match_rgaa_core_catalog() {
     );
 
     for id in &agent_ids {
-        let def = get_criterion_definition(id)
-            .unwrap_or_else(|| panic!("rgaa-agent missing definition for IaAssiste criterion {id}"));
+        let def = get_criterion_definition(id).unwrap_or_else(|| {
+            panic!("rgaa-agent missing definition for IaAssiste criterion {id}")
+        });
         let core = core_map[*id];
 
         assert_eq!(

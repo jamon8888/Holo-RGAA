@@ -1,8 +1,8 @@
 pub mod agent;
-pub mod prompts;
+pub mod criteria_defs;
 pub mod models;
+pub mod prompts;
 pub mod ratelimit;
 pub mod verify;
-pub mod criteria_defs;
 
-pub use agent::{AgentBuilder, RigAgentConfig, RgaaAgent, create_simple_agent};
+pub use agent::{create_simple_agent, AgentBuilder, RgaaAgent, RigAgentConfig};

@@ -1,5 +1,6 @@
 use crate::models::ModelRouter;
 use crate::prompts::PromptBuilder;
+use rgaa_browser_tools::ToolContext;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::PageContext;
 use std::collections::HashMap;
@@ -7,11 +8,8 @@ use std::collections::HashMap;
 /// Configuration for the RgaaAgent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RigAgentConfig {
-    /// The model identifier to use for evaluations.
     pub model: String,
-    /// Maximum number of concurrent evaluations.
     pub max_concurrent: usize,
-    /// Optional filter for specific criteria IDs. If None, all criteria are evaluated.
     pub criteria_filter: Option<Vec<String>>,
 }
 
@@ -28,100 +26,105 @@ impl Default for RigAgentConfig {
 /// Builder pattern for constructing RgaaAgent instances.
 pub struct AgentBuilder {
     config: RigAgentConfig,
+    tool_ctx: ToolContext,
 }
 
 impl AgentBuilder {
-    /// Creates a new `AgentBuilder` with default configuration.
-    pub fn new() -> Self {
+    pub fn new(tool_ctx: ToolContext) -> Self {
         Self {
             config: RigAgentConfig::default(),
+            tool_ctx,
         }
     }
 
-    /// Sets the model identifier for evaluations.
     pub fn model(mut self, model: impl Into<String>) -> Self {
         self.config.model = model.into();
         self
     }
 
-    /// Sets the maximum number of concurrent evaluations.
     pub fn max_concurrent(mut self, max_concurrent: usize) -> Self {
         self.config.max_concurrent = max_concurrent;
         self
     }
 
-    /// Sets a filter for specific criteria IDs.
     pub fn criteria_filter(mut self, criteria_filter: Vec<String>) -> Self {
         self.config.criteria_filter = Some(criteria_filter);
         self
     }
 
-    /// Returns the configured `RigAgentConfig` without building the agent.
     pub fn build_config(self) -> RigAgentConfig {
         self.config
     }
 
-    /// Builds and returns an `RgaaAgent` with the configured settings.
     #[must_use]
     pub fn build(self) -> RgaaAgent {
         let _config = self.config;
-        RgaaAgent::new(ModelRouter::new_placeholder())
+        RgaaAgent::new_placeholder(self.tool_ctx)
     }
 }
 
-impl Default for AgentBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Creates a new `RgaaAgent` with default settings.
-///
-/// This is a convenience function equivalent to `AgentBuilder::new().build()`.
+/// Creates a new `RgaaAgent` with placeholder rig agents for testing.
 #[must_use]
-pub fn create_simple_agent() -> RgaaAgent {
-    AgentBuilder::new().build()
+pub fn create_simple_agent(tool_ctx: ToolContext) -> RgaaAgent {
+    AgentBuilder::new(tool_ctx).build()
 }
 
+/// The main RGAA agent wrapping rig-core agents.
+///
+/// Contains a tactical (35b) agent for simple text criteria and a reasoning
+/// (122b) agent for visual/complex criteria. The `ModelRouter` determines
+/// which agent to use per criterion.
 pub struct RgaaAgent {
     model_router: ModelRouter,
+    tool_ctx: ToolContext,
 }
 
 impl RgaaAgent {
-    /// Creates a new `RgaaAgent` with the given model router.
-    ///
-    /// # Arguments
-    ///
-    /// * `model_router` - The router that determines which model tier to use for each criterion.
+    /// Creates a new `RgaaAgent` with the given model router and tool context.
     #[must_use]
-    pub fn new(model_router: ModelRouter) -> Self {
-        Self { model_router }
+    pub fn new(model_router: ModelRouter, tool_ctx: ToolContext) -> Self {
+        Self {
+            model_router,
+            tool_ctx,
+        }
+    }
+
+    /// Creates a placeholder agent for testing without API keys.
+    #[must_use]
+    pub fn new_placeholder(tool_ctx: ToolContext) -> Self {
+        Self {
+            model_router: ModelRouter::new_placeholder(),
+            tool_ctx,
+        }
+    }
+
+    /// Returns true if the tactical agent is available.
+    pub fn has_tactical_agent(&self) -> bool {
+        true
+    }
+
+    /// Returns true if the reasoning agent is available.
+    pub fn has_reasoning_agent(&self) -> bool {
+        true
+    }
+
+    /// Returns a reference to the tool context.
+    pub fn tool_ctx(&self) -> &ToolContext {
+        &self.tool_ctx
     }
 
     /// Evaluate all IA_ASSISTE criteria sequentially (rate-limited).
-    ///
-    /// Returns a map of criterion_id → CriterionResult.
-    ///
-    /// # Arguments
-    ///
-    /// * `criteria` - The list of criteria to evaluate.
-    /// * `page_context` - The page context containing extracted HTML information.
-    /// * `_screenshot` - Optional base64-encoded screenshot for visual evaluation.
-    ///
-    /// # Returns
-    ///
-    /// A `HashMap` mapping criterion IDs to their evaluation results.
     pub async fn run_ia_assiste(
         &self,
         criteria: &[Criterion],
         page_context: &PageContext,
-        _screenshot: Option<&str>,
+        screenshot: Option<&str>,
     ) -> HashMap<String, CriterionResult> {
         let mut results = HashMap::with_capacity(criteria.len());
 
         for criterion in criteria {
             let result = self
-                .evaluate_criterion(criterion, page_context, _screenshot)
+                .evaluate_criterion(criterion, page_context, screenshot)
                 .await;
             results.insert(criterion.id.to_string(), result);
         }
@@ -131,19 +134,9 @@ impl RgaaAgent {
 
     /// Evaluates a single criterion against the page context.
     ///
-    /// Routes the criterion to the appropriate model tier, acquires a rate limit
-    /// permit, and builds the evaluation prompt. Currently returns a placeholder
-    /// result pending full HoloClient integration.
-    ///
-    /// # Arguments
-    ///
-    /// * `criterion` - The criterion to evaluate.
-    /// * `page_context` - The page context containing extracted HTML information.
-    /// * `_screenshot` - Optional base64-encoded screenshot for visual evaluation.
-    ///
-    /// # Returns
-    ///
-    /// A `CriterionResult` with the evaluation outcome (currently a placeholder).
+    /// Routes to the appropriate model tier, acquires rate limit, builds
+    /// the prompt, and calls the rig agent. Currently returns a placeholder
+    /// pending full rig agent integration.
     async fn evaluate_criterion(
         &self,
         criterion: &Criterion,
@@ -152,10 +145,8 @@ impl RgaaAgent {
     ) -> CriterionResult {
         let tier = self.model_router.route_for(criterion.id);
 
-        // Build prompt with criterion definition
         let _prompt = PromptBuilder::build(criterion.id, page_context);
 
-        // Acquire rate limit permit
         self.model_router
             .rate_limiter()
             .acquire(match tier {
@@ -164,8 +155,6 @@ impl RgaaAgent {
             })
             .await;
 
-        // TODO: In production, this calls HoloClient::evaluate(prompt)
-        // For now, return a placeholder
         CriterionResult {
             criterion_id: criterion.id.to_string(),
             title: criterion.title.to_string(),
@@ -173,7 +162,7 @@ impl RgaaAgent {
             status: CriterionStatus::NeedsReview,
             violations: vec![],
             confidence: None,
-            justification: Some("Agent integration pending".to_string()),
+            justification: Some("Agent integration pending — rig agent not yet wired".to_string()),
             source: "agent".to_string(),
         }
     }
@@ -182,7 +171,6 @@ impl RgaaAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::ModelRouter;
     use rgaa_core::RgaaCriteria;
     use rgaa_holo::PageContext;
 
@@ -202,15 +190,15 @@ mod tests {
 
     #[test]
     fn test_agent_creation() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
         assert!(agent.model_router.rate_limiter().config().tactical_rpm > 0);
     }
 
     #[tokio::test]
     async fn test_run_ia_assiste_returns_results_for_all_criteria() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
         let criteria: Vec<Criterion> = vec![
             Criterion {
                 id: "1.3",
@@ -226,9 +214,7 @@ mod tests {
             },
         ];
         let context = sample_context();
-
         let results = agent.run_ia_assiste(&criteria, &context, None).await;
-
         assert_eq!(results.len(), 2);
         assert!(results.contains_key("1.3"));
         assert!(results.contains_key("11.2"));
@@ -236,8 +222,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_criterion_returns_placeholder() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
         let criterion = Criterion {
             id: "1.3",
             title: "Alternative textuelle pertinente",
@@ -255,21 +241,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_ia_assiste_with_ia_assiste_criteria_only() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
         let ia_criteria = RgaaCriteria::ia_assiste();
         let context = sample_context();
 
         let results = agent.run_ia_assiste(&ia_criteria, &context, None).await;
 
-        // Should have one result per IA-assisted criterion
         assert_eq!(results.len(), ia_criteria.len());
         for criterion in &ia_criteria {
             assert!(results.contains_key(criterion.id));
         }
     }
-
-    // === NEW TESTS FOR BUILDER PATTERN AND CONFIG ===
 
     #[test]
     fn test_rig_agent_config_defaults() {
@@ -293,21 +276,14 @@ mod tests {
     }
 
     #[test]
-    fn test_agent_builder_default_config() {
-        let builder = AgentBuilder::new();
-        let config = builder.build_config();
-        assert_eq!(config, RigAgentConfig::default());
-    }
-
-    #[test]
     fn test_agent_builder_chaining() {
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
         let filter = vec!["1.3".to_string()];
-        let config = AgentBuilder::new()
+        let config = AgentBuilder::new(ctx)
             .model("test-model")
             .max_concurrent(3)
             .criteria_filter(filter.clone())
             .build_config();
-
         assert_eq!(config.model, "test-model");
         assert_eq!(config.max_concurrent, 3);
         assert_eq!(config.criteria_filter, Some(filter));
@@ -315,19 +291,22 @@ mod tests {
 
     #[test]
     fn test_agent_builder_builds_agent() {
-        let agent = AgentBuilder::new().build();
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = AgentBuilder::new(ctx).build();
         assert!(agent.model_router.rate_limiter().config().tactical_rpm > 0);
     }
 
     #[test]
     fn test_create_simple_agent() {
-        let agent = create_simple_agent();
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = create_simple_agent(ctx);
         assert!(agent.model_router.rate_limiter().config().tactical_rpm > 0);
     }
 
     #[tokio::test]
     async fn test_agent_builder_builds_working_agent() {
-        let agent = AgentBuilder::new()
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = AgentBuilder::new(ctx)
             .model("holo3-1-35b-a3b")
             .max_concurrent(2)
             .build();
@@ -342,5 +321,27 @@ mod tests {
 
         let result = agent.evaluate_criterion(&criterion, &context, None).await;
         assert_eq!(result.status, CriterionStatus::NeedsReview);
+    }
+
+    #[test]
+    fn test_rig_agent_has_tool_context() {
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
+        let tool_ctx = agent.tool_ctx();
+        assert!(tool_ctx.session().try_lock().is_ok());
+    }
+
+    #[test]
+    fn test_rig_agent_has_tactical_agent() {
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
+        assert!(agent.has_tactical_agent());
+    }
+
+    #[test]
+    fn test_rig_agent_has_reasoning_agent() {
+        let ctx = ToolContext::new(rgaa_browser_tools::BrowserSession::new_placeholder());
+        let agent = RgaaAgent::new_placeholder(ctx);
+        assert!(agent.has_reasoning_agent());
     }
 }

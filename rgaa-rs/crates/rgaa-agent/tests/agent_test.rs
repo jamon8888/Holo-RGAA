@@ -1,6 +1,6 @@
 use rgaa_agent::models::{ModelRouter, SelectedTier};
 use rgaa_agent::prompts::PromptBuilder;
-use rgaa_agent::ratelimit::{ModelTier, RateLimiter, RateLimitConfig};
+use rgaa_agent::ratelimit::{ModelTier, RateLimitConfig, RateLimiter};
 use rgaa_agent::verify::{map_verdict, CONFIDENCE_THRESHOLD};
 use rgaa_core::CriterionStatus;
 use rgaa_holo::{HoloResponse, PageContext};
@@ -63,14 +63,23 @@ async fn rate_limiter_enforces_budget() {
     // With 10 RPM, 15 requests should take at least 30 seconds
     // (first 10 immediate, next 5 must wait for refill)
     // But for testing, we just verify it doesn't complete instantly
-    assert!(elapsed > Duration::from_secs(1), "rate limiter should throttle");
+    assert!(
+        elapsed > Duration::from_secs(1),
+        "rate limiter should throttle"
+    );
 }
 
 #[test]
 fn rate_limiter_config_returns_tier_limits() {
     let limiter = RateLimiter::new(10, 20);
     let config = limiter.config();
-    assert_eq!(config, RateLimitConfig { tactical_rpm: 10, reasoning_rpm: 20 });
+    assert_eq!(
+        config,
+        RateLimitConfig {
+            tactical_rpm: 10,
+            reasoning_rpm: 20
+        }
+    );
 }
 
 #[tokio::test]
@@ -92,7 +101,10 @@ async fn rate_limiter_reset_restores_tokens() {
     // Acquire should succeed immediately after reset
     let start = std::time::Instant::now();
     limiter.acquire(ModelTier::Tactical).await;
-    assert!(start.elapsed() < Duration::from_secs(1), "reset should restore tokens");
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "reset should restore tokens"
+    );
 }
 
 #[test]
@@ -118,8 +130,12 @@ fn list_available_models_returns_both_tiers() {
     let router = ModelRouter::new_placeholder();
     let models = router.list_available_models();
     assert_eq!(models.len(), 2);
-    assert!(models.iter().any(|m| m.id == "holo3-1-35b-a3b" && m.tier == SelectedTier::Tactical));
-    assert!(models.iter().any(|m| m.id == "holo3-122b-a10b" && m.tier == SelectedTier::Reasoning));
+    assert!(models
+        .iter()
+        .any(|m| m.id == "holo3-1-35b-a3b" && m.tier == SelectedTier::Tactical));
+    assert!(models
+        .iter()
+        .any(|m| m.id == "holo3-122b-a10b" && m.tier == SelectedTier::Reasoning));
 }
 
 #[test]

@@ -31,31 +31,37 @@ pub struct AgentBuilder {
 }
 
 impl AgentBuilder {
+    /// Creates a new `AgentBuilder` with default configuration.
     pub fn new() -> Self {
         Self {
             config: RigAgentConfig::default(),
         }
     }
 
+    /// Sets the model identifier for evaluations.
     pub fn model(mut self, model: impl Into<String>) -> Self {
         self.config.model = model.into();
         self
     }
 
+    /// Sets the maximum number of concurrent evaluations.
     pub fn max_concurrent(mut self, max_concurrent: usize) -> Self {
         self.config.max_concurrent = max_concurrent;
         self
     }
 
+    /// Sets a filter for specific criteria IDs.
     pub fn criteria_filter(mut self, criteria_filter: Vec<String>) -> Self {
         self.config.criteria_filter = Some(criteria_filter);
         self
     }
 
+    /// Returns the configured `RigAgentConfig` without building the agent.
     pub fn build_config(self) -> RigAgentConfig {
         self.config
     }
 
+    /// Builds and returns an `RgaaAgent` with the configured settings.
     #[must_use]
     pub fn build(self) -> RgaaAgent {
         let _config = self.config;
@@ -69,7 +75,9 @@ impl Default for AgentBuilder {
     }
 }
 
-/// Convenience function to create a simple agent with default settings.
+/// Creates a new `RgaaAgent` with default settings.
+///
+/// This is a convenience function equivalent to `AgentBuilder::new().build()`.
 #[must_use]
 pub fn create_simple_agent() -> RgaaAgent {
     AgentBuilder::new().build()
@@ -80,6 +88,11 @@ pub struct RgaaAgent {
 }
 
 impl RgaaAgent {
+    /// Creates a new `RgaaAgent` with the given model router.
+    ///
+    /// # Arguments
+    ///
+    /// * `model_router` - The router that determines which model tier to use for each criterion.
     #[must_use]
     pub fn new(model_router: ModelRouter) -> Self {
         Self { model_router }
@@ -88,6 +101,16 @@ impl RgaaAgent {
     /// Evaluate all IA_ASSISTE criteria sequentially (rate-limited).
     ///
     /// Returns a map of criterion_id → CriterionResult.
+    ///
+    /// # Arguments
+    ///
+    /// * `criteria` - The list of criteria to evaluate.
+    /// * `page_context` - The page context containing extracted HTML information.
+    /// * `_screenshot` - Optional base64-encoded screenshot for visual evaluation.
+    ///
+    /// # Returns
+    ///
+    /// A `HashMap` mapping criterion IDs to their evaluation results.
     pub async fn run_ia_assiste(
         &self,
         criteria: &[Criterion],
@@ -106,6 +129,21 @@ impl RgaaAgent {
         results
     }
 
+    /// Evaluates a single criterion against the page context.
+    ///
+    /// Routes the criterion to the appropriate model tier, acquires a rate limit
+    /// permit, and builds the evaluation prompt. Currently returns a placeholder
+    /// result pending full HoloClient integration.
+    ///
+    /// # Arguments
+    ///
+    /// * `criterion` - The criterion to evaluate.
+    /// * `page_context` - The page context containing extracted HTML information.
+    /// * `_screenshot` - Optional base64-encoded screenshot for visual evaluation.
+    ///
+    /// # Returns
+    ///
+    /// A `CriterionResult` with the evaluation outcome (currently a placeholder).
     async fn evaluate_criterion(
         &self,
         criterion: &Criterion,

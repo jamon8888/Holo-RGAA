@@ -47,6 +47,11 @@ pub struct HoloClient {
 }
 
 impl HoloClient {
+    /// Creates a new HoloClient with the given API key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the HTTP client cannot be built (e.g., TLS initialization failure).
     #[must_use]
     pub fn new(api_key: String) -> Self {
         let http_client = Client::builder()
@@ -67,6 +72,24 @@ impl HoloClient {
         self
     }
 
+    /// Sends a text-only evaluation prompt to the Holo3 API.
+    ///
+    /// Wraps the prompt with the system prompt and sends it as a chat completion.
+    /// Retries up to `MAX_RETRIES` times with exponential backoff on transient
+    /// failures (HTTP 429, network errors).
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The evaluation prompt describing the accessibility criterion.
+    ///
+    /// # Returns
+    ///
+    /// A parsed `HoloResponse` containing the verdict, confidence, and justification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` if all retry attempts fail due to network errors,
+    /// API errors, or invalid response parsing.
     pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, String> {
         let messages = vec![
             ChatMessage {
@@ -83,6 +106,21 @@ impl HoloClient {
 
     /// Evaluate a prompt with an optional image (base64 PNG).
     /// When image is Some, sends a multimodal content array.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The evaluation prompt describing the accessibility criterion.
+    /// * `image_base64` - Optional base64-encoded PNG image for visual evaluation.
+    ///
+    /// # Returns
+    ///
+    /// A parsed `HoloResponse` containing the verdict, confidence, and justification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` if:
+    /// - The provided `image_base64` is not valid base64 data.
+    /// - All retry attempts fail due to network errors, API errors, or invalid response parsing.
     pub async fn evaluate_multimodal(
         &self,
         prompt: &str,
@@ -199,6 +237,20 @@ impl HoloClient {
         ))
     }
 
+    /// Attempts to extract a `HoloResponse` from raw text.
+    ///
+    /// Tries three strategies in order:
+    /// 1. Direct JSON parsing of the entire text.
+    /// 2. Extraction from a markdown code block (` ```json ... ``` `).
+    /// 3. Regex extraction of a JSON object containing the expected fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The raw response text from the API.
+    ///
+    /// # Returns
+    ///
+    /// `Some(HoloResponse)` if any extraction strategy succeeds, `None` otherwise.
     pub fn extract_json(text: &str) -> Option<HoloResponse> {
         if let Ok(response) = serde_json::from_str::<HoloResponse>(text) {
             return Some(response);
@@ -229,6 +281,7 @@ impl HoloClient {
         seed % (backoff / 2 + 1)
     }
 
+    /// Extracts JSON content from a markdown code block.
     fn extract_from_code_block(text: &str) -> Option<String> {
         let patterns = ["```json\n", "```\n", "```json\r\n", "```\r\n"];
 
@@ -244,6 +297,7 @@ impl HoloClient {
         None
     }
 
+    /// Extracts a JSON object containing the expected fields using regex.
     fn extract_with_regex(text: &str) -> Option<String> {
         let pattern = r#"\{[^{}]*"verdict"[^{}]*"confidence"[^{}]*"justification"[^{}]*\}"#;
         let re = regex_lite::Regex::new(pattern).ok()?;

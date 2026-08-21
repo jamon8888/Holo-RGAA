@@ -661,3 +661,287 @@ Run: `cargo check -p rgaa-agent`
 git add crates/rgaa-agent/src/vector/ crates/rgaa-agent/src/lib.rs
 git commit -m "feat(agent): add LanceDbVectorStore with vector store schemas"
 ```
+
+---
+
+## Task 8: Agent Integration
+
+**Files:**
+- Modify: `crates/rgaa-agent/src/agent.rs`
+- Modify: `crates/rgaa-agent/src/lib.rs`
+
+- [ ] **Step 1: Update agent.rs to use rig-agent**
+
+Replace the entire content of agent.rs with:
+
+```rust
+use crate::config::AgentConfig;
+use crate::embeddings::HybridEmbeddingProvider;
+use crate::error::AgentError;
+use crate::memory::LanceDbMemory;
+use crate::vector::LanceDbVectorStore;
+use rgaa_core::{Criterion, CriterionResult, CriterionStatus, Classification};
+use rig_agent::agent::Agent;
+use rig_core::providers::openai;
+use std::sync::Arc;
+
+pub struct RgaaAgent {
+    agent: Agent<openai::CompletionModel>,
+    memory: Arc<LanceDbMemory>,
+    vector_store: Arc<LanceDbVectorStore>,
+}
+
+impl RgaaAgent {
+    pub async fn new(config: &AgentConfig) -> Result<Self, AgentError> {
+        // 1. Create OpenAI client pointing at Holo3
+        let client = openai::Client::builder()
+            .base_url(&config.holo3_base_url)
+            .api_key(&config.api_key)
+            .build()
+            .map_err(|e| AgentError::RigAgent(e.to_string()))?;
+
+        // 2. Create embedding provider
+        let embeddings = HybridEmbeddingProvider::new(config)?;
+
+        // 3. Create LanceDB memory
+        let memory = LanceDbMemory::new(&config.lancedb_path, embeddings.clone()).await?;
+        let memory = Arc::new(memory);
+
+        // 4. Create vector store
+        let vector_store = LanceDbVectorStore::new(&config.lancedb_path, embeddings.clone()).await?;
+        let vector_store = Arc::new(vector_store);
+
+        // 5. Build agent with tools
+        let agent = client.agent(&config.model)
+            .preamble("You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.")
+            .build();
+
+        Ok(Self {
+            agent,
+            memory,
+            vector_store,
+        })
+    }
+
+    pub async fn evaluate_criterion(
+        &self,
+        criterion: &Criterion,
+        page_context: &rgaa_holo::PageContext,
+    ) -> CriterionResult {
+        // Build prompt
+        let prompt = format!(
+            "Evaluate RGAA criterion {}: {}. Page title: {:?}. Language: {:?}.",
+            criterion.id,
+            criterion.title,
+            page_context.title,
+            page_context.lang,
+        );
+
+        // Call agent
+        match self.agent.prompt(&prompt).await {
+            Ok(response) => CriterionResult {
+                criterion_id: criterion.id.to_string(),
+                title: criterion.title.to_string(),
+                classification: Classification::IaAssiste,
+                status: CriterionStatus::NeedsReview,
+                violations: vec![],
+                confidence: None,
+                justification: Some(response),
+                source: "agent".to_string(),
+            },
+            Err(e) => {
+                tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::IaAssiste,
+                    status: CriterionStatus::NeedsReview,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(format!("Erreur: {e}")),
+                    source: "agent-error".to_string(),
+                }
+            }
+        }
+    }
+
+    pub async fn run_ia_assiste(
+        &self,
+        criteria: &[Criterion],
+        page_context: &rgaa_holo::PageContext,
+    ) -> std::collections::HashMap<String, CriterionResult> {
+        let mut results = std::collections::HashMap::with_capacity(criteria.len());
+        for criterion in criteria {
+            let result = self.evaluate_criterion(criterion, page_context).await;
+            results.insert(criterion.id.to_string(), result);
+        }
+        results
+    }
+}
+```
+
+- [ ] **Step 2: Update lib.rs**
+
+```rust
+pub mod agent;
+pub mod config;
+pub mod embeddings;
+pub mod error;
+pub mod memory;
+pub mod vector;
+```
+
+- [ ] **Step 3: Verify compilation**
+
+Run: `cargo check -p rgaa-agent`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add crates/rgaa-agent/src/agent.rs crates/rgaa-agent/src/lib.rs
+git commit -m "feat(agent): integrate rig-agent with LanceDbMemory and vector store"
+```
+
+---
+
+## Task 9: Update Orchestrator
+
+**Files:**
+- Modify: `crates/rgaa-orchestrator/src/pipeline.rs`
+- Modify: `crates/rgaa-orchestrator/Cargo.toml`
+
+- [ ] **Step 1: Update Cargo.toml dependencies**
+
+```toml
+[dependencies]
+rgaa-agent = { path = "../rgaa-agent" }
+```
+
+- [ ] **Step 2: Update pipeline.rs to use new agent**
+
+Replace the agent creation section (lines 66-74) with:
+
+```rust
+let agent_config = rgaa_agent::config::AgentConfig::from_env()
+    .unwrap_or_default();
+let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config).await
+    .map_err(|e| format!("failed to create agent: {e}"))?;
+```
+
+- [ ] **Step 3: Update the agent call**
+
+Replace the `run_ia_assiste` call (lines 137-139) with:
+
+```rust
+let agent_results = agent
+    .run_ia_assiste(&ia_criteria, &page_context)
+    .await;
+```
+
+- [ ] **Step 4: Remove unused imports**
+
+Remove these imports:
+```rust
+use rgaa_agent::models::ModelRouter;
+use rgaa_agent::ratelimit::RateLimiter;
+```
+
+- [ ] **Step 5: Verify compilation**
+
+Run: `cargo check -p rgaa-orchestrator`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add crates/rgaa-orchestrator/
+git commit -m "feat(orchestrator): update to use new RgaaAgent with LanceDB"
+```
+
+---
+
+## Task 10: Integration Tests
+
+**Files:**
+- Create: `crates/rgaa-agent/tests/integration.rs`
+
+- [ ] **Step 1: Create integration test**
+
+```rust
+use rgaa_agent::config::AgentConfig;
+use rgaa_agent::agent::RgaaAgent;
+use rgaa_core::{Criterion, Classification};
+use rgaa_holo::PageContext;
+
+#[tokio::test]
+async fn test_agent_creation() {
+    let config = AgentConfig::default();
+    let agent = RgaaAgent::new(&config).await;
+    assert!(agent.is_ok());
+}
+
+#[tokio::test]
+async fn test_evaluate_criterion() {
+    let config = AgentConfig::default();
+    let agent = RgaaAgent::new(&config).await.unwrap();
+
+    let criterion = Criterion {
+        id: "1.3".to_string(),
+        title: "Test Criterion".to_string(),
+        classification: Classification::IaAssiste,
+        wcag_refs: "1.1.1".to_string(),
+    };
+
+    let page_context = PageContext {
+        title: Some("Test Page".to_string()),
+        lang: Some("fr".to_string()),
+        headings: vec![],
+        images: vec![],
+        iframes: vec![],
+        links: vec![],
+        forms: vec![],
+        media: vec![],
+        navigation: vec![],
+    };
+
+    let result = agent.evaluate_criterion(&criterion, &page_context).await;
+    assert_eq!(result.status, rgaa_core::CriterionStatus::NeedsReview);
+}
+```
+
+- [ ] **Step 2: Run tests**
+
+Run: `cargo test -p rgaa-agent`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add crates/rgaa-agent/tests/
+git commit -m "test(agent): add integration tests for LanceDB agent"
+```
+
+---
+
+## Task 11: Final Verification
+
+- [ ] **Step 1: Run full workspace check**
+
+Run: `cargo check --workspace`
+
+- [ ] **Step 2: Run all tests**
+
+Run: `cargo test --workspace`
+
+- [ ] **Step 3: Run clippy**
+
+Run: `cargo clippy --workspace --all-targets`
+
+- [ ] **Step 4: Format code**
+
+Run: `cargo fmt --all`
+
+- [ ] **Step 5: Final commit**
+
+```bash
+git add -A
+git commit -m "chore: final cleanup for LanceDB memory and vector store integration"
+```

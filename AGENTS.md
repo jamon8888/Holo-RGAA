@@ -17,15 +17,18 @@ Comprehensive rules for writing idiomatic, fast, and safe Rust code. Current for
 
 ```
 rgaa-rs/
-  Cargo.toml              # Workspace root (7 crates)
+  Cargo.toml              # Workspace root (10 crates)
   crates/
     rgaa-core/            # Domain types + criteria catalog (106 RGAA criteria)
     rgaa-rules/           # axe-core violation mapping + gap-fix JS snippets
     rgaa-holo/            # Holo3 LLM client for AI-assisted evaluation
-    rgaa-browser/         # Browser automation (Playwright) — EMPTY
-    rgaa-orchestrator/    # Pipeline orchestration — EMPTY
+    rgaa-browser-tools/   # Browser automation via CDP (AXTree, BrowserSession, MCP server)
+    rgaa-agent/           # Rig-based agentic evaluator (dual model routing, rate limiter)
+    rgaa-orchestrator/    # Pipeline orchestration (wires agent + browser + rules)
     rgaa-storage/         # PostgreSQL storage — EMPTY
     rgaa-api/             # Axum HTTP API — EMPTY
+    rgaa-mcp/             # MCP server — EMPTY
+    rgaa-cli/             # CLI interface — EMPTY
 ```
 
 ### Key Dependencies

@@ -1,8 +1,8 @@
-use rig_core::tool::PortableTool;
 use rgaa_remediation::{
     detect_framework, remediate, RemediationIssue, RemediationOutcome, RemediationPolicy,
     SourceLocation,
 };
+use rig_core::tool::PortableTool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -58,7 +58,8 @@ impl PortableTool for RemediateTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let framework = detect_framework(&args.element_html);
-        let adapter = rgaa_remediation::adapter_for(framework.unwrap_or(rgaa_remediation::Framework::React));
+        let adapter =
+            rgaa_remediation::adapter_for(framework.unwrap_or(rgaa_remediation::Framework::React));
 
         let issue = RemediationIssue {
             id: args.finding_id,
@@ -75,9 +76,6 @@ impl PortableTool for RemediateTool {
         let outcomes = remediate(&[issue], &self.policy, adapter)
             .map_err(|e| RemediateError::RemediationFailed(e.to_string()))?;
 
-        outcomes
-            .into_iter()
-            .next()
-            .ok_or(RemediateError::NoOutcome)
+        outcomes.into_iter().next().ok_or(RemediateError::NoOutcome)
     }
 }

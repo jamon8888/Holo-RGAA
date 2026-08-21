@@ -1,11 +1,14 @@
-use std::collections::HashMap;
-use rgaa_core::{AuditResult, CriterionResult, CriterionStatus, CrawlConfig, PageResult, RgaaCriteria, Classification};
-use rgaa_rules::{AxeMapper, GapFixRules};
-use rgaa_holo::PageContext;
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_agent::models::ModelRouter;
 use rgaa_agent::ratelimit::RateLimiter;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
+use rgaa_core::{
+    AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
+    RgaaCriteria,
+};
+use rgaa_holo::PageContext;
+use rgaa_rules::{AxeMapper, GapFixRules};
+use std::collections::HashMap;
 use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
@@ -108,19 +111,18 @@ async fn audit_one(
 
     // 3. Extract page context for Holo3 prompts
     info!("Extracting page context");
-    let page_context: PageContext = serde_json::from_value(
-        bridge.extract_page_context(url).await?
-    ).unwrap_or(PageContext {
-        title: None,
-        lang: None,
-        headings: vec![],
-        images: vec![],
-        iframes: vec![],
-        links: vec![],
-        forms: vec![],
-        media: vec![],
-        navigation: vec![],
-    });
+    let page_context: PageContext = serde_json::from_value(bridge.extract_page_context(url).await?)
+        .unwrap_or(PageContext {
+            title: None,
+            lang: None,
+            headings: vec![],
+            images: vec![],
+            iframes: vec![],
+            links: vec![],
+            forms: vec![],
+            media: vec![],
+            navigation: vec![],
+        });
 
     // Drop the session lock before calling the agent (which may need it for tools)
     drop(session);
@@ -132,7 +134,9 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
-    let agent_results = agent.run_ia_assiste(&ia_criteria, &page_context, None).await;
+    let agent_results = agent
+        .run_ia_assiste(&ia_criteria, &page_context, None)
+        .await;
 
     let mut holo_results = HashMap::new();
     for (criterion_id, result) in agent_results {
@@ -155,39 +159,54 @@ async fn audit_one(
     let all_criteria = RgaaCriteria::all();
     for criterion in &all_criteria {
         if criterion.classification == Classification::Manuel {
-            all_results.entry(criterion.id.to_string()).or_insert_with(|| CriterionResult {
-                criterion_id: criterion.id.to_string(),
-                title: criterion.title.to_string(),
-                classification: Classification::Manuel,
-                status: manual_status(),
-                violations: vec![],
-                confidence: None,
-                justification: Some("Manual verification required".into()),
-                source: "manual".into(),
-            });
+            all_results
+                .entry(criterion.id.to_string())
+                .or_insert_with(|| CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::Manuel,
+                    status: manual_status(),
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some("Manual verification required".into()),
+                    source: "manual".into(),
+                });
         } else if !all_results.contains_key(&criterion.id.to_string()) {
-            all_results.entry(criterion.id.to_string()).or_insert_with(|| CriterionResult {
-                criterion_id: criterion.id.to_string(),
-                title: criterion.title.to_string(),
-                classification: criterion.classification.clone(),
-                status: CriterionStatus::Pass,
-                violations: vec![],
-                confidence: None,
-                justification: Some("No violation detected by automated checks (axe-core + gap-fix)".into()),
-                source: "automated".into(),
-            });
+            all_results
+                .entry(criterion.id.to_string())
+                .or_insert_with(|| CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification.clone(),
+                    status: CriterionStatus::Pass,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(
+                        "No violation detected by automated checks (axe-core + gap-fix)".into(),
+                    ),
+                    source: "automated".into(),
+                });
         }
     }
 
     // 7. Calculate compliance rate
     let criteria: Vec<CriterionResult> = all_results.into_values().collect();
-    let pass_count = criteria.iter().filter(|c| c.status == CriterionStatus::Pass).count();
-    let fail_count = criteria.iter().filter(|c| c.status == CriterionStatus::Fail).count();
+    let pass_count = criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::Pass)
+        .count();
+    let fail_count = criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::Fail)
+        .count();
     let na_count = criteria
         .iter()
         .filter(|c| c.status == CriterionStatus::NotApplicable)
         .count();
-    let error_count = criteria.iter().filter(|c| c.status == CriterionStatus::Error).count();
+    let error_count = criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::Error)
+        .count();
     let total = RgaaCriteria::count();
     let compliance = calculate_compliance(&criteria, total);
 
@@ -231,7 +250,10 @@ mod tests {
 
     #[test]
     fn needs_review_is_not_excluded_from_compliance_denominator() {
-        let criteria = vec![test_result(CriterionStatus::Pass), test_result(CriterionStatus::NeedsReview)];
+        let criteria = vec![
+            test_result(CriterionStatus::Pass),
+            test_result(CriterionStatus::NeedsReview),
+        ];
 
         assert_eq!(calculate_compliance(&criteria, 2), 50.0);
     }

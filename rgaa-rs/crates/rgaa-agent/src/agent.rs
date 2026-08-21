@@ -5,7 +5,7 @@ use rgaa_browser_tools::ToolContext;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::PageContext;
 use rig_core::client::CompletionClient;
-use rig_core::tool::{IntoToolOutput, PortableDynamicTool, PortableTool, portable_tool_definition};
+use rig_core::tool::{portable_tool_definition, IntoToolOutput, PortableDynamicTool, PortableTool};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::warn;
@@ -87,11 +87,9 @@ impl HoloProvider {
                                 "failed to deserialize tool args: {e}"
                             ))
                         })?;
-                        let output = PortableTool::call(&*tool, typed_args)
-                            .await
-                            .map_err(|e| {
-                                rig_core::tool::ToolExecutionError::other(e.to_string())
-                            })?;
+                        let output = PortableTool::call(&*tool, typed_args).await.map_err(|e| {
+                            rig_core::tool::ToolExecutionError::other(e.to_string())
+                        })?;
                         output.into_tool_output()
                     })
                 })
@@ -254,7 +252,10 @@ impl RgaaAgent {
                     status,
                     violations: vec![],
                     confidence: None,
-                    justification: Some(format!("Évaluation par agent pour critère {}", criterion.id)),
+                    justification: Some(format!(
+                        "Évaluation par agent pour critère {}",
+                        criterion.id
+                    )),
                     source: "agent".to_string(),
                 }
             }

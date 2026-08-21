@@ -131,16 +131,25 @@ async fn upload_bundle(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let api_key = get_api_key(&headers)?;
 
-    state.repository
+    state
+        .repository
         .validate_api_key(&api_key, "bundle:write")
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid or expired API key".to_string()))?;
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired API key".to_string(),
+        ))?;
 
     if bundle.schema_version != "1.0" {
-        return Err((StatusCode::BAD_REQUEST, "Unsupported schema version".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Unsupported schema version".to_string(),
+        ));
     }
-    bundle.validate().map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    bundle
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     state
         .repository
@@ -158,11 +167,15 @@ async fn get_bundle(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let api_key = get_api_key(&headers)?;
 
-    state.repository
+    state
+        .repository
         .validate_api_key(&api_key, "bundle:read")
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid or expired API key".to_string()))?;
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired API key".to_string(),
+        ))?;
 
     if let Some(audit_id_str) = query.audit_id {
         let result = state
@@ -203,14 +216,21 @@ async fn list_findings(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let api_key = get_api_key(&headers)?;
 
-    state.repository
+    state
+        .repository
         .validate_api_key(&api_key, "bundle:read")
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid or expired API key".to_string()))?;
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired API key".to_string(),
+        ))?;
 
-    let audit_id_str = query.audit_id.ok_or((StatusCode::BAD_REQUEST, "audit_id required".to_string()))?;
-    let audit_id = Uuid::parse_str(&audit_id_str).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid audit_id".to_string()))?;
+    let audit_id_str = query
+        .audit_id
+        .ok_or((StatusCode::BAD_REQUEST, "audit_id required".to_string()))?;
+    let audit_id = Uuid::parse_str(&audit_id_str)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid audit_id".to_string()))?;
 
     let limit = query.limit.unwrap_or(50);
     let offset = query.offset.unwrap_or(0);
@@ -230,15 +250,21 @@ async fn evaluate_policy(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let api_key = get_api_key(&headers)?;
 
-    state.repository
+    state
+        .repository
         .validate_api_key(&api_key, "policy:evaluate")
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid or expired API key".to_string()))?;
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired API key".to_string(),
+        ))?;
 
     let audit_id = Uuid::parse_str(&payload.audit_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid audit_id".to_string()))?;
-    let baseline_id = payload.baseline_id.as_ref()
+    let baseline_id = payload
+        .baseline_id
+        .as_ref()
         .map(|s| Uuid::parse_str(s))
         .transpose()
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid baseline_id".to_string()))?;
@@ -254,11 +280,16 @@ async fn evaluate_policy(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     let baseline_bundle = if let Some(bid) = baseline_id {
-        let bjson = state.repository.get_bundle(bid).await
+        let bjson = state
+            .repository
+            .get_bundle(bid)
+            .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
             .ok_or((StatusCode::NOT_FOUND, "Baseline not found".to_string()))?;
-        Some(serde_json::from_value::<AuditBundle>(bjson)
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?)
+        Some(
+            serde_json::from_value::<AuditBundle>(bjson)
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
+        )
     } else {
         None
     };
@@ -266,7 +297,10 @@ async fn evaluate_policy(
     let policy = rgaa_remediation::RemediationPolicy::default();
     let result = policy.evaluate(&bundle, baseline_bundle.as_ref());
 
-    state.repository.store_policy_evaluation(&result, audit_id, baseline_id).await
+    state
+        .repository
+        .store_policy_evaluation(&result, audit_id, baseline_id)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(serde_json::to_value(result).unwrap()))
@@ -278,7 +312,10 @@ fn get_api_key(headers: &HeaderMap) -> Result<String, (StatusCode, String)> {
         .and_then(|h| h.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "))
         .map(|s| s.to_string())
-        .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid Authorization header".to_string()))
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing or invalid Authorization header".to_string(),
+        ))
 }
 
 #[tokio::main]

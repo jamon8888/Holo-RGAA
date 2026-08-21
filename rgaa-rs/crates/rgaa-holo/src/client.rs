@@ -126,12 +126,10 @@ impl HoloClient {
         prompt: &str,
         image_base64: Option<&str>,
     ) -> Result<HoloResponse, String> {
-        let mut messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: SYSTEM_PROMPT.to_string(),
-            },
-        ];
+        let mut messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: SYSTEM_PROMPT.to_string(),
+        }];
 
         if let Some(img) = image_base64 {
             base64::engine::general_purpose::STANDARD

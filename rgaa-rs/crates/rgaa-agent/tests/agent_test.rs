@@ -1,14 +1,14 @@
 use rgaa_agent::agent::HoloProvider;
-use rgaa_agent::remediate::{RemediateArgs, RemediateTool};
-use rgaa_remediation::SourceLocation;
-use rig_core::tool::PortableTool;
 use rgaa_agent::models::{ModelRouter, SelectedTier};
 use rgaa_agent::prompts::PromptBuilder;
 use rgaa_agent::ratelimit::{ModelTier, RateLimitConfig, RateLimiter};
+use rgaa_agent::remediate::{RemediateArgs, RemediateTool};
 use rgaa_agent::verify::{map_verdict, CONFIDENCE_THRESHOLD};
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::CriterionStatus;
 use rgaa_holo::{HoloResponse, PageContext};
+use rgaa_remediation::SourceLocation;
+use rig_core::tool::PortableTool;
 use std::time::Duration;
 
 fn sample_context() -> PageContext {
@@ -201,7 +201,10 @@ fn unknown_verdict_maps_to_needs_review() {
 #[test]
 fn holo_provider_creation_with_test_key() {
     let provider = HoloProvider::new("https://api.hcompany.ai/v1", "test-key");
-    assert!(provider.is_ok(), "client creation should not make network calls");
+    assert!(
+        provider.is_ok(),
+        "client creation should not make network calls"
+    );
 }
 
 #[test]
@@ -231,10 +234,7 @@ fn holo_provider_build_tools_returns_all_browser_tools() {
 
 #[tokio::test]
 async fn remediate_tool_has_correct_name() {
-    assert_eq!(
-        <RemediateTool as PortableTool>::NAME,
-        "remediate"
-    );
+    assert_eq!(<RemediateTool as PortableTool>::NAME, "remediate");
 }
 
 #[tokio::test]
@@ -270,7 +270,10 @@ async fn remediate_tool_returns_proposal_for_valid_issue() {
     let result = tool.call(args).await;
     assert!(result.is_ok());
     let outcome = result.expect("remediation succeeded");
-    assert!(matches!(outcome, rgaa_remediation::RemediationOutcome::Ok(_)));
+    assert!(matches!(
+        outcome,
+        rgaa_remediation::RemediationOutcome::Ok(_)
+    ));
 }
 
 #[tokio::test]

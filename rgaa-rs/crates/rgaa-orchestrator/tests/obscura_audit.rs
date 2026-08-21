@@ -26,5 +26,8 @@ async fn test_run_batch_obscura() {
     assert_eq!(map.len(), 1, "one audit result per URL");
     let audit = &map["https://example.com"];
     assert_eq!(audit.url, "https://example.com");
-    assert!(audit.total_criteria > 0, "should evaluate at least one criterion");
+    assert!(
+        audit.total_criteria > 0,
+        "should evaluate at least one criterion"
+    );
 }

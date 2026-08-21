@@ -1,6 +1,6 @@
 pub mod repository;
 
-pub use repository::{Repository, AuditRow, CriterionResultRow, hash_api_key};
+pub use repository::{hash_api_key, AuditRow, CriterionResultRow, Repository};
 
 #[cfg(test)]
 mod tests {

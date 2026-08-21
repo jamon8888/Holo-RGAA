@@ -149,11 +149,7 @@ pub fn format_page_context(context: &PageContext) -> String {
                 prompt.push_str(&format!(
                     "    - type={}, label: {}\n",
                     input.input_type,
-                    if input.has_label {
-                        "oui"
-                    } else {
-                        "non"
-                    }
+                    if input.has_label { "oui" } else { "non" }
                 ));
             }
         }
@@ -226,7 +222,15 @@ impl PromptBuilder {
             "11" | "12" | "13" => "11".to_string(),
             "14" | "15" | "16" | "17" => "14".to_string(),
             "18" | "19" | "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" => "18".to_string(),
-            "28" | "29" | "30" | "31" | "32" | "33" | "34" | "35" | "36" | "37" | "38" | "39" | "40" | "41" | "42" | "43" | "44" | "45" | "46" | "47" | "48" | "49" | "50" | "51" | "52" | "53" | "54" | "55" | "56" | "57" | "58" | "59" | "60" | "61" | "62" | "63" | "64" | "65" | "66" | "67" | "68" | "69" | "70" | "71" | "72" | "73" | "74" | "75" | "76" | "77" | "78" | "79" | "80" | "81" | "82" | "83" | "84" | "85" | "86" | "87" | "88" | "89" | "90" | "91" | "92" | "93" | "94" | "95" | "96" | "97" | "98" | "99" | "100" | "101" | "102" | "103" | "104" | "105" | "106" | "107" | "108" | "109" | "110" | "111" | "112" | "113" | "114" | "115" | "116" | "117" | "118" | "119" | "120" => "28".to_string(),
+            "28" | "29" | "30" | "31" | "32" | "33" | "34" | "35" | "36" | "37" | "38" | "39"
+            | "40" | "41" | "42" | "43" | "44" | "45" | "46" | "47" | "48" | "49" | "50" | "51"
+            | "52" | "53" | "54" | "55" | "56" | "57" | "58" | "59" | "60" | "61" | "62" | "63"
+            | "64" | "65" | "66" | "67" | "68" | "69" | "70" | "71" | "72" | "73" | "74" | "75"
+            | "76" | "77" | "78" | "79" | "80" | "81" | "82" | "83" | "84" | "85" | "86" | "87"
+            | "88" | "89" | "90" | "91" | "92" | "93" | "94" | "95" | "96" | "97" | "98" | "99"
+            | "100" | "101" | "102" | "103" | "104" | "105" | "106" | "107" | "108" | "109"
+            | "110" | "111" | "112" | "113" | "114" | "115" | "116" | "117" | "118" | "119"
+            | "120" => "28".to_string(),
             _ => criterion_id.to_string(),
         }
     }
@@ -249,26 +253,23 @@ mod tests {
         PageContext {
             title: Some("Test Page".to_string()),
             lang: Some("fr".to_string()),
-            headings: vec![
-                HeadingInfo { level: 1, text: "Titre principal".to_string() },
-            ],
-            images: vec![
-                ImageInfo {
-                    src: "/img/logo.png".to_string(),
-                    alt: Some("Logo".to_string()),
-                    has_alt: true,
-                    is_decorative: false,
-                },
-            ],
+            headings: vec![HeadingInfo {
+                level: 1,
+                text: "Titre principal".to_string(),
+            }],
+            images: vec![ImageInfo {
+                src: "/img/logo.png".to_string(),
+                alt: Some("Logo".to_string()),
+                has_alt: true,
+                is_decorative: false,
+            }],
             iframes: vec![],
-            links: vec![
-                LinkInfo {
-                    href: "/about".to_string(),
-                    text: "À propos".to_string(),
-                    has_text: true,
-                    is_empty: false,
-                },
-            ],
+            links: vec![LinkInfo {
+                href: "/about".to_string(),
+                text: "À propos".to_string(),
+                has_text: true,
+                is_empty: false,
+            }],
             forms: vec![],
             media: vec![],
             navigation: vec!["Menu principal".to_string()],

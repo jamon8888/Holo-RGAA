@@ -14,13 +14,20 @@ async fn test_full_audit_example_com() {
 
     eprintln!("Audit result: {:?}", result);
 
-    assert!(result.is_ok(), "Audit should complete without error: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Audit should complete without error: {:?}",
+        result.err()
+    );
 
     let audit = result.unwrap();
 
     assert_eq!(audit.url, "https://example.com", "URL should match input");
 
-    assert!(audit.total_criteria > 0, "Should evaluate at least one criterion");
+    assert!(
+        audit.total_criteria > 0,
+        "Should evaluate at least one criterion"
+    );
 
     assert!(
         audit.overall_compliance >= 0.0 && audit.overall_compliance <= 100.0,
@@ -28,5 +35,8 @@ async fn test_full_audit_example_com() {
         audit.overall_compliance
     );
 
-    assert!(!audit.pages.is_empty(), "Should have at least one page result");
+    assert!(
+        !audit.pages.is_empty(),
+        "Should have at least one page result"
+    );
 }

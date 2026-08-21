@@ -1,5 +1,5 @@
+use rgaa_core::{Classification, CriterionResult, CriterionStatus, Violation};
 use std::collections::HashMap;
-use rgaa_core::{CriterionResult, CriterionStatus, Violation, Classification};
 
 /// Gap-fix rules targeting the 10 real false negatives from comparison data.
 /// Each rule is a JS snippet executed via Playwright.
@@ -153,31 +153,48 @@ impl GapFixRules {
     }
 
     /// Parse JS execution results into CriterionResults
-    pub fn parse_results(js_results: &HashMap<String, serde_json::Value>) -> HashMap<String, CriterionResult> {
+    pub fn parse_results(
+        js_results: &HashMap<String, serde_json::Value>,
+    ) -> HashMap<String, CriterionResult> {
         let mut results = HashMap::new();
 
         for (criterion_id, js_result) in js_results {
-            let pass = js_result.get("pass").and_then(|v| v.as_bool()).unwrap_or(false);
-            let details = js_result.get("details").and_then(|v| v.as_str()).unwrap_or("");
+            let pass = js_result
+                .get("pass")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let details = js_result
+                .get("details")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let nodes = js_result.get("nodes").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
-            results.insert(criterion_id.clone(), CriterionResult {
-                criterion_id: criterion_id.clone(),
-                title: String::new(),
-                classification: Classification::Deterministe,
-                status: if pass { CriterionStatus::Pass } else { CriterionStatus::Fail },
-                violations: if pass { vec![] } else {
-                    vec![Violation {
-                        rule_id: format!("gap-fix-{}", criterion_id),
-                        impact: "serious".into(),
-                        description: details.to_string(),
-                        nodes_affected: nodes,
-                    }]
+            results.insert(
+                criterion_id.clone(),
+                CriterionResult {
+                    criterion_id: criterion_id.clone(),
+                    title: String::new(),
+                    classification: Classification::Deterministe,
+                    status: if pass {
+                        CriterionStatus::Pass
+                    } else {
+                        CriterionStatus::Fail
+                    },
+                    violations: if pass {
+                        vec![]
+                    } else {
+                        vec![Violation {
+                            rule_id: format!("gap-fix-{}", criterion_id),
+                            impact: "serious".into(),
+                            description: details.to_string(),
+                            nodes_affected: nodes,
+                        }]
+                    },
+                    confidence: None,
+                    justification: None,
+                    source: "gap-fix".to_string(),
                 },
-                confidence: None,
-                justification: None,
-                source: "gap-fix".to_string(),
-            });
+            );
         }
 
         results

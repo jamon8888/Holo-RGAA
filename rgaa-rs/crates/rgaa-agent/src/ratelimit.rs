@@ -15,7 +15,7 @@ pub enum ModelTier {
     Reasoning, // holo3-122b-a10b, paid, configurable RPM
 }
 
-pub struct RateLimiterInner {
+pub(crate) struct RateLimiterInner {
     tactical_tokens: AtomicU32,
     reasoning_tokens: AtomicU32,
     tactical_refill: u32,

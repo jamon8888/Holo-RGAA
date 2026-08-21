@@ -172,6 +172,15 @@ impl ObscuraBridge {
         }
     }
 
+    /// Create a bridge using the `RGAA_OBSCURA_BIN` env var if set,
+    /// otherwise falling back to `"obscura"` in PATH.
+    pub fn from_env() -> Self {
+        match std::env::var("RGAA_OBSCURA_BIN") {
+            Ok(path) if !path.is_empty() => Self::with_binary_path(path),
+            _ => Self::new(),
+        }
+    }
+
     pub fn with_port(mut self, port: u16) -> Self {
         self.server_port = port;
         self

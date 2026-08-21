@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
+
 use crate::ax_tree::AXTree;
 use rgaa_obscura::ObscuraBridge;
 
@@ -68,5 +72,27 @@ impl BrowserSession {
     /// * `tree` - The accessibility tree to store.
     pub fn set_last_a11y(&mut self, tree: AXTree) {
         self.last_a11y = Some(tree);
+    }
+}
+
+/// Shared context passed to all rig tools.
+/// Wraps `BrowserSession` in `Arc<Mutex<>>` for concurrent tool access.
+#[derive(Clone)]
+pub struct ToolContext {
+    session: Arc<Mutex<BrowserSession>>,
+}
+
+impl ToolContext {
+    /// Creates a new `ToolContext` wrapping the given session.
+    #[must_use]
+    pub fn new(session: BrowserSession) -> Self {
+        Self {
+            session: Arc::new(Mutex::new(session)),
+        }
+    }
+
+    /// Returns a reference to the inner mutex-guarded session.
+    pub fn session(&self) -> &Arc<Mutex<BrowserSession>> {
+        &self.session
     }
 }

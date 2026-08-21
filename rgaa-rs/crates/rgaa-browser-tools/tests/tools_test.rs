@@ -2,9 +2,9 @@ use rgaa_browser_tools::tools::{
     AccessibilityTreeTool, AssertStateTool, ClickTool, EvalJsTool, NavigateTool, PressKeyTool,
     ScreenshotTool, TabOrderTool, TypeTool,
 };
-use rgaa_browser_tools::{AXNode, AXTree, BrowserSession};
-use std::collections::HashMap;
+use rgaa_browser_tools::{AXNode, AXTree, BrowserSession, ToolContext};
 use rgaa_obscura::ObscuraBridge;
+use std::collections::HashMap;
 
 #[test]
 fn screenshot_tool_is_unit_struct() {
@@ -230,15 +230,13 @@ fn focused_element_returns_node_with_focused_true() {
 #[test]
 fn focused_element_returns_none_when_no_focused_node() {
     let tree = AXTree {
-        nodes: vec![
-            AXNode {
-                backend_node_id: "1".to_string(),
-                role: "button".to_string(),
-                name: "OK".to_string(),
-                children: vec![],
-                properties: HashMap::new(),
-            },
-        ],
+        nodes: vec![AXNode {
+            backend_node_id: "1".to_string(),
+            role: "button".to_string(),
+            name: "OK".to_string(),
+            children: vec![],
+            properties: HashMap::new(),
+        }],
     };
     assert!(tree.focused_element().is_none());
 }
@@ -373,7 +371,10 @@ fn focusable_elements_returns_nodes_with_tabindex() {
     };
     let focusable = tree.focusable_elements();
     assert_eq!(focusable.len(), 2);
-    let ids: Vec<&str> = focusable.iter().map(|n| n.backend_node_id.as_str()).collect();
+    let ids: Vec<&str> = focusable
+        .iter()
+        .map(|n| n.backend_node_id.as_str())
+        .collect();
     assert!(ids.contains(&"1"));
     assert!(ids.contains(&"2"));
 }
@@ -405,4 +406,11 @@ fn focusable_elements_returns_empty_when_no_interactive_nodes() {
         ],
     };
     assert!(tree.focusable_elements().is_empty());
+}
+
+#[tokio::test]
+async fn test_tool_context_creation() {
+    let session = BrowserSession::new_placeholder();
+    let ctx = ToolContext::new(session);
+    assert!(ctx.session().lock().await.current_url().is_none());
 }

@@ -1,3 +1,4 @@
+use base64::Engine;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -95,6 +96,10 @@ impl HoloClient {
         ];
 
         if let Some(img) = image_base64 {
+            base64::engine::general_purpose::STANDARD
+                .decode(img)
+                .map_err(|e| format!("invalid base64 image data: {e}"))?;
+
             let content = serde_json::json!([
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{}", img)}}
@@ -348,6 +353,16 @@ mod tests {
         let r = res.unwrap();
         assert_eq!(r.verdict, "pass");
         drop(handle);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_multimodal_invalid_base64() {
+        let client = HoloClient::new("test-key".to_string());
+        let result = client
+            .evaluate_multimodal("test prompt", Some("not-valid-base64!!!"))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("base64"));
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 use rgaa_browser_tools::tools::{
-    AccessibilityTreeTool, AssertStateTool, ClickTool, EvalJsTool, NavigateLegacy, NavigateTool,
-    PressKeyTool, ScreenshotTool, TabOrderTool, TypeTool,
+    A11yTreeTool, AccessibilityTreeLegacy, AssertStateTool, ClickTool, EvalJsTool, NavigateLegacy,
+    NavigateTool, PressKeyTool, ScreenshotLegacy, ScreenshotTool, TabOrderTool, TypeTool,
 };
 use rgaa_browser_tools::{AXNode, AXTree, BrowserSession, ToolContext};
 use rgaa_obscura::ObscuraBridge;
@@ -8,8 +8,8 @@ use rig_core::tool::PortableTool;
 use std::collections::HashMap;
 
 #[test]
-fn screenshot_tool_is_unit_struct() {
-    let tool = ScreenshotTool;
+fn screenshot_legacy_is_unit_struct() {
+    let tool = ScreenshotLegacy;
     assert!(std::mem::size_of_val(&tool) == 0);
 }
 
@@ -85,7 +85,7 @@ async fn navigate_tool_execute_without_cdp_returns_ok() {
 async fn screenshot_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
-    let tool = ScreenshotTool;
+    let tool = ScreenshotLegacy;
     let result = tool.execute(&session).await;
     assert!(result.is_err());
 }
@@ -94,7 +94,7 @@ async fn screenshot_tool_execute_without_cdp_returns_err() {
 async fn a11y_tree_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let mut session = BrowserSession::new(bridge);
-    let tool = AccessibilityTreeTool;
+    let tool = AccessibilityTreeLegacy;
     let result = tool.execute(&mut session).await;
     assert!(result.is_err());
 }
@@ -428,6 +428,56 @@ fn focusable_elements_returns_empty_when_no_interactive_nodes() {
         ],
     };
     assert!(tree.focusable_elements().is_empty());
+}
+
+#[tokio::test]
+async fn screenshot_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = ScreenshotTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.contains("screenshot"));
+}
+
+#[tokio::test]
+async fn screenshot_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = ScreenshotTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn screenshot_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = ScreenshotTool::new(ctx);
+    let args = rgaa_browser_tools::tools::ScreenshotArgs {};
+    let result = tool.call(args).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn a11y_tree_tool_description() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = A11yTreeTool::new(ctx);
+    let desc = tool.description();
+    assert!(desc.contains("accessibility tree"));
+}
+
+#[tokio::test]
+async fn a11y_tree_tool_parameters_is_object() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = A11yTreeTool::new(ctx);
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn a11y_tree_tool_calls_err_when_not_connected() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = A11yTreeTool::new(ctx);
+    let args = rgaa_browser_tools::tools::A11yTreeArgs {};
+    let result = tool.call(args).await;
+    assert!(result.is_err());
 }
 
 #[tokio::test]

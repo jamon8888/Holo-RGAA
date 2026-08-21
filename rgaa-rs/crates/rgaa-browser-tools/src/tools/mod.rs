@@ -8,7 +8,9 @@ pub mod screenshot;
 pub mod tab_order;
 pub mod type_input;
 
-pub use a11y_tree::AccessibilityTreeTool;
+pub use a11y_tree::{
+    A11yTreeArgs, A11yTreeError, A11yTreeOutput, A11yTreeTool, AccessibilityTreeLegacy,
+};
 pub use assert_state::AssertStateTool;
 pub use click::ClickTool;
 pub use eval_js::EvalJsTool;
@@ -18,6 +20,8 @@ pub use navigate::NavigateLegacy;
 pub use navigate::NavigateOutput;
 pub use navigate::NavigateTool;
 pub use press_key::PressKeyTool;
-pub use screenshot::ScreenshotTool;
+pub use screenshot::{
+    ScreenshotArgs, ScreenshotError, ScreenshotLegacy, ScreenshotOutput, ScreenshotTool,
+};
 pub use tab_order::TabOrderTool;
 pub use type_input::TypeTool;

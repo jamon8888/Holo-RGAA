@@ -5,6 +5,7 @@ use rgaa_holo::PageContext;
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_agent::models::ModelRouter;
 use rgaa_agent::ratelimit::RateLimiter;
+use rgaa_browser_tools::{BrowserSession, ToolContext};
 use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
@@ -54,6 +55,11 @@ impl Orchestrator {
             b.start_server().await?;
             b
         };
+
+        // Create shared tool context from browser session
+        let session = BrowserSession::new(bridge);
+        let tool_ctx = ToolContext::new(session);
+
         let api_key = std::env::var("HOLO3_API_KEY")
             .unwrap_or_else(|_| "hk-a73b030c64aac335fc3651c280c95694beb8df95c4a5d8b1".into());
         let rate_limiter = RateLimiter::new(10, 20);
@@ -62,10 +68,10 @@ impl Orchestrator {
             rgaa_holo::HoloClient::new(api_key),
             rate_limiter,
         );
-        let agent = RgaaAgent::new(model_router);
+        let agent = RgaaAgent::new(model_router, tool_ctx);
         let mut results = HashMap::new();
         for url in urls {
-            let audit = audit_one(&bridge, &agent, url, config).await?;
+            let audit = audit_one(&agent, url, config).await?;
             results.insert(url.clone(), audit);
         }
         Ok(results)
@@ -78,13 +84,16 @@ impl Orchestrator {
 /// and [`Orchestrator::run_batch`] route through it so a single URL produces
 /// identical results regardless of entry point.
 async fn audit_one(
-    bridge: &ObscuraBridge,
     agent: &RgaaAgent,
     url: &str,
     _config: &CrawlConfig,
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
+
+    // Lock the browser session from the agent's tool context
+    let session = agent.tool_ctx().session().lock().await;
+    let bridge = session.bridge();
 
     // 1. Run axe-core
     info!("Running axe-core");
@@ -112,6 +121,9 @@ async fn audit_one(
         media: vec![],
         navigation: vec![],
     });
+
+    // Drop the session lock before calling the agent (which may need it for tools)
+    drop(session);
 
     // 4. Run agentic evaluation for all IA_ASSISTE criteria
     let ia_criteria = RgaaCriteria::ia_assiste();

@@ -2,12 +2,21 @@ use crate::{Framework, RemediationError, RemediationIssue};
 use rgaa_core::FindingFingerprint;
 use serde::{Deserialize, Serialize};
 
+/// Policy configuration for remediation operations.
+///
+/// Controls which frameworks are allowed, whether remote AI is permitted,
+/// batch size limits, and approval requirements.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemediationPolicy {
+    /// Whether remote AI remediation is allowed at all.
     pub allow_remote_ai: bool,
+    /// Whether to actually use remote AI for remediation.
     pub use_remote_ai: bool,
+    /// List of frameworks allowed for automated remediation.
     pub allowed_frameworks: Vec<Framework>,
+    /// Maximum number of issues to remediate in a single batch.
     pub max_batch_size: usize,
+    /// Whether human approval is required before applying patches.
     pub require_approval: bool,
 }
 
@@ -29,6 +38,21 @@ impl Default for RemediationPolicy {
 }
 
 impl RemediationPolicy {
+    /// Checks if a remediation issue passes policy constraints.
+    ///
+    /// # Arguments
+    ///
+    /// * `issue` - The remediation issue to validate.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the issue passes all policy checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RemediationError::PolicyDenied` if the issue violates policy,
+    /// `RemediationError::InvalidIssue` if required fields are missing,
+    /// or `RemediationError::MissingSourceLocation` if no source locations exist.
     pub fn check(&self, issue: &RemediationIssue) -> Result<(), RemediationError> {
         if self.use_remote_ai && !self.allow_remote_ai {
             return Err(RemediationError::PolicyDenied {

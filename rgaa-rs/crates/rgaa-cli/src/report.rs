@@ -5,6 +5,22 @@ use rgaa_core::{AuditBundle, CriterionStatus, Finding};
 use crate::format::ReportFormat;
 use crate::CliError;
 
+/// Renders an audit bundle into the specified report format.
+///
+/// Supports JSON, Markdown, SARIF 2.1.0, and JUnit XML output formats.
+///
+/// # Arguments
+///
+/// * `bundle` - The audit bundle containing findings and metadata.
+/// * `format` - The desired output format.
+///
+/// # Returns
+///
+/// A `Result` containing the rendered report string or a `CliError`.
+///
+/// # Errors
+///
+/// Returns `CliError::Execution` if JSON serialization fails.
 pub fn render(bundle: &AuditBundle, format: ReportFormat) -> Result<String, CliError> {
     match format {
         ReportFormat::Json => serde_json::to_string_pretty(bundle)

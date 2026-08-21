@@ -1,87 +1,142 @@
 use crate::{Framework, FrameworkAdapter, RemediationError, RemediationPolicy};
 use serde::{Deserialize, Serialize};
 
+/// Source code location for a remediation issue.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SourceLocation {
+    /// The file path.
     pub file: String,
+    /// The line number (1-indexed).
     pub line: u32,
+    /// Optional column number (1-indexed).
     pub column: Option<u32>,
 }
 
+/// An accessibility issue requiring remediation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemediationIssue {
+    /// Unique identifier for the issue.
     pub id: String,
+    /// The RGAA rule that was violated.
     pub rule: String,
+    /// HTML snippet of the problematic element.
     pub element_html: String,
+    /// URL of the page where the issue was found.
     pub page_url: String,
+    /// Source code locations where the fix should be applied.
     pub source_locations: Vec<SourceLocation>,
+    /// Human-readable summary of the issue.
     pub summary: String,
+    /// Recommended remediation steps.
     pub remediation: String,
+    /// RGAA criteria affected by this issue.
     pub criteria: Vec<String>,
+    /// The frontend framework this issue belongs to.
     #[serde(default)]
     pub framework: Option<Framework>,
 }
 
+/// Guidance for remediating an issue, including a patch proposal.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemediationGuidance {
+    /// The issue ID this guidance applies to.
     pub issue_id: String,
+    /// Detailed explanation of the issue and fix.
     pub explanation: String,
+    /// Step-by-step remediation instructions.
     pub steps: Vec<String>,
+    /// Confidence level of the proposed fix.
     pub confidence: String,
+    /// RGAA criteria affected.
     pub criteria: Vec<String>,
+    /// The proposed patch.
     pub proposal: PatchProposal,
 }
 
+/// Information about a remediation error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemediationErrorInfo {
+    /// The issue ID that failed.
     pub issue_id: String,
+    /// The error code.
     pub code: RemediationErrorCode,
+    /// Human-readable error message.
     pub message: String,
 }
 
+/// Error codes for remediation failures.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RemediationErrorCode {
+    /// The issue is invalid or missing required fields.
     InvalidIssue,
+    /// Policy denied the remediation attempt.
     PolicyDenied,
+    /// The issue requires human review.
     NeedsReview,
+    /// The framework is not supported.
     UnsupportedFramework,
+    /// Source location is missing.
     MissingSourceLocation,
+    /// Approval is required but not provided.
     MissingApproval,
+    /// The AI model failed to generate a fix.
     ModelFailure,
 }
 
+/// Outcome of a remediation attempt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(clippy::large_enum_variant)]
 pub enum RemediationOutcome {
+    /// Successful remediation with guidance.
     Ok(RemediationGuidance),
+    /// Failed remediation with error information.
     Error(RemediationErrorInfo),
 }
 
+/// A proposed patch for fixing accessibility issues.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PatchProposal {
+    /// Unique identifier for this proposal.
     pub proposal_id: String,
+    /// IDs of findings this proposal addresses.
     pub finding_ids: Vec<String>,
+    /// The diff to apply.
     pub diff: String,
+    /// Files that will be modified.
     pub files: Vec<String>,
+    /// Rationale for the proposed changes.
     pub rationale: String,
+    /// Potential risks of applying this patch.
     pub risks: Vec<String>,
+    /// Commands to validate the fix.
     pub validation_commands: Vec<String>,
+    /// Expected effect of applying the patch.
     pub expected_effect: String,
+    /// Hash of the proposal for integrity verification.
     pub proposal_hash: String,
+    /// Approval state (not serialized).
     #[serde(skip)]
     approval: ApprovalState,
 }
 
+/// Approval state for a patch proposal.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ApprovalState {
+    /// Approval is required but not yet granted.
     #[default]
     Required,
+    /// No approval is required.
     NotRequired,
+    /// Proposal has been approved.
     Approved {
+        /// The proposal ID.
         proposal_id: String,
+        /// Hash of the proposal.
         proposal_hash: String,
+        /// Who approved the proposal.
         approver: String,
+        /// Approval token for verification.
         token: String,
     },
 }

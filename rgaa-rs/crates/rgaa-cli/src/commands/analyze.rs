@@ -4,16 +4,32 @@ use crate::commands::{write_output, CommonArgs};
 use crate::config::Config;
 use crate::CliError;
 
+/// CLI arguments for the analyze command.
+///
+/// Analyzes a web page for accessibility issues using axe-core and
+/// structured observation techniques.
 #[derive(Debug, clap::Args)]
 pub struct AnalyzeArgs {
+    /// Common CLI arguments shared across all commands.
     #[clap(flatten)]
     pub common: CommonArgs,
+    /// The URL to analyze. Conflicts with `--profile`.
     #[clap(long, conflicts_with = "profile")]
     pub url: Option<String>,
+    /// A named URL profile from the config file. Conflicts with `--url`.
     #[clap(long, conflicts_with = "url")]
     pub profile: Option<String>,
 }
 
+/// Executes the analyze command.
+///
+/// Loads configuration, resolves the target URL, performs browser-based
+/// accessibility analysis, and outputs structured findings as JSON.
+///
+/// # Errors
+///
+/// Returns `CliError` if configuration is invalid, browser is unavailable,
+/// or analysis fails.
 pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
     let config = Config::load(args.common.config.as_deref())
         .map_err(|error| CliError::invalid_input(error.to_string()))?;

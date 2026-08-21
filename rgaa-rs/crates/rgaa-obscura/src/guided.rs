@@ -6,55 +6,91 @@ use std::collections::HashMap;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+/// Maximum number of attempts for a single guided test step.
 const MAX_STEP_ATTEMPTS: usize = 3;
 
+/// A guided accessibility test definition.
+///
+/// Contains a sequence of steps to execute, along with metadata
+/// for criterion mapping and evidence collection.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GuidedTest {
+    /// Unique identifier for the test.
     pub id: String,
+    /// Version number of the test.
     pub version: u32,
+    /// Preconditions that must be met before running the test.
     #[serde(default)]
     pub preconditions: Vec<String>,
+    /// Steps to execute in order.
     pub steps: Vec<GuidedStep>,
+    /// RGAA criteria this test maps to.
     #[serde(default)]
     pub criterion_mapping: Vec<String>,
+    /// Types of evidence required by this test.
     #[serde(default)]
     pub evidence_requirements: Vec<String>,
 }
 
+/// A single step in a guided accessibility test.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GuidedStep {
+    /// Navigate to a URL.
     Navigate { url: String },
+    /// Capture the accessibility tree.
     AccessibilityTree,
+    /// Press a keyboard key.
     PressKey { key: String },
+    /// Click an element by accessibility reference.
     ClickRef { reference: String },
+    /// Fill an input field by accessibility reference.
     FillRef { reference: String, value: String },
+    /// Take a screenshot.
     Screenshot,
+    /// Assert the page state matches expected values.
     AssertState { expected: serde_json::Value },
 }
 
+/// An action to execute in a guided test (runtime representation).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum GuidedAction {
+    /// Navigate to a URL.
     Navigate { url: String },
+    /// Capture the accessibility tree.
     AccessibilityTree,
+    /// Press a keyboard key.
     PressKey { key: String },
+    /// Click an element by accessibility reference.
     ClickRef { reference: String },
+    /// Fill an input field by accessibility reference.
     FillRef { reference: String, value: String },
+    /// Take a screenshot.
     Screenshot,
+    /// Assert the page state matches expected values.
     AssertState { expected: serde_json::Value },
 }
 
+/// Observations collected during guided test execution.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GuidedObservation {
+    /// Accessibility tree references collected.
     #[serde(default)]
     pub tree_refs: Vec<String>,
+    /// Page state snapshot.
     #[serde(default)]
     pub state: Option<serde_json::Value>,
+    /// Evidence artifacts collected.
     #[serde(default)]
     pub evidence: Vec<EvidenceArtifact>,
 }
 
 impl GuidedObservation {
+    /// Creates an observation with accessibility tree references.
+    ///
+    /// # Arguments
+    ///
+    /// * `refs` - Accessibility tree references to include.
     pub fn tree(refs: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             tree_refs: refs.into_iter().map(Into::into).collect(),
@@ -63,11 +99,35 @@ impl GuidedObservation {
     }
 }
 
+/// Executor trait for guided accessibility tests.
+///
+/// Implementations drive browser interaction via CDP or other mechanisms.
 #[allow(async_fn_in_trait)]
 pub trait GuidedExecutor {
+    /// Executes a guided action and returns observations.
+    ///
+    /// # Arguments
+    ///
+    /// * `action` - The action to execute.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ObscuraError` if the action fails.
     async fn execute(&mut self, action: &GuidedAction) -> Result<GuidedObservation, ObscuraError>;
 }
 
+/// Checks if a reference is a stable accessibility reference.
+///
+/// Stable references use the format `ax:{number}` or `ax-role={role};name={name}`
+/// and can be used reliably across page loads.
+///
+/// # Arguments
+///
+/// * `reference` - The reference string to check.
+///
+/// # Returns
+///
+/// `true` if the reference is stable, `false` otherwise.
 pub fn is_stable_accessibility_reference(reference: &str) -> bool {
     reference
         .strip_prefix("ax:")
@@ -75,28 +135,46 @@ pub fn is_stable_accessibility_reference(reference: &str) -> bool {
         || (reference.starts_with("ax-role=") && reference.contains(";name="))
 }
 
+/// Reason why a guided test terminated.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum TerminationReason {
+    /// Test completed successfully.
     Completed,
+    /// An accessibility reference was missing.
     MissingReference,
+    /// An assertion failed.
     AssertionFailed,
+    /// A keyboard trap was detected.
     KeyboardTrap,
+    /// The test timed out.
     Timeout,
+    /// Navigation to a URL failed.
     NavigationError,
+    /// An execution error occurred.
     #[default]
     ExecutionError,
+    /// Steps were executed in an invalid order.
     InvalidOrdering,
 }
 
+/// Result of running a guided accessibility test.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GuidedRunResult {
+    /// Issues discovered during the test.
     pub issues: Vec<String>,
+    /// Elements that could not be analyzed.
     pub unanalyzed_elements: Vec<String>,
+    /// Reason the test terminated.
     pub terminated_reason: TerminationReason,
+    /// Number of steps completed.
     pub completed_steps: usize,
+    /// Evidence collected during the test.
     pub evidence: Vec<EvidenceRef>,
+    /// Whether manual review is required.
     pub manual_review_required: bool,
+    /// Trace of actions executed.
     pub action_trace: Vec<GuidedAction>,
+    /// RGAA criteria this test maps to.
     pub criterion_mapping: Vec<String>,
     #[serde(default)]
     pub evidence_requirements: Vec<String>,

@@ -4,13 +4,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CheckpointResult, CriterionResult, CriterionStatus, Finding, PageError, RgaaError};
 
+/// Current schema version for audit bundles.
 pub const CURRENT_SCHEMA_VERSION: &str = "1.0";
 
+/// Configuration for an accessibility audit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditConfig {
+    /// Maximum number of pages to audit.
     pub max_pages: usize,
+    /// Maximum crawl depth from the starting URL.
     pub max_depth: u32,
+    /// Whether to respect robots.txt directives.
     pub respect_robots: bool,
+    /// Whether to use sampling mode (audit a subset of pages).
     pub sample_mode: bool,
 }
 
@@ -25,42 +31,78 @@ impl Default for AuditConfig {
     }
 }
 
+/// Audit results for a single page.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PageAudit {
+    /// Unique identifier for the page.
     pub page_id: String,
+    /// URL of the page.
     pub url: String,
+    /// Page title, if available.
     pub title: Option<String>,
+    /// Criterion evaluation results for this page.
     pub criteria: Vec<CriterionResult>,
+    /// Accessibility findings for this page.
     pub findings: Vec<Finding>,
+    /// Errors encountered during auditing.
     pub errors: Vec<PageError>,
+    /// Whether the page audit completed successfully.
     pub completed: bool,
+    /// Duration of the page audit in milliseconds.
     pub duration_ms: u64,
 }
 
+/// Summary statistics for an audit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AuditSummary {
+    /// Total number of pages audited.
     pub total_pages: usize,
+    /// Number of pages that completed successfully.
     pub completed_pages: usize,
+    /// Total number of findings across all pages.
     pub total_findings: usize,
+    /// Number of criteria that passed.
     pub passed: usize,
+    /// Number of criteria that failed.
     pub failed: usize,
+    /// Number of criteria that need review.
     pub needs_review: usize,
+    /// Number of errors encountered.
     pub errors: usize,
 }
 
+/// Complete audit bundle containing all results and metadata.
+///
+/// This is the primary output format for RGAA audits, containing
+/// page-level results, findings, checkpoints, and summary statistics.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditBundle {
+    /// Schema version (currently "1.0").
     pub schema_version: String,
+    /// Unique identifier for this audit.
     pub audit_id: String,
+    /// Starting URL for the audit.
     pub url: String,
+    /// Configuration used for this audit.
     pub config: AuditConfig,
+    /// Results for each audited page.
     pub pages: Vec<PageAudit>,
+    /// Aggregate findings across all pages.
     pub findings: Vec<Finding>,
+    /// Checkpoint results for criterion verification.
     pub checkpoints: Vec<CheckpointResult>,
+    /// Summary statistics.
     pub summary: AuditSummary,
 }
 
 impl AuditBundle {
+    /// Creates a new empty audit bundle.
+    ///
+    /// # Arguments
+    ///
+    /// * `audit_id` - Unique identifier for this audit.
+    /// * `url` - Starting URL for the audit.
+    /// * `config` - Audit configuration.
     pub fn new(audit_id: impl Into<String>, url: impl Into<String>, config: AuditConfig) -> Self {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION.to_owned(),

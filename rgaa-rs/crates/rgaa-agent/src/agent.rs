@@ -64,8 +64,13 @@ impl AgentBuilder {
     /// Builds and returns an `RgaaAgent` with the configured settings.
     #[must_use]
     pub fn build(self) -> RgaaAgent {
-        let _config = self.config;
-        RgaaAgent::new(ModelRouter::new_placeholder())
+        let config = self.config;
+        let router = ModelRouter::from_config(
+            &config.model,
+            config.max_concurrent,
+            config.criteria_filter,
+        );
+        RgaaAgent::new(router)
     }
 }
 

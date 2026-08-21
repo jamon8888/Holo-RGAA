@@ -63,6 +63,31 @@ impl ModelRouter {
         }
     }
 
+    /// Create a router from agent configuration parameters.
+    ///
+    /// Creates HoloClient instances with dummy keys and a rate limiter
+    /// based on the max_concurrent setting.
+    ///
+    /// # Arguments
+    ///
+    /// * `_model` - The model identifier (currently unused, placeholder for future).
+    /// * `max_concurrent` - Maximum concurrent evaluations, used to configure rate limits.
+    /// * `_criteria_filter` - Optional criteria filter (currently unused).
+    #[must_use]
+    pub fn from_config(
+        _model: &str,
+        max_concurrent: usize,
+        _criteria_filter: Option<Vec<String>>,
+    ) -> Self {
+        let dummy_key = "test-key".to_string();
+        let rpm = ((max_concurrent * 10).max(10)) as u32;
+        Self::new(
+            HoloClient::new(dummy_key.clone()),
+            HoloClient::new(dummy_key),
+            RateLimiter::new(rpm, rpm * 2),
+        )
+    }
+
     /// Create a placeholder router for testing without API keys.
     ///
     /// Uses dummy API keys and a default rate limiter configuration.

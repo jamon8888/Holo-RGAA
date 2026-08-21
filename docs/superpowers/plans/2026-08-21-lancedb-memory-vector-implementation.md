@@ -177,3 +177,211 @@ Run: `cargo check -p rgaa-agent`
 git add crates/rgaa-agent/src/config.rs crates/rgaa-agent/src/lib.rs
 git commit -m "feat(agent): add configuration types"
 ```
+
+---
+
+## Task 3: Error Types
+
+**Files:**
+- Create: `crates/rgaa-agent/src/error.rs`
+- Modify: `crates/rgaa-agent/src/lib.rs`
+
+- [ ] **Step 1: Create error.rs**
+
+```rust
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum AgentError {
+    #[error("rig agent error: {0}")]
+    RigAgent(String),
+
+    #[error("lancedb error: {0}")]
+    LanceDb(String),
+
+    #[error("embedding error: {0}")]
+    Embedding(String),
+
+    #[error("memory error: {0}")]
+    Memory(String),
+
+    #[error("tool execution error: {0}")]
+    ToolExecution(String),
+
+    #[error("configuration error: {0}")]
+    Config(String),
+
+    #[error("holog3 api error: {0}")]
+    Holo3Api(String),
+}
+```
+
+- [ ] **Step 2: Update lib.rs**
+
+```rust
+pub mod config;
+pub mod error;
+```
+
+- [ ] **Step 3: Verify compilation**
+
+Run: `cargo check -p rgaa-agent`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add crates/rgaa-agent/src/error.rs crates/rgaa-agent/src/lib.rs
+git commit -m "feat(agent): add error types"
+```
+
+---
+
+## Task 4: FastEmbed Model
+
+**Files:**
+- Create: `crates/rgaa-agent/src/embeddings/mod.rs`
+- Create: `crates/rgaa-agent/src/embeddings/fastembed.rs`
+- Modify: `crates/rgaa-agent/src/lib.rs`
+
+- [ ] **Step 1: Create embeddings/mod.rs**
+
+```rust
+pub mod fastembed;
+
+pub use fastembed::FastEmbedModel;
+```
+
+- [ ] **Step 2: Create embeddings/fastembed.rs**
+
+```rust
+use rig_core::embeddings::{Embedding, EmbeddingError};
+use fastembed::{TextEmbedding, EmbeddingModel as FastEmbedTrait};
+
+#[derive(Clone)]
+pub struct FastEmbedModel {
+    model: TextEmbedding,
+    dimensions: usize,
+}
+
+impl FastEmbedModel {
+    pub fn new(model_name: &str) -> Result<Self, crate::error::AgentError> {
+        let model = TextEmbedding::try_new(
+            fastembed::InitOptions::new(fastembed::AllMiniLmL6V2::default())
+        ).map_err(|e| crate::error::AgentError::Embedding(e.to_string()))?;
+
+        Ok(Self {
+            model,
+            dimensions: 384,
+        })
+    }
+
+    pub fn dimensions(&self) -> usize {
+        self.dimensions
+    }
+}
+
+impl rig_core::embeddings::EmbeddingModel for FastEmbedModel {
+    fn embed_text(&self, text: &str) -> Result<Embedding, EmbeddingError> {
+        let embeddings = self.model
+            .embed(vec![text.to_string()], None)
+            .map_err(|e| EmbeddingError::FailedToEmbed(e.to_string()))?;
+
+        Ok(Embedding {
+            vec: embeddings[0].clone(),
+        })
+    }
+
+    fn ndims(&self) -> usize {
+        self.dimensions
+    }
+}
+```
+
+- [ ] **Step 3: Update lib.rs**
+
+```rust
+pub mod config;
+pub mod embeddings;
+pub mod error;
+```
+
+- [ ] **Step 4: Verify compilation**
+
+Run: `cargo check -p rgaa-agent`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add crates/rgaa-agent/src/embeddings/ crates/rgaa-agent/src/lib.rs
+git commit -m "feat(agent): add FastEmbed model"
+```
+
+---
+
+## Task 5: Hybrid Embedding Provider
+
+**Files:**
+- Modify: `crates/rgaa-agent/src/embeddings/mod.rs`
+
+- [ ] **Step 1: Add HybridEmbeddingProvider to embeddings/mod.rs**
+
+```rust
+pub mod fastembed;
+
+pub use fastembed::FastEmbedModel;
+use rig_core::embeddings::{Embedding, EmbeddingError, EmbeddingModel};
+
+pub enum EmbeddingBackend {
+    FastEmbed(FastEmbedModel),
+}
+
+pub struct HybridEmbeddingProvider {
+    primary: EmbeddingBackend,
+    fallback: Option<EmbeddingBackend>,
+}
+
+impl HybridEmbeddingProvider {
+    pub fn new(config: &crate::config::AgentConfig) -> Result<Self, crate::error::AgentError> {
+        let primary = match &config.embedding_backend {
+            crate::config::EmbeddingBackendConfig::FastEmbed { model_name } => {
+                EmbeddingBackend::FastEmbed(FastEmbedModel::new(model_name)?)
+            }
+            _ => return Err(crate::error::AgentError::Config("unsupported backend".into())),
+        };
+
+        Ok(Self {
+            primary,
+            fallback: None,
+        })
+    }
+
+    pub fn dimensions(&self) -> usize {
+        match &self.primary {
+            EmbeddingBackend::FastEmbed(m) => m.dimensions(),
+        }
+    }
+}
+
+impl EmbeddingModel for HybridEmbeddingProvider {
+    fn embed_text(&self, text: &str) -> Result<Embedding, EmbeddingError> {
+        match &self.primary {
+            EmbeddingBackend::FastEmbed(m) => m.embed_text(text),
+        }
+    }
+
+    fn ndims(&self) -> usize {
+        self.dimensions()
+    }
+}
+```
+
+- [ ] **Step 2: Verify compilation**
+
+Run: `cargo check -p rgaa-agent`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add crates/rgaa-agent/src/embeddings/mod.rs
+git commit -m "feat(agent): add HybridEmbeddingProvider"
+```

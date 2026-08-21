@@ -65,14 +65,15 @@ impl ModelRouter {
 
     /// Create a placeholder router for testing without API keys.
     ///
-    /// Uses dummy API keys and a default rate limiter configuration.
+    /// Uses dummy API keys and a non-routable base URL so HTTP calls fail fast.
     /// Suitable only for unit tests and integration tests.
     #[must_use]
     pub fn new_placeholder() -> Self {
         let dummy_key = "test-key".to_string();
+        let dummy_url = "http://127.0.0.1:1".to_string();
         Self::new(
-            HoloClient::new(dummy_key.clone()),
-            HoloClient::new(dummy_key),
+            HoloClient::new(dummy_key.clone()).with_base_url(&dummy_url),
+            HoloClient::new(dummy_key).with_base_url(dummy_url),
             RateLimiter::new(10, 20),
         )
     }
@@ -112,6 +113,15 @@ impl ModelRouter {
             SelectedTier::Reasoning
         } else {
             SelectedTier::Tactical
+        }
+    }
+
+    /// Returns a reference to the HoloClient for the given tier.
+    #[must_use]
+    pub fn client_for_tier(&self, tier: SelectedTier) -> &HoloClient {
+        match tier {
+            SelectedTier::Tactical => &self.tactical_client,
+            SelectedTier::Reasoning => &self.reasoning_client,
         }
     }
 

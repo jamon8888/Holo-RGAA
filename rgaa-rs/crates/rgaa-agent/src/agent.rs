@@ -1,5 +1,6 @@
 use crate::models::ModelRouter;
 use crate::prompts::PromptBuilder;
+use crate::verify::map_verdict;
 use rgaa_browser_tools::ToolContext;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::PageContext;
@@ -7,6 +8,7 @@ use rig_core::client::CompletionClient;
 use rig_core::tool::{IntoToolOutput, PortableDynamicTool, PortableTool, portable_tool_definition};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::warn;
 
 /// Configuration for the RgaaAgent.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +67,7 @@ impl HoloProvider {
     /// Each tool is wrapped in a `PortableDynamicTool` that deserializes
     /// arguments, executes the typed tool, and serializes the output.
     pub fn build_tools(tool_ctx: &ToolContext) -> Vec<PortableDynamicTool> {
-        use rgaa_browser_tools::tools::{
+        use rgaa_browser_tools::{
             A11yTreeTool, ClickTool, EvalJsTool, NavigateTool, PressKeyTool, ScreenshotTool,
             TabOrderTool, TypeTool,
         };
@@ -221,8 +223,8 @@ impl RgaaAgent {
     /// Evaluates a single criterion against the page context.
     ///
     /// Routes to the appropriate model tier, acquires rate limit, builds
-    /// the prompt, and calls the rig agent. Currently returns a placeholder
-    /// pending full rig agent integration.
+    /// the prompt, and calls the HoloClient API. Falls back to NeedsReview
+    /// on API failure.
     async fn evaluate_criterion(
         &self,
         criterion: &Criterion,
@@ -231,7 +233,7 @@ impl RgaaAgent {
     ) -> CriterionResult {
         let tier = self.model_router.route_for(criterion.id);
 
-        let _prompt = PromptBuilder::build(criterion.id, page_context);
+        let prompt = PromptBuilder::build(criterion.id, page_context);
 
         self.model_router
             .rate_limiter()
@@ -241,15 +243,34 @@ impl RgaaAgent {
             })
             .await;
 
-        CriterionResult {
-            criterion_id: criterion.id.to_string(),
-            title: criterion.title.to_string(),
-            classification: Classification::IaAssiste,
-            status: CriterionStatus::NeedsReview,
-            violations: vec![],
-            confidence: None,
-            justification: Some("Agent integration pending — rig agent not yet wired".to_string()),
-            source: "agent".to_string(),
+        let client = self.model_router.client_for_tier(tier);
+        match client.evaluate(&prompt).await {
+            Ok(response) => {
+                let status = map_verdict(response);
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::IaAssiste,
+                    status,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(format!("Évaluation par agent pour critère {}", criterion.id)),
+                    source: "agent".to_string(),
+                }
+            }
+            Err(e) => {
+                warn!(criterion = criterion.id, error = %e, "évaluation API échouée");
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::IaAssiste,
+                    status: CriterionStatus::NeedsReview,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(format!("Erreur API: {e}")),
+                    source: "agent".to_string(),
+                }
+            }
         }
     }
 }

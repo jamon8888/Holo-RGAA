@@ -5,3 +5,7 @@ pub mod tools;
 
 pub use ax_tree::{AXNode, AXTree};
 pub use session::{BrowserSession, ToolContext};
+pub use tools::{
+    A11yTreeTool, ClickTool, EvalJsTool, NavigateTool, PressKeyTool, ScreenshotTool, TabOrderTool,
+    TypeTool,
+};

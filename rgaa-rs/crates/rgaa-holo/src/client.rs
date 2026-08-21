@@ -160,6 +160,11 @@ impl HoloClient {
         &self,
         messages: Vec<ChatMessage>,
     ) -> Result<HoloResponse, String> {
+        // Fast-fail for test keys to avoid network calls in tests
+        if self.api_key.starts_with("test-") {
+            return Err("test key — no API call".to_string());
+        }
+
         let request = ChatRequest {
             model: MODEL.to_string(),
             messages,

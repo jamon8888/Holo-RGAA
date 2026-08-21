@@ -1,9 +1,10 @@
 use rgaa_browser_tools::tools::{
-    AccessibilityTreeTool, AssertStateTool, ClickTool, EvalJsTool, NavigateTool, PressKeyTool,
-    ScreenshotTool, TabOrderTool, TypeTool,
+    AccessibilityTreeTool, AssertStateTool, ClickTool, EvalJsTool, NavigateLegacy, NavigateTool,
+    PressKeyTool, ScreenshotTool, TabOrderTool, TypeTool,
 };
 use rgaa_browser_tools::{AXNode, AXTree, BrowserSession, ToolContext};
 use rgaa_obscura::ObscuraBridge;
+use rig_core::tool::PortableTool;
 use std::collections::HashMap;
 
 #[test]
@@ -14,7 +15,7 @@ fn screenshot_tool_is_unit_struct() {
 
 #[test]
 fn navigate_tool_holds_url() {
-    let tool = NavigateTool {
+    let tool = NavigateLegacy {
         url: "https://example.com".to_string(),
     };
     assert_eq!(tool.url, "https://example.com");
@@ -72,7 +73,7 @@ fn assert_state_tool_holds_predicate() {
 async fn navigate_tool_execute_without_cdp_returns_ok() {
     let bridge = ObscuraBridge::new();
     let mut session = BrowserSession::new(bridge);
-    let tool = NavigateTool {
+    let tool = NavigateLegacy {
         url: "https://example.com".to_string(),
     };
     let result = tool.execute(&mut session).await;
@@ -161,6 +162,27 @@ async fn assert_state_tool_execute_without_cdp_returns_err() {
     };
     let result = tool.execute(&session).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn navigate_tool_definition() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = NavigateTool::new(ctx);
+    let desc = tool.description();
+    assert!(!desc.is_empty());
+    let params = tool.parameters();
+    assert!(params.is_object());
+}
+
+#[tokio::test]
+async fn navigate_tool_calls_successfully() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let tool = NavigateTool::new(ctx);
+    let args: rgaa_browser_tools::tools::NavigateArgs =
+        serde_json::from_value(serde_json::json!({"url": "https://example.com"}))
+            .expect("valid args");
+    let result = tool.call(args).await;
+    assert!(result.is_ok());
 }
 
 #[test]

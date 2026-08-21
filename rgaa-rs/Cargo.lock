@@ -2042,6 +2042,7 @@ dependencies = [
  "rgaa-obscura",
  "rig-core",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

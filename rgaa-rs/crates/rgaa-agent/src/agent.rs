@@ -3,7 +3,10 @@ use crate::prompts::PromptBuilder;
 use rgaa_browser_tools::ToolContext;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::PageContext;
+use rig_core::client::CompletionClient;
+use rig_core::tool::{IntoToolOutput, PortableDynamicTool, PortableTool, portable_tool_definition};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Configuration for the RgaaAgent.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +23,89 @@ impl Default for RigAgentConfig {
             max_concurrent: 5,
             criteria_filter: None,
         }
+    }
+}
+
+/// Wraps rig-core's OpenAI client configured for the Holo3 API.
+///
+/// Holo3 exposes an OpenAI-compatible `/v1` endpoint, so we reuse
+/// rig-core's `providers::openai::Client` with a custom base URL.
+pub struct HoloProvider {
+    client: rig_core::providers::openai::CompletionsClient,
+}
+
+impl HoloProvider {
+    /// Create a new provider pointing at the given Holo3 base URL.
+    ///
+    /// Uses the Completions API (Chat Completions) since Holo3 is
+    /// OpenAI-compatible and may not support the newer Responses API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying HTTP client cannot be built.
+    pub fn new(base_url: &str, api_key: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let client = rig_core::providers::openai::Client::builder()
+            .base_url(base_url)
+            .api_key(api_key)
+            .build()?
+            .completions_api();
+        Ok(Self { client })
+    }
+
+    /// Returns a completion model for the given model name.
+    pub fn completion_model(
+        &self,
+        model: &str,
+    ) -> rig_core::providers::openai::completion::CompletionModel {
+        self.client.completion_model(model)
+    }
+
+    /// Build portable dynamic tools from browser tools for the given context.
+    ///
+    /// Each tool is wrapped in a `PortableDynamicTool` that deserializes
+    /// arguments, executes the typed tool, and serializes the output.
+    pub fn build_tools(tool_ctx: &ToolContext) -> Vec<PortableDynamicTool> {
+        use rgaa_browser_tools::tools::{
+            A11yTreeTool, ClickTool, EvalJsTool, NavigateTool, PressKeyTool, ScreenshotTool,
+            TabOrderTool, TypeTool,
+        };
+
+        macro_rules! wrap_tool {
+            ($tool:expr) => {{
+                let tool = Arc::new($tool);
+                let def = portable_tool_definition(&*tool);
+                let name = def.name;
+                let description = def.description;
+                let parameters = def.parameters;
+                PortableDynamicTool::new(name, description, parameters, move |args| {
+                    let tool = Arc::clone(&tool);
+                    Box::pin(async move {
+                        let typed_args = serde_json::from_value(args).map_err(|e| {
+                            rig_core::tool::ToolExecutionError::other(format!(
+                                "failed to deserialize tool args: {e}"
+                            ))
+                        })?;
+                        let output = PortableTool::call(&*tool, typed_args)
+                            .await
+                            .map_err(|e| {
+                                rig_core::tool::ToolExecutionError::other(e.to_string())
+                            })?;
+                        output.into_tool_output()
+                    })
+                })
+            }};
+        }
+
+        vec![
+            wrap_tool!(NavigateTool::new(tool_ctx.clone())),
+            wrap_tool!(ScreenshotTool::new(tool_ctx.clone())),
+            wrap_tool!(A11yTreeTool::new(tool_ctx.clone())),
+            wrap_tool!(ClickTool::new(tool_ctx.clone())),
+            wrap_tool!(PressKeyTool::new(tool_ctx.clone())),
+            wrap_tool!(TabOrderTool::new(tool_ctx.clone())),
+            wrap_tool!(TypeTool::new(tool_ctx.clone())),
+            wrap_tool!(EvalJsTool::new(tool_ctx.clone())),
+        ]
     }
 }
 

@@ -5,4 +5,4 @@ pub mod prompts;
 pub mod ratelimit;
 pub mod verify;
 
-pub use agent::{create_simple_agent, AgentBuilder, RgaaAgent, RigAgentConfig};
+pub use agent::{create_simple_agent, AgentBuilder, HoloProvider, RgaaAgent, RigAgentConfig};

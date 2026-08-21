@@ -4,14 +4,28 @@ use crate::commands::{write_output, CommonArgs};
 use crate::config::Config;
 use crate::CliError;
 
+/// CLI arguments for the guided test command.
+///
+/// Runs a specific guided accessibility test defined in the configuration.
 #[derive(Debug, clap::Args)]
 pub struct IgtArgs {
+    /// Common CLI arguments shared across all commands.
     #[clap(flatten)]
     pub common: CommonArgs,
+    /// Name of the guided test to run.
     #[clap(long, value_name = "TEST")]
     pub test: String,
 }
 
+/// Executes the guided test command.
+///
+/// Loads configuration, validates the test name, and runs the guided
+/// accessibility test using browser automation.
+///
+/// # Errors
+///
+/// Returns `CliError` if configuration is invalid, test is unknown,
+/// or browser execution fails.
 pub async fn run(args: IgtArgs) -> Result<i32, CliError> {
     let config = Config::load(args.common.config.as_deref())
         .map_err(|error| CliError::invalid_input(error.to_string()))?;

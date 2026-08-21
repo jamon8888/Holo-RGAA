@@ -3,23 +3,32 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// Viewport dimensions for browser automation.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ViewportProfile {
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
 }
 
+/// URL profile with optional viewport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct UrlProfile {
+    /// The URL to audit.
     pub url: String,
+    /// Optional viewport profile name to use.
     #[serde(default)]
     pub viewport: Option<String>,
 }
 
+/// Policy configuration for compliance checks.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PolicyConfig {
+    /// Minimum compliance percentage required (0-100).
     #[serde(default = "default_min_compliance")]
     pub min_compliance: f64,
+    /// List of criteria that must pass.
     #[serde(default)]
     pub required_criteria: Vec<String>,
 }
@@ -37,45 +46,73 @@ fn default_min_compliance() -> f64 {
     80.0
 }
 
+/// CLI configuration loaded from `.rgaa/config.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Config {
+    /// Named URL profiles for auditing.
     #[serde(default)]
     pub url_profiles: HashMap<String, UrlProfile>,
+    /// Named viewport profiles for browser automation.
     #[serde(default)]
     pub viewport_profiles: HashMap<String, ViewportProfile>,
+    /// List of guided tests available to run.
     #[serde(default)]
     pub guided_tests: Vec<String>,
+    /// Applicable accessibility standards.
     #[serde(default)]
     pub standards: Vec<String>,
+    /// Policy configuration for compliance checks.
     #[serde(default)]
     pub policy: PolicyConfig,
+    /// Directory to store evidence artifacts.
     #[serde(default)]
     pub evidence_dir: Option<String>,
+    /// Remote API endpoint for uploading results.
     #[serde(default)]
     pub remote_endpoint: Option<String>,
+    /// Whether the user has consented to upload results.
     #[serde(default)]
     pub upload_consent: bool,
 }
 
+/// Errors that can occur when loading or validating configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    /// Failed to read the config file.
     #[error("failed to read config file {path}: {source}")]
     Io {
+        /// Path to the config file.
         path: String,
+        /// The underlying I/O error.
         #[source]
         source: std::io::Error,
     },
+    /// Failed to parse the config file.
     #[error("invalid config: {0}")]
     Parse(String),
+    /// Configuration validation failed.
     #[error("invalid config: {0}")]
     Validation(String),
 }
 
+/// Returns the default config file path (`.rgaa/config.yaml`).
 pub fn default_config_path() -> PathBuf {
     PathBuf::from(".rgaa").join("config.yaml")
 }
 
 impl Config {
+    /// Loads configuration from a YAML file.
+    ///
+    /// If no path is provided, uses the default path (`.rgaa/config.yaml`).
+    /// Returns default configuration if the file doesn't exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Optional path to the config file.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ConfigError` if the file cannot be read, parsed, or validated.
     pub fn load(path: Option<&Path>) -> Result<Self, ConfigError> {
         let path = path
             .map(Path::to_path_buf)
@@ -93,6 +130,16 @@ impl Config {
         Ok(config)
     }
 
+    /// Validates the configuration.
+    ///
+    /// Checks that:
+    /// - `min_compliance` is between 0 and 100
+    /// - Viewport profiles have non-zero dimensions
+    /// - URL profiles have non-empty URLs
+    ///
+    /// # Errors
+    ///
+    /// Returns `ConfigError::Validation` if any validation check fails.
     pub fn validate(&self) -> Result<(), ConfigError> {
         if !(0.0..=100.0).contains(&self.policy.min_compliance) {
             return Err(ConfigError::Validation(

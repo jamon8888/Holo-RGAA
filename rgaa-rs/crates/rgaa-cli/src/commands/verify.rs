@@ -6,14 +6,31 @@ use crate::commands::write_output;
 use crate::commands::CommonArgs;
 use crate::CliError;
 
+/// CLI arguments for the verify command.
+///
+/// Verifies remediation proposals by running them through the remediation engine.
 #[derive(Debug, clap::Args)]
 pub struct VerifyArgs {
+    /// Common CLI arguments shared across all commands.
     #[clap(flatten)]
     pub common: CommonArgs,
+    /// Path to the JSON file containing remediation issues.
     #[clap(long, value_name = "ISSUES")]
     pub issues: std::path::PathBuf,
 }
 
+/// Executes the verify command.
+///
+/// Loads remediation issues, validates batch size (1-25), and runs them
+/// through the remediation engine to generate patch proposals.
+///
+/// # Returns
+///
+/// Exit code 0 if all remediations succeed, 1 if any fail.
+///
+/// # Errors
+///
+/// Returns `CliError` if issues are invalid or remediation fails.
 pub fn run(args: VerifyArgs) -> Result<i32, CliError> {
     let issues = load_issues(&args.issues)?;
     if issues.is_empty() {

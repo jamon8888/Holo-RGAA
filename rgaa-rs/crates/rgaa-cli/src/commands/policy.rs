@@ -5,14 +5,31 @@ use crate::commands::CommonArgs;
 use crate::config::Config;
 use crate::CliError;
 
+/// CLI arguments for the policy command.
+///
+/// Checks if an audit bundle complies with the configured policy thresholds.
 #[derive(Debug, clap::Args)]
 pub struct PolicyArgs {
+    /// Common CLI arguments shared across all commands.
     #[clap(flatten)]
     pub common: CommonArgs,
+    /// Path to the audit bundle JSON file.
     #[clap(long, value_name = "BUNDLE")]
     pub input: std::path::PathBuf,
 }
 
+/// Executes the policy check command.
+///
+/// Loads the audit bundle, validates it, and checks compliance against
+/// the configured policy thresholds (min_compliance, required_criteria).
+///
+/// # Returns
+///
+/// Exit code 0 if compliant, 1 if non-compliant.
+///
+/// # Errors
+///
+/// Returns `CliError` if configuration or bundle loading fails.
 pub fn run(args: PolicyArgs) -> Result<i32, CliError> {
     let config = Config::load(args.common.config.as_deref())
         .map_err(|error| CliError::invalid_input(error.to_string()))?;

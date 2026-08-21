@@ -16,10 +16,12 @@ pub struct AXTree {
 }
 
 impl AXTree {
+    #[must_use]
     pub fn find_by_ref(&self, ref_id: &str) -> Option<&AXNode> {
         self.nodes.iter().find(|n| n.backend_node_id == ref_id)
     }
 
+    #[must_use]
     pub fn focused_element(&self) -> Option<&AXNode> {
         self.nodes.iter().find(|n| {
             n.properties

@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use crate::BrowserSession;
 
 pub struct BrowserMcpServer {
+    #[allow(dead_code)]
     session: Arc<Mutex<BrowserSession>>,
 }
 

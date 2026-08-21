@@ -56,6 +56,7 @@ impl AgentBuilder {
         self.config
     }
 
+    #[must_use]
     pub fn build(self) -> RgaaAgent {
         let _config = self.config;
         RgaaAgent::new(ModelRouter::new_placeholder())
@@ -69,6 +70,7 @@ impl Default for AgentBuilder {
 }
 
 /// Convenience function to create a simple agent with default settings.
+#[must_use]
 pub fn create_simple_agent() -> RgaaAgent {
     AgentBuilder::new().build()
 }
@@ -78,6 +80,7 @@ pub struct RgaaAgent {
 }
 
 impl RgaaAgent {
+    #[must_use]
     pub fn new(model_router: ModelRouter) -> Self {
         Self { model_router }
     }

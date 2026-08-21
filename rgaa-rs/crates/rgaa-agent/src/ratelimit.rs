@@ -29,6 +29,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    #[must_use]
     pub fn new(tactical_rpm: u32, reasoning_rpm: u32) -> Self {
         Self {
             inner: Arc::new(RateLimiterInner {

@@ -1,5 +1,5 @@
 use crate::criteria_defs::get_criterion_definition;
-use rgaa_holo::PageContext;
+use rgaa_holo::{format_page_context, PageContext};
 
 pub struct PromptBuilder;
 
@@ -20,112 +20,7 @@ impl PromptBuilder {
             prompt.push_str(&format!("- **Définition:** {}\n\n", def.definition));
         }
 
-        prompt.push_str("## Contexte de la page\n\n");
-        if let Some(ref title) = context.title {
-            prompt.push_str(&format!("**Titre:** {}\n", title));
-        }
-        if let Some(ref lang) = context.lang {
-            prompt.push_str(&format!("**Langue:** {}\n", lang));
-        }
-
-        prompt.push_str("\n## Éléments de la page\n\n");
-
-        if !context.headings.is_empty() {
-            prompt.push_str("### Titres\n");
-            for h in &context.headings {
-                prompt.push_str(&format!("  - H{}: {}\n", h.level, h.text));
-            }
-            prompt.push('\n');
-        }
-
-        if !context.images.is_empty() {
-            prompt.push_str("### Images\n");
-            for img in &context.images {
-                let alt_info = if img.is_decorative {
-                    "(décorative)".to_string()
-                } else if img.has_alt {
-                    format!("alt: \"{}\"", img.alt.as_deref().unwrap_or(""))
-                } else {
-                    "(sans alt)".to_string()
-                };
-                prompt.push_str(&format!("  - src=\"{}\" {}\n", img.src, alt_info));
-            }
-            prompt.push('\n');
-        }
-
-        if !context.iframes.is_empty() {
-            prompt.push_str("### Iframes\n");
-            for iframe in &context.iframes {
-                let title_info = if iframe.has_title {
-                    format!("title: \"{}\"", iframe.title.as_deref().unwrap_or(""))
-                } else {
-                    "(sans titre)".to_string()
-                };
-                prompt.push_str(&format!(
-                    "  - src=\"{}\" {}\n",
-                    iframe.src.as_deref().unwrap_or(""),
-                    title_info
-                ));
-            }
-            prompt.push('\n');
-        }
-
-        if !context.links.is_empty() {
-            prompt.push_str("### Liens\n");
-            for link in &context.links {
-                let text_info = if link.is_empty {
-                    "(vide)"
-                } else if link.has_text {
-                    link.text.as_str()
-                } else {
-                    "(sans texte)"
-                };
-                prompt.push_str(&format!("  - href=\"{}\" {}\n", link.href, text_info));
-            }
-            prompt.push('\n');
-        }
-
-        if !context.forms.is_empty() {
-            prompt.push_str("### Formulaires\n");
-            for form in &context.forms {
-                prompt.push_str(&format!(
-                    "  - Form{} (labels: {}, submit: {})\n",
-                    form.id.as_deref().unwrap_or(""),
-                    if form.has_labels { "oui" } else { "non" },
-                    if form.has_submit { "oui" } else { "non" }
-                ));
-                for input in &form.inputs {
-                    prompt.push_str(&format!(
-                        "    - type={}, label: {}\n",
-                        input.input_type,
-                        if input.has_label { "oui" } else { "non" }
-                    ));
-                }
-            }
-            prompt.push('\n');
-        }
-
-        if !context.media.is_empty() {
-            prompt.push_str("### Médias\n");
-            for media in &context.media {
-                prompt.push_str(&format!(
-                    "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}\n",
-                    media.media_type,
-                    if media.has_controls { "oui" } else { "non" },
-                    if media.has_captions { "oui" } else { "non" },
-                    if media.has_transcript { "oui" } else { "non" }
-                ));
-            }
-            prompt.push('\n');
-        }
-
-        if !context.navigation.is_empty() {
-            prompt.push_str("### Navigation\n");
-            for nav in &context.navigation {
-                prompt.push_str(&format!("  - {}\n", nav));
-            }
-            prompt.push('\n');
-        }
+        prompt.push_str(&format_page_context(context));
 
         prompt.push_str("\n## Instructions\n\n");
         prompt.push_str("1. Analyse le critère en fonction de la définition et des éléments ci-dessus\n");

@@ -140,6 +140,15 @@ impl ModelRouter {
         }
     }
 
+    /// Returns a reference to the HoloClient for the given tier.
+    #[must_use]
+    pub fn client_for_tier(&self, tier: SelectedTier) -> &HoloClient {
+        match tier {
+            SelectedTier::Tactical => &self.tactical_client,
+            SelectedTier::Reasoning => &self.reasoning_client,
+        }
+    }
+
     /// Returns a reference to the rate limiter.
     pub fn rate_limiter(&self) -> &RateLimiter {
         &self.rate_limiter

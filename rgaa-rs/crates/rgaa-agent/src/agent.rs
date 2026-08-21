@@ -1,8 +1,10 @@
 use crate::models::ModelRouter;
 use crate::prompts::PromptBuilder;
+use crate::verify::map_verdict;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::PageContext;
 use std::collections::HashMap;
+use tracing::warn;
 
 /// Configuration for the RgaaAgent.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,8 +139,9 @@ impl RgaaAgent {
     /// Evaluates a single criterion against the page context.
     ///
     /// Routes the criterion to the appropriate model tier, acquires a rate limit
-    /// permit, and builds the evaluation prompt. Currently returns a placeholder
-    /// result pending full HoloClient integration.
+    /// permit, builds the evaluation prompt, and calls the HoloClient API.
+    /// Returns a `CriterionResult` with the parsed verdict, confidence, and
+    /// justification. On API failure, falls back to `NeedsReview` status.
     ///
     /// # Arguments
     ///
@@ -148,7 +151,7 @@ impl RgaaAgent {
     ///
     /// # Returns
     ///
-    /// A `CriterionResult` with the evaluation outcome (currently a placeholder).
+    /// A `CriterionResult` with the evaluation outcome from the LLM.
     async fn evaluate_criterion(
         &self,
         criterion: &Criterion,
@@ -158,7 +161,11 @@ impl RgaaAgent {
         let tier = self.model_router.route_for(criterion.id);
 
         // Build prompt with criterion definition
-        let _prompt = PromptBuilder::build(criterion.id, page_context);
+        let prompt = if let Some(img) = _screenshot {
+            PromptBuilder::build_with_image(criterion.id, page_context, img)
+        } else {
+            PromptBuilder::build(criterion.id, page_context)
+        };
 
         // Acquire rate limit permit
         self.model_router
@@ -169,17 +176,40 @@ impl RgaaAgent {
             })
             .await;
 
-        // TODO: In production, this calls HoloClient::evaluate(prompt)
-        // For now, return a placeholder
-        CriterionResult {
-            criterion_id: criterion.id.to_string(),
-            title: criterion.title.to_string(),
-            classification: Classification::IaAssiste,
-            status: CriterionStatus::NeedsReview,
-            violations: vec![],
-            confidence: None,
-            justification: Some("Agent integration pending".to_string()),
-            source: "agent".to_string(),
+        // Call HoloClient via the tier-appropriate client
+        let client = self.model_router.client_for_tier(tier);
+
+        match client.evaluate_multimodal(&prompt, _screenshot).await {
+            Ok(response) => {
+                let status = map_verdict(response.clone());
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::IaAssiste,
+                    status,
+                    violations: vec![],
+                    confidence: Some(response.confidence),
+                    justification: Some(response.justification),
+                    source: "agent".to_string(),
+                }
+            }
+            Err(e) => {
+                warn!(
+                    criterion_id = criterion.id,
+                    error = %e,
+                    "LLM evaluation failed, falling back to NeedsReview"
+                );
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::IaAssiste,
+                    status: CriterionStatus::NeedsReview,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(format!("LLM evaluation failed: {e}")),
+                    source: "agent".to_string(),
+                }
+            }
         }
     }
 }
@@ -189,7 +219,10 @@ mod tests {
     use super::*;
     use crate::models::ModelRouter;
     use rgaa_core::RgaaCriteria;
-    use rgaa_holo::PageContext;
+    use rgaa_holo::{HoloClient, PageContext};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
 
     fn sample_context() -> PageContext {
         PageContext {
@@ -205,6 +238,39 @@ mod tests {
         }
     }
 
+    fn spawn_mock_server(body: &'static str) -> (String, Arc<std::thread::JoinHandle<()>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(mut s) => {
+                        std::thread::spawn(move || {
+                            let mut buf = [0u8; 4096];
+                            let _ = s.read(&mut buf);
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = s.write_all(response.as_bytes());
+                            let _ = s.flush();
+                        });
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        (addr.to_string(), Arc::new(handle))
+    }
+
+    fn agent_with_mock(body: &'static str) -> (RgaaAgent, Arc<std::thread::JoinHandle<()>>) {
+        let (addr, handle) = spawn_mock_server(body);
+        let client = HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+        let router = ModelRouter::new(client.clone(), client, crate::ratelimit::RateLimiter::new(60, 60));
+        (RgaaAgent::new(router), handle)
+    }
+
     #[test]
     fn test_agent_creation() {
         let router = ModelRouter::new_placeholder();
@@ -214,20 +280,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_ia_assiste_returns_results_for_all_criteria() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+        let (agent, _handle) = agent_with_mock(
+            r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#,
+        );
         let criteria: Vec<Criterion> = vec![
             Criterion {
-                id: "1.3",
-                title: "Test Criterion 1.3",
+                id: "2.2",
+                title: "Test Criterion 2.2",
                 classification: Classification::IaAssiste,
-                wcag_refs: "1.1.1",
+                wcag_refs: "1.3.1",
             },
             Criterion {
-                id: "11.2",
-                title: "Test Criterion 11.2",
+                id: "8.6",
+                title: "Test Criterion 8.6",
                 classification: Classification::IaAssiste,
-                wcag_refs: "2.4.6",
+                wcag_refs: "2.4.2",
             },
         ];
         let context = sample_context();
@@ -235,33 +302,70 @@ mod tests {
         let results = agent.run_ia_assiste(&criteria, &context, None).await;
 
         assert_eq!(results.len(), 2);
-        assert!(results.contains_key("1.3"));
-        assert!(results.contains_key("11.2"));
+        assert!(results.contains_key("2.2"));
+        assert!(results.contains_key("8.6"));
     }
 
     #[tokio::test]
-    async fn test_evaluate_criterion_returns_placeholder() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+    async fn test_evaluate_criterion_returns_parsed_verdict() {
+        let (agent, _handle) = agent_with_mock(
+            r#"{"verdict":"pass","confidence":0.95,"justification":"Titre pertinent"}"#,
+        );
         let criterion = Criterion {
-            id: "1.3",
-            title: "Alternative textuelle pertinente",
+            id: "8.6",
+            title: "Titre de page pertinent",
             classification: Classification::IaAssiste,
-            wcag_refs: "1.1.1, 4.1.2",
+            wcag_refs: "2.4.2",
         };
         let context = sample_context();
 
         let result = agent.evaluate_criterion(&criterion, &context, None).await;
-
-        assert_eq!(result.status, CriterionStatus::NeedsReview);
         assert_eq!(result.source, "agent");
         assert!(result.justification.is_some());
+        assert_eq!(result.status, CriterionStatus::Pass);
+        assert_eq!(result.confidence, Some(0.95));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_criterion_fail_verdict() {
+        let (agent, _handle) = agent_with_mock(
+            r#"{"verdict":"fail","confidence":0.8,"justification":"Pas de titre"}"#,
+        );
+        let criterion = Criterion {
+            id: "8.6",
+            title: "Titre de page pertinent",
+            classification: Classification::IaAssiste,
+            wcag_refs: "2.4.2",
+        };
+        let context = sample_context();
+
+        let result = agent.evaluate_criterion(&criterion, &context, None).await;
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(result.confidence, Some(0.8));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_criterion_low_confidence_needs_review() {
+        let (agent, _handle) = agent_with_mock(
+            r#"{"verdict":"pass","confidence":0.3,"justification":"Incertain"}"#,
+        );
+        let criterion = Criterion {
+            id: "2.2",
+            title: "Test",
+            classification: Classification::IaAssiste,
+            wcag_refs: "1.3.1",
+        };
+        let context = sample_context();
+
+        let result = agent.evaluate_criterion(&criterion, &context, None).await;
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
     }
 
     #[tokio::test]
     async fn test_run_ia_assiste_with_ia_assiste_criteria_only() {
-        let router = ModelRouter::new_placeholder();
-        let agent = RgaaAgent::new(router);
+        let (agent, _handle) = agent_with_mock(
+            r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#,
+        );
         let ia_criteria = RgaaCriteria::ia_assiste();
         let context = sample_context();
 
@@ -332,20 +436,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_builder_builds_working_agent() {
-        let agent = AgentBuilder::new()
-            .model("holo3-1-35b-a3b")
-            .max_concurrent(2)
-            .build();
+        let (agent, _handle) = agent_with_mock(
+            r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#,
+        );
 
         let context = sample_context();
         let criterion = Criterion {
-            id: "1.3",
+            id: "2.2",
             title: "Test",
             classification: Classification::IaAssiste,
-            wcag_refs: "1.1.1",
+            wcag_refs: "1.3.1",
         };
 
         let result = agent.evaluate_criterion(&criterion, &context, None).await;
-        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert_eq!(result.status, CriterionStatus::Pass);
     }
 }

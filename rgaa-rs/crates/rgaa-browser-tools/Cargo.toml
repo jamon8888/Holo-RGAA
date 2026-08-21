@@ -1,0 +1,16 @@
+[package]
+name = "rgaa-browser-tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rgaa-obscura = { path = "../rgaa-obscura" }
+rgaa-core = { path = "../rgaa-core" }
+rig-core = { workspace = true, features = ["derive"] }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

@@ -1,19 +1,40 @@
 use crate::{PatchProposal, RemediationError, RemediationIssue, SourceLocation};
 use serde::{Deserialize, Serialize};
 
+/// Supported frontend frameworks for automated remediation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Framework {
+    /// React (JSX/TSX)
     React,
+    /// Next.js (React + SSR)
     Next,
+    /// Vue.js (SFC)
     Vue,
+    /// Angular (TypeScript)
     Angular,
 }
 
+/// Adapter trait for framework-specific remediation logic.
+///
+/// Each framework implements detection, source location, and patch proposal
+/// generation for accessibility issues.
 pub trait FrameworkAdapter: Send + Sync {
+    /// Returns the framework this adapter handles.
     fn framework(&self) -> Framework;
+
+    /// Detects if the given source code belongs to this framework.
     fn detect(&self, source: &str) -> Option<Framework>;
+
+    /// Locates the source positions relevant to the given issue.
     fn locate(&self, source: &str, issue: &RemediationIssue) -> Vec<SourceLocation>;
+
+    /// Generates a patch proposal for the given issue.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RemediationError::NeedsReview` if the issue requires manual review,
+    /// or `RemediationError::UnsupportedFramework` if the framework doesn't match.
     fn propose(
         &self,
         issue: &RemediationIssue,
@@ -21,11 +42,24 @@ pub trait FrameworkAdapter: Send + Sync {
     ) -> Result<PatchProposal, RemediationError>;
 }
 
+/// React framework adapter.
 pub struct ReactAdapter;
+/// Next.js framework adapter.
 pub struct NextAdapter;
+/// Vue.js framework adapter.
 pub struct VueAdapter;
+/// Angular framework adapter.
 pub struct AngularAdapter;
 
+/// Returns a static reference to the adapter for the given framework.
+///
+/// # Arguments
+///
+/// * `framework` - The framework to get an adapter for.
+///
+/// # Returns
+///
+/// A static reference to the appropriate `FrameworkAdapter` implementation.
 pub fn adapter_for(framework: Framework) -> &'static dyn FrameworkAdapter {
     match framework {
         Framework::React => &ReactAdapter,

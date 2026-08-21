@@ -5,14 +5,26 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// MCP request for analyzing a web page for accessibility issues.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AnalyzeRequest {
+    /// The URL to analyze.
     pub url: String,
+    /// Optional configuration for the analysis.
     #[serde(default)]
     pub config: AnalyzeConfigInput,
 }
 
 impl AnalyzeRequest {
+    /// Creates a malformed request for testing error handling.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL to use in the malformed request.
+    ///
+    /// # Errors
+    ///
+    /// Always returns `Err(McpFailure::InvalidInput)`.
     pub fn malformed(url: &str) -> Result<Self, McpFailure> {
         let request = Self {
             url: url.into(),
@@ -73,12 +85,23 @@ impl AnalyzeRequest {
     }
 }
 
+/// MCP request for remediating accessibility issues.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RemediationRequest {
+    /// List of issues to remediate (1-25 items).
     pub issues: Vec<RemediationIssueInput>,
 }
 
 impl RemediationRequest {
+    /// Validates that the issue count is within allowed bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - Number of issues in the batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns `McpFailure::InvalidInput` if count is not between 1 and 25.
     pub fn validate_issue_count(count: usize) -> Result<(), McpFailure> {
         (1..=25)
             .contains(&count)
@@ -87,11 +110,16 @@ impl RemediationRequest {
     }
 }
 
+/// MCP request for running a guided accessibility test.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GuidedTestRequest {
+    /// The guided test configuration.
     pub test: GuidedTestInput,
 }
 
+/// Error type for MCP tool operations.
+///
+/// Contains an error code and message, with support for secret redaction.
 #[derive(Debug, Clone)]
 pub struct McpFailure {
     code: ErrorCode,
@@ -99,45 +127,83 @@ pub struct McpFailure {
 }
 
 impl McpFailure {
+    /// Creates an invalid input error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message describing the invalid input.
     pub fn invalid(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::InvalidInput,
             message: message.into(),
         }
     }
+    /// Creates a policy denied error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message describing the policy violation.
     pub fn policy(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::PolicyDenied,
             message: message.into(),
         }
     }
+
+    /// Creates an unsupported configuration error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message describing the unsupported configuration.
     pub fn unsupported(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::UnsupportedConfiguration,
             message: message.into(),
         }
     }
+
+    /// Creates an execution failed error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message describing the execution failure.
     pub fn execution(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::ExecutionFailed,
             message: message.into(),
         }
     }
+
+    /// Creates an incomplete result error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message describing the incomplete result.
     pub fn incomplete(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::IncompleteResult,
             message: message.into(),
         }
     }
+
+    /// Creates an empty result error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message describing the empty result.
     pub fn empty(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::EmptyResult,
             message: message.into(),
         }
     }
+
+    /// Returns the error code as a static string.
     pub fn code(&self) -> &'static str {
         self.code.as_str()
     }
+
+    /// Converts the error into MCP ErrorData with redacted secrets.
     pub fn into_error_data(self) -> ErrorData {
         let message = format!("{}: {}", self.code.as_str(), redact(&self.message));
         let data = Some(serde_json::json!({ "code": self.code.as_str() }));

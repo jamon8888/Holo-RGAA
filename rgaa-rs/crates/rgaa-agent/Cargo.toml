@@ -1,0 +1,15 @@
+[package]
+name = "rgaa-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+rgaa-holo = { path = "../rgaa-holo" }
+rgaa-browser-tools = { path = "../rgaa-browser-tools" }
+rig-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

@@ -1,30 +1,48 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// State of a finding in the remediation lifecycle.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingState {
+    /// Newly discovered finding.
     Open,
+    /// Finding has been triaged and prioritized.
     Triaged,
+    /// A fix has been proposed for the finding.
     FixProposed,
+    /// Fix is awaiting human approval.
     AwaitingApproval,
+    /// Fix has been applied to the codebase.
     Applied,
+    /// Fix is being verified.
     Verifying,
+    /// Finding has been resolved and verified.
     Resolved,
+    /// Finding requires human review.
     NeedsReview,
+    /// Finding is not applicable to this context.
     NotApplicable,
+    /// Finding has been marked as a false positive.
     FalsePositive,
+    /// Finding has been deferred to a later date.
     Deferred,
 }
 
+/// Record of a state transition in the finding lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LifecycleEntry {
+    /// The state before the transition.
     pub from: FindingState,
+    /// The state after the transition.
     pub to: FindingState,
+    /// The actor who performed the transition.
     pub actor: String,
+    /// The reason for the transition.
     pub reason: String,
 }
 
+/// Errors that can occur during remediation operations.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum RemediationError {
     #[error("invalid finding transition from {from:?} to {to:?}")]
@@ -50,14 +68,25 @@ pub enum RemediationError {
     InvalidApproval { issue_id: String },
 }
 
+/// Tracks the lifecycle of a finding through state transitions.
+///
+/// Maintains a history of all state changes with actor and reason information.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FindingLifecycle {
+    /// The unique identifier of the finding.
     pub finding_id: String,
+    /// The current state of the finding.
     pub state: FindingState,
+    /// History of all state transitions.
     history: Vec<LifecycleEntry>,
 }
 
 impl FindingLifecycle {
+    /// Creates a new finding lifecycle starting in the `Open` state.
+    ///
+    /// # Arguments
+    ///
+    /// * `finding_id` - The unique identifier of the finding.
     pub fn new(finding_id: impl Into<String>) -> Self {
         Self {
             finding_id: finding_id.into(),
@@ -66,6 +95,18 @@ impl FindingLifecycle {
         }
     }
 
+    /// Transitions the finding to a new state.
+    ///
+    /// # Arguments
+    ///
+    /// * `next` - The target state to transition to.
+    /// * `actor` - The actor performing the transition.
+    /// * `reason` - The reason for the transition.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RemediationError::InvalidTransition` if the transition is not allowed
+    /// or if actor/reason are empty.
     pub fn transition(
         &mut self,
         next: FindingState,

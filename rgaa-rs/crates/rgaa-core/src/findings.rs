@@ -2,28 +2,51 @@ use serde::{Deserialize, Serialize};
 
 use crate::EvidenceRef;
 
+/// An accessibility finding representing a specific violation.
+///
+/// Findings are the primary output of accessibility audits, containing
+/// information about what was found, where, and how to fix it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Finding {
+    /// Unique identifier for this finding.
     pub id: String,
+    /// The RGAA rule that was violated (e.g., "rgaa-1.1").
     pub rule: String,
+    /// Optional criterion identifier (e.g., "1.3").
     pub criterion_id: Option<String>,
+    /// URL where the finding was discovered.
     pub url: String,
+    /// CSS selector or AX reference to the problematic element.
     pub target: String,
+    /// Optional component path in the codebase.
     pub component_path: Option<String>,
+    /// Evidence collected for this finding.
     pub evidence: Vec<EvidenceRef>,
+    /// Status of the finding (Fail, NeedsReview, etc.).
     pub status: crate::CriterionStatus,
+    /// Severity level (critical, serious, moderate, minor).
     pub severity: Option<String>,
+    /// Human-readable description of the issue.
     pub description: Option<String>,
+    /// Recommended remediation steps.
     pub remediation: Option<String>,
+    /// HTML snippet of the problematic element.
     #[serde(default)]
     pub html: Option<String>,
+    /// Additional details about the finding.
     #[serde(default)]
     pub details: Option<String>,
+    /// Source of the finding (axe, agent, manual).
     #[serde(default)]
     pub source: String,
 }
 
 impl Finding {
+    /// Creates a new finding with the given ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Unique identifier for the finding.
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -46,9 +69,23 @@ impl Finding {
 
 /// Stable persisted fingerprint format: `rgaa-fp-v1-` followed by a 16-digit
 /// lowercase hexadecimal FNV-1a hash of length-prefixed UTF-8 fields.
+///
+/// Fingerprints are used for deduplication and baseline comparison.
 pub struct FindingFingerprint;
 
 impl FindingFingerprint {
+    /// Generates a stable fingerprint for a finding.
+    ///
+    /// The fingerprint is based on the rule, URL, target, component path,
+    /// and evidence, making it suitable for deduplication across audits.
+    ///
+    /// # Arguments
+    ///
+    /// * `finding` - The finding to generate a fingerprint for.
+    ///
+    /// # Returns
+    ///
+    /// A string in the format `rgaa-fp-v1-{16 hex digits}`.
     pub fn from_finding(finding: &Finding) -> String {
         let mut hash = 0xcbf29ce484222325_u64;
         hash = hash_field(hash, Some(&finding.rule));

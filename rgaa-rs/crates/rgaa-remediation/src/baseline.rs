@@ -22,7 +22,19 @@ pub struct ExpiredSuppression {
     pub expires_at: Option<String>,
 }
 
-/// Compare a baseline audit bundle against a current one.
+/// Compares a baseline audit bundle against a current one.
+///
+/// Identifies new findings, resolved issues, regressions, unchanged items,
+/// and expired suppressions by matching findings via fingerprints.
+///
+/// # Arguments
+///
+/// * `previous` - The baseline audit bundle to compare against.
+/// * `current` - The current audit bundle to compare.
+///
+/// # Returns
+///
+/// A `BaselineDiff` containing categorized findings.
 pub fn compare(
     previous: &rgaa_core::AuditBundle,
     current: &rgaa_core::AuditBundle,

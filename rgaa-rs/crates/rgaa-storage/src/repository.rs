@@ -6,72 +6,138 @@ use uuid::Uuid;
 
 use rgaa_core::{AuditResult, CriterionResult};
 
+/// Database row representing an audit record.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AuditRow {
+    /// Unique identifier for the audit.
     pub id: Uuid,
+    /// URL that was audited.
     pub url: String,
+    /// Current status of the audit (pending, running, completed, failed).
     pub status: String,
+    /// Serialized audit result (JSON).
     pub result: Option<Value>,
+    /// When the audit was created.
     pub created_at: DateTime<Utc>,
+    /// When the audit was last updated.
     pub updated_at: DateTime<Utc>,
 }
 
+/// Database row representing a criterion evaluation result.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CriterionResultRow {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The audit this result belongs to.
     pub audit_id: Uuid,
+    /// RGAA criterion identifier (e.g., "1.3").
     pub criterion_id: String,
+    /// Human-readable criterion title.
     pub title: String,
+    /// Classification (IaAssiste, Technique, etc.).
     pub classification: String,
+    /// Evaluation status (Pass, Fail, NeedsReview, etc.).
     pub status: String,
+    /// Violations found (JSON array).
     pub violations: Value,
+    /// Confidence score (0.0 to 1.0).
     pub confidence: Option<f64>,
+    /// Human-readable justification for the result.
     pub justification: Option<String>,
+    /// Source of the evaluation (agent, axe, manual).
     pub source: String,
+    /// When the result was created.
     pub created_at: DateTime<Utc>,
 }
 
+/// Database row representing an accessibility finding.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct FindingRow {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The audit this finding belongs to.
     pub audit_id: Uuid,
+    /// Finding identifier (e.g., "finding-1").
     pub finding_id: String,
+    /// The RGAA rule violated.
     pub rule: String,
+    /// Optional criterion identifier.
     pub criterion_id: Option<String>,
+    /// URL where the finding was discovered.
     pub url: String,
+    /// CSS selector or AX reference to the element.
     pub target: String,
+    /// Optional component path in the codebase.
     pub component_path: Option<String>,
+    /// Finding status (Fail, NeedsReview, etc.).
     pub status: String,
+    /// Severity level (critical, serious, moderate, minor).
     pub severity: Option<String>,
+    /// Fingerprint for deduplication.
     pub fingerprint: String,
+    /// Types of evidence collected.
     pub evidence_kind: Vec<String>,
+    /// Hashes of evidence artifacts.
     pub evidence_hash: Vec<String>,
+    /// Source of the finding (axe, agent, manual).
     pub source: String,
+    /// Additional details (JSON).
     pub details: Option<Value>,
+    /// When the finding was created.
     pub created_at: DateTime<Utc>,
 }
 
+/// Database row representing an API key.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ApiKeyRow {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Hashed API key (never stored in plaintext).
     pub key_hash: String,
+    /// Human-readable name for the key.
     pub name: String,
+    /// Scopes this key is authorized for.
     pub scopes: Vec<String>,
+    /// Optional expiration timestamp.
     pub expires_at: Option<DateTime<Utc>>,
+    /// When the key was created.
     pub created_at: DateTime<Utc>,
+    /// When the key was last used.
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
+/// Repository for database operations on audit data.
+///
+/// Provides methods for creating, querying, and updating audit records,
+/// findings, and API keys in PostgreSQL.
 #[derive(Clone)]
 pub struct Repository {
     pool: PgPool,
 }
 
 impl Repository {
+    /// Creates a new repository with the given connection pool.
+    ///
+    /// # Arguments
+    ///
+    /// * `pool` - PostgreSQL connection pool.
     pub fn new(pool: &PgPool) -> Self {
         Self { pool: pool.clone() }
     }
 
+    /// Creates a new audit record.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL being audited.
+    ///
+    /// # Returns
+    ///
+    /// The UUID of the newly created audit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database insert fails.
     pub async fn create_audit(&self, url: &str) -> anyhow::Result<Uuid> {
         let id = Uuid::new_v4();
         sqlx::query(
@@ -87,6 +153,16 @@ impl Repository {
         Ok(id)
     }
 
+    /// Updates the status of an audit.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The audit UUID.
+    /// * `status` - The new status (pending, running, completed, failed).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_audit_status(&self, id: Uuid, status: &str) -> anyhow::Result<()> {
         sqlx::query(
             r#"
@@ -101,6 +177,16 @@ impl Repository {
         Ok(())
     }
 
+    /// Marks an audit as completed with its final result.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The audit UUID.
+    /// * `result` - The final audit result to store.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or database update fails.
     pub async fn complete_audit(&self, id: Uuid, result: &AuditResult) -> anyhow::Result<()> {
         let result_json = serde_json::to_value(result)?;
         sqlx::query(
@@ -116,6 +202,16 @@ impl Repository {
         Ok(())
     }
 
+    /// Stores criterion evaluation results for an audit.
+    ///
+    /// # Arguments
+    ///
+    /// * `audit_id` - The audit UUID.
+    /// * `criteria` - The criterion results to store.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or database insert fails.
     pub async fn store_criterion_results(
         &self,
         audit_id: Uuid,
@@ -418,6 +514,24 @@ impl Repository {
         Ok(())
     }
 
+    /// Lists findings for an audit with optional filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `audit_id` - The audit UUID to list findings for.
+    /// * `status` - Optional status filter.
+    /// * `severity` - Optional severity filter.
+    /// * `rule` - Optional rule filter.
+    /// * `limit` - Maximum number of results to return.
+    /// * `offset` - Number of results to skip for pagination.
+    ///
+    /// # Returns
+    ///
+    /// A vector of matching finding rows, ordered by creation date descending.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn list_findings(
         &self,
         audit_id: Uuid,
@@ -471,6 +585,17 @@ impl Repository {
         Ok(rows)
     }
 
+    /// Stores a policy evaluation result.
+    ///
+    /// # Arguments
+    ///
+    /// * `eval` - The policy evaluation result to store.
+    /// * `audit_id` - The audit UUID this evaluation belongs to.
+    /// * `baseline_id` - Optional baseline audit UUID for comparison.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or database insert fails.
     pub async fn store_policy_evaluation(
         &self,
         eval: &rgaa_remediation::PolicyResult,
@@ -496,6 +621,15 @@ impl Repository {
     }
 }
 
+/// Hashes an API key using SHA-256.
+///
+/// # Arguments
+///
+/// * `key` - The plaintext API key to hash.
+///
+/// # Returns
+///
+/// The hexadecimal-encoded hash of the API key.
 pub fn hash_api_key(key: &str) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();

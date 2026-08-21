@@ -1,3 +1,4 @@
+use base64::Engine;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -38,6 +39,7 @@ struct ChatRequest {
     max_tokens: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct HoloClient {
     api_key: String,
     base_url: String,
@@ -45,6 +47,12 @@ pub struct HoloClient {
 }
 
 impl HoloClient {
+    /// Creates a new HoloClient with the given API key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the HTTP client cannot be built (e.g., TLS initialization failure).
+    #[must_use]
     pub fn new(api_key: String) -> Self {
         let http_client = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -64,19 +72,97 @@ impl HoloClient {
         self
     }
 
+    /// Sends a text-only evaluation prompt to the Holo3 API.
+    ///
+    /// Wraps the prompt with the system prompt and sends it as a chat completion.
+    /// Retries up to `MAX_RETRIES` times with exponential backoff on transient
+    /// failures (HTTP 429, network errors).
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The evaluation prompt describing the accessibility criterion.
+    ///
+    /// # Returns
+    ///
+    /// A parsed `HoloResponse` containing the verdict, confidence, and justification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` if all retry attempts fail due to network errors,
+    /// API errors, or invalid response parsing.
     pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, String> {
+        let messages = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: SYSTEM_PROMPT.to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            },
+        ];
+        self.evaluate_with_messages(messages).await
+    }
+
+    /// Evaluate a prompt with an optional image (base64 PNG).
+    /// When image is Some, sends a multimodal content array.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The evaluation prompt describing the accessibility criterion.
+    /// * `image_base64` - Optional base64-encoded PNG image for visual evaluation.
+    ///
+    /// # Returns
+    ///
+    /// A parsed `HoloResponse` containing the verdict, confidence, and justification.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` if:
+    /// - The provided `image_base64` is not valid base64 data.
+    /// - All retry attempts fail due to network errors, API errors, or invalid response parsing.
+    pub async fn evaluate_multimodal(
+        &self,
+        prompt: &str,
+        image_base64: Option<&str>,
+    ) -> Result<HoloResponse, String> {
+        let mut messages = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: SYSTEM_PROMPT.to_string(),
+            },
+        ];
+
+        if let Some(img) = image_base64 {
+            base64::engine::general_purpose::STANDARD
+                .decode(img)
+                .map_err(|e| format!("invalid base64 image data: {e}"))?;
+
+            let content = serde_json::json!([
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{}", img)}}
+            ]);
+            messages.push(ChatMessage {
+                role: "user".to_string(),
+                content: content.to_string(),
+            });
+        } else {
+            messages.push(ChatMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            });
+        }
+
+        self.evaluate_with_messages(messages).await
+    }
+
+    async fn evaluate_with_messages(
+        &self,
+        messages: Vec<ChatMessage>,
+    ) -> Result<HoloResponse, String> {
         let request = ChatRequest {
             model: MODEL.to_string(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: SYSTEM_PROMPT.to_string(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: prompt.to_string(),
-                },
-            ],
+            messages,
             temperature: 0.1,
             max_tokens: 512,
         };
@@ -84,11 +170,7 @@ impl HoloClient {
         let mut last_error = String::new();
 
         for attempt in 1..=MAX_RETRIES {
-            info!(
-                attempt,
-                max_retries = MAX_RETRIES,
-                "Calling Holo3 API"
-            );
+            info!(attempt, max_retries = MAX_RETRIES, "Calling Holo3 API");
 
             match self
                 .http_client
@@ -121,11 +203,7 @@ impl HoloClient {
                     } else if status.as_u16() == 429 {
                         let backoff = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
                         let sleep_ms = backoff + Self::jitter_for(backoff);
-                        warn!(
-                            attempt,
-                            backoff_ms = sleep_ms,
-                            "Rate limited, backing off"
-                        );
+                        warn!(attempt, backoff_ms = sleep_ms, "Rate limited, backing off");
                         tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                         last_error = "Rate limited (429)".to_string();
                     } else {
@@ -144,7 +222,10 @@ impl HoloClient {
 
                     if attempt < MAX_RETRIES {
                         let backoff = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
-                        tokio::time::sleep(Duration::from_millis(backoff + Self::jitter_for(backoff))).await;
+                        tokio::time::sleep(Duration::from_millis(
+                            backoff + Self::jitter_for(backoff),
+                        ))
+                        .await;
                     }
                 }
             }
@@ -156,6 +237,20 @@ impl HoloClient {
         ))
     }
 
+    /// Attempts to extract a `HoloResponse` from raw text.
+    ///
+    /// Tries three strategies in order:
+    /// 1. Direct JSON parsing of the entire text.
+    /// 2. Extraction from a markdown code block (` ```json ... ``` `).
+    /// 3. Regex extraction of a JSON object containing the expected fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The raw response text from the API.
+    ///
+    /// # Returns
+    ///
+    /// `Some(HoloResponse)` if any extraction strategy succeeds, `None` otherwise.
     pub fn extract_json(text: &str) -> Option<HoloResponse> {
         if let Ok(response) = serde_json::from_str::<HoloResponse>(text) {
             return Some(response);
@@ -186,13 +281,9 @@ impl HoloClient {
         seed % (backoff / 2 + 1)
     }
 
+    /// Extracts JSON content from a markdown code block.
     fn extract_from_code_block(text: &str) -> Option<String> {
-        let patterns = [
-            "```json\n",
-            "```\n",
-            "```json\r\n",
-            "```\r\n",
-        ];
+        let patterns = ["```json\n", "```\n", "```json\r\n", "```\r\n"];
 
         for start_pattern in &patterns {
             if let Some(start) = text.find(start_pattern) {
@@ -206,6 +297,7 @@ impl HoloClient {
         None
     }
 
+    /// Extracts a JSON object containing the expected fields using regex.
     fn extract_with_regex(text: &str) -> Option<String> {
         let pattern = r#"\{[^{}]*"verdict"[^{}]*"confidence"[^{}]*"justification"[^{}]*\}"#;
         let re = regex_lite::Regex::new(pattern).ok()?;
@@ -257,7 +349,9 @@ mod tests {
     /// Minimal HTTP server that answers every request with a fixed Holo3-style
     /// JSON body. Used to validate parsing and concurrent execution without
     /// touching the real API.
-    fn spawn_mock_server(body: &'static str) -> (String, std::sync::Arc<std::thread::JoinHandle<()>>) {
+    fn spawn_mock_server(
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::thread::JoinHandle<()>>) {
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
@@ -288,10 +382,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_parses_via_mock_server() {
-        let (addr, handle) = spawn_mock_server(
-            r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#,
-        );
-        let client = HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+        let (addr, handle) =
+            spawn_mock_server(r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#);
+        let client =
+            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
 
         let res = client.evaluate("prompt").await;
         assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
@@ -302,10 +396,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_evaluate_multimodal_text_only() {
+        let (addr, handle) =
+            spawn_mock_server(r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#);
+        let client =
+            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+
+        let res = client.evaluate_multimodal("prompt", None).await;
+        assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
+        let r = res.unwrap();
+        assert_eq!(r.verdict, "pass");
+        drop(handle);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_multimodal_invalid_base64() {
+        let client = HoloClient::new("test-key".to_string());
+        let result = client
+            .evaluate_multimodal("test prompt", Some("not-valid-base64!!!"))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("base64"));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_multimodal_with_image() {
+        let (addr, handle) =
+            spawn_mock_server(r#"{"verdict":"fail","confidence":0.85,"justification":"no alt"}"#);
+        let client =
+            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+
+        let fake_b64 = "iVBORw0KGgoAAAANSUhEUg==";
+        let res = client
+            .evaluate_multimodal("describe this screenshot", Some(fake_b64))
+            .await;
+        assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
+        let r = res.unwrap();
+        assert_eq!(r.verdict, "fail");
+        assert_eq!(r.confidence, 0.85);
+        drop(handle);
+    }
+
+    #[tokio::test]
     async fn test_evaluate_concurrent_send() {
-        let (addr, handle) = spawn_mock_server(
-            r#"{"verdict":"na","confidence":1.0,"justification":"n/a"}"#,
-        );
+        let (addr, handle) =
+            spawn_mock_server(r#"{"verdict":"na","confidence":1.0,"justification":"n/a"}"#);
         let client = std::sync::Arc::new(
             HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}")),
         );
@@ -330,7 +465,10 @@ mod tests {
         let elapsed = start.elapsed();
 
         assert_eq!(ok, 10, "all concurrent calls should succeed");
-        assert!(elapsed.as_secs() < 10, "concurrent calls unexpectedly slow: {elapsed:?}");
+        assert!(
+            elapsed.as_secs() < 10,
+            "concurrent calls unexpectedly slow: {elapsed:?}"
+        );
         drop(handle);
     }
 }

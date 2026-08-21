@@ -1,17 +1,24 @@
 use std::str::FromStr;
 
+/// Supported output formats for audit reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReportFormat {
+    /// JSON format (default).
     #[default]
     Json,
+    /// Markdown format.
     Markdown,
+    /// SARIF 2.1.0 format (Static Analysis Results Interchange Format).
     Sarif,
+    /// JUnit XML format.
     Junit,
 }
 
 impl ReportFormat {
+    /// List of all supported format names.
     pub const ALL: [&'static str; 4] = ["json", "markdown", "sarif", "junit"];
 
+    /// Returns the format as a static string.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Json => "json",

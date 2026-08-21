@@ -13,6 +13,39 @@ const HOLO3_CONCURRENCY: usize = 12;
 
 use rgaa_obscura::ObscuraBridge;
 
+fn holo3_status(verdict: &str) -> CriterionStatus {
+    if verdict.eq_ignore_ascii_case("pass") || verdict.eq_ignore_ascii_case("conforme") {
+        CriterionStatus::Pass
+    } else if verdict.eq_ignore_ascii_case("fail")
+        || verdict.eq_ignore_ascii_case("non_conforme")
+    {
+        CriterionStatus::Fail
+    } else {
+        CriterionStatus::NeedsReview
+    }
+}
+
+fn manual_status() -> CriterionStatus {
+    CriterionStatus::NeedsReview
+}
+
+fn calculate_compliance(criteria: &[CriterionResult], total: usize) -> f64 {
+    let pass_count = criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::Pass)
+        .count();
+    let na_count = criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
+        .count();
+    let denominator = total.saturating_sub(na_count);
+    if denominator > 0 {
+        (pass_count as f64 / denominator as f64) * 100.0
+    } else {
+        0.0
+    }
+}
+
 pub struct Orchestrator;
 
 impl Orchestrator {
@@ -121,11 +154,7 @@ async fn audit_one(
         let (criterion_id, title, res) = joined.expect("Holo3 task panicked");
         match res {
             Ok(response) => {
-                let status = match response.verdict.to_lowercase().as_str() {
-                    "pass" | "conforme" => CriterionStatus::Pass,
-                    "fail" | "non_conforme" => CriterionStatus::Fail,
-                    _ => CriterionStatus::Na,
-                };
+                let status = holo3_status(&response.verdict);
                 holo_results.insert(criterion_id.clone(), CriterionResult {
                     criterion_id,
                     title,
@@ -165,7 +194,7 @@ async fn audit_one(
     // present from Holo3) are conforming for the automated checks -> Pass, so
     // the compliance rate reflects the full 106-criterion catalog instead of
     // only the criteria that produced a violation.
-    // Manuel criteria always require human review -> Na.
+    // Manuel criteria always require human review -> NeedsReview.
     let all_criteria = RgaaCriteria::all();
     for criterion in &all_criteria {
         if criterion.classification == Classification::Manuel {
@@ -173,7 +202,7 @@ async fn audit_one(
                 criterion_id: criterion.id.to_string(),
                 title: criterion.title.to_string(),
                 classification: Classification::Manuel,
-                status: CriterionStatus::Na,
+                status: manual_status(),
                 violations: vec![],
                 confidence: None,
                 justification: Some("Manual verification required".into()),
@@ -197,14 +226,13 @@ async fn audit_one(
     let criteria: Vec<CriterionResult> = all_results.into_values().collect();
     let pass_count = criteria.iter().filter(|c| c.status == CriterionStatus::Pass).count();
     let fail_count = criteria.iter().filter(|c| c.status == CriterionStatus::Fail).count();
-    let na_count = criteria.iter().filter(|c| c.status == CriterionStatus::Na).count();
+    let na_count = criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::NotApplicable)
+        .count();
     let error_count = criteria.iter().filter(|c| c.status == CriterionStatus::Error).count();
     let total = RgaaCriteria::count();
-    let compliance = if total - na_count > 0 {
-        (pass_count as f64 / (total - na_count) as f64) * 100.0
-    } else {
-        0.0
-    };
+    let compliance = calculate_compliance(&criteria, total);
 
     info!(
         pass = pass_count,
@@ -233,4 +261,39 @@ async fn audit_one(
         overall_compliance: compliance,
         duration_ms: start.elapsed().as_millis() as u64,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_holo3_verdict_requires_review() {
+        assert_eq!(holo3_status("uncertain"), CriterionStatus::NeedsReview);
+    }
+
+    #[test]
+    fn manual_criteria_require_review() {
+        assert_eq!(manual_status(), CriterionStatus::NeedsReview);
+    }
+
+    #[test]
+    fn needs_review_is_not_excluded_from_compliance_denominator() {
+        let criteria = vec![test_result(CriterionStatus::Pass), test_result(CriterionStatus::NeedsReview)];
+
+        assert_eq!(calculate_compliance(&criteria, 2), 50.0);
+    }
+
+    fn test_result(status: CriterionStatus) -> CriterionResult {
+        CriterionResult {
+            criterion_id: "1.1".into(),
+            title: "test".into(),
+            classification: Classification::IaAssiste,
+            status,
+            violations: Vec::new(),
+            confidence: None,
+            justification: None,
+            source: "test".into(),
+        }
+    }
 }

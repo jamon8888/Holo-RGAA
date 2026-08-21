@@ -6,32 +6,51 @@ pub mod verify;
 
 use clap::Subcommand;
 
+/// Common CLI arguments shared across all audit commands.
 #[derive(Debug, Clone, clap::Args)]
 pub struct CommonArgs {
+    /// Path to the configuration file.
     #[clap(long)]
     pub config: Option<std::path::PathBuf>,
+    /// Path to write output to (defaults to stdout).
     #[clap(long)]
     pub output: Option<std::path::PathBuf>,
+    /// Output format (json, markdown, sarif, junit).
     #[clap(long)]
     pub format: Option<String>,
+    /// Audit ID for operations that require it.
     #[clap(long)]
     pub audit_id: Option<String>,
 }
 
+/// Available audit commands.
 #[derive(Debug, Subcommand)]
 pub enum AuditCommand {
-    #[command(about = "Run an RGAA audit against a URL")]
+    /// Run an RGAA audit against a URL.
     Analyze(analyze::AnalyzeArgs),
-    #[command(about = "Run a guided accessibility test")]
+    /// Run a guided accessibility test.
     Igt(igt::IgtArgs),
-    #[command(about = "Verify remediation proposals")]
+    /// Verify remediation proposals.
     Verify(verify::VerifyArgs),
-    #[command(about = "Render an audit bundle as a report")]
+    /// Render an audit bundle as a report.
     Report(report::ReportArgs),
-    #[command(about = "Check compliance against the configured policy")]
+    /// Check compliance against the configured policy.
     Policy(policy::PolicyArgs),
 }
 
+/// Dispatches a command to the appropriate handler.
+///
+/// # Arguments
+///
+/// * `command` - The audit command to execute.
+///
+/// # Returns
+///
+/// Exit code (0 for success, non-zero for failure).
+///
+/// # Errors
+///
+/// Returns `CliError` if the command fails.
 pub async fn dispatch(command: AuditCommand) -> Result<i32, crate::CliError> {
     match command {
         AuditCommand::Analyze(args) => analyze::run(args).await,

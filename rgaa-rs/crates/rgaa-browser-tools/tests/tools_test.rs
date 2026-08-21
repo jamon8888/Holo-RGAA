@@ -2,7 +2,7 @@ use rgaa_browser_tools::tools::{
     AccessibilityTreeTool, AssertStateTool, ClickTool, EvalJsTool, NavigateTool, PressKeyTool,
     ScreenshotTool, TabOrderTool, TypeTool,
 };
-use rgaa_browser_tools::{AXNode, AXTree, BrowserSession};
+use rgaa_browser_tools::{AXNode, AXTree, BrowserSession, ToolContext};
 use std::collections::HashMap;
 use rgaa_obscura::ObscuraBridge;
 
@@ -405,4 +405,22 @@ fn focusable_elements_returns_empty_when_no_interactive_nodes() {
         ],
     };
     assert!(tree.focusable_elements().is_empty());
+}
+
+#[tokio::test]
+async fn test_tool_context_creation() {
+    let session = BrowserSession::new_placeholder();
+    let ctx = ToolContext::new(session);
+    assert!(ctx.session().lock().await.current_url().is_none());
+}
+
+#[tokio::test]
+async fn test_tool_context_shares_state_across_clones() {
+    let session = BrowserSession::new_placeholder();
+    let ctx1 = ToolContext::new(session);
+    let ctx2 = ctx1.clone();
+
+    ctx1.session().lock().await.set_current_url("https://example.com".to_string());
+    let url = ctx2.session().lock().await.current_url().map(String::from);
+    assert_eq!(url.as_deref(), Some("https://example.com"));
 }

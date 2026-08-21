@@ -596,3 +596,88 @@ None expected. We're adding new functionality:
    - LanceDB: ~50MB base + data
    - FastEmbed: ~100MB model in memory
    - Mitigation: Lazy loading, optional features
+
+## Section 7: Orchestrator Update
+
+### Current State
+
+The orchestrator (`rgaa-orchestrator/src/pipeline.rs`) currently:
+- Creates `RgaaAgent` with `ModelRouter` and `ToolContext`
+- Calls `agent.run_ia_assiste()` directly
+- Manages browser session lifecycle
+
+### Changes Required
+
+#### 1. Update Agent Construction
+
+Before:
+```rust
+let rate_limiter = RateLimiter::new(10, 20);
+let model_router = ModelRouter::new(
+    rgaa_holo::HoloClient::new(api_key.clone()),
+    rgaa_holo::HoloClient::new(api_key),
+    rate_limiter,
+);
+let agent = RgaaAgent::new(model_router, tool_ctx);
+```
+
+After:
+```rust
+let config = AgentConfig::from_env()?;
+let agent = RgaaAgent::new(&config)?;
+```
+
+#### 2. Update Pipeline Flow
+
+Before:
+```rust
+let agent_results = agent
+    .run_ia_assiste(&ia_criteria, &page_context, None)
+    .await;
+```
+
+After:
+```rust
+let conversation_id = format!("audit-{}", uuid::Uuid::new_v4());
+let agent_results = agent
+    .run_ia_assiste(&ia_criteria, &page_context, &conversation_id)
+    .await;
+```
+
+#### 3. Remove Redundant Code
+
+- Remove `ModelRouter` creation (rig-agent handles routing)
+- Remove `RateLimiter` creation (rig-agent handles rate limiting)
+- Remove manual `HoloClient` creation (rig-agent uses OpenAI provider)
+
+#### 4. Add LanceDB Initialization
+
+```rust
+// Initialize LanceDB at startup
+let lancedb_path = std::env::var("LANCEDB_PATH")
+    .unwrap_or_else(|_| "./data/lancedb".into());
+
+// Create tables if they don't exist
+LanceDbMemory::initialize_tables(&lancedb_path).await?;
+LanceDbVectorIndex::initialize_tables(&lancedb_path).await?;
+```
+
+### Impact on rgaa-mcp and rgaa-cli
+
+- **rgaa-mcp**: No changes needed (does not depend on rgaa-agent)
+- **rgaa-cli**: No changes needed (does not depend on rgaa-agent)
+- **rgaa-orchestrator**: Will need updates as described above
+
+### Breaking Changes
+
+The orchestrator update is a breaking change for the pipeline API:
+- `Orchestrator::run()` and `Orchestrator::run_batch()` will require `AgentConfig`
+- The `CrawlConfig` type may need to be extended with LanceDB configuration
+
+### Migration Strategy
+
+Phase 6 in the migration path handles this update:
+1. Update `Orchestrator` to use new `AgentConfig`
+2. Remove old `ModelRouter`/`RateLimiter` code
+3. Update pipeline tests
+4. Validate with integration tests

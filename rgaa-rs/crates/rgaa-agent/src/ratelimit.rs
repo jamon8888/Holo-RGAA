@@ -3,16 +3,22 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
+/// Configuration for the rate limiter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimitConfig {
+    /// Maximum requests per minute for the tactical tier.
     pub tactical_rpm: u32,
+    /// Maximum requests per minute for the reasoning tier.
     pub reasoning_rpm: u32,
 }
 
+/// The model tier used for rate limiting purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelTier {
-    Tactical,  // holo3-1-35b-a3b, free, 10 RPM
-    Reasoning, // holo3-122b-a10b, paid, configurable RPM
+    /// holo3-1-35b-a3b, free tier, 10 RPM default.
+    Tactical,
+    /// holo3-122b-a10b, paid tier, configurable RPM.
+    Reasoning,
 }
 
 pub(crate) struct RateLimiterInner {
@@ -23,12 +29,31 @@ pub(crate) struct RateLimiterInner {
     last_refill: Mutex<Instant>,
 }
 
+/// A token bucket rate limiter for controlling API request throughput.
+///
+/// Uses atomic operations for lock-free token acquisition on the hot path,
+/// with a mutex only for periodic refill calculations.
+///
+/// # Examples
+///
+/// ```ignore
+/// let limiter = RateLimiter::new(10, 20);
+/// limiter.acquire(ModelTier::Tactical).await;
+/// ```
 #[derive(Clone)]
 pub struct RateLimiter {
     inner: Arc<RateLimiterInner>,
 }
 
 impl RateLimiter {
+    /// Creates a new rate limiter with the given RPM limits.
+    ///
+    /// Tokens start fully replenished (equal to the RPM limit).
+    ///
+    /// # Arguments
+    ///
+    /// * `tactical_rpm` - Maximum requests per minute for the tactical tier.
+    /// * `reasoning_rpm` - Maximum requests per minute for the reasoning tier.
     #[must_use]
     pub fn new(tactical_rpm: u32, reasoning_rpm: u32) -> Self {
         Self {
@@ -42,6 +67,15 @@ impl RateLimiter {
         }
     }
 
+    /// Acquires a token for the given tier, blocking until available.
+    ///
+    /// This method will loop, refilling tokens as needed, until a token
+    /// can be atomically decremented. Sleeps 1 second between retries
+    /// when no tokens are available.
+    ///
+    /// # Arguments
+    ///
+    /// * `tier` - The model tier to acquire a token for.
     pub async fn acquire(&self, tier: ModelTier) {
         loop {
             self.refill_if_needed().await;
@@ -64,6 +98,7 @@ impl RateLimiter {
         }
     }
 
+    /// Returns the current rate limit configuration.
     pub fn config(&self) -> RateLimitConfig {
         RateLimitConfig {
             tactical_rpm: self.inner.tactical_refill,
@@ -71,6 +106,7 @@ impl RateLimiter {
         }
     }
 
+    /// Resets all tokens to their maximum values.
     pub fn reset(&self) {
         self.inner
             .tactical_tokens
@@ -80,6 +116,15 @@ impl RateLimiter {
             .store(self.inner.reasoning_refill, Ordering::Release);
     }
 
+    /// Returns the current number of available tokens for the given tier.
+    ///
+    /// # Arguments
+    ///
+    /// * `tier` - The model tier to check tokens for.
+    ///
+    /// # Returns
+    ///
+    /// The number of tokens currently available (may be 0).
     pub fn tokens(&self, tier: ModelTier) -> u32 {
         match tier {
             ModelTier::Tactical => self.inner.tactical_tokens.load(Ordering::Acquire),
@@ -87,6 +132,7 @@ impl RateLimiter {
         }
     }
 
+    /// Refills tokens based on elapsed time since last refill.
     async fn refill_if_needed(&self) {
         let mut last_refill = self.inner.last_refill.lock().await;
         let now = Instant::now();

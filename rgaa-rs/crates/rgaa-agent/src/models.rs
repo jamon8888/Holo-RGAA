@@ -2,12 +2,16 @@ use crate::criteria_defs::VISUAL_CRITERIA;
 use crate::ratelimit::RateLimiter;
 use rgaa_holo::HoloClient;
 
+/// Information about an available model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelInfo {
+    /// The model identifier string (e.g., "holo3-1-35b-a3b").
     pub id: &'static str,
+    /// The tier this model belongs to.
     pub tier: SelectedTier,
 }
 
+/// Routes criteria to appropriate model tiers and manages rate limiting.
 #[derive(Clone)]
 pub struct ModelRouter {
     #[allow(dead_code)]
@@ -17,23 +21,35 @@ pub struct ModelRouter {
     rate_limiter: RateLimiter,
 }
 
+/// The model tier used for evaluating a criterion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectedTier {
+    /// Fast, lower-cost model for standard criteria.
     Tactical,
+    /// Higher-capability model for complex/visual criteria.
     Reasoning,
 }
 
 impl SelectedTier {
+    /// Returns `true` if this tier is the reasoning tier.
     pub fn is_reasoning(&self) -> bool {
         *self == SelectedTier::Reasoning
     }
 
+    /// Returns `true` if this tier is the tactical tier.
     pub fn is_tactical(&self) -> bool {
         *self == SelectedTier::Tactical
     }
 }
 
 impl ModelRouter {
+    /// Creates a new `ModelRouter` with the given clients and rate limiter.
+    ///
+    /// # Arguments
+    ///
+    /// * `tactical_client` - The HoloClient for the tactical model tier.
+    /// * `reasoning_client` - The HoloClient for the reasoning model tier.
+    /// * `rate_limiter` - The rate limiter controlling request throughput.
     #[must_use]
     pub fn new(
         tactical_client: HoloClient,
@@ -48,6 +64,9 @@ impl ModelRouter {
     }
 
     /// Create a placeholder router for testing without API keys.
+    ///
+    /// Uses dummy API keys and a default rate limiter configuration.
+    /// Suitable only for unit tests and integration tests.
     #[must_use]
     pub fn new_placeholder() -> Self {
         let dummy_key = "test-key".to_string();
@@ -58,6 +77,7 @@ impl ModelRouter {
         )
     }
 
+    /// Returns a list of all available models and their tiers.
     pub fn list_available_models(&self) -> Vec<ModelInfo> {
         vec![
             ModelInfo {
@@ -71,6 +91,18 @@ impl ModelRouter {
         ]
     }
 
+    /// Determines which model tier should evaluate the given criterion.
+    ///
+    /// Visual criteria and criteria in the 11.x range are routed to the
+    /// reasoning tier; all others use the tactical tier.
+    ///
+    /// # Arguments
+    ///
+    /// * `criterion_id` - The RGAA criterion identifier (e.g., "1.3", "11.2").
+    ///
+    /// # Returns
+    ///
+    /// The `SelectedTier` appropriate for the given criterion.
     #[must_use]
     pub fn route_for(&self, criterion_id: &str) -> SelectedTier {
         if VISUAL_CRITERIA.contains(&criterion_id)
@@ -83,6 +115,7 @@ impl ModelRouter {
         }
     }
 
+    /// Returns a reference to the rate limiter.
     pub fn rate_limiter(&self) -> &RateLimiter {
         &self.rate_limiter
     }

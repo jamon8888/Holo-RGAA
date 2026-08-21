@@ -30,3 +30,8 @@ schemars = "1.1"
 clap = { version = "4.0", features = ["derive"] }
 thiserror = "2"
 rig-core = "0.42"
+rig-agent = "0.42"
+rig-lancedb = "0.42"
+rig-memory = "0.42"
+lancedb = "0.30"
+fastembed = "4.0"

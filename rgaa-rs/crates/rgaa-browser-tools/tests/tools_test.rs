@@ -649,3 +649,26 @@ async fn test_tool_context_creation() {
     let ctx = ToolContext::new(session);
     assert!(ctx.session().lock().await.current_url().is_none());
 }
+
+#[test]
+fn all_tools_have_distinct_names() {
+    use rig_core::tool::PortableTool;
+
+    let names: Vec<&str> = vec![
+        NavigateTool::NAME,
+        ScreenshotTool::NAME,
+        A11yTreeTool::NAME,
+        ClickTool::NAME,
+        PressKeyTool::NAME,
+        TypeTool::NAME,
+        TabOrderTool::NAME,
+        EvalJsTool::NAME,
+        AssertStateTool::NAME,
+    ];
+
+    let mut unique = std::collections::HashSet::new();
+    for name in &names {
+        assert!(unique.insert(*name), "duplicate tool name: {name}");
+    }
+    assert_eq!(names.len(), 9, "expected 9 tools");
+}

@@ -1,6 +1,22 @@
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_agent::models::ModelRouter;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
+use rgaa_core::{Classification, Criterion};
+use rgaa_holo::PageContext;
+
+fn sample_context() -> PageContext {
+    PageContext {
+        title: Some("Test Page".to_string()),
+        lang: Some("fr".to_string()),
+        headings: vec![],
+        images: vec![],
+        iframes: vec![],
+        links: vec![],
+        forms: vec![],
+        media: vec![],
+        navigation: vec![],
+    }
+}
 
 #[test]
 fn agent_creates_with_placeholder_router() {
@@ -25,6 +41,42 @@ fn criteria_defs_cover_all_27_ia_assiste() {
         );
     }
     assert_eq!(ia_ids.len(), 27);
+}
+
+#[tokio::test]
+async fn test_full_ia_assiste_evaluation() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let agent = RgaaAgent::new_placeholder(ctx);
+
+    let criteria = vec![Criterion {
+        id: "8.6",
+        title: "Titre de page pertinent",
+        classification: Classification::IaAssiste,
+        wcag_refs: "2.4.2",
+    }];
+
+    let context = sample_context();
+    let results = agent.run_ia_assiste(&criteria, &context, None).await;
+
+    assert_eq!(results.len(), 1);
+    let result = results.get("8.6").expect("result for 8.6");
+    assert_eq!(result.source, "agent");
+    assert!(result.justification.is_some());
+}
+
+#[tokio::test]
+async fn test_agent_with_all_ia_assiste_criteria() {
+    let ctx = ToolContext::new(BrowserSession::new_placeholder());
+    let agent = RgaaAgent::new_placeholder(ctx);
+
+    let ia_criteria = rgaa_core::RgaaCriteria::ia_assiste();
+    let context = sample_context();
+    let results = agent.run_ia_assiste(&ia_criteria, &context, None).await;
+
+    assert_eq!(results.len(), ia_criteria.len());
+    for criterion in &ia_criteria {
+        assert!(results.contains_key(criterion.id));
+    }
 }
 
 /// Drift-prevention test: ensure rgaa-agent criterion definitions stay in sync

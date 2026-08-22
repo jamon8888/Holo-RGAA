@@ -5,36 +5,39 @@ pub use fastembed::FastEmbedModel;
 use rig_core::embeddings::{Embedding, EmbeddingError, EmbeddingModel};
 use rig_core::wasm_compat::WasmCompatSend;
 
+/// Concrete embedding backend implementations usable by the provider.
 #[derive(Clone)]
 pub enum EmbeddingBackend {
+    /// On-device embeddings produced by `fastembed`.
     FastEmbed(FastEmbedModel),
 }
 
+/// Embedding provider that produces vectors for memory and vector retrieval.
+///
+/// Currently backed by a single [`EmbeddingBackend`]; the `fallback` slot was
+/// removed until a secondary backend is implemented.
 #[derive(Clone)]
 pub struct HybridEmbeddingProvider {
     primary: EmbeddingBackend,
-    fallback: Option<EmbeddingBackend>,
 }
 
 impl HybridEmbeddingProvider {
+    /// Builds the provider from agent configuration.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::AgentError::Embedding`] if the configured
+    /// backend cannot be initialized.
     pub fn new(config: &crate::config::AgentConfig) -> Result<Self, crate::error::AgentError> {
         let primary = match &config.embedding_backend {
             crate::config::EmbeddingBackendConfig::FastEmbed { model_name } => {
                 EmbeddingBackend::FastEmbed(FastEmbedModel::new(model_name)?)
             }
-            _ => {
-                return Err(crate::error::AgentError::Config(
-                    "unsupported embedding backend".into(),
-                ))
-            }
         };
 
-        Ok(Self {
-            primary,
-            fallback: None,
-        })
+        Ok(Self { primary })
     }
 
+    /// Returns the embedding dimensionality of the active backend.
     pub fn dimensions(&self) -> usize {
         match &self.primary {
             EmbeddingBackend::FastEmbed(m) => m.dimensions(),

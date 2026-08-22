@@ -23,3 +23,4 @@ arrow = "59.2.0"
 schemars = { workspace = true }
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+futures = { workspace = true }

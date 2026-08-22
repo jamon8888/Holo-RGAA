@@ -29,6 +29,15 @@ pub struct RemediateArgs {
     pub page_url: String,
     /// Source file locations for the fix
     pub source_locations: Vec<SourceLocation>,
+    /// Optional human-readable summary of the finding, carried through to the
+    /// generated remediation context.
+    pub summary: Option<String>,
+    /// Optional suggested remediation steps, carried through to the generated
+    /// remediation context.
+    pub remediation: Option<String>,
+    /// Optional related RGAA criteria IDs, carried through to the generated
+    /// remediation context.
+    pub criteria: Option<Vec<String>>,
 }
 
 /// Tool that generates remediation proposals for accessibility findings.
@@ -57,9 +66,12 @@ impl PortableTool for RemediateTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let framework = detect_framework(&args.element_html);
-        let adapter =
-            rgaa_remediation::adapter_for(framework.unwrap_or(rgaa_remediation::Framework::React));
+        let framework = detect_framework(&args.element_html).ok_or_else(|| {
+            RemediateError::RemediationFailed(
+                "could not detect a supported UI framework from the element HTML".into(),
+            )
+        })?;
+        let adapter = rgaa_remediation::adapter_for(framework);
 
         let issue = RemediationIssue {
             id: args.finding_id,
@@ -67,10 +79,10 @@ impl PortableTool for RemediateTool {
             element_html: args.element_html,
             page_url: args.page_url,
             source_locations: args.source_locations,
-            summary: String::new(),
-            remediation: String::new(),
-            criteria: vec![],
-            framework,
+            summary: args.summary.unwrap_or_default(),
+            remediation: args.remediation.unwrap_or_default(),
+            criteria: args.criteria.unwrap_or_default(),
+            framework: Some(framework),
         };
 
         let outcomes = remediate(&[issue], &self.policy, adapter)

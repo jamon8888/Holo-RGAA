@@ -79,7 +79,17 @@ pub fn format_page_context(context: &PageContext) -> String {
         prompt.push_str(&format!("**Langue:** {}\n", lang));
     }
 
-    prompt.push_str("\n## Éléments de la page\n\n");
+    let has_elements = !context.headings.is_empty()
+        || !context.images.is_empty()
+        || !context.iframes.is_empty()
+        || !context.links.is_empty()
+        || !context.forms.is_empty()
+        || !context.media.is_empty()
+        || !context.navigation.is_empty();
+
+    if has_elements {
+        prompt.push_str("\n## Éléments de la page\n\n");
+    }
 
     if !context.headings.is_empty() {
         prompt.push_str("### Titres\n");

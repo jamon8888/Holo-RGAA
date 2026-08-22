@@ -1,26 +1,44 @@
-use rig_core::embeddings::{Embedding, EmbeddingError, EmbeddingModel};
-use rig_core::wasm_compat::WasmCompatSend;
-use fastembed::{EmbeddingModel as FastEmbedTrait, InitOptions, TextEmbedding};
 use std::sync::Arc;
 
-#[derive(Clone)]
+use fastembed::{InitOptions, TextEmbedding};
+use rig_core::embeddings::{Embedding, EmbeddingError, EmbeddingModel};
+use rig_core::wasm_compat::WasmCompatSend;
+
+use crate::error::AgentError;
+
+/// Map a `fastembed` model name to its variant and known embedding width.
+fn resolve_model(model_name: &str) -> Result<(fastembed::EmbeddingModel, usize), AgentError> {
+    match model_name {
+        "all-MiniLM-L6-v2" => Ok((fastembed::EmbeddingModel::AllMiniLML6V2, 384)),
+        other => Err(AgentError::Embedding(format!(
+            "unsupported embedding model: {other}"
+        ))),
+    }
+}
+
+/// On-device embedding model wrapper around `fastembed`'s `TextEmbedding`.
 pub struct FastEmbedModel {
     model: Arc<TextEmbedding>,
     dimensions: usize,
 }
 
 impl FastEmbedModel {
-    pub fn new(_model_name: &str) -> Result<Self, crate::error::AgentError> {
-        let model = TextEmbedding::try_new(InitOptions::new(FastEmbedTrait::AllMiniLML6V2))
-            .map_err(|e| {
-                crate::error::AgentError::Embedding(format!("Failed to initialize FastEmbed: {}", e))
-            })?;
+    /// Loads the requested embedding model and reports its dimensionality.
+    ///
+    /// # Errors
+    /// Returns [`AgentError::Embedding`] if the model is unknown or fails to
+    /// initialize (e.g. model download or backend startup failure).
+    pub fn new(model_name: &str) -> Result<Self, AgentError> {
+        let (variant, dims) = resolve_model(model_name)?;
+        let model = TextEmbedding::try_new(InitOptions::new(variant))
+            .map_err(|e| AgentError::Embedding(format!("failed to init fastembed: {e}")))?;
         Ok(Self {
             model: Arc::new(model),
-            dimensions: 384,
+            dimensions: dims,
         })
     }
 
+    /// Embedding width produced by this model.
     pub fn dimensions(&self) -> usize {
         self.dimensions
     }
@@ -46,18 +64,26 @@ impl EmbeddingModel for FastEmbedModel {
         let docs: Vec<String> = documents.into_iter().collect();
         let model = self.model.clone();
         async move {
-            let vectors = model
-                .embed(docs.clone(), None)
-                .map_err(|e| EmbeddingError::ResponseError(format!("fastembed embed failed: {}", e)))?;
+            let (docs, vectors) = tokio::task::spawn_blocking(move || {
+                let vectors = model
+                    .embed(docs.clone(), None)
+                    .map_err(|e| EmbeddingError::ResponseError(format!("fastembed embed failed: {e}")))?;
+                Ok::<_, EmbeddingError>((docs, vectors))
+            })
+            .await
+            .map_err(|e| EmbeddingError::ResponseError(format!("embed task panicked: {e}")))?
+            .map_err(|e| EmbeddingError::ResponseError(format!("fastembed embed failed: {e}")))?;
+
             let embeddings = docs
                 .into_iter()
-                .zip(vectors.into_iter())
+                .zip(vectors)
                 .map(|(document, vec)| Embedding {
                     document,
-                    vec: vec.into_iter().map(|v| v as f64).collect(),
+                    vec: vec.into_iter().map(|v| *v),
                 })
                 .collect();
-            Ok(embeddings)
+
+            embeddings
         }
     }
 }

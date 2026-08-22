@@ -230,6 +230,9 @@ async fn remediate_tool_returns_proposal_for_valid_issue() {
             line: 10,
             column: Some(4),
         }],
+        summary: None,
+        remediation: None,
+        criteria: None,
     };
     let result = tool.call(args).await;
     assert!(result.is_ok());
@@ -250,6 +253,9 @@ async fn remediate_tool_returns_error_for_empty_source_locations() {
         element_html: "import React from \"react\"; <img src=\"hero.png\">".into(),
         page_url: "https://example.test".into(),
         source_locations: vec![],
+        summary: None,
+        remediation: None,
+        criteria: None,
     };
     let outcome = tool.call(args).await.expect("call should not fail");
     assert!(matches!(
@@ -272,6 +278,9 @@ async fn remediate_tool_proposal_requires_approval_by_default() {
             line: 10,
             column: None,
         }],
+        summary: None,
+        remediation: None,
+        criteria: None,
     };
     let outcome = tool.call(args).await.expect("remediation succeeded");
     if let rgaa_remediation::RemediationOutcome::Ok(guidance) = outcome {

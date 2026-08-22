@@ -1,9 +1,17 @@
 use crate::criteria_defs::get_criterion_definition;
 use rgaa_holo::{format_page_context, PageContext};
 
+/// Builds structured evaluation prompts for Holo3.
+///
+/// The prompt includes the criterion definition, WCAG references,
+/// and the full page context (headings, images, forms, etc.).
 pub struct PromptBuilder;
 
 impl PromptBuilder {
+    /// Builds a text-only evaluation prompt for `criterion_id`.
+    ///
+    /// # Returns
+    /// A formatted prompt string ready to send to the Holo3 API.
     pub fn build(criterion_id: &str, context: &PageContext) -> String {
         let def = get_criterion_definition(criterion_id);
 
@@ -35,6 +43,10 @@ impl PromptBuilder {
         prompt
     }
 
+    /// Builds a prompt that includes an image description.
+    ///
+    /// Useful when a screenshot is available and the evaluator should
+    /// incorporate visual information into the assessment.
     pub fn build_with_image(
         criterion_id: &str,
         context: &PageContext,

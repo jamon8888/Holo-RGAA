@@ -20,6 +20,6 @@ pub enum AgentError {
     #[error("configuration error: {0}")]
     Config(String),
 
-    #[error("holog3 api error: {0}")]
+    #[error("holo3 api error: {0}")]
     Holo3Api(String),
 }

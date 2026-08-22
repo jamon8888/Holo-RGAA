@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use crate::tools::A11yTreeTool;
 use crate::BrowserSession;
 
 pub struct BrowserMcpServer {
@@ -20,7 +21,7 @@ impl BrowserMcpServer {
         vec![
             "screenshot".into(),
             "navigate".into(),
-            "accessibility_tree".into(),
+            A11yTreeTool::NAME.into(),
             "eval_js".into(),
             "click".into(),
             "type".into(),

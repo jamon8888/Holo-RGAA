@@ -1,11 +1,24 @@
+/// Criterion definition used to enrich evaluation prompts.
+///
+/// Each definition provides the RGAA criterion ID, its human-readable title,
+/// the relevant WCAG success-criterion references, and the official French
+/// definition text used by the IA-assistée evaluator.
 #[derive(Copy, Clone)]
 pub struct CriterionDefinition {
+    /// RGAA criterion identifier (e.g. "1.3", "13.12").
     pub id: &'static str,
+    /// Short French title of the criterion.
     pub title: &'static str,
+    /// Comma-separated WCAG success-criterion references.
     pub wcag_refs: &'static str,
+    /// Official French definition from the RGAA référentiel.
     pub definition: &'static str,
 }
 
+/// Looks up a [`CriterionDefinition`] by its RGAA criterion ID.
+///
+/// # Returns
+/// `Some(CriterionDefinition)` if `criterion_id` is known, `None` otherwise.
 pub fn get_criterion_definition(criterion_id: &str) -> Option<CriterionDefinition> {
     DEFINITIONS.iter().find(|d| d.id == criterion_id).copied()
 }

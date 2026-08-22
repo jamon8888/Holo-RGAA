@@ -8,24 +8,18 @@ Rig-based agentic evaluator for RGAA IA_ASSISTE criteria.
 - Enriched prompts with criterion definitions and WCAG refs
 - Confidence-based NeedsReview escalation
 - Per-criterion evidence traces
+- LanceDB-backed conversation memory and vector retrieval
 
 ## Usage
 ```rust
-use rgaa_agent::agent::{RgaaAgent, AgentBuilder, create_simple_agent};
-use rgaa_agent::models::ModelRouter;
-use rgaa_agent::ratelimit::RateLimiter;
+use rgaa_agent::{RgaaAgent, AgentConfig};
 
-// Simple construction
-let agent = create_simple_agent(api_key);
+// Build configuration
+let config = AgentConfig::from_env()?;
 
-// Builder pattern
-let agent = AgentBuilder::new()
-    .model("holo3-122b-a10b")
-    .max_concurrent(5)
-    .build();
+// Create the agent
+let agent = RgaaAgent::new(&config).await?;
 
-// Full control
-let router = ModelRouter::new(tactical_client, reasoning_client, rate_limiter);
-let agent = RgaaAgent::new(router);
-let results = agent.run_ia_assiste(&criteria, &page_context, None).await;
+// Evaluate criteria
+let results = agent.run_ia_assiste(&ia_criteria, &page_context).await;
 ```

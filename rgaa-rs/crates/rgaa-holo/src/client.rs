@@ -28,7 +28,7 @@ pub struct HoloResponse {
 #[derive(Debug, Serialize)]
 struct ChatMessage {
     role: String,
-    content: String,
+    content: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,11 +39,21 @@ struct ChatRequest {
     max_tokens: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HoloClient {
     api_key: String,
     base_url: String,
     http_client: Client,
+}
+
+impl std::fmt::Debug for HoloClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HoloClient")
+            .field("api_key", &"[redacted]")
+            .field("base_url", &self.base_url)
+            .field("http_client", &"<reqwest::Client>")
+            .finish()
+    }
 }
 
 impl HoloClient {
@@ -94,11 +104,11 @@ impl HoloClient {
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: SYSTEM_PROMPT.to_string(),
+                content: serde_json::Value::String(SYSTEM_PROMPT.to_string()),
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: prompt.to_string(),
+                content: serde_json::Value::String(prompt.to_string()),
             },
         ];
         self.evaluate_with_messages(messages).await
@@ -128,7 +138,7 @@ impl HoloClient {
     ) -> Result<HoloResponse, String> {
         let mut messages = vec![ChatMessage {
             role: "system".to_string(),
-            content: SYSTEM_PROMPT.to_string(),
+            content: serde_json::Value::String(SYSTEM_PROMPT.to_string()),
         }];
 
         if let Some(img) = image_base64 {
@@ -142,12 +152,12 @@ impl HoloClient {
             ]);
             messages.push(ChatMessage {
                 role: "user".to_string(),
-                content: content.to_string(),
+                content,
             });
         } else {
             messages.push(ChatMessage {
                 role: "user".to_string(),
-                content: prompt.to_string(),
+                content: serde_json::Value::String(prompt.to_string()),
             });
         }
 
@@ -158,11 +168,6 @@ impl HoloClient {
         &self,
         messages: Vec<ChatMessage>,
     ) -> Result<HoloResponse, String> {
-        // Fast-fail for test keys to avoid network calls in tests
-        if self.api_key.starts_with("test-") {
-            return Err("test key — no API call".to_string());
-        }
-
         let request = ChatRequest {
             model: MODEL.to_string(),
             messages,

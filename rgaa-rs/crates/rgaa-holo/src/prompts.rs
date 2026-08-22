@@ -179,15 +179,12 @@ pub fn format_page_context(context: &PageContext) -> String {
     if !context.media.is_empty() {
         writeln!(prompt, "### Médias").unwrap();
         for media in &context.media {
-            writeln!(
-            prompt,
-            "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}",
-            media.media_type,
-            if media.has_controls { "oui" } else { "non" },
-            if media.has_captions { "oui" } else { "non" },
-            if media.has_transcript { "oui" } else { "non" }
-        )
-        .unwrap();
+            writeln!(prompt, "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}",
+                media.media_type,
+                if media.has_controls { "oui" } else { "non" },
+                if media.has_captions { "oui" } else { "non" },
+                if media.has_transcript { "oui" } else { "non" }
+            ).unwrap();
         }
         writeln!(prompt).unwrap();
     }
@@ -215,56 +212,19 @@ impl PromptBuilder {
 
         let mut prompt = String::new();
 
-        writeln!(
-            prompt,
-            "Évalue le critère RGAA {} sur cette page web.\n",
-            criterion_id
-        )
-        .unwrap();
+        writeln!(prompt, "Évalue le critère RGAA {} sur cette page web.\n", criterion_id).unwrap();
 
         prompt.push_str(&format_page_context(context));
 
-        writeln!(
-            prompt,
-            "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n"
-        )
-        .unwrap();
+        writeln!(prompt, "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n").unwrap();
 
-        writeln!(
-            prompt,
-            "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n"
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "1. Analyse le critère en fonction de la définition et des éléments ci-dessus"
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "2. Si une capture d'écran est fournie, utilise-la pour juger"
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "3. Retourne un JSON avec les champs:"
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "   - verdict: \"pass\", \"fail\", ou \"na\""
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "   - confidence: nombre entre 0.0 et 1.0"
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "   - justification: explication détaillée en français"
-        )
-        .unwrap();
+        writeln!(prompt, "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n").unwrap();
+        writeln!(prompt, "1. Analyse le critère en fonction de la définition et des éléments ci-dessus").unwrap();
+        writeln!(prompt, "2. Si une capture d'écran est fournie, utilise-la pour juger").unwrap();
+        writeln!(prompt, "3. Retourne un JSON avec les champs:").unwrap();
+        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").unwrap();
+        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").unwrap();
+        writeln!(prompt, "   - justification: explication détaillée en français").unwrap();
 
         prompt
     }

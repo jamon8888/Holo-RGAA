@@ -2,7 +2,6 @@ name: Release
 
 on:
   push:
-<<<<<<< HEAD
     tags:
       - 'v*'
   workflow_dispatch:
@@ -10,118 +9,11 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: true
-=======
-    tags: ["v*"]
-  workflow_dispatch:
->>>>>>> 00e6411 (ci: add GitHub Actions CI, E2E, and cross-platform release build)
 
+# Build jobs only need read; publish job needs write
 permissions:
-  contents: write
+  contents: read
 
-<<<<<<< HEAD
-jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build rgaa-mcp
-        working-directory: rgaa-rs
-        run: cargo build --release -p rgaa-mcp
-
-      - name: Build rgaa-cli
-        working-directory: rgaa-rs
-        run: cargo build --release -p rgaa-cli
-
-      - name: Package binaries
-        run: |
-          TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
-          PLATFORM="linux-x86_64"
-          STAGING="rgaa-${PLATFORM}"
-          mkdir -p "${STAGING}"
-
-          cp rgaa-rs/target/release/rgaa-mcp "${STAGING}/"
-          cp rgaa-rs/target/release/rgaa-cli "${STAGING}/"
-
-          # Include obscura if available in repo
-          if [[ -f obscura ]]; then
-            cp obscura "${STAGING}/"
-          fi
-          if [[ -f obscura-worker ]]; then
-            cp obscura-worker "${STAGING}/"
-          fi
-
-          # Include install script and config
-          cp install.sh "${STAGING}/"
-          cp -r .rgaa "${STAGING}/default-config"
-
-          tar -czf "${STAGING}.tar.gz" "${STAGING}"
-          echo "ASSET=${STAGING}.tar.gz" >> $GITHUB_ENV
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-x86_64
-          path: ${{ env.ASSET }}
-
-  build-macos:
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            arch: macos-arm64
-          - target: x86_64-apple-darwin
-            arch: macos-x86_64
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Build rgaa-mcp
-        working-directory: rgaa-rs
-        run: cargo build --release -p rgaa-mcp --target ${{ matrix.target }}
-
-      - name: Build rgaa-cli
-        working-directory: rgaa-rs
-        run: cargo build --release -p rgaa-cli --target ${{ matrix.target }}
-
-      - name: Package binaries
-        run: |
-          TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
-          STAGING="rgaa-${{ matrix.arch }}"
-          mkdir -p "${STAGING}"
-
-          cp "rgaa-rs/target/${{ matrix.target }}/release/rgaa-mcp" "${STAGING}/"
-          cp "rgaa-rs/target/${{ matrix.target }}/release/rgaa-cli" "${STAGING}/"
-
-          # obscura is Linux-only; macOS users must provide their own
-          cat > "${STAGING}/README" <<'README_EOF'
-rgaa-rs for macOS
-
-Binaries included: rgaa-mcp, rgaa-cli
-
-The obscura browser automation binary is Linux-only.
-For full functionality on macOS:
-  1. Run rgaa-mcp from a Linux container, or
-  2. Build obscura from source (if available), or
-  3. Use the --skip-obscura flag for offline-only audits
-
-The MCP server will work for remediation and reporting without obscura.
-README_EOF
-
-          cp install.sh "${STAGING}/"
-          cp -r .rgaa "${STAGING}/default-config"
-
-          tar -czf "${STAGING}.tar.gz" "${STAGING}"
-          echo "ASSET=${STAGING}.tar.gz" >> $GITHUB_ENV
-=======
 env:
   CARGO_TERM_COLOR: always
 
@@ -199,58 +91,10 @@ jobs:
           cd target/${{ matrix.target }}/release
           Compress-Archive -Path rgaa-cli.exe, rgaa-api.exe, rgaa-mcp.exe -DestinationPath ../../../rgaa-rs-${{ matrix.target }}.zip
         shell: pwsh
->>>>>>> 00e6411 (ci: add GitHub Actions CI, E2E, and cross-platform release build)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-<<<<<<< HEAD
-          name: ${{ matrix.arch }}
-          path: ${{ env.ASSET }}
-
-  publish-release:
-    needs: [build-linux, build-macos]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            linux-x86_64/*.tar.gz
-            macos-arm64/*.tar.gz
-            macos-x86_64/*.tar.gz
-          body: |
-            ## rgaa-rs ${{ github.ref_name }}
-
-            ### Quick Install
-
-            ```bash
-            # Linux x86_64
-            curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/${{ github.ref_name }}/install.sh | bash
-
-            # Or build from source
-            curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/${{ github.ref_name }}/install.sh | bash -s -- --build
-            ```
-
-            ### What's Included
-
-            | Binary | Purpose |
-            |--------|---------|
-            | `rgaa-mcp` | MCP server for Claude Code |
-            | `rgaa-cli` | CLI for local audits |
-            | `obscura` | CDP browser automation (Linux only) |
-
-            ### Manual Install
-
-            1. Download the tarball for your platform
-            2. Extract to `~/.local/bin/`
-            3. Run `install.sh` from the extracted directory for plugin setup
-=======
           name: rgaa-rs-${{ matrix.target }}
           path: rgaa-rs/rgaa-rs-${{ matrix.target }}.*
           if-no-files-found: error
@@ -272,4 +116,3 @@ jobs:
         with:
           files: artifacts/*/*
           generate_release_notes: true
->>>>>>> 00e6411 (ci: add GitHub Actions CI, E2E, and cross-platform release build)

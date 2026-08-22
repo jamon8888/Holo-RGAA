@@ -1,13 +1,15 @@
 //! RGAA Agentic Evaluator
 //!
-//! This crate provides a dual-model agentic evaluator for RGAA IA-assistée
-//! criteria. It combines:
-//! - A fast tactical model (Holo3 35b) for routine checks
-//! - A larger reasoning model (Holo3 122b) for complex criteria
-//! - Token-bucket rate limiting per model tier
+//! This crate provides an agentic evaluator for RGAA IA-assistée criteria.
+//! It combines:
+//! - A single Holo3 model for criterion evaluation (configurable via `AgentConfig::model`)
+//! - Token-bucket rate limiting to protect the API
 //! - LanceDB-backed conversation memory and vector retrieval
 //! - Structured prompts enriched with criterion definitions and WCAG references
 //! - Confidence-based `NeedsReview` escalation for uncertain verdicts
+//!
+//! The evaluator uses a single model for all criteria. Dual-model routing
+//! (tactical/reasoning) is planned for a future release.
 
 pub mod agent;
 pub mod config;

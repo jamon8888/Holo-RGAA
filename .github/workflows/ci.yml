@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Workflow-level read permission for contents; write only where needed
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -81,6 +85,8 @@ jobs:
     name: Security audit
     runs-on: ubuntu-latest
     # Does not block the pipeline; reports vulnerabilities as a check.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
@@ -90,9 +96,9 @@ jobs:
   e2e:
     name: E2E (browser + agent + orchestrator)
     runs-on: ubuntu-latest
-    # Only runs when a Holo3 API key secret is configured. Provides the checked-in
-    # `obscura`/`obscura-worker` binaries on PATH and enables the gated E2E tests.
-    if: ${{ secrets.HOLO3_API_KEY != '' }}
+    # Enabled via repository variable HOLO3_E2E_ENABLED == 'true'
+    # (not secret-based, so the workflow can run on forks without secrets)
+    if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -106,6 +112,14 @@ jobs:
         run: |
           chmod +x obscura obscura-worker
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+      - name: Validate Holo3 API key
+        env:
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+        run: |
+          if [ -z "$HOLO3_API_KEY" ]; then
+            echo "HOLO3_API_KEY secret not set; skipping E2E"
+            exit 0
+          fi
       - name: Run E2E pipeline tests
         env:
           RUN_E2E: "1"

@@ -142,8 +142,12 @@ impl HoloClient {
         }];
 
         if let Some(img) = image_base64 {
+            // Validate base64 without retaining the full decoded buffer.
+            // Use a small reusable buffer to check validity; the actual image
+            // bytes are sent as base64 in the request and decoded by the API.
+            let mut buf = vec![0u8; 64];
             base64::engine::general_purpose::STANDARD
-                .decode(img)
+                .decode_slice(img, &mut buf)
                 .map_err(|e| format!("invalid base64 image data: {e}"))?;
 
             let content = serde_json::json!([

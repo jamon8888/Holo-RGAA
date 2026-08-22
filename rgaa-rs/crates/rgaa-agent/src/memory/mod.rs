@@ -129,7 +129,7 @@ impl ConversationMemory for LanceDbMemory {
                 .await
                 .map_err(MemoryError::backend)?;
 
-            let mut messages = Vec::new();
+            let mut entries = Vec::new();
             while let Some(batch) = stream.try_next().await.map_err(MemoryError::backend)? {
                 let content = batch
                     .column_by_name("content")
@@ -138,15 +138,37 @@ impl ConversationMemory for LanceDbMemory {
                     .as_any()
                     .downcast_ref::<StringArray>()
                     .ok_or_else(|| MemoryError::backend("content is not utf8".into()))?;
+
+                let id_col = batch
+                    .column_by_name("id")
+                    .ok_or_else(|| MemoryError::backend("missing id column".into()))?
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .ok_or_else(|| MemoryError::backend("id is not uint64".into()))?;
+
+                let ts_col = batch
+                    .column_by_name("timestamp")
+                    .ok_or_else(|| MemoryError::backend("missing timestamp column".into()))?
+                    .as_any()
+                    .downcast_ref::<TimestampNanosecondArray>()
+                    .ok_or_else(|| MemoryError::backend("timestamp is not i64".into()))?;
+
                 for i in 0..content.len() {
                     if content.is_null(i) {
                         continue;
                     }
                     let msg: Message = serde_json::from_str(content.value(i))
                         .map_err(|e| MemoryError::backend(format!("deserialize message: {e}")))?;
-                    messages.push(msg);
+                    let id = id_col.value(i);
+                    let ts = ts_col.value(i);
+                    entries.push((ts, id, msg));
                 }
             }
+
+            // Sort by timestamp, then id as deterministic tiebreaker
+            entries.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+            let messages = entries.into_iter().map(|e| e.2).collect();
+
             Ok(messages)
         })
     }

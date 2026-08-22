@@ -1,10 +1,7 @@
 use crate::config::AgentConfig;
-use crate::embeddings::HybridEmbeddingProvider;
 use crate::error::AgentError;
-use crate::memory::LanceDbMemory;
 use crate::prompts::PromptBuilder;
 use crate::ratelimit::Ratelimiter;
-use crate::vector::LanceDbVectorStore;
 use crate::verify::map_verdict;
 use futures::StreamExt;
 use rig_agent::agent::Agent;
@@ -16,21 +13,23 @@ use rgaa_holo::{HoloResponse, PageContext};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Dual-model RGAA agent: a fast reasoning model (Holo3) for criterion
-/// evaluation, backed by LanceDB conversation memory and a vector store.
+/// RGAA agentic evaluator for IA-assistée criteria.
+///
+/// Uses a single Holo3 model with token-bucket rate limiting.
+/// Conversation memory and vector retrieval are available via
+/// [`LanceDbMemory`] and [`LanceDbVectorStore`] but are not yet
+/// integrated into the evaluation path.
 pub struct RgaaAgent {
     agent: Agent,
-    memory: Arc<LanceDbMemory>,
-    vector_store: Arc<LanceDbVectorStore>,
     rate_limiter: Arc<Ratelimiter>,
 }
 
 impl RgaaAgent {
-    /// Builds the agent, embedding provider, LanceDB memory, and vector store.
+    /// Builds the agent and rate limiter.
     ///
     /// # Errors
-    /// Returns [`AgentError`] if the OpenAI-compatible client or the embedding
-    /// backend fails to initialize, or if LanceDB storage cannot be opened.
+    /// Returns [`AgentError`] if the OpenAI-compatible client or the rate
+    /// limiter fails to initialize.
     #[tracing::instrument(skip_all)]
     pub async fn new(config: &AgentConfig) -> Result<Self, AgentError> {
         // 1. Create OpenAI-compatible client pointing at Holo3
@@ -40,35 +39,19 @@ impl RgaaAgent {
             .build()
             .map_err(|e| AgentError::RigAgent(e.to_string()))?;
 
-        // 2. Create embedding provider
-        let embeddings = HybridEmbeddingProvider::new(config)?;
-
-        // 3. Create LanceDB memory
-        let memory = LanceDbMemory::new(&config.lancedb_path).await?;
-        let memory = Arc::new(memory);
-
-        // 4. Create vector store
-        let vector_store = LanceDbVectorStore::new(&config.lancedb_path, embeddings.clone()).await?;
-        let vector_store = Arc::new(vector_store);
-
-        // 5. Create rate limiter from config (tactical/reasoning RPM)
+        // 2. Create rate limiter from config (tactical/reasoning RPM)
         let rate_limiter = Arc::new(Ratelimiter::new(
             10, // tactical RPM
             20, // reasoning RPM
         ));
 
-        // 6. Build agent with preamble
+        // 3. Build agent with preamble
         let agent = client
             .agent(config.model.as_str())
             .preamble("You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.")
             .build();
 
-        Ok(Self {
-            agent,
-            memory,
-            vector_store,
-            rate_limiter,
-        })
+        Ok(Self { agent, rate_limiter })
     }
 
     /// Evaluates a single IA-assistée criterion against the given page context.

@@ -1,6 +1,6 @@
 use rgaa_remediation::{
-    detect_framework, remediate, RemediationIssue, RemediationOutcome, RemediationPolicy,
-    SourceLocation,
+    detect_framework, remediate, Framework, RemediationIssue, RemediationOutcome,
+    RemediationPolicy, SourceLocation,
 };
 use rig_core::tool::PortableTool;
 use schemars::JsonSchema;
@@ -38,6 +38,9 @@ pub struct RemediateArgs {
     /// Optional related RGAA criteria IDs, carried through to the generated
     /// remediation context.
     pub criteria: Option<Vec<String>>,
+    /// Optional explicit framework hint (e.g., "react", "vue", "angular", "html").
+    /// If provided, skips framework detection from element_html.
+    pub framework: Option<String>,
 }
 
 /// Tool that generates remediation proposals for accessibility findings.
@@ -66,11 +69,17 @@ impl PortableTool for RemediateTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let framework = detect_framework(&args.element_html).ok_or_else(|| {
-            RemediateError::RemediationFailed(
-                "could not detect a supported UI framework from the element HTML".into(),
-            )
-        })?;
+        let framework = if let Some(fw) = args.framework {
+            parse_framework(&fw).ok_or_else(|| {
+                RemediateError::RemediationFailed(format!("unsupported framework: {fw}"))
+            })?
+        } else {
+            detect_framework(&args.element_html).ok_or_else(|| {
+                RemediateError::RemediationFailed(
+                    "could not detect a supported UI framework from the element HTML".into(),
+                )
+            })?
+        };
         let adapter = rgaa_remediation::adapter_for(framework);
 
         let issue = RemediationIssue {
@@ -89,5 +98,18 @@ impl PortableTool for RemediateTool {
             .map_err(|e| RemediateError::RemediationFailed(e.to_string()))?;
 
         outcomes.into_iter().next().ok_or(RemediateError::NoOutcome)
+    }
+}
+
+/// Parses a framework string into a [`Framework`] enum.
+///
+/// Supported values: "react", "vue", "angular", "html" (case-insensitive).
+fn parse_framework(s: &str) -> Option<Framework> {
+    match s.to_lowercase().as_str() {
+        "react" => Some(Framework::React),
+        "vue" => Some(Framework::Vue),
+        "angular" => Some(Framework::Angular),
+        "html" => Some(Framework::Html),
+        _ => None,
     }
 }

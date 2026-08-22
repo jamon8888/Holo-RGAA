@@ -15,19 +15,19 @@ pub enum ModelTier {
 
 struct Inner {
     tactical_tokens: AtomicU32,
-    tactical_refill: u32,
+    tactical_rpm: u32,
     tactical_capacity: u32,
     tactical_last_refill: Mutex<Instant>,
     reasoning_tokens: AtomicU32,
-    reasoning_refill: u32,
+    reasoning_rpm: u32,
     reasoning_capacity: u32,
     reasoning_last_refill: Mutex<Instant>,
 }
 
 /// Token-bucket rate limiter with independent buckets per [`ModelTier`].
 ///
-/// Each bucket refills on its own clock, so a burst of tactical calls cannot
-/// starve the reasoning bucket (and vice versa).
+/// Each bucket refills on its own clock using fractional token replenishment
+/// based on elapsed time and configured RPM. Zero RPM means "unlimited" (no blocking).
 pub struct Ratelimiter {
     inner: Arc<Inner>,
 }
@@ -38,11 +38,11 @@ impl Ratelimiter {
         Self {
             inner: Arc::new(Inner {
                 tactical_tokens: AtomicU32::new(tactical_rpm),
-                tactical_refill: tactical_rpm / 60,
+                tactical_rpm,
                 tactical_capacity: tactical_rpm,
                 tactical_last_refill: Mutex::new(now),
                 reasoning_tokens: AtomicU32::new(reasoning_rpm),
-                reasoning_refill: reasoning_rpm / 60,
+                reasoning_rpm,
                 reasoning_capacity: reasoning_rpm,
                 reasoning_last_refill: Mutex::new(now),
             }),
@@ -50,8 +50,18 @@ impl Ratelimiter {
     }
 
     /// Acquires a token for `tier`, blocking (with bounded sleeps) until one is
-    /// available.
+    /// available. If the tier's RPM is 0, returns immediately (unlimited).
     pub async fn acquire(&self, tier: ModelTier) {
+        let rpm = match tier {
+            ModelTier::Tactical => self.inner.tactical_rpm,
+            ModelTier::Reasoning => self.inner.reasoning_rpm,
+        };
+
+        // Zero RPM = unlimited, no blocking
+        if rpm == 0 {
+            return;
+        }
+
         loop {
             self.refill(tier).await;
             let tokens = match tier {
@@ -73,17 +83,19 @@ impl Ratelimiter {
     }
 
     /// Refills the bucket belonging to `tier` based on elapsed real time.
+    /// Uses fractional replenishment: gained = elapsed_seconds * RPM / 60.
+    /// Does not advance the refill timestamp if RPM is 0 (preserves accumulated time).
     async fn refill(&self, tier: ModelTier) {
-        let (tokens, refill, capacity, last) = match tier {
+        let (tokens, rpm, capacity, last) = match tier {
             ModelTier::Tactical => (
                 &self.inner.tactical_tokens,
-                self.inner.tactical_refill,
+                self.inner.tactical_rpm,
                 self.inner.tactical_capacity,
                 &self.inner.tactical_last_refill,
             ),
             ModelTier::Reasoning => (
                 &self.inner.reasoning_tokens,
-                self.inner.reasoning_refill,
+                self.inner.reasoning_rpm,
                 self.inner.reasoning_capacity,
                 &self.inner.reasoning_last_refill,
             ),
@@ -95,14 +107,15 @@ impl Ratelimiter {
         if elapsed < 0.01 {
             return;
         }
-        if refill == 0 {
-            *last_guard = now;
+        if rpm == 0 {
+            // Zero RPM = unlimited; don't advance last_refill so accumulated
+            // elapsed time is preserved if RPM later becomes non-zero.
             return;
         }
 
-        let gained = (elapsed * refill as f64) as u32;
+        let gained = (elapsed * rpm as f64 / 60.0) as u32;
         let current = tokens.load(Ordering::Relaxed);
-        let updated = (current + gained).min(capacity);
+        let updated = current.saturating_add(gained).min(capacity);
         tokens.store(updated, Ordering::Relaxed);
         *last_guard = now;
     }

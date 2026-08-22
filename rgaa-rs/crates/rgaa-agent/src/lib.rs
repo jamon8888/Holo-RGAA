@@ -1,9 +1,19 @@
 pub mod agent;
+pub mod config;
 pub mod criteria_defs;
+pub mod embeddings;
+pub mod error;
+pub mod memory;
+pub mod vector;
 pub mod models;
 pub mod prompts;
 pub mod ratelimit;
 pub mod remediate;
 pub mod verify;
 
-pub use agent::{create_simple_agent, AgentBuilder, HoloProvider, RgaaAgent, RigAgentConfig};
+pub use agent::RgaaAgent;
+pub use config::AgentConfig;
+pub use embeddings::HybridEmbeddingProvider;
+pub use error::AgentError;
+pub use memory::LanceDbMemory;
+pub use vector::LanceDbVectorStore;

@@ -1,10 +1,8 @@
-use rgaa_agent::agent::HoloProvider;
 use rgaa_agent::models::{ModelRouter, SelectedTier};
 use rgaa_agent::prompts::PromptBuilder;
 use rgaa_agent::ratelimit::{ModelTier, RateLimitConfig, RateLimiter};
 use rgaa_agent::remediate::{RemediateArgs, RemediateTool};
 use rgaa_agent::verify::{map_verdict, CONFIDENCE_THRESHOLD};
-use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::CriterionStatus;
 use rgaa_holo::{HoloResponse, PageContext};
 use rgaa_remediation::SourceLocation;
@@ -196,40 +194,6 @@ fn unknown_verdict_maps_to_needs_review() {
         justification: "Model unsure".to_string(),
     };
     assert_eq!(map_verdict(response), CriterionStatus::NeedsReview);
-}
-
-#[test]
-fn holo_provider_creation_with_test_key() {
-    let provider = HoloProvider::new("https://api.hcompany.ai/v1", "test-key");
-    assert!(
-        provider.is_ok(),
-        "client creation should not make network calls"
-    );
-}
-
-#[test]
-fn holo_provider_builds_completion_model() {
-    let provider = HoloProvider::new("https://api.hcompany.ai/v1", "test-key").unwrap();
-    let model = provider.completion_model("holo3-1-35b-a3b");
-    // Verify the model was created (type is CompletionModel)
-    let _ = model;
-}
-
-#[test]
-fn holo_provider_build_tools_returns_all_browser_tools() {
-    let ctx = ToolContext::new(BrowserSession::new_placeholder());
-    let tools = HoloProvider::build_tools(&ctx);
-    assert_eq!(tools.len(), 8, "should have 8 browser tools");
-
-    let tool_names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
-    assert!(tool_names.contains(&"navigate"));
-    assert!(tool_names.contains(&"screenshot"));
-    assert!(tool_names.contains(&"a11y_tree"));
-    assert!(tool_names.contains(&"click"));
-    assert!(tool_names.contains(&"press_key"));
-    assert!(tool_names.contains(&"tab_order"));
-    assert!(tool_names.contains(&"type_input"));
-    assert!(tool_names.contains(&"eval_js"));
 }
 
 #[tokio::test]

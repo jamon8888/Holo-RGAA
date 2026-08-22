@@ -1,6 +1,4 @@
 use rgaa_agent::agent::RgaaAgent;
-use rgaa_agent::models::ModelRouter;
-use rgaa_agent::ratelimit::RateLimiter;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::{
     AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
@@ -63,15 +61,10 @@ impl Orchestrator {
         let session = BrowserSession::new(bridge);
         let tool_ctx = ToolContext::new(session);
 
-        let api_key = std::env::var("HOLO3_API_KEY")
-            .unwrap_or_else(|_| "hk-a73b030c64aac335fc3651c280c95694beb8df95c4a5d8b1".into());
-        let rate_limiter = RateLimiter::new(10, 20);
-        let model_router = ModelRouter::new(
-            rgaa_holo::HoloClient::new(api_key.clone()),
-            rgaa_holo::HoloClient::new(api_key),
-            rate_limiter,
-        );
-        let agent = RgaaAgent::new(model_router, tool_ctx);
+        let agent_config = rgaa_agent::config::AgentConfig::from_env()
+            .unwrap_or_default();
+        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config).await
+            .map_err(|e| format!("failed to create agent: {e}"))?;
         let mut results = HashMap::new();
         for url in urls {
             let audit = audit_one(&agent, url, config).await?;
@@ -134,8 +127,9 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
+    let conversation_id = format!("audit-{}", uuid::Uuid::new_v4());
     let agent_results = agent
-        .run_ia_assiste(&ia_criteria, &page_context, None)
+        .run_ia_assiste(&ia_criteria, &page_context, &conversation_id)
         .await;
 
     let mut holo_results = HashMap::new();

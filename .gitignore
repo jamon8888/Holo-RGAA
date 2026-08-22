@@ -1,2 +1,4 @@
 node_modules/
 rgaa-rs/node_modules/
+rgaa-rs/target/
+target/

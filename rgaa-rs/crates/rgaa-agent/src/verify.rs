@@ -11,6 +11,7 @@ pub const CONFIDENCE_THRESHOLD: f64 = 0.6;
 /// - confidence < 0.6 → NeedsReview (human reviews low-confidence verdicts)
 /// - verdict "pass"/"conforme" + confidence >= 0.6 → Pass
 /// - verdict "fail"/"non_conforme" + confidence >= 0.6 → Fail
+/// - verdict "na"/"non_applicable" + confidence >= 0.6 → NotApplicable
 /// - unknown verdict → NeedsReview
 pub fn map_verdict(response: &HoloResponse) -> CriterionStatus {
     if response.confidence < CONFIDENCE_THRESHOLD {
@@ -20,6 +21,7 @@ pub fn map_verdict(response: &HoloResponse) -> CriterionStatus {
     match response.verdict.as_str() {
         "pass" | "conforme" => CriterionStatus::Pass,
         "fail" | "non_conforme" => CriterionStatus::Fail,
+        "na" | "non_applicable" => CriterionStatus::NotApplicable,
         _ => CriterionStatus::NeedsReview,
     }
 }

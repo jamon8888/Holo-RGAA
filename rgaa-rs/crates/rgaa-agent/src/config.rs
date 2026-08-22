@@ -5,11 +5,11 @@ use std::time::Duration;
 ///
 /// Construct via [`AgentConfig::default`] for local runs or
 /// [`AgentConfig::from_env`] to read credentials from the environment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct AgentConfig {
     /// Base URL of the Holo3 evaluation API.
     pub holo3_base_url: String,
-    /// API key for the Holo3 evaluation API.
+    /// API key for the Holo3 evaluation API (redacted in Debug/Serialize).
     pub api_key: String,
     /// Reasoning model identifier (e.g. `holo3-1-35b-a3b`).
     pub model: String,
@@ -27,6 +27,56 @@ pub struct AgentConfig {
     pub max_tokens: usize,
     /// Sampling temperature for the reasoning model.
     pub temperature: f32,
+}
+
+impl std::fmt::Debug for AgentConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentConfig")
+            .field("holo3_base_url", &self.holo3_base_url)
+            .field("api_key", &"<redacted>")
+            .field("model", &self.model)
+            .field("lancedb_path", &self.lancedb_path)
+            .field("embedding_backend", &self.embedding_backend)
+            .field("embedding_dimensions", &self.embedding_dimensions)
+            .field("memory_retention", &self.memory_retention)
+            .field("max_turns", &self.max_turns)
+            .field("max_tokens", &self.max_tokens)
+            .field("temperature", &self.temperature)
+            .finish()
+    }
+}
+
+impl Serialize for AgentConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct AgentConfigNoKey<'a> {
+            holo3_base_url: &'a str,
+            model: &'a str,
+            lancedb_path: &'a str,
+            embedding_backend: &'a EmbeddingBackendConfig,
+            embedding_dimensions: usize,
+            memory_retention: &'a MemoryRetention,
+            max_turns: usize,
+            max_tokens: usize,
+            temperature: f32,
+        }
+
+        let no_key = AgentConfigNoKey {
+            holo3_base_url: &self.holo3_base_url,
+            model: &self.model,
+            lancedb_path: &self.lancedb_path,
+            embedding_backend: &self.embedding_backend,
+            embedding_dimensions: self.embedding_dimensions,
+            memory_retention: &self.memory_retention,
+            max_turns: self.max_turns,
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+        };
+        no_key.serialize(serializer)
+    }
 }
 
 /// Embedding backend selection.

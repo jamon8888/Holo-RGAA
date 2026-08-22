@@ -26,10 +26,19 @@ impl HybridEmbeddingProvider {
     ///
     /// # Errors
     /// Returns [`crate::error::AgentError::Embedding`] if the configured
-    /// backend cannot be initialized.
+    /// backend cannot be initialized, or if `embedding_dimensions` in config
+    /// does not match the resolved model width.
     pub fn new(config: &crate::config::AgentConfig) -> Result<Self, crate::error::AgentError> {
         let primary = match &config.embedding_backend {
             crate::config::EmbeddingBackendConfig::FastEmbed { model_name } => {
+                // Validate model name and dimensions before construction
+                let (_, model_dims) = fastembed::resolve_model(model_name)?;
+                if config.embedding_dimensions != model_dims {
+                    return Err(crate::error::AgentError::Embedding(format!(
+                        "embedding_dimensions {} does not match model {} (expected {})",
+                        config.embedding_dimensions, model_name, model_dims
+                    )));
+                }
                 EmbeddingBackend::FastEmbed(FastEmbedModel::new(model_name)?)
             }
         };

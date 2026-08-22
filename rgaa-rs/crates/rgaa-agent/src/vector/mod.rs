@@ -6,13 +6,10 @@ use lancedb::Connection;
 use lancedb::Table;
 use std::sync::Arc;
 
-use crate::embeddings::HybridEmbeddingProvider;
-
 /// Vector store for RGAA criteria, findings, and remediation patterns, backed
 /// by LanceDB. Tables are created idempotently on construction.
 pub struct LanceDbVectorStore {
     db: Connection,
-    embedding_model: Arc<HybridEmbeddingProvider>,
 }
 
 impl LanceDbVectorStore {
@@ -22,19 +19,13 @@ impl LanceDbVectorStore {
     /// # Errors
     /// Returns [`crate::error::AgentError::LanceDb`] if the database cannot be
     /// opened or if table creation/validation fails.
-    pub async fn new(
-        path: &str,
-        embedding_model: HybridEmbeddingProvider,
-    ) -> Result<Self, crate::error::AgentError> {
+    pub async fn new(path: &str) -> Result<Self, crate::error::AgentError> {
         let db = lancedb::connect(path)
             .execute()
             .await
             .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
 
-        let store = Self {
-            db,
-            embedding_model: Arc::new(embedding_model),
-        };
+        let store = Self { db };
         store.initialize_tables().await?;
         Ok(store)
     }

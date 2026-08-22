@@ -7,7 +7,7 @@ use rig_core::wasm_compat::WasmCompatSend;
 use crate::error::AgentError;
 
 /// Map a `fastembed` model name to its variant and known embedding width.
-fn resolve_model(model_name: &str) -> Result<(fastembed::EmbeddingModel, usize), AgentError> {
+pub fn resolve_model(model_name: &str) -> Result<(fastembed::EmbeddingModel, usize), AgentError> {
     match model_name {
         "all-MiniLM-L6-v2" => Ok((fastembed::EmbeddingModel::AllMiniLML6V2, 384)),
         other => Err(AgentError::Embedding(format!(

@@ -81,16 +81,18 @@ const UNTRUSTED_END: &str = "<<<END UNTRUSTED CONTENT>>>";
 /// # Returns
 /// A markdown-formatted string ready for inclusion in an evaluation prompt.
 pub fn format_page_context(context: &PageContext) -> String {
+    use std::fmt::Write;
+
     let mut prompt = String::new();
 
-    prompt.push_str("## Contexte de la page\n\n");
+    writeln!(prompt, "## Contexte de la page\n").unwrap();
 
     if let Some(ref title) = context.title {
-        prompt.push_str(&format!("**Titre:** {UNTRUSTED_START}{title}{UNTRUSTED_END}\n"));
+        writeln!(prompt, "**Titre:** {UNTRUSTED_START}{title}{UNTRUSTED_END}").unwrap();
     }
 
     if let Some(ref lang) = context.lang {
-        prompt.push_str(&format!("**Langue:** {UNTRUSTED_START}{lang}{UNTRUSTED_END}\n"));
+        writeln!(prompt, "**Langue:** {UNTRUSTED_START}{lang}{UNTRUSTED_END}").unwrap();
     }
 
     let has_elements = !context.headings.is_empty()
@@ -102,22 +104,19 @@ pub fn format_page_context(context: &PageContext) -> String {
         || !context.navigation.is_empty();
 
     if has_elements {
-        prompt.push_str("\n## Éléments de la page\n\n");
+        writeln!(prompt, "\n## Éléments de la page\n").unwrap();
     }
 
     if !context.headings.is_empty() {
-        prompt.push_str("### Titres\n");
+        writeln!(prompt, "### Titres").unwrap();
         for h in &context.headings {
-            prompt.push_str(&format!(
-                "  - H{}: {UNTRUSTED_START}{}{UNTRUSTED_END}\n",
-                h.level, h.text
-            ));
+            writeln!(prompt, "  - H{}: {UNTRUSTED_START}{}{UNTRUSTED_END}", h.level, h.text).unwrap();
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     if !context.images.is_empty() {
-        prompt.push_str("### Images\n");
+        writeln!(prompt, "### Images").unwrap();
         for img in &context.images {
             let alt_info = if img.is_decorative {
                 "(décorative)".to_string()
@@ -126,33 +125,26 @@ pub fn format_page_context(context: &PageContext) -> String {
             } else {
                 "(sans alt)".to_string()
             };
-            prompt.push_str(&format!(
-                "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}\n",
-                img.src, alt_info
-            ));
+            writeln!(prompt, "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}", img.src, alt_info).unwrap();
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     if !context.iframes.is_empty() {
-        prompt.push_str("### Iframes\n");
+        writeln!(prompt, "### Iframes").unwrap();
         for iframe in &context.iframes {
             let title_info = if iframe.has_title {
                 format!("title: \"{}\"", iframe.title.as_deref().unwrap_or(""))
             } else {
                 "(sans titre)".to_string()
             };
-            prompt.push_str(&format!(
-                "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}\n",
-                iframe.src.as_deref().unwrap_or(""),
-                title_info
-            ));
+            writeln!(prompt, "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}", iframe.src.as_deref().unwrap_or(""), title_info).unwrap();
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     if !context.links.is_empty() {
-        prompt.push_str("### Liens\n");
+        writeln!(prompt, "### Liens").unwrap();
         for link in &context.links {
             let text_info = if link.is_empty {
                 "(vide)"
@@ -161,54 +153,48 @@ pub fn format_page_context(context: &PageContext) -> String {
             } else {
                 "(sans texte)"
             };
-            prompt.push_str(&format!(
-                "  - href=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}\n",
-                link.href, text_info
-            ));
+            writeln!(prompt, "  - href=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}", link.href, text_info).unwrap();
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     if !context.forms.is_empty() {
-        prompt.push_str("### Formulaires\n");
+        writeln!(prompt, "### Formulaires").unwrap();
         for form in &context.forms {
-            prompt.push_str(&format!(
-                "  - Form{} (labels: {}, submit: {})\n",
+            writeln!(prompt, "  - Form{} (labels: {}, submit: {})",
                 form.id.as_deref().unwrap_or(""),
                 if form.has_labels { "oui" } else { "non" },
                 if form.has_submit { "oui" } else { "non" }
-            ));
+            ).unwrap();
             for input in &form.inputs {
-                prompt.push_str(&format!(
-                    "    - type={}, label: {}\n",
+                writeln!(prompt, "    - type={}, label: {}",
                     input.input_type,
                     if input.has_label { "oui" } else { "non" }
-                ));
+                ).unwrap();
             }
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     if !context.media.is_empty() {
-        prompt.push_str("### Médias\n");
+        writeln!(prompt, "### Médias").unwrap();
         for media in &context.media {
-            prompt.push_str(&format!(
-                "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}\n",
+            writeln!(prompt, "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}",
                 media.media_type,
                 if media.has_controls { "oui" } else { "non" },
                 if media.has_captions { "oui" } else { "non" },
                 if media.has_transcript { "oui" } else { "non" }
-            ));
+            ).unwrap();
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     if !context.navigation.is_empty() {
-        prompt.push_str("### Navigation\n");
+        writeln!(prompt, "### Navigation").unwrap();
         for nav in &context.navigation {
-            prompt.push_str(&format!("  - {UNTRUSTED_START}{nav}{UNTRUSTED_END}\n"));
+            writeln!(prompt, "  - {UNTRUSTED_START}{nav}{UNTRUSTED_END}").unwrap();
         }
-        prompt.push('\n');
+        writeln!(prompt).unwrap();
     }
 
     prompt
@@ -222,26 +208,23 @@ impl PromptBuilder {
     /// The page context is wrapped in delimiters so the model cannot confuse
     /// page-derived content with evaluation instructions.
     pub fn build(criterion_id: &str, context: &PageContext) -> String {
-        let mut prompt = format!(
-            "Évalue le critère RGAA {} sur cette page web.\n\n",
-            criterion_id
-        );
+        use std::fmt::Write;
+
+        let mut prompt = String::new();
+
+        writeln!(prompt, "Évalue le critère RGAA {} sur cette page web.\n", criterion_id).unwrap();
 
         prompt.push_str(&format_page_context(context));
 
-        prompt.push_str(&format!(
-            "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n\n"
-        ));
+        writeln!(prompt, "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n").unwrap();
 
-        prompt.push_str(
-            "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n\n"
-        );
-        prompt.push_str("1. Analyse le critère en fonction de la définition et des éléments ci-dessus\n");
-        prompt.push_str("2. Si une capture d'écran est fournie, utilise-la pour juger\n");
-        prompt.push_str("3. Retourne un JSON avec les champs:\n");
-        prompt.push_str("   - verdict: \"pass\", \"fail\", ou \"na\"\n");
-        prompt.push_str("   - confidence: nombre entre 0.0 et 1.0\n");
-        prompt.push_str("   - justification: explication détaillée en français\n");
+        writeln!(prompt, "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n").unwrap();
+        writeln!(prompt, "1. Analyse le critère en fonction de la définition et des éléments ci-dessus").unwrap();
+        writeln!(prompt, "2. Si une capture d'écran est fournie, utilise-la pour juger").unwrap();
+        writeln!(prompt, "3. Retourne un JSON avec les champs:").unwrap();
+        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").unwrap();
+        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").unwrap();
+        writeln!(prompt, "   - justification: explication détaillée en français").unwrap();
 
         prompt
     }

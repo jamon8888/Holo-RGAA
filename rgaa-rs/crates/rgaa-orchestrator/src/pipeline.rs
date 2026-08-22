@@ -89,9 +89,11 @@ async fn audit_one(
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
 
-    // Lock the browser session from the shared tool context
-    let session = tool_ctx.session().lock().await;
-    let bridge = session.bridge();
+    // Get the bridge without holding the mutex across awaits
+    let bridge = {
+        let session = tool_ctx.session().lock().await;
+        session.bridge().clone()
+    };
 
     // 1. Run axe-core
     info!("Running axe-core");
@@ -118,9 +120,6 @@ async fn audit_one(
             media: vec![],
             navigation: vec![],
         });
-
-    // Drop the session lock before calling the agent (which may need it for tools)
-    drop(session);
 
     // 4. Run agentic evaluation for all IA_ASSISTE criteria
     let ia_criteria = RgaaCriteria::ia_assiste();

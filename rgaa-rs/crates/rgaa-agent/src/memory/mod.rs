@@ -11,7 +11,10 @@ use rig_core::completion::Message;
 use rig_core::memory::{ConversationMemory, MemoryError};
 use rig_core::wasm_compat::WasmBoxedFuture;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static MSG_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn escape_single_quotes(s: &str) -> String {
     s.replace('\'', "''")
@@ -64,44 +67,6 @@ impl LanceDbMemory {
         self.db
             .create_empty_table("conversation_messages", schema::conversation_messages_schema())
             .mode(CreateTableMode::exist_ok(|req| req))
-            .execute()
-            .await
-            .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
-        Ok(())
-    }
-
-    async fn append_one(
-        &self,
-        conversation_id: &str,
-        message: &Message,
-    ) -> Result<(), crate::error::AgentError> {
-        let table = self
-            .db
-            .open_table("conversation_messages")
-            .execute()
-            .await
-            .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
-
-        let serialized = serde_json::to_string(message)
-            .map_err(|e| crate::error::AgentError::LanceDb(format!("serialize message: {e}")))?;
-        let id = now_nanos().max(0) as u64;
-        let ts = now_nanos();
-
-        let schema: SchemaRef = schema::conversation_messages_schema();
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(UInt64Array::from(vec![id])),
-                Arc::new(StringArray::from(vec![conversation_id.to_string()])),
-                Arc::new(StringArray::from(vec![role_of(message).to_string()])),
-                Arc::new(StringArray::from(vec![serialized])),
-                Arc::new(TimestampNanosecondArray::from(vec![ts])),
-            ],
-        )
-        .map_err(|e| crate::error::AgentError::LanceDb(format!("build batch: {e}")))?;
-
-        table
-            .add(batch)
             .execute()
             .await
             .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
@@ -202,10 +167,13 @@ impl ConversationMemory for LanceDbMemory {
                 .map(|d| d.as_nanos() as i64)
                 .unwrap_or(0);
 
+            // Use atomic counter for guaranteed-unique IDs across all calls
+            let next_id = MSG_ID_COUNTER.fetch_add(messages.len() as u64, Ordering::Relaxed);
+
             for (idx, message) in messages.iter().enumerate() {
                 let serialized = serde_json::to_string(message)
                     .map_err(|e| MemoryError::backend(format!("serialize message: {e}")))?;
-                let id = (base_ts as u64).saturating_add(idx as u64);
+                let id = next_id.saturating_add(idx as u64);
                 let ts = base_ts.saturating_add(idx as i64);
                 ids.push(id);
                 conv_ids.push(conversation_id.to_string());

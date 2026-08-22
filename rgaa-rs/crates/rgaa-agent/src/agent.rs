@@ -3,8 +3,10 @@ use crate::embeddings::HybridEmbeddingProvider;
 use crate::error::AgentError;
 use crate::memory::LanceDbMemory;
 use crate::prompts::PromptBuilder;
+use crate::ratelimit::Ratelimiter;
 use crate::vector::LanceDbVectorStore;
 use crate::verify::map_verdict;
+use futures::StreamExt;
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
 use rig_agent::completion::Prompt;
@@ -20,6 +22,7 @@ pub struct RgaaAgent {
     agent: Agent,
     memory: Arc<LanceDbMemory>,
     vector_store: Arc<LanceDbVectorStore>,
+    rate_limiter: Arc<Ratelimiter>,
 }
 
 impl RgaaAgent {
@@ -48,7 +51,13 @@ impl RgaaAgent {
         let vector_store = LanceDbVectorStore::new(&config.lancedb_path, embeddings.clone()).await?;
         let vector_store = Arc::new(vector_store);
 
-        // 5. Build agent with preamble
+        // 5. Create rate limiter from config (tactical/reasoning RPM)
+        let rate_limiter = Arc::new(Ratelimiter::new(
+            10, // tactical RPM
+            20, // reasoning RPM
+        ));
+
+        // 6. Build agent with preamble
         let agent = client
             .agent(config.model.as_str())
             .preamble("You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.")
@@ -58,6 +67,7 @@ impl RgaaAgent {
             agent,
             memory,
             vector_store,
+            rate_limiter,
         })
     }
 
@@ -76,6 +86,9 @@ impl RgaaAgent {
     ) -> CriterionResult {
         let prompt = PromptBuilder::build(&criterion.id, page_context);
 
+        // Apply rate limiting (tactical tier for standard criteria)
+        self.rate_limiter.acquire(crate::ratelimit::ModelTier::Tactical).await;
+
         match self.agent.prompt(prompt.as_str()).await {
             Ok(response) => {
                 let parsed = HoloResponse::extract_json(&response)
@@ -84,7 +97,7 @@ impl RgaaAgent {
                         confidence: 0.0,
                         justification: response.clone(),
                     });
-                let status = map_verdict(parsed.clone());
+                let status = map_verdict(&parsed);
                 CriterionResult {
                     criterion_id: criterion.id.to_string(),
                     title: criterion.title.to_string(),
@@ -114,16 +127,30 @@ impl RgaaAgent {
 
     /// Evaluates every criterion in `criteria`, returning a result map keyed by
     /// criterion id.
+    ///
+    /// Uses bounded concurrency with the internal rate limiter to avoid
+    /// overwhelming the Holo3 API while keeping evaluations parallel.
     pub async fn run_ia_assiste(
         &self,
         criteria: &[Criterion],
         page_context: &PageContext,
     ) -> HashMap<String, CriterionResult> {
-        let mut results = HashMap::with_capacity(criteria.len());
-        for criterion in criteria {
-            let result = self.evaluate_criterion(criterion, page_context).await;
-            results.insert(criterion.id.to_string(), result);
-        }
+        use futures::stream::{self, StreamExt};
+
+        let page_context = Arc::new(page_context.clone());
+        let results = stream::iter(criteria.iter().cloned())
+            .map(|criterion| {
+                let self_ = Arc::new(self.clone());
+                let page_context = page_context.clone();
+                async move {
+                    let result = self_.evaluate_criterion(&criterion, &page_context).await;
+                    (criterion.id.to_string(), result)
+                }
+            })
+            .buffer_unordered(4) // bounded parallelism
+            .collect::<HashMap<_, _>>()
+            .await;
+
         results
     }
 }

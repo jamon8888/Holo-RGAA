@@ -12,7 +12,7 @@ pub const CONFIDENCE_THRESHOLD: f64 = 0.6;
 /// - verdict "pass"/"conforme" + confidence >= 0.6 → Pass
 /// - verdict "fail"/"non_conforme" + confidence >= 0.6 → Fail
 /// - unknown verdict → NeedsReview
-pub fn map_verdict(response: HoloResponse) -> CriterionStatus {
+pub fn map_verdict(response: &HoloResponse) -> CriterionStatus {
     if response.confidence < CONFIDENCE_THRESHOLD {
         return CriterionStatus::NeedsReview;
     }

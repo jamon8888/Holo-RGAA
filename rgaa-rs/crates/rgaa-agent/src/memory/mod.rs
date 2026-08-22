@@ -13,6 +13,10 @@ use rig_core::wasm_compat::WasmBoxedFuture;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn escape_single_quotes(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
 fn role_of(message: &Message) -> &'static str {
     match message {
         Message::System { .. } => "system",
@@ -28,11 +32,20 @@ fn now_nanos() -> i64 {
         .unwrap_or(0)
 }
 
+/// LanceDB-backed conversation memory.
+///
+/// Stores and retrieves message histories per conversation ID.
+#[derive(Debug)]
 pub struct LanceDbMemory {
     db: Connection,
 }
 
 impl LanceDbMemory {
+    /// Opens a LanceDB connection and ensures the conversation table exists.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::AgentError::LanceDb`] if the database cannot be
+    /// opened or the table initialization fails.
     pub async fn new(path: &str) -> Result<Self, crate::error::AgentError> {
         let db = lancedb::connect(path)
             .execute()
@@ -44,6 +57,9 @@ impl LanceDbMemory {
     }
 
     /// Creates the conversation table if absent. Idempotent.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::AgentError::LanceDb`] if the table creation fails.
     pub async fn initialize_tables(&self) -> Result<(), crate::error::AgentError> {
         self.db
             .create_empty_table("conversation_messages", schema::conversation_messages_schema())
@@ -108,7 +124,7 @@ impl ConversationMemory for LanceDbMemory {
 
             let mut stream = table
                 .query()
-                .only_if(format!("conversation_id = '{}'", conversation_id))
+                .only_if(format!("conversation_id = '{}'", escape_single_quotes(conversation_id)))
                 .execute()
                 .await
                 .map_err(MemoryError::backend)?;
@@ -141,11 +157,58 @@ impl ConversationMemory for LanceDbMemory {
         messages: Vec<Message>,
     ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
         Box::pin(async move {
-            for message in &messages {
-                self.append_one(conversation_id, message)
-                    .await
-                    .map_err(MemoryError::backend)?;
+            if messages.is_empty() {
+                return Ok(());
             }
+            let table = self
+                .db
+                .open_table("conversation_messages")
+                .execute()
+                .await
+                .map_err(MemoryError::backend)?;
+
+            let schema: SchemaRef = schema::conversation_messages_schema();
+            let mut ids = Vec::with_capacity(messages.len());
+            let mut conv_ids = Vec::with_capacity(messages.len());
+            let mut roles = Vec::with_capacity(messages.len());
+            let mut contents = Vec::with_capacity(messages.len());
+            let mut timestamps = Vec::with_capacity(messages.len());
+
+            // Use a single timestamp base for all messages to preserve order
+            let base_ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos() as i64)
+                .unwrap_or(0);
+
+            for (idx, message) in messages.iter().enumerate() {
+                let serialized = serde_json::to_string(message)
+                    .map_err(|e| MemoryError::backend(format!("serialize message: {e}")))?;
+                let id = (base_ts as u64).saturating_add(idx as u64);
+                let ts = base_ts.saturating_add(idx as i64);
+                ids.push(id);
+                conv_ids.push(conversation_id.to_string());
+                roles.push(role_of(message).to_string());
+                contents.push(serialized);
+                timestamps.push(ts);
+            }
+
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(UInt64Array::from(ids)),
+                    Arc::new(StringArray::from(conv_ids)),
+                    Arc::new(StringArray::from(roles)),
+                    Arc::new(StringArray::from(contents)),
+                    Arc::new(TimestampNanosecondArray::from(timestamps)),
+                ],
+            )
+            .map_err(|e| MemoryError::backend(format!("build batch: {e}")))?;
+
+            table
+                .add(batch)
+                .execute()
+                .await
+                .map_err(MemoryError::backend)?;
             Ok(())
         })
     }
@@ -162,7 +225,7 @@ impl ConversationMemory for LanceDbMemory {
                 .await
                 .map_err(MemoryError::backend)?;
             table
-                .delete(format!("conversation_id = '{}'", conversation_id))
+                .delete(format!("conversation_id = '{}'", escape_single_quotes(conversation_id)))
                 .await
                 .map_err(MemoryError::backend)?;
             Ok(())

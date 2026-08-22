@@ -66,6 +66,14 @@ pub struct MediaInfo {
     pub has_controls: bool,
 }
 
+/// Formats a [`PageContext`] into a structured prompt section.
+///
+/// The output includes the page title, language, and all extracted elements
+/// (headings, images, iframes, links, forms, media, navigation) organized
+/// under clear markdown headings. Empty collections are omitted from the output.
+///
+/// # Returns
+/// A markdown-formatted string ready for inclusion in an evaluation prompt.
 pub fn format_page_context(context: &PageContext) -> String {
     let mut prompt = String::new();
 

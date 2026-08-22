@@ -62,8 +62,9 @@ impl Orchestrator {
         let tool_ctx = ToolContext::new(session);
 
         let agent_config = rgaa_agent::config::AgentConfig::from_env()
-            .unwrap_or_default();
-        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config).await
+            .map_err(|e| format!("invalid agent configuration: {e}"))?;
+        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
+            .await
             .map_err(|e| format!("failed to create agent: {e}"))?;
         let mut results = HashMap::new();
         for url in urls {

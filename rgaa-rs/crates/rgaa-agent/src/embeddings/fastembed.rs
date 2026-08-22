@@ -48,9 +48,24 @@ impl EmbeddingModel for FastEmbedModel {
     const MAX_DOCUMENTS: usize = 256;
     type Client = ();
 
-    fn make(_client: &(), _model: impl Into<String>, _dims: Option<usize>) -> Self {
-        Self::new("all-MiniLM-L6-v2")
-            .expect("failed to build default FastEmbed embedding model")
+    fn make(_client: &(), model: impl Into<String>, dims: Option<usize>) -> Self {
+        let model_name: String = model.into();
+        let (variant, model_dims) = resolve_model(&model_name)
+            .expect("unsupported embedding model in make");
+        if let Some(requested) = dims {
+            if requested != model_dims {
+                panic!(
+                    "requested embedding dimensions {} mismatch resolved model {}",
+                    requested, model_dims
+                );
+            }
+        }
+        let model = TextEmbedding::try_new(InitOptions::new(variant))
+            .expect("failed to init fastembed in make");
+        Self {
+            model: Arc::new(model),
+            dimensions: model_dims,
+        }
     }
 
     fn ndims(&self) -> usize {

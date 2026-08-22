@@ -81,6 +81,19 @@ impl Default for AgentConfig {
 }
 
 impl AgentConfig {
+    /// Builds configuration from environment variables.
+    ///
+    /// # Environment Variables
+    /// - `HOLO3_API_KEY` (required): API key for the Holo3 evaluation API.
+    /// - `HOLO3_BASE_URL` (optional): Base URL for the Holo3 API. Defaults to
+    ///   `https://api.hcompany.ai/v1`.
+    /// - `HOLO3_MODEL` (optional): Model identifier. Defaults to
+    ///   `holo3-1-35b-a3b`.
+    /// - `LANCEDB_PATH` (optional): LanceDB storage path. Defaults to
+    ///   `./data/lancedb`.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::AgentError::Config`] if `HOLO3_API_KEY` is not set.
     pub fn from_env() -> Result<Self, crate::error::AgentError> {
         Ok(Self {
             holo3_base_url: std::env::var("HOLO3_BASE_URL")

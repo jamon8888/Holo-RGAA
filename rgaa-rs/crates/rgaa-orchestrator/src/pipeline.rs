@@ -128,9 +128,7 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
-    let agent_results = agent
-        .run_ia_assiste(&ia_criteria, &page_context)
-        .await;
+    let agent_results = agent.run_ia_assiste(&ia_criteria, &page_context).await;
 
     let mut holo_results = HashMap::new();
     for (criterion_id, result) in agent_results {

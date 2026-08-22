@@ -67,7 +67,7 @@ impl Orchestrator {
             .map_err(|e| format!("failed to create agent: {e}"))?;
         let mut results = HashMap::new();
         for url in urls {
-            let audit = audit_one(&agent, url, config).await?;
+            let audit = audit_one(&agent, &tool_ctx, url, config).await?;
             results.insert(url.clone(), audit);
         }
         Ok(results)
@@ -81,14 +81,15 @@ impl Orchestrator {
 /// identical results regardless of entry point.
 async fn audit_one(
     agent: &RgaaAgent,
+    tool_ctx: &ToolContext,
     url: &str,
     _config: &CrawlConfig,
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
 
-    // Lock the browser session from the agent's tool context
-    let session = agent.tool_ctx().session().lock().await;
+    // Lock the browser session from the shared tool context
+    let session = tool_ctx.session().lock().await;
     let bridge = session.bridge();
 
     // 1. Run axe-core
@@ -127,9 +128,8 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
-    let conversation_id = format!("audit-{}", uuid::Uuid::new_v4());
     let agent_results = agent
-        .run_ia_assiste(&ia_criteria, &page_context, &conversation_id)
+        .run_ia_assiste(&ia_criteria, &page_context)
         .await;
 
     let mut holo_results = HashMap::new();

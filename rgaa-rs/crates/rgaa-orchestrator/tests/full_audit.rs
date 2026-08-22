@@ -3,6 +3,13 @@ use rgaa_orchestrator::Orchestrator;
 
 #[tokio::test]
 async fn test_full_audit_example_com() {
+    // Full-pipeline E2E: requires a Holo3 API key and network access to the
+    // target page. Skipped unless RUN_E2E=1 is set (e.g. in the CI `e2e` job).
+    if std::env::var("RUN_E2E").is_err() {
+        eprintln!("skipping full_audit E2E (set RUN_E2E=1 to enable)");
+        return;
+    }
+
     let config = CrawlConfig {
         max_pages: 1,
         max_depth: 0,

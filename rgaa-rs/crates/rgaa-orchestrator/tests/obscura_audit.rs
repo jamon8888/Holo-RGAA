@@ -6,6 +6,14 @@ use rgaa_orchestrator::Orchestrator;
 
 #[tokio::test]
 async fn test_run_batch_obscura() {
+    // Full-pipeline E2E via the Obscura CDP backend: requires the `obscura`
+    // binary on PATH, network access, and a Holo3 API key. Skipped unless
+    // RUN_E2E=1 is set (e.g. in the CI `e2e` job).
+    if std::env::var("RUN_E2E").is_err() {
+        eprintln!("skipping obscura_audit E2E (set RUN_E2E=1 to enable)");
+        return;
+    }
+
     let config = CrawlConfig {
         max_pages: 1,
         max_depth: 0,

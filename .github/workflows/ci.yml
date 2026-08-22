@@ -1,4 +1,4 @@
-name: RGAA Audit CI
+name: CI
 
 on:
   push:
@@ -6,74 +6,110 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          
-      - name: Install dependencies
-        run: |
-          npm install
-          npx playwright install chromium
-          
-      - name: Run CI tests
-        run: node test-ci.js
-        
-      - name: Run full audit on test page
-        run: node audit-pipeline.js https://example.com --no-sample
-        
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            *.json
-            !node_modules/**
+env:
+  CARGO_TERM_COLOR: always
 
-  rust:
+defaults:
+  run:
+    working-directory: rgaa-rs
+
+jobs:
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-          
+      - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y chromium-browser
-          
-      - name: Install Node.js and Playwright
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          
-      - name: Install npm dependencies
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  build:
+    name: Build (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
         run: |
-          npm install
-          npx playwright install chromium
-          
-      - name: Run cargo check
-        working-directory: rgaa-rs
-        run: cargo check --workspace
-        
-      - name: Run cargo clippy
-        working-directory: rgaa-rs
-        run: cargo clippy --workspace -- -D warnings
-        
-      - name: Run cargo test
-        working-directory: rgaa-rs
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+      - name: Build workspace
+        run: cargo build --workspace --release
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-rs-bin-linux-x86_64
+          path: |
+            rgaa-rs/target/release/rgaa-cli
+            rgaa-rs/target/release/rgaa-api
+            rgaa-rs/target/release/rgaa-mcp
+          if-no-files-found: error
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+      - name: Run tests
+        # E2E tests in rgaa-orchestrator self-skip unless RUN_E2E=1 is set.
         run: cargo test --workspace
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    # Does not block the pipeline; reports vulnerabilities as a check.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  e2e:
+    name: E2E (browser + agent + orchestrator)
+    runs-on: ubuntu-latest
+    # Only runs when a Holo3 API key secret is configured. Provides the checked-in
+    # `obscura`/`obscura-worker` binaries on PATH and enables the gated E2E tests.
+    if: ${{ secrets.HOLO3_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+      - name: Prepare Obscura backend
+        working-directory: ${{ github.workspace }}
+        run: |
+          chmod +x obscura obscura-worker
+          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+      - name: Run E2E pipeline tests
+        env:
+          RUN_E2E: "1"
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+          HOLO3_BASE_URL: ${{ secrets.HOLO3_BASE_URL }}
+          HOLO3_MODEL: ${{ secrets.HOLO3_MODEL }}
+        run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture

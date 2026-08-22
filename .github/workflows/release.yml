@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+<<<<<<< HEAD
     tags:
       - 'v*'
   workflow_dispatch:
@@ -9,10 +10,15 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: true
+=======
+    tags: ["v*"]
+  workflow_dispatch:
+>>>>>>> 00e6411 (ci: add GitHub Actions CI, E2E, and cross-platform release build)
 
 permissions:
   contents: write
 
+<<<<<<< HEAD
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -115,10 +121,90 @@ README_EOF
 
           tar -czf "${STAGING}.tar.gz" "${STAGING}"
           echo "ASSET=${STAGING}.tar.gz" >> $GITHUB_ENV
+=======
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            cross: false
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            cross: false
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            cross: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            cross: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki1978/install-action@v2
+        with:
+          tool: cross
+
+      - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
+        if: runner.os == 'Windows'
+        run: choco install nasm strawberryperl -y
+        shell: bash
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --target ${{ matrix.target }} --release
+          else
+            cargo build --target ${{ matrix.target }} --release
+          fi
+        shell: bash
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../rgaa-rs-${{ matrix.target }}.tar.gz rgaa-cli rgaa-api rgaa-mcp
+        shell: bash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path rgaa-cli.exe, rgaa-api.exe, rgaa-mcp.exe -DestinationPath ../../../rgaa-rs-${{ matrix.target }}.zip
+        shell: pwsh
+>>>>>>> 00e6411 (ci: add GitHub Actions CI, E2E, and cross-platform release build)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
+<<<<<<< HEAD
           name: ${{ matrix.arch }}
           path: ${{ env.ASSET }}
 
@@ -164,3 +250,26 @@ README_EOF
             1. Download the tarball for your platform
             2. Extract to `~/.local/bin/`
             3. Run `install.sh` from the extracted directory for plugin setup
+=======
+          name: rgaa-rs-${{ matrix.target }}
+          path: rgaa-rs/rgaa-rs-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*
+          generate_release_notes: true
+>>>>>>> 00e6411 (ci: add GitHub Actions CI, E2E, and cross-platform release build)

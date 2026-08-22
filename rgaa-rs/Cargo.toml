@@ -34,5 +34,12 @@ rig-core = "0.42"
 rig-agent = "0.42"
 rig-lancedb = "0.42"
 rig-memory = "0.42"
-lancedb = "0.30"
-fastembed = "4.0"
+  lancedb = "0.30"
+  fastembed = "4.0"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"

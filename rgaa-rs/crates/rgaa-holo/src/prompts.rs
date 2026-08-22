@@ -110,7 +110,12 @@ pub fn format_page_context(context: &PageContext) -> String {
     if !context.headings.is_empty() {
         writeln!(prompt, "### Titres").unwrap();
         for h in &context.headings {
-            writeln!(prompt, "  - H{}: {UNTRUSTED_START}{}{UNTRUSTED_END}", h.level, h.text).unwrap();
+            writeln!(
+                prompt,
+                "  - H{}: {UNTRUSTED_START}{}{UNTRUSTED_END}",
+                h.level, h.text
+            )
+            .unwrap();
         }
         writeln!(prompt).unwrap();
     }
@@ -125,7 +130,12 @@ pub fn format_page_context(context: &PageContext) -> String {
             } else {
                 "(sans alt)".to_string()
             };
-            writeln!(prompt, "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}", img.src, alt_info).unwrap();
+            writeln!(
+                prompt,
+                "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}",
+                img.src, alt_info
+            )
+            .unwrap();
         }
         writeln!(prompt).unwrap();
     }
@@ -138,7 +148,13 @@ pub fn format_page_context(context: &PageContext) -> String {
             } else {
                 "(sans titre)".to_string()
             };
-            writeln!(prompt, "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}", iframe.src.as_deref().unwrap_or(""), title_info).unwrap();
+            writeln!(
+                prompt,
+                "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}",
+                iframe.src.as_deref().unwrap_or(""),
+                title_info
+            )
+            .unwrap();
         }
         writeln!(prompt).unwrap();
     }
@@ -153,7 +169,12 @@ pub fn format_page_context(context: &PageContext) -> String {
             } else {
                 "(sans texte)"
             };
-            writeln!(prompt, "  - href=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}", link.href, text_info).unwrap();
+            writeln!(
+                prompt,
+                "  - href=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}",
+                link.href, text_info
+            )
+            .unwrap();
         }
         writeln!(prompt).unwrap();
     }
@@ -161,16 +182,22 @@ pub fn format_page_context(context: &PageContext) -> String {
     if !context.forms.is_empty() {
         writeln!(prompt, "### Formulaires").unwrap();
         for form in &context.forms {
-            writeln!(prompt, "  - Form{} (labels: {}, submit: {})",
+            writeln!(
+                prompt,
+                "  - Form{} (labels: {}, submit: {})",
                 form.id.as_deref().unwrap_or(""),
                 if form.has_labels { "oui" } else { "non" },
                 if form.has_submit { "oui" } else { "non" }
-            ).unwrap();
+            )
+            .unwrap();
             for input in &form.inputs {
-                writeln!(prompt, "    - type={}, label: {}",
+                writeln!(
+                    prompt,
+                    "    - type={}, label: {}",
                     input.input_type,
                     if input.has_label { "oui" } else { "non" }
-                ).unwrap();
+                )
+                .unwrap();
             }
         }
         writeln!(prompt).unwrap();
@@ -179,12 +206,15 @@ pub fn format_page_context(context: &PageContext) -> String {
     if !context.media.is_empty() {
         writeln!(prompt, "### Médias").unwrap();
         for media in &context.media {
-            writeln!(prompt, "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}",
+            writeln!(
+                prompt,
+                "  - type={}, contrôles: {}, sous-titres: {}, transcription: {}",
                 media.media_type,
                 if media.has_controls { "oui" } else { "non" },
                 if media.has_captions { "oui" } else { "non" },
                 if media.has_transcript { "oui" } else { "non" }
-            ).unwrap();
+            )
+            .unwrap();
         }
         writeln!(prompt).unwrap();
     }
@@ -212,19 +242,56 @@ impl PromptBuilder {
 
         let mut prompt = String::new();
 
-        writeln!(prompt, "Évalue le critère RGAA {} sur cette page web.\n", criterion_id).unwrap();
+        writeln!(
+            prompt,
+            "Évalue le critère RGAA {} sur cette page web.\n",
+            criterion_id
+        )
+        .unwrap();
 
         prompt.push_str(&format_page_context(context));
 
-        writeln!(prompt, "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n").unwrap();
+        writeln!(
+            prompt,
+            "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n"
+        )
+        .unwrap();
 
-        writeln!(prompt, "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n").unwrap();
-        writeln!(prompt, "1. Analyse le critère en fonction de la définition et des éléments ci-dessus").unwrap();
-        writeln!(prompt, "2. Si une capture d'écran est fournie, utilise-la pour juger").unwrap();
-        writeln!(prompt, "3. Retourne un JSON avec les champs:").unwrap();
-        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").unwrap();
-        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").unwrap();
-        writeln!(prompt, "   - justification: explication détaillée en français").unwrap();
+        writeln!(
+            prompt,
+            "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n"
+        )
+        .unwrap();
+        writeln!(
+            prompt,
+            "1. Analyse le critère en fonction de la définition et des éléments ci-dessus"
+        )
+        .unwrap();
+        writeln!(
+            prompt,
+            "2. Si une capture d'écran est fournie, utilise-la pour juger"
+        )
+        .unwrap();
+        writeln!(
+            prompt,
+            "3. Retourne un JSON avec les champs:"
+        )
+        .unwrap();
+        writeln!(
+            prompt,
+            "   - verdict: \"pass\", \"fail\", ou \"na\""
+        )
+        .unwrap();
+        writeln!(
+            prompt,
+            "   - confidence: nombre entre 0.0 et 1.0"
+        )
+        .unwrap();
+        writeln!(
+            prompt,
+            "   - justification: explication détaillée en français"
+        )
+        .unwrap();
 
         prompt
     }

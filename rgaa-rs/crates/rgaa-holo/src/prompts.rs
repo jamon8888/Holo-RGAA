@@ -88,11 +88,13 @@ pub fn format_page_context(context: &PageContext) -> String {
     writeln!(prompt, "## Contexte de la page\n").expect("writing to String cannot fail");
 
     if let Some(ref title) = context.title {
-        writeln!(prompt, "**Titre:** {UNTRUSTED_START}{title}{UNTRUSTED_END}").expect("writing to String cannot fail");
+        writeln!(prompt, "**Titre:** {UNTRUSTED_START}{title}{UNTRUSTED_END}")
+            .expect("writing to String cannot fail");
     }
 
     if let Some(ref lang) = context.lang {
-        writeln!(prompt, "**Langue:** {UNTRUSTED_START}{lang}{UNTRUSTED_END}").expect("writing to String cannot fail");
+        writeln!(prompt, "**Langue:** {UNTRUSTED_START}{lang}{UNTRUSTED_END}")
+            .expect("writing to String cannot fail");
     }
 
     let has_elements = !context.headings.is_empty()
@@ -222,7 +224,8 @@ pub fn format_page_context(context: &PageContext) -> String {
     if !context.navigation.is_empty() {
         writeln!(prompt, "### Navigation").expect("writing to String cannot fail");
         for nav in &context.navigation {
-            writeln!(prompt, "  - {UNTRUSTED_START}{nav}{UNTRUSTED_END}").expect("writing to String cannot fail");
+            writeln!(prompt, "  - {UNTRUSTED_START}{nav}{UNTRUSTED_END}")
+                .expect("writing to String cannot fail");
         }
         writeln!(prompt).expect("writing to String cannot fail");
     }
@@ -272,9 +275,12 @@ impl PromptBuilder {
             "2. Si une capture d'écran est fournie, utilise-la pour juger"
         )
         .expect("writing to String cannot fail");
-        writeln!(prompt, "3. Retourne un JSON avec les champs:").expect("writing to String cannot fail");
-        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").expect("writing to String cannot fail");
-        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").expect("writing to String cannot fail");
+        writeln!(prompt, "3. Retourne un JSON avec les champs:")
+            .expect("writing to String cannot fail");
+        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"")
+            .expect("writing to String cannot fail");
+        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0")
+            .expect("writing to String cannot fail");
         writeln!(
             prompt,
             "   - justification: explication détaillée en français"

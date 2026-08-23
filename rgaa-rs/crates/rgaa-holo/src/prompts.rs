@@ -85,14 +85,14 @@ pub fn format_page_context(context: &PageContext) -> String {
 
     let mut prompt = String::new();
 
-    writeln!(prompt, "## Contexte de la page\n").unwrap();
+    writeln!(prompt, "## Contexte de la page\n").expect("writing to String cannot fail");
 
     if let Some(ref title) = context.title {
-        writeln!(prompt, "**Titre:** {UNTRUSTED_START}{title}{UNTRUSTED_END}").unwrap();
+        writeln!(prompt, "**Titre:** {UNTRUSTED_START}{title}{UNTRUSTED_END}").expect("writing to String cannot fail");
     }
 
     if let Some(ref lang) = context.lang {
-        writeln!(prompt, "**Langue:** {UNTRUSTED_START}{lang}{UNTRUSTED_END}").unwrap();
+        writeln!(prompt, "**Langue:** {UNTRUSTED_START}{lang}{UNTRUSTED_END}").expect("writing to String cannot fail");
     }
 
     let has_elements = !context.headings.is_empty()
@@ -104,24 +104,24 @@ pub fn format_page_context(context: &PageContext) -> String {
         || !context.navigation.is_empty();
 
     if has_elements {
-        writeln!(prompt, "\n## Éléments de la page\n").unwrap();
+        writeln!(prompt, "\n## Éléments de la page\n").expect("writing to String cannot fail");
     }
 
     if !context.headings.is_empty() {
-        writeln!(prompt, "### Titres").unwrap();
+        writeln!(prompt, "### Titres").expect("writing to String cannot fail");
         for h in &context.headings {
             writeln!(
                 prompt,
                 "  - H{}: {UNTRUSTED_START}{}{UNTRUSTED_END}",
                 h.level, h.text
             )
-            .unwrap();
+            .expect("writing to String cannot fail");
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     if !context.images.is_empty() {
-        writeln!(prompt, "### Images").unwrap();
+        writeln!(prompt, "### Images").expect("writing to String cannot fail");
         for img in &context.images {
             let alt_info = if img.is_decorative {
                 "(décorative)".to_string()
@@ -135,13 +135,13 @@ pub fn format_page_context(context: &PageContext) -> String {
                 "  - src=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}",
                 img.src, alt_info
             )
-            .unwrap();
+            .expect("writing to String cannot fail");
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     if !context.iframes.is_empty() {
-        writeln!(prompt, "### Iframes").unwrap();
+        writeln!(prompt, "### Iframes").expect("writing to String cannot fail");
         for iframe in &context.iframes {
             let title_info = if iframe.has_title {
                 format!("title: \"{}\"", iframe.title.as_deref().unwrap_or(""))
@@ -154,13 +154,13 @@ pub fn format_page_context(context: &PageContext) -> String {
                 iframe.src.as_deref().unwrap_or(""),
                 title_info
             )
-            .unwrap();
+            .expect("writing to String cannot fail");
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     if !context.links.is_empty() {
-        writeln!(prompt, "### Liens").unwrap();
+        writeln!(prompt, "### Liens").expect("writing to String cannot fail");
         for link in &context.links {
             let text_info = if link.is_empty {
                 "(vide)"
@@ -174,13 +174,13 @@ pub fn format_page_context(context: &PageContext) -> String {
                 "  - href=\"{UNTRUSTED_START}{}{UNTRUSTED_END}\" {}",
                 link.href, text_info
             )
-            .unwrap();
+            .expect("writing to String cannot fail");
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     if !context.forms.is_empty() {
-        writeln!(prompt, "### Formulaires").unwrap();
+        writeln!(prompt, "### Formulaires").expect("writing to String cannot fail");
         for form in &context.forms {
             writeln!(
                 prompt,
@@ -189,7 +189,7 @@ pub fn format_page_context(context: &PageContext) -> String {
                 if form.has_labels { "oui" } else { "non" },
                 if form.has_submit { "oui" } else { "non" }
             )
-            .unwrap();
+            .expect("writing to String cannot fail");
             for input in &form.inputs {
                 writeln!(
                     prompt,
@@ -197,14 +197,14 @@ pub fn format_page_context(context: &PageContext) -> String {
                     input.input_type,
                     if input.has_label { "oui" } else { "non" }
                 )
-                .unwrap();
+                .expect("writing to String cannot fail");
             }
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     if !context.media.is_empty() {
-        writeln!(prompt, "### Médias").unwrap();
+        writeln!(prompt, "### Médias").expect("writing to String cannot fail");
         for media in &context.media {
             writeln!(
                 prompt,
@@ -214,17 +214,17 @@ pub fn format_page_context(context: &PageContext) -> String {
                 if media.has_captions { "oui" } else { "non" },
                 if media.has_transcript { "oui" } else { "non" }
             )
-            .unwrap();
+            .expect("writing to String cannot fail");
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     if !context.navigation.is_empty() {
-        writeln!(prompt, "### Navigation").unwrap();
+        writeln!(prompt, "### Navigation").expect("writing to String cannot fail");
         for nav in &context.navigation {
-            writeln!(prompt, "  - {UNTRUSTED_START}{nav}{UNTRUSTED_END}").unwrap();
+            writeln!(prompt, "  - {UNTRUSTED_START}{nav}{UNTRUSTED_END}").expect("writing to String cannot fail");
         }
-        writeln!(prompt).unwrap();
+        writeln!(prompt).expect("writing to String cannot fail");
     }
 
     prompt
@@ -247,7 +247,7 @@ impl PromptBuilder {
             "Évalue le critère RGAA {} sur cette page web.\n",
             criterion_id
         )
-        .unwrap();
+        .expect("writing to String cannot fail");
 
         prompt.push_str(&format_page_context(context));
 
@@ -255,26 +255,26 @@ impl PromptBuilder {
             prompt,
             "\n{UNTRUSTED_START} (fin du contenu de page) {UNTRUSTED_END}\n"
         )
-        .unwrap();
+        .expect("writing to String cannot fail");
 
         writeln!(
             prompt,
             "INSTRUCTIONS D'ÉVALUATION (ces instructions sont fiables) :\n"
         )
-        .unwrap();
+        .expect("writing to String cannot fail");
         writeln!(
             prompt,
             "1. Analyse le critère en fonction de la définition et des éléments ci-dessus"
         )
-        .unwrap();
+        .expect("writing to String cannot fail");
         writeln!(
             prompt,
             "2. Si une capture d'écran est fournie, utilise-la pour juger"
         )
-        .unwrap();
-        writeln!(prompt, "3. Retourne un JSON avec les champs:").unwrap();
-        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").unwrap();
-        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").unwrap();
+        .expect("writing to String cannot fail");
+        writeln!(prompt, "3. Retourne un JSON avec les champs:").expect("writing to String cannot fail");
+        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").expect("writing to String cannot fail");
+        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").expect("writing to String cannot fail");
         writeln!(
             prompt,
             "   - justification: explication détaillée en français"

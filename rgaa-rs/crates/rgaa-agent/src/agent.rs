@@ -18,6 +18,7 @@ use std::sync::Arc;
 /// Conversation memory and vector retrieval are available via
 /// [`LanceDbMemory`] and [`LanceDbVectorStore`] but are not yet
 /// integrated into the evaluation path.
+#[derive(Clone)]
 pub struct RgaaAgent {
     agent: Agent,
     rate_limiter: Arc<Ratelimiter>,
@@ -71,7 +72,7 @@ impl RgaaAgent {
         criterion: &Criterion,
         page_context: &PageContext,
     ) -> CriterionResult {
-        let prompt = PromptBuilder::build(&criterion.id, page_context);
+        let prompt = PromptBuilder::build(criterion.id, page_context);
 
         // Apply rate limiting (tactical tier for standard criteria)
         self.rate_limiter

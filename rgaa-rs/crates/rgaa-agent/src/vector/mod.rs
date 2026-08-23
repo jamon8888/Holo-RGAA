@@ -3,8 +3,6 @@ pub mod schema;
 use lancedb::arrow::arrow_schema::SchemaRef;
 use lancedb::database::CreateTableMode;
 use lancedb::Connection;
-use lancedb::Table;
-use std::sync::Arc;
 
 /// Vector store for RGAA criteria, findings, and remediation patterns, backed
 /// by LanceDB. Tables are created idempotently on construction.

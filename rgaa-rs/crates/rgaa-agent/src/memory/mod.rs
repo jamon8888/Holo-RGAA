@@ -28,12 +28,7 @@ fn role_of(message: &Message) -> &'static str {
     }
 }
 
-fn now_nanos() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
-        .unwrap_or(0)
-}
+
 
 /// LanceDB-backed conversation memory.
 ///

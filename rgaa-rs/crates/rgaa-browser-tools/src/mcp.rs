@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::tools::A11yTreeTool;
 use crate::BrowserSession;
+use rig_core::tool::PortableTool;
 
 pub struct BrowserMcpServer {
     #[allow(dead_code)]

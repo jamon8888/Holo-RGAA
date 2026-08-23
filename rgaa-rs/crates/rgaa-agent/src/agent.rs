@@ -4,12 +4,12 @@ use crate::prompts::PromptBuilder;
 use crate::ratelimit::Ratelimiter;
 use crate::verify::map_verdict;
 use futures::StreamExt;
+use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
+use rgaa_holo::{HoloResponse, PageContext};
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
 use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
-use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
-use rgaa_holo::{HoloResponse, PageContext};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -48,10 +48,15 @@ impl RgaaAgent {
         // 3. Build agent with preamble
         let agent = client
             .agent(config.model.as_str())
-            .preamble("You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.")
+            .preamble(
+                "You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.",
+            )
             .build();
 
-        Ok(Self { agent, rate_limiter })
+        Ok(Self {
+            agent,
+            rate_limiter,
+        })
     }
 
     /// Evaluates a single IA-assistée criterion against the given page context.
@@ -70,12 +75,14 @@ impl RgaaAgent {
         let prompt = PromptBuilder::build(&criterion.id, page_context);
 
         // Apply rate limiting (tactical tier for standard criteria)
-        self.rate_limiter.acquire(crate::ratelimit::ModelTier::Tactical).await;
+        self.rate_limiter
+            .acquire(crate::ratelimit::ModelTier::Tactical)
+            .await;
 
         match self.agent.prompt(prompt.as_str()).await {
             Ok(response) => {
-                let parsed = HoloResponse::extract_json(&response)
-                    .unwrap_or_else(|| HoloResponse {
+                let parsed =
+                    HoloResponse::extract_json(&response).unwrap_or_else(|| HoloResponse {
                         verdict: "na".to_string(),
                         confidence: 0.0,
                         justification: response.clone(),

@@ -39,7 +39,11 @@ pub fn rgaa_findings_schema() -> SchemaRef {
             ),
             true,
         ),
-        Field::new("created_at", DataType::Timestamp(TimeUnit::Second, None), false),
+        Field::new(
+            "created_at",
+            DataType::Timestamp(TimeUnit::Second, None),
+            false,
+        ),
     ]))
 }
 

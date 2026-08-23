@@ -17,11 +17,11 @@ pub mod criteria_defs;
 pub mod embeddings;
 pub mod error;
 pub mod memory;
-pub mod vector;
 pub mod models;
 pub mod prompts;
 pub mod ratelimit;
 pub mod remediate;
+pub mod vector;
 pub mod verify;
 
 pub use agent::RgaaAgent;

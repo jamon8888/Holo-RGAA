@@ -150,10 +150,8 @@ impl AgentConfig {
                 .unwrap_or_else(|_| "https://api.hcompany.ai/v1".into()),
             api_key: std::env::var("HOLO3_API_KEY")
                 .map_err(|_| crate::error::AgentError::Config("HOLO3_API_KEY required".into()))?,
-            model: std::env::var("HOLO3_MODEL")
-                .unwrap_or_else(|_| "holo3-1-35b-a3b".into()),
-            lancedb_path: std::env::var("LANCEDB_PATH")
-                .unwrap_or_else(|_| "./data/lancedb".into()),
+            model: std::env::var("HOLO3_MODEL").unwrap_or_else(|_| "holo3-1-35b-a3b".into()),
+            lancedb_path: std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into()),
             ..Default::default()
         })
     }

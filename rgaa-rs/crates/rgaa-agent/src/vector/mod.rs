@@ -61,9 +61,14 @@ async fn create_table(
         .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
 
     // Open and verify schema matches expected
-    let table = db.open_table(name).execute().await
+    let table = db
+        .open_table(name)
+        .execute()
+        .await
         .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
-    let actual = table.schema().await
+    let actual = table
+        .schema()
+        .await
         .map_err(|e| crate::error::AgentError::LanceDb(e.to_string()))?;
 
     if !schemas_match(&actual, &expected) {
@@ -79,6 +84,8 @@ async fn create_table(
 fn schemas_match(a: &SchemaRef, b: &SchemaRef) -> bool {
     a.fields().len() == b.fields().len()
         && a.fields().iter().zip(b.fields().iter()).all(|(fa, fb)| {
-            fa.name() == fb.name() && fa.data_type() == fb.data_type() && fa.is_nullable() == fb.is_nullable()
+            fa.name() == fb.name()
+                && fa.data_type() == fb.data_type()
+                && fa.is_nullable() == fb.is_nullable()
         })
 }

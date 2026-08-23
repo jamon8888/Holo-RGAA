@@ -15,6 +15,10 @@ pub fn conversation_messages_schema() -> SchemaRef {
         Field::new("conversation_id", DataType::Utf8, false),
         Field::new("role", DataType::Utf8, true),
         Field::new("content", DataType::Utf8, false),
-        Field::new("timestamp", DataType::Timestamp(TimeUnit::Nanosecond, None), false),
+        Field::new(
+            "timestamp",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        ),
     ]))
 }

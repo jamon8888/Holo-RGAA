@@ -50,8 +50,8 @@ impl EmbeddingModel for FastEmbedModel {
 
     fn make(_client: &(), model: impl Into<String>, dims: Option<usize>) -> Self {
         let model_name: String = model.into();
-        let (variant, model_dims) = resolve_model(&model_name)
-            .expect("unsupported embedding model in make");
+        let (variant, model_dims) =
+            resolve_model(&model_name).expect("unsupported embedding model in make");
         if let Some(requested) = dims {
             if requested != model_dims {
                 panic!(
@@ -80,9 +80,9 @@ impl EmbeddingModel for FastEmbedModel {
         let model = self.model.clone();
         async move {
             let (docs, vectors) = tokio::task::spawn_blocking(move || {
-                let vectors = model
-                    .embed(docs.clone(), None)
-                    .map_err(|e| EmbeddingError::ResponseError(format!("fastembed embed failed: {e}")))?;
+                let vectors = model.embed(docs.clone(), None).map_err(|e| {
+                    EmbeddingError::ResponseError(format!("fastembed embed failed: {e}"))
+                })?;
                 Ok::<_, EmbeddingError>((docs, vectors))
             })
             .await

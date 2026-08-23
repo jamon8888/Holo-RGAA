@@ -2,16 +2,16 @@ pub mod schema;
 
 use futures::TryStreamExt;
 use lancedb::arrow::array::{StringArray, TimestampNanosecondArray, UInt64Array};
-use lancedb::arrow::record_batch::RecordBatch;
 use lancedb::arrow::arrow_schema::SchemaRef;
-use lancedb::Connection;
+use lancedb::arrow::record_batch::RecordBatch;
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::Connection;
 use rig_core::completion::Message;
 use rig_core::memory::{ConversationMemory, MemoryError};
 use rig_core::wasm_compat::WasmBoxedFuture;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static MSG_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -65,7 +65,10 @@ impl LanceDbMemory {
     /// Returns [`crate::error::AgentError::LanceDb`] if the table creation fails.
     pub async fn initialize_tables(&self) -> Result<(), crate::error::AgentError> {
         self.db
-            .create_empty_table("conversation_messages", schema::conversation_messages_schema())
+            .create_empty_table(
+                "conversation_messages",
+                schema::conversation_messages_schema(),
+            )
             .mode(CreateTableMode::exist_ok(|req| req))
             .execute()
             .await
@@ -89,7 +92,10 @@ impl ConversationMemory for LanceDbMemory {
 
             let mut stream = table
                 .query()
-                .only_if(format!("conversation_id = '{}'", escape_single_quotes(conversation_id)))
+                .only_if(format!(
+                    "conversation_id = '{}'",
+                    escape_single_quotes(conversation_id)
+                ))
                 .execute()
                 .await
                 .map_err(MemoryError::backend)?;
@@ -215,7 +221,10 @@ impl ConversationMemory for LanceDbMemory {
                 .await
                 .map_err(MemoryError::backend)?;
             table
-                .delete(format!("conversation_id = '{}'", escape_single_quotes(conversation_id)))
+                .delete(format!(
+                    "conversation_id = '{}'",
+                    escape_single_quotes(conversation_id)
+                ))
                 .await
                 .map_err(MemoryError::backend)?;
             Ok(())

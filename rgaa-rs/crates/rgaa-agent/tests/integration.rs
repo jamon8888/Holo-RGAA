@@ -1,13 +1,16 @@
-use rgaa_agent::config::AgentConfig;
 use rgaa_agent::agent::RgaaAgent;
-use rgaa_core::{Criterion, Classification};
+use rgaa_agent::config::AgentConfig;
+use rgaa_core::{Classification, Criterion};
 use rgaa_holo::PageContext;
 
 #[tokio::test]
 async fn test_agent_creation() {
     let config = AgentConfig::default();
     let agent = RgaaAgent::new(&config).await;
-    assert!(agent.is_ok(), "Agent creation should succeed with default config");
+    assert!(
+        agent.is_ok(),
+        "Agent creation should succeed with default config"
+    );
 }
 
 #[tokio::test]

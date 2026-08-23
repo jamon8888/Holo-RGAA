@@ -272,21 +272,9 @@ impl PromptBuilder {
             "2. Si une capture d'écran est fournie, utilise-la pour juger"
         )
         .unwrap();
-        writeln!(
-            prompt,
-            "3. Retourne un JSON avec les champs:"
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "   - verdict: \"pass\", \"fail\", ou \"na\""
-        )
-        .unwrap();
-        writeln!(
-            prompt,
-            "   - confidence: nombre entre 0.0 et 1.0"
-        )
-        .unwrap();
+        writeln!(prompt, "3. Retourne un JSON avec les champs:").unwrap();
+        writeln!(prompt, "   - verdict: \"pass\", \"fail\", ou \"na\"").unwrap();
+        writeln!(prompt, "   - confidence: nombre entre 0.0 et 1.0").unwrap();
         writeln!(
             prompt,
             "   - justification: explication détaillée en français"

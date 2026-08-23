@@ -5956,6 +5956,7 @@ dependencies = [
  "arrow 59.2.0",
  "chrono",
  "fastembed",
+ "futures",
  "lancedb",
  "rgaa-browser-tools",
  "rgaa-core",

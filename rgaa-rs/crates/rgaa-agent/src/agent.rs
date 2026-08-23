@@ -3,9 +3,8 @@ use crate::error::AgentError;
 use crate::prompts::PromptBuilder;
 use crate::ratelimit::Ratelimiter;
 use crate::verify::map_verdict;
-use futures::StreamExt;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
-use rgaa_holo::{HoloResponse, PageContext};
+use rgaa_holo::{HoloClient, HoloResponse, PageContext};
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
 use rig_agent::completion::Prompt;
@@ -82,7 +81,7 @@ impl RgaaAgent {
         match self.agent.prompt(prompt.as_str()).await {
             Ok(response) => {
                 let parsed =
-                    HoloResponse::extract_json(&response).unwrap_or_else(|| HoloResponse {
+                    HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
                         verdict: "na".to_string(),
                         confidence: 0.0,
                         justification: response.clone(),

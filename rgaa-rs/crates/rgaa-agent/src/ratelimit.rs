@@ -28,6 +28,7 @@ struct Inner {
 ///
 /// Each bucket refills on its own clock using fractional token replenishment
 /// based on elapsed time and configured RPM. Zero RPM means "unlimited" (no blocking).
+#[derive(Clone)]
 pub struct Ratelimiter {
     inner: Arc<Inner>,
 }

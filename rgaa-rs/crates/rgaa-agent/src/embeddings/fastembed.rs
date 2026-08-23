@@ -17,6 +17,7 @@ pub fn resolve_model(model_name: &str) -> Result<(fastembed::EmbeddingModel, usi
 }
 
 /// On-device embedding model wrapper around `fastembed`'s `TextEmbedding`.
+#[derive(Clone)]
 pub struct FastEmbedModel {
     model: Arc<TextEmbedding>,
     dimensions: usize,
@@ -94,11 +95,11 @@ impl EmbeddingModel for FastEmbedModel {
                 .zip(vectors)
                 .map(|(document, vec)| Embedding {
                     document,
-                    vec: vec.into_iter().map(|v| *v),
+                    vec: vec.into_iter().map(|v| v as f64).collect(),
                 })
                 .collect();
 
-            embeddings
+            Ok(embeddings)
         }
     }
 }

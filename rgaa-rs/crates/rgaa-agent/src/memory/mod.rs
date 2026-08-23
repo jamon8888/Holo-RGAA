@@ -1,9 +1,9 @@
 pub mod schema;
 
 use futures::TryStreamExt;
-use lancedb::arrow::array::{StringArray, TimestampNanosecondArray, UInt64Array};
-use lancedb::arrow::arrow_schema::SchemaRef;
-use lancedb::arrow::record_batch::RecordBatch;
+use arrow::array::{Array, StringArray, TimestampNanosecondArray, UInt64Array};
+use arrow::datatypes::SchemaRef;
+use arrow::record_batch::RecordBatch;
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::Connection;
@@ -38,7 +38,6 @@ fn now_nanos() -> i64 {
 /// LanceDB-backed conversation memory.
 ///
 /// Stores and retrieves message histories per conversation ID.
-#[derive(Debug)]
 pub struct LanceDbMemory {
     db: Connection,
 }
@@ -104,25 +103,25 @@ impl ConversationMemory for LanceDbMemory {
             while let Some(batch) = stream.try_next().await.map_err(MemoryError::backend)? {
                 let content = batch
                     .column_by_name("content")
-                    .ok_or_else(|| MemoryError::backend("missing content column".into()))?;
+                    .ok_or_else(|| MemoryError::backend("missing content column"))?;
                 let content = content
                     .as_any()
                     .downcast_ref::<StringArray>()
-                    .ok_or_else(|| MemoryError::backend("content is not utf8".into()))?;
+                    .ok_or_else(|| MemoryError::backend("content is not utf8"))?;
 
                 let id_col = batch
                     .column_by_name("id")
-                    .ok_or_else(|| MemoryError::backend("missing id column".into()))?
+                    .ok_or_else(|| MemoryError::backend("missing id column"))?
                     .as_any()
                     .downcast_ref::<UInt64Array>()
-                    .ok_or_else(|| MemoryError::backend("id is not uint64".into()))?;
+                    .ok_or_else(|| MemoryError::backend("id is not uint64"))?;
 
                 let ts_col = batch
                     .column_by_name("timestamp")
-                    .ok_or_else(|| MemoryError::backend("missing timestamp column".into()))?
+                    .ok_or_else(|| MemoryError::backend("missing timestamp column"))?
                     .as_any()
                     .downcast_ref::<TimestampNanosecondArray>()
-                    .ok_or_else(|| MemoryError::backend("timestamp is not i64".into()))?;
+                    .ok_or_else(|| MemoryError::backend("timestamp is not i64"))?;
 
                 for i in 0..content.len() {
                     if content.is_null(i) {
@@ -221,7 +220,7 @@ impl ConversationMemory for LanceDbMemory {
                 .await
                 .map_err(MemoryError::backend)?;
             table
-                .delete(format!(
+                .delete(&format!(
                     "conversation_id = '{}'",
                     escape_single_quotes(conversation_id)
                 ))

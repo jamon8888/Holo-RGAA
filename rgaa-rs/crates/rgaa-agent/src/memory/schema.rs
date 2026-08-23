@@ -1,4 +1,4 @@
-use lancedb::arrow::arrow_schema::{DataType, Field, Schema, SchemaRef, TimeUnit};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
 use std::sync::Arc;
 
 /// Returns the Arrow schema for the `conversation_messages` table.

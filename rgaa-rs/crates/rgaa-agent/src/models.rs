@@ -1,5 +1,5 @@
 use crate::criteria_defs::VISUAL_CRITERIA;
-use crate::ratelimit::RateLimiter;
+use crate::ratelimit::Ratelimiter;
 use rgaa_holo::HoloClient;
 
 /// Information about an available model.
@@ -18,7 +18,7 @@ pub struct ModelRouter {
     tactical_client: HoloClient,
     #[allow(dead_code)]
     reasoning_client: HoloClient,
-    rate_limiter: RateLimiter,
+    rate_limiter: Ratelimiter,
 }
 
 /// The model tier used for evaluating a criterion.
@@ -54,7 +54,7 @@ impl ModelRouter {
     pub fn new(
         tactical_client: HoloClient,
         reasoning_client: HoloClient,
-        rate_limiter: RateLimiter,
+        rate_limiter: Ratelimiter,
     ) -> Self {
         Self {
             tactical_client,
@@ -74,7 +74,7 @@ impl ModelRouter {
         Self::new(
             HoloClient::new(dummy_key.clone()).with_base_url(&dummy_url),
             HoloClient::new(dummy_key).with_base_url(dummy_url),
-            RateLimiter::new(10, 20),
+            Ratelimiter::new(10, 20),
         )
     }
 
@@ -126,7 +126,7 @@ impl ModelRouter {
     }
 
     /// Returns a reference to the rate limiter.
-    pub fn rate_limiter(&self) -> &RateLimiter {
+    pub fn rate_limiter(&self) -> &Ratelimiter {
         &self.rate_limiter
     }
 }

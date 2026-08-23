@@ -109,7 +109,7 @@ fn parse_framework(s: &str) -> Option<Framework> {
         "react" => Some(Framework::React),
         "vue" => Some(Framework::Vue),
         "angular" => Some(Framework::Angular),
-        "html" => Some(Framework::Html),
+        "next" => Some(Framework::Next),
         _ => None,
     }
 }

@@ -28,8 +28,6 @@ fn role_of(message: &Message) -> &'static str {
     }
 }
 
-
-
 /// LanceDB-backed conversation memory.
 ///
 /// Stores and retrieves message histories per conversation ID.

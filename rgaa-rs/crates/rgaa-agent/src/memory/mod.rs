@@ -1,9 +1,9 @@
 pub mod schema;
 
-use futures::TryStreamExt;
 use arrow::array::{Array, StringArray, TimestampNanosecondArray, UInt64Array};
 use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
+use futures::TryStreamExt;
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::Connection;

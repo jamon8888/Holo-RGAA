@@ -80,12 +80,11 @@ impl RgaaAgent {
 
         match self.agent.prompt(prompt.as_str()).await {
             Ok(response) => {
-                let parsed =
-                    HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
-                        verdict: "na".to_string(),
-                        confidence: 0.0,
-                        justification: response.clone(),
-                    });
+                let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
+                    verdict: "na".to_string(),
+                    confidence: 0.0,
+                    justification: response.clone(),
+                });
                 let status = map_verdict(&parsed);
                 CriterionResult {
                     criterion_id: criterion.id.to_string(),

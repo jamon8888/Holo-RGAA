@@ -59,6 +59,13 @@ impl BrowserSession {
         self.current_url = Some(url);
     }
 
+    /// Navigate the browser to a URL
+    pub async fn navigate(&mut self, url: &str) -> Result<(), String> {
+        self.bridge.navigate(url).await?;
+        self.current_url = Some(url.to_string());
+        Ok(())
+    }
+
     /// Returns a reference to the last accessibility tree, if available.
     #[must_use]
     pub fn last_a11y(&self) -> Option<&AXTree> {

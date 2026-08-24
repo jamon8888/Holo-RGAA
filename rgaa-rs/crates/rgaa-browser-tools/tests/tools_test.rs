@@ -177,14 +177,14 @@ async fn navigate_tool_definition() {
 }
 
 #[tokio::test]
-async fn navigate_tool_calls_successfully() {
+async fn navigate_tool_calls_err_when_not_connected() {
     let ctx = ToolContext::new(BrowserSession::new_placeholder());
     let tool = NavigateTool::new(ctx);
     let args: rgaa_browser_tools::tools::NavigateArgs =
         serde_json::from_value(serde_json::json!({"url": "https://example.com"}))
             .expect("valid args");
     let result = tool.call(args).await;
-    assert!(result.is_ok());
+    assert!(result.is_err());
 }
 
 #[tokio::test]

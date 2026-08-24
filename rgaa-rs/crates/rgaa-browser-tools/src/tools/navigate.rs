@@ -51,8 +51,10 @@ impl PortableTool for NavigateTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let mut session = self.ctx.session().lock().await;
-        session.set_current_url(args.url.clone());
-        // TODO: CDP Page.navigate in Task 6
+        session
+            .navigate(&args.url)
+            .await
+            .map_err(NavigateError::NavigationFailed)?;
         Ok(NavigateOutput {
             success: true,
             message: format!("Navigated to {}", args.url),

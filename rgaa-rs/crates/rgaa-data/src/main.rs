@@ -19,14 +19,15 @@ async fn main() -> Result<()> {
     tracing::info!("Saved {} axe-core rules", axe_rules.len());
 
     tracing::info!("Validating axe-core → RGAA mapping...");
-    let existing_mapping = parse::load_existing_mapping()?;
+    let existing_mapping = parse::load_existing_mapping();
     let validated = validate::validate_mapping(&axe_rules, &existing_mapping);
     let mapping_json = serde_json::to_string_pretty(&validated)?;
     std::fs::write(out_dir.join("axe_mapping.json"), &mapping_json)?;
     tracing::info!("Saved {} validated mappings", validated.len());
 
     tracing::info!("Analyzing automatability from criteres.json...");
-    let automatability = automatability::analyze_automatability()?;
+    let criteres_path = out_dir.join("criteres.json");
+    let automatability = automatability::analyze_automatability(&criteres_path)?;
     let auto_json = serde_json::to_string_pretty(&automatability)?;
     std::fs::write(out_dir.join("automatable_criteres.json"), &auto_json)?;
     tracing::info!(

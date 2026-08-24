@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::fetch::AxeRule;
 
-pub fn load_existing_mapping() -> Result<HashMap<String, Vec<String>>> {
+pub fn load_existing_mapping() -> HashMap<String, Vec<String>> {
     let mut m: HashMap<String, Vec<String>> = HashMap::new();
     m.insert(
         "1.1".into(),
@@ -185,7 +185,7 @@ pub fn load_existing_mapping() -> Result<HashMap<String, Vec<String>>> {
     m.insert("13.10".into(), vec!["pointer-gestures".into()]);
     m.insert("13.11".into(), vec!["pointer-cancellation".into()]);
     m.insert("13.12".into(), vec!["motion-actuation".into()]);
-    Ok(m)
+    m
 }
 
 pub fn parse_rule_descriptions(markdown: &str) -> Result<Vec<AxeRule>> {
@@ -212,10 +212,10 @@ pub fn parse_rule_descriptions(markdown: &str) -> Result<Vec<AxeRule>> {
         let tags = parse_tags(cols[4].trim());
         rules.push(AxeRule {
             id,
-            description: description.clone(),
+            help: description.clone(),
             impact,
             tags,
-            help: description,
+            description,
             help_url,
         });
     }

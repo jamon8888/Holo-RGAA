@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,47 +43,45 @@ struct Criterium {
     tests: std::collections::HashMap<String, Vec<String>>,
 }
 
-fn classification_key_set() -> HashSet<&'static str> {
-    let mut s = HashSet::new();
-    // French keywords indicating human/subjective judgment required
-    for kw in &[
-        "pertinent",
-        "compréhensib",
-        "perceptib",
-        "interprétab",
-        "significatif",
-        "suffisant",
-        "correctement restitué",
-        "correctement identifié",
-        "intention",
-        "objectif",
-        "but",
-        "finalité",
-        "visib",
-        "audib",
-        "évident",
-        "clairement",
-        "cohérent",
-        "pertinence",
-        "sens",
-    ] {
-        s.insert(*kw);
-    }
-    s
+const MANUAL_CLASSIFICATION_KEYWORDS: &[&str] = &[
+    "pertinent",
+    "compréhensib",
+    "perceptib",
+    "interprétab",
+    "significatif",
+    "suffisant",
+    "correctement restitué",
+    "correctement identifié",
+    "intention",
+    "objectif",
+    "but",
+    "finalité",
+    "visib",
+    "audib",
+    "évident",
+    "clairement",
+    "cohérent",
+    "pertinence",
+    "sens",
+];
+
+fn has_manual_keyword(text: &str) -> bool {
+    MANUAL_CLASSIFICATION_KEYWORDS
+        .iter()
+        .any(|kw| text.contains(kw))
 }
 
 fn classify_criterion(
     title: &str,
     tests: &std::collections::HashMap<String, Vec<String>>,
 ) -> (String, usize, usize) {
-    let keywords = classification_key_set();
     let mut manual_test_count = 0usize;
     let total_test_count: usize = tests.values().map(|v| v.len()).sum();
 
     for test_list in tests.values() {
         for test in test_list {
             let lower = test.to_lowercase();
-            if keywords.iter().any(|kw| lower.contains(kw)) {
+            if has_manual_keyword(&lower) {
                 manual_test_count += 1;
             }
         }
@@ -92,7 +89,7 @@ fn classify_criterion(
 
     // Also check title
     let title_lower = title.to_lowercase();
-    let title_has_manual = keywords.iter().any(|kw| title_lower.contains(kw));
+    let title_has_manual = has_manual_keyword(&title_lower);
 
     let automatable_count = total_test_count.saturating_sub(manual_test_count);
 
@@ -107,17 +104,8 @@ fn classify_criterion(
     (classification, automatable_count, total_test_count)
 }
 
-fn criteres_path() -> std::path::PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-    let base = std::path::Path::new(&manifest_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .unwrap_or(std::path::Path::new("."));
-    base.join("crates/rgaa-core/data/rgaa-4.1.2/criteres.json")
-}
-
-pub fn analyze_automatability() -> Result<AutomatabilityReport> {
-    let path = criteres_path();
+pub fn analyze_automatability(criteres_path: &std::path::Path) -> Result<AutomatabilityReport> {
+    let path = criteres_path.to_path_buf();
     let data =
         fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
     let root: CriteresRoot =
@@ -172,9 +160,15 @@ pub fn analyze_automatability() -> Result<AutomatabilityReport> {
 mod tests {
     use super::*;
 
+    fn test_criteres_path() -> std::path::PathBuf {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+        std::path::Path::new(&manifest_dir)
+            .join("../../crates/rgaa-core/data/rgaa-4.1.2/criteres.json")
+    }
+
     #[test]
     fn test_criterion_id_formatting() {
-        let report = analyze_automatability().unwrap();
+        let report = analyze_automatability(&test_criteres_path()).unwrap();
         assert_eq!(report.total_criteria, 106);
         // Check first criterion ID
         assert_eq!(report.criteria[0].criterion_id, "1.1");
@@ -185,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_classifications_sum() {
-        let report = analyze_automatability().unwrap();
+        let report = analyze_automatability(&test_criteres_path()).unwrap();
         assert_eq!(
             report.fully_automatable + report.partially_automatable + report.not_automatable,
             report.total_criteria
@@ -194,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_all_criteria_have_valid_classification() {
-        let report = analyze_automatability().unwrap();
+        let report = analyze_automatability(&test_criteres_path()).unwrap();
         for c in &report.criteria {
             assert!(
                 c.classification == "FullyAutomatable"
@@ -215,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_criterion_8_1_is_fully_automatable() {
-        let report = analyze_automatability().unwrap();
+        let report = analyze_automatability(&test_criteres_path()).unwrap();
         let c8_1 = report
             .criteria
             .iter()
@@ -226,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_criterion_3_2_is_fully_automatable() {
-        let report = analyze_automatability().unwrap();
+        let report = analyze_automatability(&test_criteres_path()).unwrap();
         let c3_2 = report
             .criteria
             .iter()

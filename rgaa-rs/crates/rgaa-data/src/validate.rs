@@ -1,3 +1,4 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -50,7 +51,7 @@ pub fn validate_mapping(
             provenance: Provenance {
                 source: "axe-core 4.9.1 rule-descriptions.md".to_string(),
                 validated_by: "automated cross-reference".to_string(),
-                validated_at: "2026-08-24".to_string(),
+                validated_at: Utc::now().format("%Y-%m-%d").to_string(),
                 notes,
             },
         });

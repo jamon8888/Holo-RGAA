@@ -20,7 +20,7 @@ async fn test_evaluate_criterion() {
 
     let criterion = Criterion {
         id: "1.3",
-        title: "Test Criterion",
+        title: "Test Criterion".to_string(),
         classification: Classification::IaAssiste,
         wcag_refs: "1.1.1",
     };
@@ -51,13 +51,13 @@ async fn test_run_ia_assiste() {
     let criteria = vec![
         Criterion {
             id: "1.3",
-            title: "Test Criterion 1",
+            title: "Test Criterion 1".to_string(),
             classification: Classification::IaAssiste,
             wcag_refs: "1.1.1",
         },
         Criterion {
             id: "11.2",
-            title: "Test Criterion 2",
+            title: "Test Criterion 2".to_string(),
             classification: Classification::IaAssiste,
             wcag_refs: "2.4.6",
         },

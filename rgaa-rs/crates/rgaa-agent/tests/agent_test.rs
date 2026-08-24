@@ -111,7 +111,7 @@ fn high_confidence_pass_maps_to_pass() {
         confidence: 0.9,
         justification: "OK".to_string(),
     };
-    assert_eq!(map_verdict(response), CriterionStatus::Pass);
+    assert_eq!(map_verdict(&response), CriterionStatus::Pass);
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn high_confidence_fail_maps_to_fail() {
         confidence: 0.85,
         justification: "Missing alt".to_string(),
     };
-    assert_eq!(map_verdict(response), CriterionStatus::Fail);
+    assert_eq!(map_verdict(&response), CriterionStatus::Fail);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn low_confidence_maps_to_needs_review() {
         confidence: 0.3,
         justification: "Uncertain".to_string(),
     };
-    assert_eq!(map_verdict(response), CriterionStatus::NeedsReview);
+    assert_eq!(map_verdict(&response), CriterionStatus::NeedsReview);
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn exactly_at_threshold_maps_to_verdict() {
         confidence: 0.6,
         justification: "Borderline".to_string(),
     };
-    assert_eq!(map_verdict(response), CriterionStatus::Fail);
+    assert_eq!(map_verdict(&response), CriterionStatus::Fail);
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn unknown_verdict_maps_to_needs_review() {
         confidence: 0.9,
         justification: "Model unsure".to_string(),
     };
-    assert_eq!(map_verdict(response), CriterionStatus::NeedsReview);
+    assert_eq!(map_verdict(&response), CriterionStatus::NeedsReview);
 }
 
 #[tokio::test]
@@ -196,6 +196,7 @@ async fn remediate_tool_returns_proposal_for_valid_issue() {
         summary: None,
         remediation: None,
         criteria: None,
+        framework: None,
     };
     let result = tool.call(args).await;
     assert!(result.is_ok());
@@ -219,6 +220,7 @@ async fn remediate_tool_returns_error_for_empty_source_locations() {
         summary: None,
         remediation: None,
         criteria: None,
+        framework: None,
     };
     let outcome = tool.call(args).await.expect("call should not fail");
     assert!(matches!(
@@ -244,6 +246,7 @@ async fn remediate_tool_proposal_requires_approval_by_default() {
         summary: None,
         remediation: None,
         criteria: None,
+        framework: None,
     };
     let outcome = tool.call(args).await.expect("remediation succeeded");
     if let rgaa_remediation::RemediationOutcome::Ok(guidance) = outcome {

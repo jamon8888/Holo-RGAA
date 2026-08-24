@@ -523,13 +523,13 @@ runtime = ["rgaa-obscura", "reqwest"]
 
 ## 8. Implementation Plan
 
-### Phase 1: Static Engine + Auto-fix (Weeks 1-2)
+### Phase 1: Static Engine + Auto-fix (Weeks 1-3)
 - [ ] Create `rgaa-linter` crate
-- [ ] Implement axe-core → html-linter rule translator
-- [ ] Port 30 most common static rules
-- [ ] CLI with file input + pretty output
+- [ ] Implement axe-core → html-linter rule translator (batch-generate from axe JSON)
+- [ ] Port all 70+ static rules (full coverage from day one)
+- [ ] CLI with file input + pretty/json/github output
 - [ ] `--fix` for 5-10 simple rules (alt, lang, title, tabindex, video-caption)
-- [ ] Unit tests for each rule
+- [ ] Unit tests for each rule (passing + failing HTML snippets)
 
 ### Phase 2: Config & Exclusions (Week 3)
 - [ ] `.rgaa-lint.yml` config loading
@@ -553,7 +553,6 @@ runtime = ["rgaa-obscura", "reqwest"]
 
 ### Phase 5: Polish (Week 7)
 - [ ] SARIF output format (for GitHub code scanning)
-- [ ] Remaining static rules (reach ~70)
 - [ ] Performance optimization (parallel file processing)
 - [ ] Documentation + examples
 
@@ -580,8 +579,8 @@ runtime = ["rgaa-obscura", "reqwest"]
 
 ## 10. Decisions (Resolved)
 
-1. **Rule coverage: Ship 30 rules in Phase 1, grow to 70+ incrementally.**
-   Reasoning: 30 rules covers the most impactful violations (alt, lang, labels, headings, landmarks, ARIA roles). Ship fast, validate with real consultants, iterate. The rule translator is mechanical — adding rules is low-effort once the engine works.
+1. **Rule coverage: All 70+ static rules in MVP.**
+   Reasoning: The rule translator is mechanical — each axe-core rule maps to an html-linter rule type. Building all 70 at once ensures full coverage from day one and avoids rework. The `html-linter` crate handles the heavy lifting. We batch-generate rules from axe-core's JSON definitions.
 
 2. **Template scope: HTML-only MVP. JSX/Vue/Svelte in Phase 2+.**
    Reasoning: Template extraction is its own complexity layer (parsing `<template>`, `<script>`, `<style>` blocks). The core value is the rule engine. Most consultant work is on HTML files or server-rendered templates where the HTML is the final output. JSX/Vue/Svelte templates are a follow-up.

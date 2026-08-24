@@ -13,6 +13,7 @@ members = [
     "crates/rgaa-cli",
     "crates/rgaa-browser-tools",
     "crates/rgaa-agent",
+    "crates/rgaa-data",
 ]
 
 [workspace.package]

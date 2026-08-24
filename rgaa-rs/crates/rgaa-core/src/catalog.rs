@@ -169,13 +169,21 @@ mod tests {
     #[test]
     fn test_all_criteria_have_automatability() {
         let catalog = RgaaCatalog::all();
+        let mut fully = 0;
+        let mut partially = 0;
+        let mut not_automatable = 0;
         for theme in catalog {
             for cw in &theme.criteria {
-                assert!(matches!(
-                    cw.criterium.automatable,
-                    Automatable::FullyAutomatable | Automatable::PartiallyAutomatable | Automatable::NotAutomatable
-                ));
+                match cw.criterium.automatable {
+                    Automatable::FullyAutomatable => fully += 1,
+                    Automatable::PartiallyAutomatable => partially += 1,
+                    Automatable::NotAutomatable => not_automatable += 1,
+                }
             }
         }
+        assert_eq!(fully, 39, "expected 39 FullyAutomatable criteria");
+        assert_eq!(partially, 45, "expected 45 PartiallyAutomatable criteria");
+        assert_eq!(not_automatable, 22, "expected 22 NotAutomatable criteria");
+        assert_eq!(fully + partially + not_automatable, 106);
     }
 }

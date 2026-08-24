@@ -1,11 +1,18 @@
 # Build configuration for faster compilation
-# Generated: 2026-08-23
+# Optimized: 2026-08-24
 
 # Use mold as linker (2-5x faster than default ld)
 [target.x86_64-unknown-linux-gnu]
 linker = "gcc"
-rustflags = ["-C", "link-arg=-B/home/jamin/.local/opt/mold/bin", "-C", "link-arg=-fuse-ld=mold"]
+rustflags = [
+    "-C", "link-arg=-B/home/jamin/.local/opt/mold/bin",
+    "-C", "link-arg=-fuse-ld=mold",
+    "-C", "target-cpu=native",
+]
 
 # Use sccache as compilation cache
 [build]
 rustc-wrapper = "sccache"
+# Limit parallel jobs to avoid OOM on 8GB RAM
+# Each rustc process uses ~1-2GB, 4 jobs = ~4-8GB max
+jobs = 4

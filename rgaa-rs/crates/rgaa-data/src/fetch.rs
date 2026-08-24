@@ -14,7 +14,8 @@ pub struct AxeRule {
 }
 
 pub async fn axe_core_rules() -> Result<Vec<AxeRule>> {
-    let url = "https://raw.githubusercontent.com/dequelabs/axe-core/develop/doc/rule-descriptions.md";
+    let url =
+        "https://raw.githubusercontent.com/dequelabs/axe-core/develop/doc/rule-descriptions.md";
     let body = reqwest::get(url).await?.text().await?;
     parse::parse_rule_descriptions(&body)
 }

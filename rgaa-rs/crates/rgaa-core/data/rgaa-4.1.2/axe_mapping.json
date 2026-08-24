@@ -1,0 +1,847 @@
+[
+  {
+    "criterion_id": "1.1",
+    "axe_rules": [
+      "image-alt",
+      "input-image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "1.2",
+    "axe_rules": [
+      "image-alt",
+      "image-redundant-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "1.5",
+    "axe_rules": [
+      "image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "1.6",
+    "axe_rules": [
+      "image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"longdesc\"]"
+    }
+  },
+  {
+    "criterion_id": "1.8",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"image-text\"]"
+    }
+  },
+  {
+    "criterion_id": "1.9",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"figure-caption\"]"
+    }
+  },
+  {
+    "criterion_id": "10.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"deprecated-element\"]"
+    }
+  },
+  {
+    "criterion_id": "10.11",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"reflow\"]"
+    }
+  },
+  {
+    "criterion_id": "10.12",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"text-spacing\"]"
+    }
+  },
+  {
+    "criterion_id": "10.13",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"focus-visible\", \"keyboard\"]"
+    }
+  },
+  {
+    "criterion_id": "10.14",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard\"]"
+    }
+  },
+  {
+    "criterion_id": "10.2",
+    "axe_rules": [
+      "color-contrast",
+      "image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "10.4",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"resize-text\"]"
+    }
+  },
+  {
+    "criterion_id": "10.5",
+    "axe_rules": [
+      "color-contrast"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "10.6",
+    "axe_rules": [
+      "link-in-text-block"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "10.7",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"focus-visible\"]"
+    }
+  },
+  {
+    "criterion_id": "10.8",
+    "axe_rules": [
+      "aria-hidden-focus",
+      "hidden-content"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "10.9",
+    "axe_rules": [
+      "color-contrast",
+      "image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "11.1",
+    "axe_rules": [
+      "label",
+      "label-title-only",
+      "input-image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 3 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "11.11",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"error-suggestion\"]"
+    }
+  },
+  {
+    "criterion_id": "11.12",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"error-prevention\"]"
+    }
+  },
+  {
+    "criterion_id": "11.13",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"autocomplete\"]"
+    }
+  },
+  {
+    "criterion_id": "11.4",
+    "axe_rules": [
+      "label"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "11.5",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"fieldset\"]"
+    }
+  },
+  {
+    "criterion_id": "11.6",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"fieldset\"]"
+    }
+  },
+  {
+    "criterion_id": "12.1",
+    "axe_rules": [
+      "landmark-one-main",
+      "region"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "12.10",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"character-key-shortcuts\"]"
+    }
+  },
+  {
+    "criterion_id": "12.11",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard\"]"
+    }
+  },
+  {
+    "criterion_id": "12.2",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"consistent-navigation\"]"
+    }
+  },
+  {
+    "criterion_id": "12.4",
+    "axe_rules": [
+      "landmark-one-main",
+      "region"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "12.5",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"consistent-navigation\"]"
+    }
+  },
+  {
+    "criterion_id": "12.6",
+    "axe_rules": [
+      "landmark-one-main",
+      "region",
+      "bypass"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 3 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "12.7",
+    "axe_rules": [
+      "bypass",
+      "skip-link"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "12.9",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard-trap\"]"
+    }
+  },
+  {
+    "criterion_id": "13.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"timing-adjustable\", \"pause-stop-hide\"]"
+    }
+  },
+  {
+    "criterion_id": "13.10",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"pointer-gestures\"]"
+    }
+  },
+  {
+    "criterion_id": "13.11",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"pointer-cancellation\"]"
+    }
+  },
+  {
+    "criterion_id": "13.12",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"motion-actuation\"]"
+    }
+  },
+  {
+    "criterion_id": "13.2",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"on-focus\"]"
+    }
+  },
+  {
+    "criterion_id": "13.3",
+    "axe_rules": [
+      "document-title"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"pdf\"]"
+    }
+  },
+  {
+    "criterion_id": "13.4",
+    "axe_rules": [
+      "document-title"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"pdf\"]"
+    }
+  },
+  {
+    "criterion_id": "13.5",
+    "axe_rules": [
+      "image-alt"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"non-text-content\"]"
+    }
+  },
+  {
+    "criterion_id": "13.7",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"three-flashes\"]"
+    }
+  },
+  {
+    "criterion_id": "13.8",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"pause-stop-hide\", \"timing-adjustable\"]"
+    }
+  },
+  {
+    "criterion_id": "13.9",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"orientation\"]"
+    }
+  },
+  {
+    "criterion_id": "2.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"iframe-title\"]"
+    }
+  },
+  {
+    "criterion_id": "3.2",
+    "axe_rules": [
+      "color-contrast"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "3.3",
+    "axe_rules": [
+      "color-contrast"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "4.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"audio-description\", \"video-description\"]"
+    }
+  },
+  {
+    "criterion_id": "4.10",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"audio-control\"]"
+    }
+  },
+  {
+    "criterion_id": "4.11",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard\", \"keyboard-trap\"]"
+    }
+  },
+  {
+    "criterion_id": "4.12",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard\", \"keyboard-trap\"]"
+    }
+  },
+  {
+    "criterion_id": "4.13",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"video-description\", \"audio-description\"]"
+    }
+  },
+  {
+    "criterion_id": "4.3",
+    "axe_rules": [
+      "video-caption"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "4.5",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"audio-description\", \"video-description\"]"
+    }
+  },
+  {
+    "criterion_id": "4.7",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"video-description\", \"audio-description\"]"
+    }
+  },
+  {
+    "criterion_id": "4.8",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"video-description\", \"audio-description\"]"
+    }
+  },
+  {
+    "criterion_id": "5.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"table-header\"]"
+    }
+  },
+  {
+    "criterion_id": "5.4",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"table-header\"]"
+    }
+  },
+  {
+    "criterion_id": "5.6",
+    "axe_rules": [
+      "td-headers-attr"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"table-header\"]"
+    }
+  },
+  {
+    "criterion_id": "5.7",
+    "axe_rules": [
+      "td-headers-attr",
+      "th-has-data-cells"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "5.8",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"layout-table\"]"
+    }
+  },
+  {
+    "criterion_id": "6.1",
+    "axe_rules": [
+      "link-name"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"link-purpose-in-context\"]"
+    }
+  },
+  {
+    "criterion_id": "6.2",
+    "axe_rules": [
+      "link-name"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "7.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard\", \"keyboard-trap\", \"focus-order\"]"
+    }
+  },
+  {
+    "criterion_id": "7.3",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"keyboard\", \"keyboard-trap\", \"focus-visible\"]"
+    }
+  },
+  {
+    "criterion_id": "7.4",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"on-focus\", \"on-input\"]"
+    }
+  },
+  {
+    "criterion_id": "8.1",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"doctype\"]"
+    }
+  },
+  {
+    "criterion_id": "8.10",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"focus-order\", \"meaningful-sequence\"]"
+    }
+  },
+  {
+    "criterion_id": "8.2",
+    "axe_rules": [
+      "html-has-lang",
+      "html-lang-valid"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "8.3",
+    "axe_rules": [
+      "html-has-lang"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 1 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "8.5",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"page-title\"]"
+    }
+  },
+  {
+    "criterion_id": "8.7",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"lang\"]"
+    }
+  },
+  {
+    "criterion_id": "8.9",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"layout-table\", \"deprecated-element\"]"
+    }
+  },
+  {
+    "criterion_id": "9.1",
+    "axe_rules": [
+      "heading-order",
+      "landmark-one-main",
+      "region"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 3 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "9.3",
+    "axe_rules": [
+      "list",
+      "listitem"
+    ],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "All 2 axe rules validated"
+    }
+  },
+  {
+    "criterion_id": "9.4",
+    "axe_rules": [],
+    "provenance": {
+      "source": "axe-core 4.9.1 rule-descriptions.md",
+      "validated_by": "automated cross-reference",
+      "validated_at": "2026-08-24",
+      "notes": "Invalid rules found: [\"blockquote\"]"
+    }
+  }
+]

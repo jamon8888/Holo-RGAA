@@ -7,8 +7,12 @@ pub fn detect_na(page_context: &serde_json::Value) -> HashMap<String, bool> {
     let mut applicable = HashMap::new();
 
     // Default: assume all criteria are applicable.
-    // We will only explicitly set the criteria covered by detection rules.
-    // Uncovered criteria remain absent from the map and are treated as applicable by callers.
+    // Initialize map with all 13 themes × criteria 1-15 set to true.
+    for theme in 1..=13 {
+        for crit in 1..=15 {
+            applicable.insert(format!("{}.{}", theme, crit), true);
+        }
+    }
 
     // Helper to check if an array field is non-empty
     let has_non_empty_array = |key: &str| -> bool {
@@ -25,10 +29,6 @@ pub fn detect_na(page_context: &serde_json::Value) -> HashMap<String, bool> {
         for j in 1..=9 {
             applicable.insert(format!("1.{j}"), false);
         }
-    } else {
-        for j in 1..=9 {
-            applicable.entry(format!("1.{j}")).or_insert(true);
-        }
     }
 
     // 11.x forms criteria 11.1-11.13
@@ -36,10 +36,6 @@ pub fn detect_na(page_context: &serde_json::Value) -> HashMap<String, bool> {
     if !has_forms {
         for j in 1..=13 {
             applicable.insert(format!("11.{j}"), false);
-        }
-    } else {
-        for j in 1..=13 {
-            applicable.entry(format!("11.{j}")).or_insert(true);
         }
     }
 
@@ -61,18 +57,12 @@ pub fn detect_na(page_context: &serde_json::Value) -> HashMap<String, bool> {
         for j in 1..=8 {
             applicable.insert(format!("5.{j}"), false);
         }
-    } else {
-        for j in 1..=8 {
-            applicable.entry(format!("5.{j}")).or_insert(true);
-        }
     }
 
     // 2.1 iframes
     let has_iframes = has_non_empty_array("iframes");
     if !has_iframes {
         applicable.insert("2.1".to_string(), false);
-    } else {
-        applicable.entry("2.1".to_string()).or_insert(true);
     }
 
     // 4.x media criteria 4.1-4.13
@@ -80,10 +70,6 @@ pub fn detect_na(page_context: &serde_json::Value) -> HashMap<String, bool> {
     if !has_media {
         for j in 1..=13 {
             applicable.insert(format!("4.{j}"), false);
-        }
-    } else {
-        for j in 1..=13 {
-            applicable.entry(format!("4.{j}")).or_insert(true);
         }
     }
 
@@ -173,11 +159,16 @@ mod tests {
     fn test_na_detection_missing_fields() {
         let context = serde_json::json!({});
         let na = detect_na(&context);
-        // All should be NA
+        // Covered criteria should be NA
         assert_eq!(na.get("1.1"), Some(&false));
         assert_eq!(na.get("11.13"), Some(&false));
         assert_eq!(na.get("2.1"), Some(&false));
         assert_eq!(na.get("4.13"), Some(&false));
         assert_eq!(na.get("5.8"), Some(&false));
+        // Uncovered criteria should be present and true
+        assert_eq!(na.get("3.2"), Some(&true));
+        assert_eq!(na.get("6.1"), Some(&true));
+        // Map should contain all 13 themes × 15 criteria
+        assert!(na.len() >= 195);
     }
 }

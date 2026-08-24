@@ -1,14 +1,20 @@
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-/// axe-core rule as returned by the GitHub API.
-#[derive(Debug, Deserialize, serde::Serialize)]
+use crate::parse;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AxeRule {
     pub id: String,
     pub description: String,
+    pub impact: String,
+    pub tags: Vec<String>,
+    pub help: String,
+    pub help_url: String,
 }
 
-/// Fetch axe-core rule descriptions from the GitHub repository.
 pub async fn axe_core_rules() -> Result<Vec<AxeRule>> {
-    todo!("fetch axe-core rules from GitHub API")
+    let url = "https://raw.githubusercontent.com/dequelabs/axe-core/develop/doc/rule-descriptions.md";
+    let body = reqwest::get(url).await?.text().await?;
+    parse::parse_rule_descriptions(&body)
 }

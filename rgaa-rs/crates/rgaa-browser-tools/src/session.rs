@@ -66,6 +66,11 @@ impl BrowserSession {
         Ok(())
     }
 
+    /// Evaluate JavaScript in the current page
+    pub async fn eval_js(&self, expression: &str) -> Result<serde_json::Value, String> {
+        self.bridge.eval_js(expression).await
+    }
+
     /// Returns a reference to the last accessibility tree, if available.
     #[must_use]
     pub fn last_a11y(&self) -> Option<&AXTree> {

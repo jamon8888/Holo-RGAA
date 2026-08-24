@@ -720,6 +720,54 @@ impl ObscuraBridge {
         }
     }
 
+    /// Evaluate JavaScript in the page using CDP Runtime.evaluate
+    pub async fn eval_js(&self, expression: &str) -> Result<serde_json::Value, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        // Create a target
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": "about:blank"}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        // Attach to the target
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        // Evaluate the expression
+        let result = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": expression, "returnByValue": true}),
+        )
+        .await?;
+
+        // Cleanup
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+
+        Ok(result)
+    }
+
     /// Navigate to a URL using CDP Page.navigate
     pub async fn navigate(&self, url: &str) -> Result<(), String> {
         let ws_url = self.get_browser_ws_url().await?;

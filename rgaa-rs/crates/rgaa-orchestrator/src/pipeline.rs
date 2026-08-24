@@ -2,8 +2,10 @@ use rgaa_agent::agent::RgaaAgent;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::{
     AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
-    RgaaCriteria,
+    RgaaCatalog, RgaaCriteria,
 };
+use rgaa_core::catalog::Automatable;
+use rgaa_core::types::ConformityStatus;
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
 use std::collections::HashMap;
@@ -30,6 +32,52 @@ fn calculate_compliance(criteria: &[CriterionResult]) -> f64 {
     } else {
         0.0
     }
+}
+
+fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, String) {
+    let mut c = 0;
+    let mut nc = 0;
+    let mut validated_total = 0;
+    let mut validated_executed = 0;
+
+    for criterion in criteria {
+        let conformity = ConformityStatus::from(criterion.status);
+        if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion.criterion_id) {
+            if matches!(cat.automatable, Automatable::FullyAutomatable | Automatable::PartiallyAutomatable) {
+                validated_total += 1;
+                if criterion.status != CriterionStatus::NotTested {
+                    validated_executed += 1;
+                }
+            }
+        }
+        match conformity {
+            ConformityStatus::Conforme => c += 1,
+            ConformityStatus::NonConforme => nc += 1,
+            _ => {}
+        }
+    }
+
+    let taux_global = if c + nc > 0 {
+        (c as f64 / (c + nc) as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let coverage_percent = if validated_total > 0 {
+        (validated_executed as f64 / validated_total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let etat_conformite = if taux_global >= 100.0 {
+        "totale".to_string()
+    } else if taux_global >= 50.0 {
+        "partielle".to_string()
+    } else {
+        "non conforme".to_string()
+    };
+
+    (taux_global, coverage_percent, etat_conformite)
 }
 
 pub struct Orchestrator;
@@ -201,6 +249,7 @@ async fn audit_one(
         .count();
     let total = RgaaCriteria::count();
     let compliance = calculate_compliance(&criteria);
+    let (taux_global, coverage_percent, etat_conformite) = calculate_compliance_summary(&criteria);
 
     info!(
         pass = pass_count,
@@ -209,6 +258,9 @@ async fn audit_one(
         errors = error_count,
         total,
         compliance = format!("{:.1}%", compliance),
+        taux_global = format!("{:.1}%", taux_global),
+        coverage_percent = format!("{:.1}%", coverage_percent),
+        etat_conformite,
         "Audit complete"
     );
 
@@ -227,6 +279,9 @@ async fn audit_one(
         failed: fail_count,
         na: na_count,
         overall_compliance: compliance,
+        taux_global,
+        coverage_percent,
+        etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
     })
 }
@@ -375,5 +430,42 @@ mod tests {
             test_result_id("1.3", CriterionStatus::Pass),
         ];
         assert_eq!(calculate_compliance(&criteria), 100.0);
+    }
+
+    #[test]
+    fn compliance_summary_all_pass() {
+        let criteria = vec![
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("1.2", CriterionStatus::Pass),
+        ];
+        let (taux, coverage, etat) = calculate_compliance_summary(&criteria);
+        assert_eq!(taux, 100.0);
+        assert_eq!(etat, "totale");
+    }
+
+    #[test]
+    fn compliance_summary_mixed() {
+        let criteria = vec![
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("1.2", CriterionStatus::Fail),
+        ];
+        let (taux, _coverage, etat) = calculate_compliance_summary(&criteria);
+        assert_eq!(taux, 50.0);
+        assert_eq!(etat, "partielle");
+    }
+
+    #[test]
+    fn compliance_summary_coverage_percent() {
+        // 1.1 is FullyAutomatable, 1.2 is PartiallyAutomatable, 13.1 is NotAutomatable
+        let criteria = vec![
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("1.2", CriterionStatus::NotTested),
+            test_result_id("13.1", CriterionStatus::Pass),
+        ];
+        let (taux, coverage, _etat) = calculate_compliance_summary(&criteria);
+        // validated_total = 2 (1.1,1.2), validated_executed =1 (1.1)
+        assert!((coverage - 50.0).abs() < 0.01);
+        // taux based on ConformityStatus: Pass and NotTested → NonTeste not counted, so taux =100
+        assert_eq!(taux, 100.0);
     }
 }

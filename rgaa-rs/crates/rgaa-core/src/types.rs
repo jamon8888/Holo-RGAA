@@ -77,6 +77,9 @@ pub struct AuditResult {
     pub failed: usize,
     pub na: usize,
     pub overall_compliance: f64,
+    pub taux_global: f64,
+    pub coverage_percent: f64,
+    pub etat_conformite: String,
     pub duration_ms: u64,
 }
 

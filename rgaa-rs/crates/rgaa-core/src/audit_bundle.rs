@@ -415,6 +415,9 @@ mod tests {
             failed: 5,
             na: 1,
             overall_compliance: 95.0,
+            taux_global: 95.0,
+            coverage_percent: 100.0,
+            etat_conformite: "partielle".into(),
             duration_ms: 1000,
         }
     }

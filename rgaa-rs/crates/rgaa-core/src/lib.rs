@@ -1,4 +1,5 @@
 pub mod audit_bundle;
+pub mod catalog;
 pub mod checkpoints;
 pub mod criteria;
 pub mod error;

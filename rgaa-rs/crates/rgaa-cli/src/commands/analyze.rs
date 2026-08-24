@@ -1,4 +1,5 @@
-use rgaa_obscura::{AnalyzeConfig, AnalyzeRequest, ObscuraBridge};
+use rgaa_core::CrawlConfig;
+use rgaa_orchestrator::Orchestrator;
 
 use crate::commands::{write_output, CommonArgs};
 use crate::config::Config;
@@ -18,23 +19,12 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
     let config = Config::load(args.common.config.as_deref())
         .map_err(|error| CliError::invalid_input(error.to_string()))?;
     let url = resolve_url(&config, args.url, args.profile)?;
-    let request = AnalyzeRequest {
-        url,
-        config: analyze_config(&config)?,
-    };
-    request
-        .validate()
-        .map_err(|error| CliError::invalid_input(error.to_string()))?;
 
-    let mut bridge = ObscuraBridge::new();
-    bridge
-        .start_server()
-        .await
-        .map_err(|error| CliError::execution(format!("browser unavailable: {error}")))?;
-    let result = bridge
-        .analyze(&request)
+    let crawl_config = crawl_config(&config);
+    let result = Orchestrator::run(&url, &crawl_config)
         .await
         .map_err(|error| CliError::execution(error.to_string()))?;
+
     let rendered = serde_json::to_string_pretty(&result)
         .map_err(|error| CliError::execution(error.to_string()))?;
     write_output(&args.common.output, &rendered)?;
@@ -62,30 +52,8 @@ fn resolve_url(
     }
 }
 
-fn analyze_config(config: &Config) -> Result<AnalyzeConfig, CliError> {
-    let mut analyze = AnalyzeConfig::default();
-    if let Some(profile) = config
-        .url_profiles
-        .get("default")
-        .and_then(|entry| entry.viewport.as_deref())
-    {
-        apply_viewport(config, profile, &mut analyze)?;
-    }
-    Ok(analyze)
-}
-
-fn apply_viewport(
-    config: &Config,
-    name: &str,
-    analyze: &mut AnalyzeConfig,
-) -> Result<(), CliError> {
-    let viewport = config
-        .viewport_profiles
-        .get(name)
-        .ok_or_else(|| CliError::invalid_input(format!("unknown viewport profile '{name}'")))?;
-    analyze.viewport.width = viewport.width;
-    analyze.viewport.height = viewport.height;
-    Ok(())
+fn crawl_config(_config: &Config) -> CrawlConfig {
+    CrawlConfig::default()
 }
 
 #[cfg(test)]
@@ -121,20 +89,5 @@ mod tests {
             resolve_url(&config, None, None).unwrap(),
             "https://default.test"
         );
-    }
-
-    #[test]
-    fn viewport_profile_override_applies_dimensions() {
-        let mut config = Config::default();
-        config.viewport_profiles.insert(
-            "mobile".into(),
-            crate::config::ViewportProfile {
-                width: 375,
-                height: 812,
-            },
-        );
-        let mut analyze = AnalyzeConfig::default();
-        apply_viewport(&config, "mobile", &mut analyze).unwrap();
-        assert_eq!(analyze.viewport.width, 375);
     }
 }

@@ -38,6 +38,16 @@ rig-memory = "0.42"
   fastembed = "4.0"
 futures = "0.3"
 
+# Dev profile: optimized for fast compilation
+[profile.dev]
+debug = 1                    # line-tables-only (faster than full debug info)
+incremental = true           # incremental compilation
+
+# Optimize dependencies at level 2 (they rarely change, big perf win)
+[profile.dev.package."*"]
+opt-level = 2
+
+# Release profile: optimized for small fast binary
 [profile.release]
 opt-level = 3
 codegen-units = 1

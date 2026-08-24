@@ -27,6 +27,20 @@ pub struct AgentConfig {
     pub max_tokens: usize,
     /// Sampling temperature for the reasoning model.
     pub temperature: f32,
+    /// Requests per minute for the tactical (fast) model tier.
+    #[serde(default = "default_tactical_rpm")]
+    pub tactical_rpm: u32,
+    /// Requests per minute for the reasoning (slow) model tier.
+    #[serde(default = "default_reasoning_rpm")]
+    pub reasoning_rpm: u32,
+}
+
+fn default_tactical_rpm() -> u32 {
+    10
+}
+
+fn default_reasoning_rpm() -> u32 {
+    20
 }
 
 impl std::fmt::Debug for AgentConfig {
@@ -42,6 +56,8 @@ impl std::fmt::Debug for AgentConfig {
             .field("max_turns", &self.max_turns)
             .field("max_tokens", &self.max_tokens)
             .field("temperature", &self.temperature)
+            .field("tactical_rpm", &self.tactical_rpm)
+            .field("reasoning_rpm", &self.reasoning_rpm)
             .finish()
     }
 }
@@ -62,6 +78,8 @@ impl Serialize for AgentConfig {
             max_turns: usize,
             max_tokens: usize,
             temperature: f32,
+            tactical_rpm: u32,
+            reasoning_rpm: u32,
         }
 
         let no_key = AgentConfigNoKey {
@@ -74,6 +92,8 @@ impl Serialize for AgentConfig {
             max_turns: self.max_turns,
             max_tokens: self.max_tokens,
             temperature: self.temperature,
+            tactical_rpm: self.tactical_rpm,
+            reasoning_rpm: self.reasoning_rpm,
         };
         no_key.serialize(serializer)
     }
@@ -126,6 +146,8 @@ impl Default for AgentConfig {
             max_turns: 10,
             max_tokens: 4096,
             temperature: 0.3,
+            tactical_rpm: default_tactical_rpm(),
+            reasoning_rpm: default_reasoning_rpm(),
         }
     }
 }
@@ -141,6 +163,10 @@ impl AgentConfig {
     ///   `holo3-1-35b-a3b`.
     /// - `LANCEDB_PATH` (optional): LanceDB storage path. Defaults to
     ///   `./data/lancedb`.
+    /// - `RGAA_TACTICAL_RPM` (optional): Tactical model requests per minute.
+    ///   Defaults to 10.
+    /// - `RGAA_REASONING_RPM` (optional): Reasoning model requests per minute.
+    ///   Defaults to 20.
     ///
     /// # Errors
     /// Returns [`crate::error::AgentError::Config`] if `HOLO3_API_KEY` is not set.
@@ -152,6 +178,14 @@ impl AgentConfig {
                 .map_err(|_| crate::error::AgentError::Config("HOLO3_API_KEY required".into()))?,
             model: std::env::var("HOLO3_MODEL").unwrap_or_else(|_| "holo3-1-35b-a3b".into()),
             lancedb_path: std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into()),
+            tactical_rpm: std::env::var("RGAA_TACTICAL_RPM")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or_else(default_tactical_rpm),
+            reasoning_rpm: std::env::var("RGAA_REASONING_RPM")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or_else(default_reasoning_rpm),
             ..Default::default()
         })
     }

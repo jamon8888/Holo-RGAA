@@ -41,8 +41,8 @@ impl RgaaAgent {
 
         // 2. Create rate limiter from config (tactical/reasoning RPM)
         let rate_limiter = Arc::new(Ratelimiter::new(
-            10, // tactical RPM
-            20, // reasoning RPM
+            config.tactical_rpm,
+            config.reasoning_rpm,
         ));
 
         // 3. Build agent with preamble

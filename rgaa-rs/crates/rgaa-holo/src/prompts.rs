@@ -291,47 +291,7 @@ impl PromptBuilder {
     }
 
     pub fn build_for_criterion(criterion_id: &str, context: &PageContext) -> String {
-        let prefix = criterion_id.split('-').next().unwrap_or(criterion_id);
-        let base_criterion = Self::get_base_criterion(prefix);
-
-        if base_criterion != prefix {
-            format!(
-                "{}\n\nNote: Ce critère fait partie du groupe {}. Concentre-toi sur {}.",
-                Self::build(criterion_id, context),
-                base_criterion,
-                Self::get_criterion_focus(criterion_id)
-            )
-        } else {
-            Self::build(criterion_id, context)
-        }
-    }
-
-    fn get_base_criterion(criterion_id: &str) -> String {
-        match criterion_id {
-            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" => "1".to_string(),
-            "11" | "12" | "13" => "11".to_string(),
-            "14" | "15" | "16" | "17" => "14".to_string(),
-            "18" | "19" | "20" | "21" | "22" | "23" | "24" | "25" | "26" | "27" => "18".to_string(),
-            "28" | "29" | "30" | "31" | "32" | "33" | "34" | "35" | "36" | "37" | "38" | "39"
-            | "40" | "41" | "42" | "43" | "44" | "45" | "46" | "47" | "48" | "49" | "50" | "51"
-            | "52" | "53" | "54" | "55" | "56" | "57" | "58" | "59" | "60" | "61" | "62" | "63"
-            | "64" | "65" | "66" | "67" | "68" | "69" | "70" | "71" | "72" | "73" | "74" | "75"
-            | "76" | "77" | "78" | "79" | "80" | "81" | "82" | "83" | "84" | "85" | "86" | "87"
-            | "88" | "89" | "90" | "91" | "92" | "93" | "94" | "95" | "96" | "97" | "98" | "99"
-            | "100" | "101" | "102" | "103" | "104" | "105" | "106" | "107" | "108" | "109"
-            | "110" | "111" | "112" | "113" | "114" | "115" | "116" | "117" | "118" | "119"
-            | "120" => "28".to_string(),
-            _ => criterion_id.to_string(),
-        }
-    }
-
-    fn get_criterion_focus(criterion_id: &str) -> String {
-        let parts: Vec<&str> = criterion_id.split('-').collect();
-        if parts.len() > 1 {
-            format!("le sous-critère {}", parts[1])
-        } else {
-            "ce critère".to_string()
-        }
+        Self::build(criterion_id, context)
     }
 }
 
@@ -373,7 +333,7 @@ mod tests {
         assert!(prompt.contains("critère RGAA 1.1"));
         assert!(prompt.contains("Test Page"));
         assert!(prompt.contains("fr"));
-        assert!(prompt.contains("H1: Titre principal"));
+        assert!(prompt.contains("H1: <<<UNTRUSTED PAGE CONTENT>>>Titre principal<<<END UNTRUSTED CONTENT>>>"));
     }
 
     #[test]
@@ -412,7 +372,7 @@ mod tests {
         assert!(output.contains("**Titre:**"));
         assert!(output.contains("**Langue:**"));
         assert!(output.contains("### Titres"));
-        assert!(output.contains("H1: Titre principal"));
+        assert!(output.contains("H1: <<<UNTRUSTED PAGE CONTENT>>>Titre principal<<<END UNTRUSTED CONTENT>>>"));
         assert!(output.contains("### Images"));
         assert!(output.contains("### Liens"));
         assert!(output.contains("### Navigation"));

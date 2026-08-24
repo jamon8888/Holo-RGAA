@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CheckpointResult, CriterionResult, CriterionStatus, Finding, PageError, RgaaError};
+use crate::{
+    AuditResult, CheckpointResult, CriterionResult, CriterionStatus, CrawlConfig, Finding,
+    PageError, RgaaError, Violation,
+};
 
 pub const CURRENT_SCHEMA_VERSION: &str = "1.0";
 
@@ -177,6 +180,107 @@ fn validate_finding(finding: &Finding, finding_ids: &mut HashSet<String>) -> Res
     validate_status(&finding.status)
 }
 
+impl From<&CrawlConfig> for AuditConfig {
+    fn from(crawl: &CrawlConfig) -> Self {
+        Self {
+            max_pages: crawl.max_pages,
+            max_depth: crawl.max_depth,
+            respect_robots: crawl.respect_robots,
+            sample_mode: crawl.sample_mode,
+        }
+    }
+}
+
+impl From<AuditResult> for AuditBundle {
+    fn from(result: AuditResult) -> Self {
+        let mut findings = Vec::new();
+        let mut page_audits = Vec::with_capacity(result.pages.len());
+
+        for (page_idx, page) in result.pages.into_iter().enumerate() {
+            let page_id = format!("page-{page_idx}");
+            let mut page_findings = Vec::new();
+
+            for criterion in &page.criteria {
+                for violation in &criterion.violations {
+                    let finding = finding_from_violation(
+                        violation,
+                        criterion,
+                        &page.url,
+                        &page_id,
+                        findings.len() + page_findings.len(),
+                    );
+                    page_findings.push(finding);
+                }
+            }
+
+            findings.append(&mut page_findings.clone());
+
+            page_audits.push(PageAudit {
+                page_id,
+                url: page.url,
+                title: page.title,
+                criteria: page.criteria,
+                findings: page_findings,
+                errors: Vec::new(),
+                completed: true,
+                duration_ms: 0,
+            });
+        }
+
+        let page_count = page_audits.len();
+        let total_findings = findings.len()
+            + page_audits
+                .iter()
+                .map(|p| p.findings.len())
+                .sum::<usize>();
+
+        let needs_review = page_audits
+            .iter()
+            .flat_map(|p| &p.criteria)
+            .filter(|c| c.status == CriterionStatus::NeedsReview)
+            .count();
+
+        Self {
+            schema_version: CURRENT_SCHEMA_VERSION.to_owned(),
+            audit_id: result.audit_id,
+            url: result.url,
+            config: AuditConfig::default(),
+            pages: page_audits,
+            findings,
+            checkpoints: Vec::new(),
+            summary: AuditSummary {
+                total_pages: page_count,
+                completed_pages: page_count,
+                total_findings,
+                passed: result.passed,
+                failed: result.failed,
+                needs_review,
+                errors: 0,
+            },
+        }
+    }
+}
+
+fn finding_from_violation(
+    violation: &Violation,
+    criterion: &CriterionResult,
+    page_url: &str,
+    page_id: &str,
+    index: usize,
+) -> Finding {
+    let id = format!("{page_id}-{}-{}", criterion.criterion_id, index);
+    let mut finding = Finding::new(id);
+    finding.rule = violation.rule_id.clone();
+    finding.criterion_id = Some(criterion.criterion_id.clone());
+    finding.url = page_url.to_string();
+    finding.target = format!("[data-rgaa-criterion=\"{}\"]", criterion.criterion_id);
+    finding.status = criterion.status.clone();
+    finding.severity = Some(violation.impact.clone());
+    finding.description = Some(violation.description.clone());
+    finding.source = criterion.source.clone();
+    finding
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +386,71 @@ mod tests {
         finding.url = "https://example.test".into();
         finding.target = "#main".into();
         finding
+    }
+
+    fn sample_audit_result() -> crate::AuditResult {
+        crate::AuditResult {
+            audit_id: "audit-1".into(),
+            url: "https://example.test".into(),
+            pages: vec![crate::PageResult {
+                url: "https://example.test".into(),
+                title: Some("Home".into()),
+                criteria: vec![crate::CriterionResult {
+                    criterion_id: "1.1".into(),
+                    title: "Test".into(),
+                    classification: crate::Classification::Deterministe,
+                    status: CriterionStatus::Fail,
+                    violations: vec![crate::Violation {
+                        rule_id: "image-alt".into(),
+                        impact: "critical".into(),
+                        description: "Missing alt".into(),
+                        nodes_affected: 2,
+                    }],
+                    confidence: None,
+                    justification: None,
+                    source: "axe".into(),
+                }],
+                compliance_rate: 0.0,
+                crawl_depth: 0,
+            }],
+            total_criteria: 106,
+            passed: 100,
+            failed: 5,
+            na: 1,
+            overall_compliance: 95.0,
+            duration_ms: 1000,
+        }
+    }
+
+    #[test]
+    fn from_audit_result_populates_bundle() {
+        let result = sample_audit_result();
+        let bundle = AuditBundle::from(result);
+
+        assert_eq!(bundle.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(bundle.audit_id, "audit-1");
+        assert_eq!(bundle.pages.len(), 1);
+        assert_eq!(bundle.pages[0].criteria.len(), 1);
+        assert_eq!(bundle.findings.len(), 1);
+        assert_eq!(bundle.findings[0].rule, "image-alt");
+        assert_eq!(bundle.findings[0].criterion_id.as_deref(), Some("1.1"));
+        assert_eq!(bundle.summary.passed, 100);
+        assert_eq!(bundle.summary.failed, 5);
+        assert_eq!(bundle.summary.needs_review, 0);
+    }
+
+    #[test]
+    fn from_crawl_config_converts_to_audit_config() {
+        let crawl = crate::CrawlConfig {
+            max_pages: 25,
+            max_depth: 3,
+            respect_robots: false,
+            sample_mode: true,
+        };
+        let config = AuditConfig::from(&crawl);
+        assert_eq!(config.max_pages, 25);
+        assert_eq!(config.max_depth, 3);
+        assert!(!config.respect_robots);
+        assert!(config.sample_mode);
     }
 }

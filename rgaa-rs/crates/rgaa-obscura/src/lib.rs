@@ -93,7 +93,8 @@ fn findings_from_axe(
     let payload = validate_axe_payload(value)?;
     let normalized =
         serde_json::to_string(value).map_err(|error| ObscuraError::Json(error.to_string()))?;
-    let mapped = AxeMapper::map(&normalized);
+    let mapped = AxeMapper::map(&normalized)
+        .map_err(|error| ObscuraError::Evaluation(error.to_string()))?;
     let mut findings = Vec::new();
     for violation in payload {
         let mut criteria = mapped
@@ -1163,10 +1164,10 @@ impl ObscuraBridge {
             r#"
  (() => {{
    try {{
-     {snippet}
-     return JSON.stringify({{ success: true }});
+     const r = {snippet};
+     return JSON.stringify(r);
    }} catch (e) {{
-     return JSON.stringify({{ success: false, error: e.message }});
+     return JSON.stringify({{ pass: false, details: e.message, nodes: 0 }});
    }}
  }})()
  "#

@@ -1,5 +1,6 @@
 use base64::Engine;
 use reqwest::Client;
+use rgaa_core::RgaaError;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -59,21 +60,21 @@ impl std::fmt::Debug for HoloClient {
 impl HoloClient {
     /// Creates a new HoloClient with the given API key.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the HTTP client cannot be built (e.g., TLS initialization failure).
-    #[must_use]
-    pub fn new(api_key: String) -> Self {
+    /// Returns `Err(RgaaError::Holo3)` if the HTTP client cannot be built
+    /// (e.g., TLS initialization failure).
+    pub fn new(api_key: String) -> Result<Self, RgaaError> {
         let http_client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| RgaaError::Holo3(e.to_string()))?;
 
-        Self {
+        Ok(Self {
             api_key,
             base_url: API_URL.to_string(),
             http_client,
-        }
+        })
     }
 
     /// Override the API base URL. Primarily used by tests against a mock server.
@@ -100,7 +101,7 @@ impl HoloClient {
     ///
     /// Returns `Err(String)` if all retry attempts fail due to network errors,
     /// API errors, or invalid response parsing.
-    pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, String> {
+    pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, RgaaError> {
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -135,7 +136,7 @@ impl HoloClient {
         &self,
         prompt: &str,
         image_base64: Option<&str>,
-    ) -> Result<HoloResponse, String> {
+    ) -> Result<HoloResponse, RgaaError> {
         let mut messages = vec![ChatMessage {
             role: "system".to_string(),
             content: serde_json::Value::String(SYSTEM_PROMPT.to_string()),
@@ -148,7 +149,7 @@ impl HoloClient {
             let mut buf = vec![0u8; 64];
             base64::engine::general_purpose::STANDARD
                 .decode_slice(img, &mut buf)
-                .map_err(|e| format!("invalid base64 image data: {e}"))?;
+                .map_err(|e| RgaaError::Holo3(format!("invalid base64 image data: {e}")))?;
 
             let content = serde_json::json!([
                 {"type": "text", "text": prompt},
@@ -171,7 +172,7 @@ impl HoloClient {
     async fn evaluate_with_messages(
         &self,
         messages: Vec<ChatMessage>,
-    ) -> Result<HoloResponse, String> {
+    ) -> Result<HoloResponse, RgaaError> {
         let request = ChatRequest {
             model: MODEL.to_string(),
             messages,
@@ -243,10 +244,10 @@ impl HoloClient {
             }
         }
 
-        Err(format!(
+        Err(RgaaError::Holo3(format!(
             "Failed after {} attempts. Last error: {}",
             MAX_RETRIES, last_error
-        ))
+        )))
     }
 
     /// Attempts to extract a `HoloResponse` from raw text.
@@ -397,7 +398,7 @@ mod tests {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#);
         let client =
-            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}"));
 
         let res = client.evaluate("prompt").await;
         assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
@@ -412,7 +413,7 @@ mod tests {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#);
         let client =
-            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}"));
 
         let res = client.evaluate_multimodal("prompt", None).await;
         assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
@@ -423,12 +424,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_multimodal_invalid_base64() {
-        let client = HoloClient::new("test-key".to_string());
+        let client = HoloClient::new("test-key".to_string()).unwrap();
         let result = client
             .evaluate_multimodal("test prompt", Some("not-valid-base64!!!"))
             .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("base64"));
+        assert!(result.unwrap_err().to_string().contains("base64"));
     }
 
     #[tokio::test]
@@ -436,7 +437,7 @@ mod tests {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"fail","confidence":0.85,"justification":"no alt"}"#);
         let client =
-            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}"));
+            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}"));
 
         let fake_b64 = "iVBORw0KGgoAAAANSUhEUg==";
         let res = client
@@ -454,7 +455,7 @@ mod tests {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"na","confidence":1.0,"justification":"n/a"}"#);
         let client = std::sync::Arc::new(
-            HoloClient::new("test-key".to_string()).with_base_url(format!("http://{addr}")),
+            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}")),
         );
 
         let start = std::time::Instant::now();

@@ -1,4 +1,4 @@
-use rgaa_core::{Classification, CriterionResult, CriterionStatus, Violation};
+use rgaa_core::{Classification, CriterionResult, CriterionStatus, RgaaError, Violation};
 use std::collections::HashMap;
 
 pub struct AxeMapper;
@@ -7,10 +7,10 @@ impl AxeMapper {
     /// Map axe-core violations JSON to RGAA criterion results.
     /// Input: JSON array of axe violations from axe.run()
     /// Output: HashMap of criterion_id → CriterionResult
-    pub fn map(violations_json: &str) -> HashMap<String, CriterionResult> {
+    pub fn map(violations_json: &str) -> Result<HashMap<String, CriterionResult>, RgaaError> {
         let mapping = Self::rgaa_to_axe_map();
-        let violations: Vec<AxeViolation> =
-            serde_json::from_str(violations_json).unwrap_or_default();
+        let violations: Vec<AxeViolation> = serde_json::from_str(violations_json)
+            .map_err(|e| RgaaError::AxeCore(format!("Failed to parse axe violations JSON: {e}")))?;
 
         let mut results: HashMap<String, CriterionResult> = HashMap::new();
 
@@ -48,7 +48,7 @@ impl AxeMapper {
             }
         }
 
-        results
+        Ok(results)
     }
 
     fn rgaa_to_axe_map() -> HashMap<String, Vec<String>> {

@@ -15,18 +15,18 @@ fn manual_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
 }
 
-fn calculate_compliance(criteria: &[CriterionResult], total: usize) -> f64 {
-    let pass_count = criteria
+fn calculate_compliance(criteria: &[CriterionResult]) -> f64 {
+    let pass = criteria
         .iter()
-        .filter(|criterion| criterion.status == CriterionStatus::Pass)
+        .filter(|c| c.status == CriterionStatus::Pass)
         .count();
-    let na_count = criteria
+    let fail = criteria
         .iter()
-        .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
+        .filter(|c| c.status == CriterionStatus::Fail || c.status == CriterionStatus::Error)
         .count();
-    let denominator = total.saturating_sub(na_count);
+    let denominator = pass + fail;
     if denominator > 0 {
-        (pass_count as f64 / denominator as f64) * 100.0
+        (pass as f64 / denominator as f64) * 100.0
     } else {
         0.0
     }
@@ -89,16 +89,14 @@ async fn audit_one(
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
 
-    // Get the bridge without holding the mutex across awaits
-    let bridge = {
-        let session = tool_ctx.session().lock().await;
-        session.bridge().clone()
-    };
+    // Hold the lock for the sequential bridge calls — released before agent work.
+    let session = tool_ctx.session().lock().await;
+    let bridge = session.bridge();
 
     // 1. Run axe-core
     info!("Running axe-core");
     let axe_violations = bridge.run_axe(url).await?;
-    let axe_results = AxeMapper::map(&axe_violations);
+    let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
     // 2. Run gap-fix rules for 10 false negatives
     info!("Running gap-fix rules");
@@ -120,6 +118,8 @@ async fn audit_one(
             media: vec![],
             navigation: vec![],
         });
+
+    drop(session); // Release the browser lock before agent calls
 
     // 4. Run agentic evaluation for all IA_ASSISTE criteria
     let ia_criteria = RgaaCriteria::ia_assiste();
@@ -170,11 +170,11 @@ async fn audit_one(
                     criterion_id: criterion.id.to_string(),
                     title: criterion.title.to_string(),
                     classification: criterion.classification.clone(),
-                    status: CriterionStatus::Pass,
+                    status: CriterionStatus::NotTested,
                     violations: vec![],
                     confidence: None,
                     justification: Some(
-                        "No violation detected by automated checks (axe-core + gap-fix)".into(),
+                        "Not tested — no automated check covered this criterion".into(),
                     ),
                     source: "automated".into(),
                 });
@@ -200,7 +200,7 @@ async fn audit_one(
         .filter(|c| c.status == CriterionStatus::Error)
         .count();
     let total = RgaaCriteria::count();
-    let compliance = calculate_compliance(&criteria, total);
+    let compliance = calculate_compliance(&criteria);
 
     info!(
         pass = pass_count,
@@ -247,7 +247,7 @@ mod tests {
             test_result(CriterionStatus::NeedsReview),
         ];
 
-        assert_eq!(calculate_compliance(&criteria, 2), 50.0);
+        assert_eq!(calculate_compliance(&criteria), 100.0);
     }
 
     fn test_result(status: CriterionStatus) -> CriterionResult {

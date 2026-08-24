@@ -4,6 +4,15 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
+/// Configuration snapshot for a [`Ratelimiter`] instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RateLimitConfig {
+    /// Tactical tier RPM.
+    pub tactical_rpm: u32,
+    /// Reasoning tier RPM.
+    pub reasoning_rpm: u32,
+}
+
 /// Model tiers with distinct rate limits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelTier {
@@ -48,6 +57,24 @@ impl Ratelimiter {
                 reasoning_last_refill: Mutex::new(now),
             }),
         }
+    }
+
+    /// Returns a snapshot of the configured RPM limits.
+    pub fn config(&self) -> RateLimitConfig {
+        RateLimitConfig {
+            tactical_rpm: self.inner.tactical_rpm,
+            reasoning_rpm: self.inner.reasoning_rpm,
+        }
+    }
+
+    /// Resets both token buckets to full capacity.
+    pub fn reset(&self) {
+        self.inner
+            .tactical_tokens
+            .store(self.inner.tactical_capacity, Ordering::Relaxed);
+        self.inner
+            .reasoning_tokens
+            .store(self.inner.reasoning_capacity, Ordering::Relaxed);
     }
 
     /// Acquires a token for `tier`, blocking (with bounded sleeps) until one is

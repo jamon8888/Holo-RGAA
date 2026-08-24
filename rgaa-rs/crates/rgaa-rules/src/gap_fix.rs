@@ -8,6 +8,7 @@ pub struct GapFixRules;
 impl GapFixRules {
     /// Returns JS snippets for each gap-fix criterion.
     /// Each snippet returns JSON: { "pass": bool, "details": string, "nodes": number }
+    #[must_use]
     pub fn snippets() -> HashMap<String, &'static str> {
         let mut m: HashMap<String, &str> = HashMap::new();
 

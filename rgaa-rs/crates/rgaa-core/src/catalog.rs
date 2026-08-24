@@ -59,6 +59,7 @@ impl RgaaCatalog {
         &Self::instance().themes
     }
 
+    #[must_use]
     pub fn count() -> usize {
         Self::instance()
             .themes

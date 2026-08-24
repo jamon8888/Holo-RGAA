@@ -89,6 +89,30 @@ impl BrowserSession {
         self.bridge.get_accessibility_tree(url).await
     }
 
+    /// Type text into an input element by CSS selector
+    pub async fn type_input(&self, selector: &str, text: &str) -> Result<(), String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.type_input(url, selector, text).await
+    }
+
+    /// Press a keyboard key (e.g., "Tab", "Enter", "ArrowDown")
+    pub async fn press_key(&self, key: &str) -> Result<(), String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.press_key(url, key).await
+    }
+
+    /// Get the tab order of focusable elements on the current page
+    pub async fn get_tab_order(&self) -> Result<Vec<serde_json::Value>, String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.get_tab_order(url).await
+    }
+
+    /// Assert page state by evaluating a JavaScript predicate
+    pub async fn assert_state(&self, script: &str) -> Result<serde_json::Value, String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.assert_state(url, script).await
+    }
+
     /// Returns a reference to the last accessibility tree, if available.
     #[must_use]
     pub fn last_a11y(&self) -> Option<&AXTree> {

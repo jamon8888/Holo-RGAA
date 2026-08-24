@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 /// Errors that can occur when using the press key tool.
 #[derive(Debug, thiserror::Error)]
 pub enum PressKeyError {
-    #[error("press_key not yet connected to CDP")]
-    NotConnected,
+    #[error("press_key failed: {0}")]
+    Failed(String),
 }
 
 /// Arguments for the press key tool.
@@ -49,10 +49,16 @@ impl PortableTool for PressKeyTool {
         serde_json::to_value(schemars::schema_for!(PressKeyArgs)).expect("valid schema")
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: CDP Input.dispatchKeyEvent in Task 6
-        Err(PressKeyError::NotConnected)
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let session = self.ctx.session().lock().await;
+        session
+            .press_key(&args.key)
+            .await
+            .map_err(PressKeyError::Failed)?;
+        Ok(PressKeyOutput {
+            success: true,
+            focused_element: None,
+        })
     }
 }
 
@@ -64,7 +70,8 @@ pub struct PressKeyToolLegacy {
 impl PressKeyToolLegacy {
     /// Press a keyboard key via CDP Input.dispatchKeyEvent.
     /// Supports: Tab, Enter, Escape, ArrowUp, ArrowDown, etc.
-    pub async fn execute(&self, _session: &crate::BrowserSession) -> Result<String, String> {
-        Err("press_key not yet connected to CDP".to_string())
+    pub async fn execute(&self, session: &crate::BrowserSession) -> Result<String, String> {
+        session.press_key(&self.key).await?;
+        Ok(format!("Pressed key: {}", self.key))
     }
 }

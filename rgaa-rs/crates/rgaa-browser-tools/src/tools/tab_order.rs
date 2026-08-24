@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 /// Errors that can occur when using the tab order tool.
 #[derive(Debug, thiserror::Error)]
 pub enum TabOrderError {
-    #[error("tab_order not yet connected to CDP")]
-    NotConnected,
+    #[error("tab_order failed: {0}")]
+    Failed(String),
 }
 
 /// Arguments for the tab order tool (no parameters needed).
@@ -55,9 +55,37 @@ impl PortableTool for TabOrderTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: Derived from a11y tree in Task 6
-        Err(TabOrderError::NotConnected)
+        let session = self.ctx.session().lock().await;
+        let raw = session
+            .get_tab_order()
+            .await
+            .map_err(TabOrderError::Failed)?;
+        let elements = raw
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| TabStop {
+                index: v
+                    .get("index")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(i as u64) as usize,
+                ref_id: v
+                    .get("tag")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                role: v
+                    .get("role")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                name: v
+                    .get("name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
+            .collect();
+        Ok(TabOrderOutput { elements })
     }
 }
 

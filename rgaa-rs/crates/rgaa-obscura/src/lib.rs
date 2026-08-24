@@ -1613,6 +1613,219 @@ impl ObscuraBridge {
             Ok(stdout)
         }
     }
+
+    /// Type text into an input element using CDP Runtime.evaluate
+    pub async fn type_input(&self, url: &str, selector: &str, text: &str) -> Result<(), String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+
+        let script = format!(
+            "(() => {{ const el = document.querySelector('{}'); if (!el) throw new Error('selector not found'); el.focus(); el.value = '{}'; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()",
+            selector.replace('\'', "\\'"),
+            text.replace('\'', "\\'")
+        );
+        let result = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": script, "returnByValue": true}),
+        )
+        .await?;
+
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+
+        if result.get("exceptionDetails").is_some() {
+            return Err(format!("type failed for selector '{selector}'"));
+        }
+        Ok(())
+    }
+
+    /// Press a keyboard key using CDP Input.dispatchKeyEvent
+    pub async fn press_key(&self, url: &str, key: &str) -> Result<(), String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+
+        Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Input.dispatchKeyEvent",
+            serde_json::json!({"type": "keyDown", "key": key}),
+        )
+        .await?;
+        Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Input.dispatchKeyEvent",
+            serde_json::json!({"type": "keyUp", "key": key}),
+        )
+        .await?;
+
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        Ok(())
+    }
+
+    /// Get tab order of focusable elements using CDP Runtime.evaluate
+    pub async fn get_tab_order(&self, url: &str) -> Result<Vec<serde_json::Value>, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+
+        let result = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": "Array.from(document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, [tabindex]')).filter(el => el.tabIndex >= 0 && !el.disabled).sort((a, b) => a.tabIndex - b.tabIndex).map((el, i) => ({index: i, tag: el.tagName.toLowerCase(), role: el.getAttribute('aria-role') || el.tagName.toLowerCase(), name: (el.textContent || '').trim().substring(0, 100), tabindex: el.tabIndex}))",
+                "returnByValue": true
+            }),
+        )
+        .await?;
+
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+
+        result
+            .get("result")
+            .and_then(|r| r.get("value"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .ok_or_else(|| "No tab order data returned".to_string())
+    }
+
+    /// Assert page state by evaluating a JavaScript predicate via CDP Runtime.evaluate
+    pub async fn assert_state(&self, url: &str, script: &str) -> Result<serde_json::Value, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+
+        let result = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": script, "returnByValue": true}),
+        )
+        .await?;
+
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+
+        if let Some(ex) = result.get("exceptionDetails") {
+            return Err(format!("assert_state script error: {ex}"));
+        }
+        result
+            .get("result")
+            .and_then(|r| r.get("value"))
+            .cloned()
+            .ok_or_else(|| "No result from assert_state script".to_string())
+    }
 }
 
 impl Drop for ObscuraBridge {

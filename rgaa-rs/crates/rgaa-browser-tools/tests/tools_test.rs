@@ -235,7 +235,7 @@ async fn type_tool_calls_err_when_not_connected() {
     let ctx = ToolContext::new(BrowserSession::new_placeholder());
     let tool = TypeTool::new(ctx);
     let args = rgaa_browser_tools::tools::TypeArgs {
-        ref_id: "7".to_string(),
+        selector: "#input".to_string(),
         text: "hello".to_string(),
     };
     let result = tool.call(args).await;

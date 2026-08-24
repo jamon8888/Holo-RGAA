@@ -6,15 +6,15 @@ use serde::{Deserialize, Serialize};
 /// Errors that can occur when using the assert state tool.
 #[derive(Debug, thiserror::Error)]
 pub enum AssertStateError {
-    #[error("assert_state not yet connected to CDP")]
-    NotConnected,
+    #[error("assert_state failed: {0}")]
+    Failed(String),
 }
 
 /// Arguments for the assert state tool.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct AssertStateArgs {
-    /// A predicate describing the expected state
-    /// (e.g., "dialog-visible", "element-focused:#submit")
+    /// A JavaScript expression that returns a boolean or value
+    /// (e.g., "document.querySelector('.dialog') !== null")
     pub predicate: String,
 }
 
@@ -43,18 +43,24 @@ impl PortableTool for AssertStateTool {
     type Output = AssertStateOutput;
 
     fn description(&self) -> String {
-        "Assert a specific browser state predicate (e.g., 'dialog-visible', 'element-focused:#submit')"
-            .to_string()
+        "Assert a specific browser state by evaluating a JavaScript predicate".to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
         serde_json::to_value(schemars::schema_for!(AssertStateArgs)).expect("valid schema")
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: Varies per predicate in Task 6
-        Err(AssertStateError::NotConnected)
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let session = self.ctx.session().lock().await;
+        let result = session
+            .assert_state(&args.predicate)
+            .await
+            .map_err(AssertStateError::Failed)?;
+        let satisfied = result.as_bool().unwrap_or(false);
+        Ok(AssertStateOutput {
+            satisfied,
+            details: result.to_string(),
+        })
     }
 }
 
@@ -66,7 +72,8 @@ pub struct AssertStateToolLegacy {
 impl AssertStateToolLegacy {
     /// Evaluate a JavaScript predicate in-page and return its boolean result.
     /// Used by the act→verify loop to confirm state changes after actions.
-    pub async fn execute(&self, _session: &crate::BrowserSession) -> Result<bool, String> {
-        Err("assert_state not yet connected to CDP".to_string())
+    pub async fn execute(&self, session: &crate::BrowserSession) -> Result<bool, String> {
+        let result = session.assert_state(&self.predicate).await?;
+        Ok(result.as_bool().unwrap_or(false))
     }
 }

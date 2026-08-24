@@ -6,15 +6,15 @@ use serde::{Deserialize, Serialize};
 /// Errors that can occur when using the type tool.
 #[derive(Debug, thiserror::Error)]
 pub enum TypeError {
-    #[error("type_input not yet connected to CDP")]
-    NotConnected,
+    #[error("type failed: {0}")]
+    Failed(String),
 }
 
 /// Arguments for the type tool.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct TypeArgs {
-    /// The accessibility tree reference ID of the input element
-    pub ref_id: String,
+    /// The CSS selector of the input element
+    pub selector: String,
     /// The text to type into the element
     pub text: String,
 }
@@ -43,17 +43,20 @@ impl PortableTool for TypeTool {
     type Output = TypeOutput;
 
     fn description(&self) -> String {
-        "Type text into an input element identified by its accessibility reference".to_string()
+        "Type text into an input element identified by its CSS selector".to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
         serde_json::to_value(schemars::schema_for!(TypeArgs)).expect("valid schema")
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: CDP Input.dispatchKeyEvent in Task 6
-        Err(TypeError::NotConnected)
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let session = self.ctx.session().lock().await;
+        session
+            .type_input(&args.selector, &args.text)
+            .await
+            .map_err(TypeError::Failed)?;
+        Ok(TypeOutput { success: true })
     }
 }
 
@@ -64,9 +67,10 @@ pub struct TypeToolLegacy {
 }
 
 impl TypeToolLegacy {
-    /// Type text into an element by its a11y tree ref.
-    /// Uses CDP DOM.focus + Input.dispatchKeyEvent.
-    pub async fn execute(&self, _session: &crate::BrowserSession) -> Result<String, String> {
-        Err("type not yet connected to CDP".to_string())
+    /// Type text into an element by its CSS selector.
+    /// Uses CDP Runtime.evaluate to set value and dispatch events.
+    pub async fn execute(&self, session: &crate::BrowserSession) -> Result<String, String> {
+        session.type_input(&self.ref_id, &self.text).await?;
+        Ok(format!("Typed '{}' into {}", self.text, self.ref_id))
     }
 }

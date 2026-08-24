@@ -1,7 +1,7 @@
 # rgaa-linter — Pure-Rust Accessibility Linter + GitHub Action
 
 **Date:** 2026-08-24
-**Status:** Draft
+**Status:** Approved
 **Depends on:** 2026-08-24-rgaa-distribution-design.md (distribution spec)
 
 ---
@@ -523,11 +523,12 @@ runtime = ["rgaa-obscura", "reqwest"]
 
 ## 8. Implementation Plan
 
-### Phase 1: Static Engine (Weeks 1-2)
+### Phase 1: Static Engine + Auto-fix (Weeks 1-2)
 - [ ] Create `rgaa-linter` crate
 - [ ] Implement axe-core → html-linter rule translator
 - [ ] Port 30 most common static rules
 - [ ] CLI with file input + pretty output
+- [ ] `--fix` for 5-10 simple rules (alt, lang, title, tabindex, video-caption)
 - [ ] Unit tests for each rule
 
 ### Phase 2: Config & Exclusions (Week 3)
@@ -577,10 +578,19 @@ runtime = ["rgaa-obscura", "reqwest"]
 
 ---
 
-## 10. Open Questions
+## 10. Decisions (Resolved)
 
-1. **Rule coverage target**: Start with 30 rules and grow, or aim for all 70+ static rules from day one?
-2. **Template support scope**: JSX/Vue/Svelte from day one, or HTML-only MVP?
-3. **Auto-fix**: Should Phase 1 include `--fix` for simple cases (adding `alt=""`, adding `lang="fr"`)?
-4. **SARIF output**: Needed for GitHub code scanning integration, or nice-to-have?
-5. **Branding**: Public name — `rgaa-lint`, `axe-lint-rs`, something else?
+1. **Rule coverage: Ship 30 rules in Phase 1, grow to 70+ incrementally.**
+   Reasoning: 30 rules covers the most impactful violations (alt, lang, labels, headings, landmarks, ARIA roles). Ship fast, validate with real consultants, iterate. The rule translator is mechanical — adding rules is low-effort once the engine works.
+
+2. **Template scope: HTML-only MVP. JSX/Vue/Svelte in Phase 2+.**
+   Reasoning: Template extraction is its own complexity layer (parsing `<template>`, `<script>`, `<style>` blocks). The core value is the rule engine. Most consultant work is on HTML files or server-rendered templates where the HTML is the final output. JSX/Vue/Svelte templates are a follow-up.
+
+3. **Auto-fix: Yes, in Phase 1 for simple cases.**
+   Reasoning: The most common accessibility fixes are trivial — adding `alt=""`, `lang="fr"`, `role="img"`. These are safe, mechanical transforms. The `html-linter` crate doesn't have built-in fix support, so we implement a lightweight `Fixer` module that applies text edits to the source file. Scope to 5-10 rules max in Phase 1: `image-alt`, `html-has-lang`, `html-lang-valid`, `document-title`, `tabindex`, `video-caption`. More complex fixes (adding `<label>`, restructuring DOM) come later.
+
+4. **SARIF: Phase 5 (nice-to-have).**
+   Reasoning: SARIF enables GitHub code scanning integration, which is valuable for consultants selling compliance. But it's a formatting concern — the underlying data model (`LintResult`) supports it. Ship JSON + pretty + GitHub annotations first. SARIF is a wire format, not an architecture decision.
+
+5. **Branding: `rgaa-lint`.**
+   Reasoning: Consistent with existing crate naming (`rgaa-core`, `rgaa-rules`, `rgaa-mcp`). Clear what it does. Available on crates.io. The GitHub Action becomes `rgaa-lint/rgaa-lint-action`.

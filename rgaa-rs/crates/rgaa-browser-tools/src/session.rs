@@ -71,6 +71,11 @@ impl BrowserSession {
         self.bridge.eval_js(expression).await
     }
 
+    /// Take a screenshot of the current page
+    pub async fn screenshot(&self) -> Result<String, String> {
+        self.bridge.screenshot().await
+    }
+
     /// Returns a reference to the last accessibility tree, if available.
     #[must_use]
     pub fn last_a11y(&self) -> Option<&AXTree> {

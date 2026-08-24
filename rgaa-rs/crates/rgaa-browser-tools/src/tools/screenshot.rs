@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum ScreenshotError {
     #[error("screenshot not yet connected to CDP")]
     NotConnected,
+    #[error("screenshot capture failed: {0}")]
+    CaptureFailed(String),
 }
 
 /// Arguments for the screenshot tool (no parameters needed).
@@ -17,7 +19,9 @@ pub struct ScreenshotArgs {}
 /// Output from the screenshot tool.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotOutput {
-    pub base64_png: String,
+    pub data_base64: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Tool that captures a screenshot of the current page.
@@ -46,9 +50,19 @@ impl PortableTool for ScreenshotTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: CDP Page.captureScreenshot in Task 6
-        Err(ScreenshotError::NotConnected)
+        let session = self.ctx.session().lock().await;
+        let data_base64 = session
+            .screenshot()
+            .await
+            .map_err(ScreenshotError::CaptureFailed)?;
+
+        // TODO: Get actual dimensions from CDP response
+        // For now, return placeholder dimensions
+        Ok(ScreenshotOutput {
+            data_base64,
+            width: 1920,
+            height: 1080,
+        })
     }
 }
 
@@ -58,7 +72,7 @@ pub struct ScreenshotLegacy;
 impl ScreenshotLegacy {
     /// Capture a screenshot of the current page via CDP Page.captureScreenshot.
     /// Returns base64-encoded PNG.
-    pub async fn execute(&self, _session: &crate::BrowserSession) -> Result<String, String> {
-        Err("screenshot not yet connected to CDP".to_string())
+    pub async fn execute(&self, session: &crate::BrowserSession) -> Result<String, String> {
+        session.screenshot().await
     }
 }

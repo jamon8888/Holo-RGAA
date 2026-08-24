@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 const CRITERES_JSON: &str = include_str!("../data/rgaa-4.1.2/criteres.json");
 const AUTOMATABLE_JSON: &str = include_str!("../data/rgaa-4.1.2/automatable_criteres.json");
+const AXE_MAPPING_JSON: &str = include_str!("../data/rgaa-4.1.2/axe_mapping.json");
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
@@ -22,6 +23,21 @@ struct RawRoot {
 #[derive(Debug, Clone, Deserialize)]
 struct AutomatableRoot {
     criteria: Vec<AutomatableCriterion>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AxeMappingEntry {
+    criterion_id: String,
+    axe_rules: Vec<String>,
+    provenance: AxeProvenance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AxeProvenance {
+    pub source: String,
+    pub validated_by: String,
+    pub validated_at: String,
+    pub notes: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +65,10 @@ pub struct CatalogCriterion {
     pub tests: HashMap<String, Vec<String>>,
     #[serde(default)]
     pub automatable: Automatable,
+    #[serde(default)]
+    pub axe_rules: Vec<String>,
+    #[serde(default)]
+    pub axe_provenance: Option<AxeProvenance>,
 }
 
 impl CatalogCriterion {
@@ -71,10 +91,21 @@ impl RgaaCatalog {
         let raw: RawRoot = serde_json::from_str(CRITERES_JSON).expect("criteres.json must parse");
         let automatable_root: AutomatableRoot =
             serde_json::from_str(AUTOMATABLE_JSON).expect("automatable_criteres.json must parse");
+        let axe_entries: Vec<AxeMappingEntry> =
+            serde_json::from_str(AXE_MAPPING_JSON).expect("axe_mapping.json must parse");
+
         let mut automatable_map: HashMap<String, Automatable> = HashMap::new();
         for ac in automatable_root.criteria {
             automatable_map.insert(ac.criterion_id, ac.classification);
         }
+
+        let mut axe_rules_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut axe_provenance_map: HashMap<String, AxeProvenance> = HashMap::new();
+        for entry in axe_entries {
+            axe_rules_map.insert(entry.criterion_id.clone(), entry.axe_rules);
+            axe_provenance_map.insert(entry.criterion_id, entry.provenance);
+        }
+
         let mut themes = raw.topics;
         for theme in &mut themes {
             for cw in &mut theme.criteria {
@@ -82,6 +113,10 @@ impl RgaaCatalog {
                 cw.criterium.automatable = automatable_map
                     .remove(&criterion_id)
                     .unwrap_or_default();
+                cw.criterium.axe_rules = axe_rules_map
+                    .remove(&criterion_id)
+                    .unwrap_or_default();
+                cw.criterium.axe_provenance = axe_provenance_map.remove(&criterion_id);
             }
         }
         Self { themes }
@@ -185,5 +220,21 @@ mod tests {
         assert_eq!(partially, 45, "expected 45 PartiallyAutomatable criteria");
         assert_eq!(not_automatable, 22, "expected 22 NotAutomatable criteria");
         assert_eq!(fully + partially + not_automatable, 106);
+    }
+
+    #[test]
+    fn test_criteria_with_axe_rules_have_valid_mapping() {
+        let catalog = RgaaCatalog::all();
+        for theme in catalog {
+            for cw in &theme.criteria {
+                if !cw.criterium.axe_rules.is_empty() {
+                    assert!(
+                        cw.criterium.axe_provenance.is_some(),
+                        "criterion {} has axe_rules but no axe_provenance",
+                        cw.criterium.id_for_theme(theme.number)
+                    );
+                }
+            }
+        }
     }
 }

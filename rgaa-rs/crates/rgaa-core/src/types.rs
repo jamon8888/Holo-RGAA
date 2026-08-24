@@ -18,6 +18,26 @@ pub enum CriterionStatus {
     NotTested,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ConformityStatus {
+    Conforme,
+    NonConforme,
+    NonApplicable,
+    NonTeste,
+}
+
+impl From<CriterionStatus> for ConformityStatus {
+    fn from(status: CriterionStatus) -> Self {
+        match status {
+            CriterionStatus::Pass => ConformityStatus::Conforme,
+            CriterionStatus::Fail => ConformityStatus::NonConforme,
+            CriterionStatus::NotApplicable => ConformityStatus::NonApplicable,
+            CriterionStatus::NeedsReview | CriterionStatus::NotTested => ConformityStatus::NonTeste,
+            CriterionStatus::Error => ConformityStatus::NonConforme,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CriterionResult {
     pub criterion_id: String,
@@ -102,5 +122,15 @@ mod tests {
         }
 
         assert!(serde_json::from_str::<CriterionStatus>("\"na\"").is_err());
+    }
+
+    #[test]
+    fn test_status_mapping() {
+        assert_eq!(ConformityStatus::from(CriterionStatus::Pass), ConformityStatus::Conforme);
+        assert_eq!(ConformityStatus::from(CriterionStatus::Fail), ConformityStatus::NonConforme);
+        assert_eq!(ConformityStatus::from(CriterionStatus::NotApplicable), ConformityStatus::NonApplicable);
+        assert_eq!(ConformityStatus::from(CriterionStatus::NeedsReview), ConformityStatus::NonTeste);
+        assert_eq!(ConformityStatus::from(CriterionStatus::NotTested), ConformityStatus::NonTeste);
+        assert_eq!(ConformityStatus::from(CriterionStatus::Error), ConformityStatus::NonConforme);
     }
 }

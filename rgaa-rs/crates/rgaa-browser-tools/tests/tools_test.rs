@@ -32,11 +32,11 @@ fn eval_js_tool_holds_snippet() {
 }
 
 #[test]
-fn click_tool_holds_ref_id() {
+fn click_tool_holds_selector() {
     let tool = ClickToolLegacy {
-        ref_id: "42".to_string(),
+        selector: "42".to_string(),
     };
-    assert_eq!(tool.ref_id, "42");
+    assert_eq!(tool.selector, "42");
 }
 
 #[test]
@@ -117,7 +117,7 @@ async fn click_tool_execute_without_cdp_returns_err() {
     let bridge = ObscuraBridge::new();
     let session = BrowserSession::new(bridge);
     let tool = ClickToolLegacy {
-        ref_id: "1".to_string(),
+        selector: "1".to_string(),
     };
     let result = tool.execute(&session).await;
     assert!(result.is_err());

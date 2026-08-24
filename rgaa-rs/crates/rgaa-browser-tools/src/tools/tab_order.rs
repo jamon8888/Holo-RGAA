@@ -24,7 +24,7 @@ pub struct TabOrderOutput {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TabStop {
     pub index: usize,
-    pub ref_id: String,
+    pub tag: String,
     pub role: String,
     pub name: String,
 }
@@ -68,7 +68,7 @@ impl PortableTool for TabOrderTool {
                     .get("index")
                     .and_then(|x| x.as_u64())
                     .unwrap_or(i as u64) as usize,
-                ref_id: v
+                tag: v
                     .get("tag")
                     .and_then(|x| x.as_str())
                     .unwrap_or("")

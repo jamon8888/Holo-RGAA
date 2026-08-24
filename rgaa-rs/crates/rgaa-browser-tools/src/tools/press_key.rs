@@ -21,7 +21,6 @@ pub struct PressKeyArgs {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PressKeyOutput {
     pub success: bool,
-    pub focused_element: Option<String>,
 }
 
 /// Tool that presses a keyboard key.
@@ -57,7 +56,6 @@ impl PortableTool for PressKeyTool {
             .map_err(PressKeyError::Failed)?;
         Ok(PressKeyOutput {
             success: true,
-            focused_element: None,
         })
     }
 }

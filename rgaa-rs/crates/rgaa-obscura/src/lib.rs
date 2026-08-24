@@ -34,6 +34,14 @@ use sha2::{Digest, Sha256};
 
 const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
 
+fn escape_js_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
 #[derive(Debug, Deserialize)]
 struct AxeViolationPayload {
     id: String,
@@ -805,9 +813,11 @@ impl ObscuraBridge {
         Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
 
         // Cleanup
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        Ok(())
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match cleanup {
+            Ok(()) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Click an element using CDP Runtime.evaluate
@@ -849,7 +859,7 @@ impl ObscuraBridge {
         // Click the element
         let click_script = format!(
             "document.querySelector('{}')?.click()",
-            selector.replace('\'', "\\'")
+            escape_js_string(selector)
         );
         let result = Self::cdp_send_session(
             &mut ws,
@@ -1649,8 +1659,8 @@ impl ObscuraBridge {
 
         let script = format!(
             "(() => {{ const el = document.querySelector('{}'); if (!el) throw new Error('selector not found'); el.focus(); el.value = '{}'; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()",
-            selector.replace('\'', "\\'"),
-            text.replace('\'', "\\'")
+            escape_js_string(selector),
+            escape_js_string(text)
         );
         let result = Self::cdp_send_session(
             &mut ws,

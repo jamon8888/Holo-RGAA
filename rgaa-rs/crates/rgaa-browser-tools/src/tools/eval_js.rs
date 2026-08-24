@@ -63,9 +63,18 @@ impl PortableTool for EvalJsTool {
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
-        let error = result
-            .get("exceptionDetails")
-            .map(|e| format!("{e}"));
+        let error = result.get("exceptionDetails").map(|e| {
+            let text = e
+                .get("text")
+                .and_then(|t| t.as_str())
+                .unwrap_or("unknown");
+            let message = e
+                .get("exception")
+                .and_then(|ex| ex.get("value"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            format!("{text}: {message}")
+        });
 
         Ok(EvalJsOutput {
             result: value,

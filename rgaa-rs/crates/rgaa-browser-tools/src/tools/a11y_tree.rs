@@ -82,7 +82,7 @@ impl AccessibilityTreeLegacy {
 }
 
 fn count_ax_nodes(tree: &serde_json::Value) -> usize {
-    let mut count = 0;
+    let mut count = 1; // count the root node itself
     if let Some(children) = tree.get("children").and_then(|c| c.as_array()) {
         for child in children {
             count += 1;
@@ -141,9 +141,16 @@ fn flatten_ax_node(node: &serde_json::Value, acc: &mut Vec<crate::ax_tree::AXNod
         for prop in props {
             if let (Some(key), Some(val)) = (
                 prop.get("name").and_then(|v| v.as_str()),
-                prop.get("value").and_then(|v| v.as_str()),
+                prop.get("value"),
             ) {
-                properties.insert(key.to_string(), val.to_string());
+                let value_str = match val {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Null => "null".to_string(),
+                    other => other.to_string(),
+                };
+                properties.insert(key.to_string(), value_str);
             }
         }
     }

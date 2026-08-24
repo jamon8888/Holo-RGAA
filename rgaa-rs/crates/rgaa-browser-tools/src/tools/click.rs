@@ -66,14 +66,15 @@ impl PortableTool for ClickTool {
 
 /// Legacy struct for backward compatibility with existing tests.
 pub struct ClickToolLegacy {
-    pub ref_id: String,
+    /// CSS selector for the element to click.
+    pub selector: String,
 }
 
 impl ClickToolLegacy {
-    /// Click an element by its a11y tree backendNodeId ref.
+    /// Click an element by its CSS selector.
     /// Uses CDP Runtime.evaluate to click by selector.
     pub async fn execute(&self, session: &crate::BrowserSession) -> Result<String, String> {
-        session.click_element(&self.ref_id).await?;
-        Ok(format!("Clicked element: {}", self.ref_id))
+        session.click_element(&self.selector).await?;
+        Ok(format!("Clicked element: {}", self.selector))
     }
 }

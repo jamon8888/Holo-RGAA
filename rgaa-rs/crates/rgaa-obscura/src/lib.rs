@@ -810,18 +810,18 @@ impl ObscuraBridge {
         Ok(())
     }
 
-    /// Take a screenshot using CDP Page.captureScreenshot
-    pub async fn screenshot(&self) -> Result<String, String> {
+    /// Take a screenshot of the given URL using CDP Page.captureScreenshot.
+    pub async fn screenshot(&self, url: &str) -> Result<String, String> {
         let ws_url = self.get_browser_ws_url().await?;
         let (mut ws, _) = connect_async(&ws_url)
             .await
             .map_err(|e| format!("WebSocket connect failed: {e}"))?;
 
-        // Create a target
+        // Create a target with the specified URL
         let target_resp = Self::cdp_send(
             &mut ws,
             "Target.createTarget",
-            serde_json::json!({"url": "about:blank"}),
+            serde_json::json!({"url": url}),
         )
         .await?;
         let target_id = target_resp
@@ -843,24 +843,25 @@ impl ObscuraBridge {
             .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
             .to_string();
 
-        // Capture screenshot
-        let result = Self::cdp_send_session(
+        // Capture screenshot, then always clean up
+        let outcome = Self::cdp_send_session(
             &mut ws,
             &session_id,
             "Page.captureScreenshot",
             serde_json::json!({"format": "png"}),
         )
-        .await?;
+        .await;
 
-        // Cleanup
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        // Extract base64 data
-        result
-            .get("data")
-            .and_then(|d| d.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| "No screenshot data in response".to_string())
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome, cleanup) {
+            (Ok(result), Ok(())) => result
+                .get("data")
+                .and_then(|d| d.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| "No screenshot data in response".to_string()),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), _) => Err(error),
+        }
     }
 
     /// Inner axe-core evaluation: wait for navigation, inject axe, then run it.

@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 /// Errors that can occur when using the screenshot tool.
 #[derive(Debug, thiserror::Error)]
 pub enum ScreenshotError {
-    #[error("screenshot not yet connected to CDP")]
-    NotConnected,
     #[error("screenshot capture failed: {0}")]
     CaptureFailed(String),
 }

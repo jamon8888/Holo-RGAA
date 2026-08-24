@@ -73,7 +73,8 @@ impl BrowserSession {
 
     /// Take a screenshot of the current page
     pub async fn screenshot(&self) -> Result<String, String> {
-        self.bridge.screenshot().await
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.screenshot(url).await
     }
 
     /// Returns a reference to the last accessibility tree, if available.

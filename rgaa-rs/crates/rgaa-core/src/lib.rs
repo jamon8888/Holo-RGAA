@@ -5,6 +5,7 @@ pub mod criteria;
 pub mod error;
 pub mod evidence;
 pub mod findings;
+pub mod na_detection;
 pub mod types;
 
 pub use audit_bundle::*;

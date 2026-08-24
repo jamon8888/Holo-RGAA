@@ -1,5 +1,5 @@
 use rgaa_core::{Classification, CriterionResult, CriterionStatus, RgaaError, Violation};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub struct AxeMapper;
 
@@ -7,12 +7,12 @@ impl AxeMapper {
     /// Map axe-core violations JSON to RGAA criterion results.
     /// Input: JSON array of axe violations from axe.run()
     /// Output: HashMap of criterion_id → CriterionResult
-    pub fn map(violations_json: &str) -> Result<HashMap<String, CriterionResult>, RgaaError> {
+    pub fn map(violations_json: &str) -> Result<IndexMap<String, CriterionResult>, RgaaError> {
         let mapping = Self::rgaa_to_axe_map();
         let violations: Vec<AxeViolation> = serde_json::from_str(violations_json)
             .map_err(|e| RgaaError::AxeCore(format!("Failed to parse axe violations JSON: {e}")))?;
 
-        let mut results: HashMap<String, CriterionResult> = HashMap::new();
+        let mut results: IndexMap<String, CriterionResult> = IndexMap::new();
 
         // Initialize all axe-mapped criteria as PASS
         for rgaa_id in mapping.keys() {
@@ -51,8 +51,8 @@ impl AxeMapper {
         Ok(results)
     }
 
-    fn rgaa_to_axe_map() -> HashMap<String, Vec<String>> {
-        let mut m: HashMap<String, Vec<String>> = HashMap::new();
+    fn rgaa_to_axe_map() -> IndexMap<String, Vec<String>> {
+        let mut m: IndexMap<String, Vec<String>> = IndexMap::new();
         // From existing poc.js — 77 criteria mapped
         m.insert(
             "1.1".into(),
@@ -244,4 +244,107 @@ struct AxeViolation {
     impact: String,
     description: String,
     nodes: Vec<serde_json::Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_json_initializes_all_mapped_criteria_as_pass() {
+        let result = AxeMapper::map("[]").unwrap();
+        assert_eq!(result.len(), 77);
+        for (id, r) in &result {
+            assert_eq!(r.status, CriterionStatus::Pass, "criterion {id} should be Pass");
+        }
+    }
+
+    #[test]
+    fn invalid_json_returns_error() {
+        let err = AxeMapper::map("not json").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to parse axe violations JSON"));
+    }
+
+    #[test]
+    fn mapped_violation_sets_status_to_fail() {
+        let axe_json = r#"[
+            {
+                "id": "color-contrast",
+                "impact": "serious",
+                "description": "Elements must have sufficient color contrast",
+                "nodes": [{"html": "<p>Low contrast</p>"}]
+            }
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        // color-contrast maps to 3.3
+        let r = results.get("3.3").expect("3.3 should be present");
+        assert_eq!(r.status, CriterionStatus::Fail);
+        assert!(!r.violations.is_empty());
+    }
+
+    #[test]
+    fn unmapped_axe_rule_does_not_corrupt_results() {
+        let axe_json = r#"[
+            {
+                "id": "unknown-rule-xyz",
+                "impact": "minor",
+                "description": "Unknown rule",
+                "nodes": []
+            }
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        // Should not create any entries for unmapped rules
+        assert!(results.is_empty() || results.values().all(|r| r.status == CriterionStatus::Pass));
+    }
+
+    #[test]
+    fn multiple_violations_same_criterion_merge() {
+        let axe_json = r#"[
+            {
+                "id": "color-contrast",
+                "impact": "serious",
+                "description": "First",
+                "nodes": [{"html": "<p>A</p>"}]
+            },
+            {
+                "id": "color-contrast",
+                "impact": "critical",
+                "description": "Second",
+                "nodes": [{"html": "<p>B</p>"}]
+            }
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        let r = results.get("3.3").expect("3.3 should be present");
+        assert_eq!(r.status, CriterionStatus::Fail);
+        // Both violations should be present
+        assert_eq!(r.violations.len(), 2);
+    }
+
+    #[test]
+    fn all_mapped_criteria_initialized_as_pass() {
+        let axe_json = "[]";
+        let results = AxeMapper::map(axe_json).unwrap();
+        // All 77 mapped criteria should be present and PASS
+        assert_eq!(results.len(), 77);
+        for (id, r) in &results {
+            assert_eq!(r.status, CriterionStatus::Pass, "criterion {id} should be Pass");
+        }
+    }
+
+    #[test]
+    fn output_is_indexmap_insertion_ordered() {
+        let axe_json = r#"[
+            {
+                "id": "color-contrast",
+                "impact": "serious",
+                "description": "test",
+                "nodes": []
+            }
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        let keys: Vec<_> = results.keys().cloned().collect();
+        // First key should be "1.1" (first in rgaa_to_axe_map), not random
+        assert_eq!(keys[0], "1.1");
+    }
 }

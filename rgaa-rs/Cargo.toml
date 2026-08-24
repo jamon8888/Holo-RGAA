@@ -37,6 +37,7 @@ rig-memory = "0.42"
   lancedb = "0.30"
   fastembed = "4.0"
 futures = "0.3"
+indexmap = "2"
 
 # Dev profile: optimized for fast compilation
 [profile.dev]

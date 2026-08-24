@@ -163,13 +163,13 @@ async fn audit_one(
                     justification: Some("Manual verification required".into()),
                     source: "manual".into(),
                 });
-        } else if !all_results.contains_key(&criterion.id.to_string()) {
+        } else if !all_results.contains_key(criterion.id) {
             all_results
                 .entry(criterion.id.to_string())
                 .or_insert_with(|| CriterionResult {
                     criterion_id: criterion.id.to_string(),
                     title: criterion.title.to_string(),
-                    classification: criterion.classification.clone(),
+                    classification: criterion.classification,
                     status: CriterionStatus::NotTested,
                     violations: vec![],
                     confidence: None,

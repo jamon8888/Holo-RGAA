@@ -33,7 +33,10 @@
 
 **Solution:**
 - Use `Cow<'static, str>` for `criterion_id`, `title`, `source` where values are static
+- Add `#[serde(borrow)]` on borrowed fields or use `#[serde(with = "...")]` for custom serde
 - Pre-allocate `Vec` with `with_capacity()` where size is known (106 criteria, 77 axe rules)
+- Use `clone_from()` in merge loop to reuse existing allocations
+- Use `write!()` into reusable `String` buffer instead of `format!()` in hot paths
 
 **Files:**
 - `rgaa-core/src/types.rs` — `CriterionResult` struct
@@ -42,6 +45,7 @@
 **Acceptance:**
 - Zero-copy for static criterion data
 - `Vec` allocations use `with_capacity(106)` for criteria collection
+- No new heap allocations in merge loop for existing entries
 
 ---
 
@@ -55,6 +59,7 @@
 - Use `futures::stream::iter(urls).map(|url| audit_one(...)).buffer_unordered(concurrency).collect()`
 - Add `concurrency: usize` field to `CrawlConfig` (default: 4)
 - Browser lock acquired/released per-URL, not held across batch
+- `ObscuraBridge` is config-only (strings + optional Child), safe to clone per task
 
 **Files:**
 - `rgaa-orchestrator/src/pipeline.rs:50-75` — `run_batch` method
@@ -69,9 +74,10 @@
 **Problem:** `buffer_unordered(4)` hardcoded in `run_ia_assiste` (`agent.rs:136`).
 
 **Solution:**
-- Derive concurrency from `AgentConfig.tactical_rpm`: `concurrency = max(1, tactical_rpm / 60)`
+- Derive concurrency from `AgentConfig.tactical_rpm`: `concurrency = max(1, min(tactical_rpm / 15, 16))`
+- Cap at 16 to prevent overwhelming the API
 - Pass as parameter to `run_ia_assiste`
-- Default: `tactical_rpm=20` → concurrency=4 (matches current)
+- Default: `tactical_rpm=20` → concurrency=1 (conservative), user can increase
 
 **Files:**
 - `rgaa-agent/src/agent.rs:119-141` — `run_ia_assiste` method
@@ -80,6 +86,7 @@
 **Acceptance:**
 - Changing `tactical_rpm` in config changes parallelism
 - No rate limit violations
+- Concurrency capped at 16 to prevent API overload
 
 ### 2.3 Reduce lock scope in pipeline
 
@@ -90,6 +97,7 @@
 - Lock again for gap-fix, release immediately
 - Lock again for page context, release immediately
 - Each browser call is independent; no need to hold lock across all three
+- Use scoped lock pattern: `{ let guard = session.lock().await; /* use */ } // guard dropped`
 
 **Files:**
 - `rgaa-orchestrator/src/pipeline.rs:83-122` — `audit_one` function
@@ -97,6 +105,7 @@
 **Acceptance:**
 - Mutex held for <100ms per lock acquisition (vs ~3s currently)
 - Other tasks can interleave between browser calls
+- No `MutexGuard` held across `.await` points
 
 ---
 
@@ -107,18 +116,20 @@
 **Problem:** `pipeline.rs` and callers return `Result<T, String>`, losing error context.
 
 **Solution:**
-- Add `RgaaError::Pipeline(String)` variant for orchestration errors
+- Add specific `RgaaError` variants: `Browser(String)`, `Agent(String)`, `Pipeline(String)`
 - `pipeline.rs`: Return `Result<AuditResult, RgaaError>`
-- Map `ObscuraError` → `RgaaError` at orchestration boundary
+- Map `ObscuraError` → `RgaaError` at orchestration boundary using `From` impl
 - Remove `.unwrap_or_default()` on JSON parse; use `.map_err()?`
+- Preserve error chains with `#[source]` attribute
 
 **Files:**
-- `rgaa-core/src/error.rs` — add `Pipeline` variant
+- `rgaa-core/src/error.rs` — add variants + `From<ObscuraError>`
 - `rgaa-orchestrator/src/pipeline.rs` — change return types
 
 **Acceptance:**
 - All pipeline functions return `Result<T, RgaaError>`
 - Malformed JSON produces `Err`, not silent empty vec
+- Error chains preserved for debugging
 
 ### 3.2 `#[must_use]` annotations
 
@@ -156,7 +167,7 @@ panic = "abort"       # Smaller binary
 strip = "symbols"     # Remove debug symbols
 ```
 
-**Trade-off:** ~2-3 min longer compile, 5-15% runtime improvement.
+**Trade-off:** ~2-3 min longer compile, 2-10% runtime improvement.
 
 **Files:** `rgaa-rs/Cargo.toml:52-57`
 
@@ -172,26 +183,30 @@ strip = "symbols"     # Remove debug symbols
 - Use `tokio::signal::ctrl_c()` + `axum::serve(...).with_graceful_shutdown()`
 - Drop database pool on shutdown
 - Log shutdown events
+- Add `tower_http::timeout::TimeoutLayer` for individual request timeouts (30s default)
 
 **Files:** `rgaa-api/src/main.rs:321-358`
 
 **Acceptance:**
 - Ctrl+C triggers graceful shutdown
 - In-flight requests complete before exit
+- Long-running requests timeout after 30s
 
 ### 4.3 Database connection pooling
 
 **Problem:** `PgPool::connect()` uses default pool config (no limit).
 
 **Solution:**
-- Use `PgPoolOptions::new().max_connections(max_conn)`
+- Use `PgPoolOptions::new().max_connections(max_conn).min_connections(2)`
 - Read `max_conn` from `DATABASE_MAX_CONNECTIONS` env (default: 10)
+- `min_connections(2)` keeps warm pool for low-latency first request
 
 **Files:** `rgaa-api/src/main.rs:329-332`
 
 **Acceptance:**
 - Pool respects configured max connections
 - No connection exhaustion under load
+- Warm pool reduces first-request latency
 
 ---
 
@@ -202,7 +217,8 @@ strip = "symbols"     # Remove debug symbols
 **Problem:** Logs lack timing data; hard to identify bottlenecks.
 
 **Solution:**
-- Add `#[tracing::instrument(skip_all)]` on `audit_one`, `run_ia_assiste`, `AxeMapper::map`
+- Add `#[tracing::instrument(skip_all, fields(url = %url))]` on `audit_one`
+- Add `#[tracing::instrument(skip_all, fields(criterion = %criterion.id))]` on `evaluate_criterion`
 - Log durations: `info!(elapsed_ms = start.elapsed().as_millis(), "operation complete")`
 - Use tracing spans for nested operations
 
@@ -211,7 +227,7 @@ strip = "symbols"     # Remove debug symbols
 - `rgaa-agent/src/agent.rs:67` — `evaluate_criterion`
 
 **Acceptance:**
-- Each pipeline stage logs duration
+- Each pipeline stage logs duration with URL/criterion context
 - Total audit time visible in logs
 
 ### 5.2 Profiling profile
@@ -243,11 +259,72 @@ Enables `samply`, `cargo flamegraph`, `perf` without recompiling.
 - `calculate_compliance()` — compliance computation
 - `PromptBuilder::build()` — string construction
 
-**Files:** `rgaa-rs/benches/` (new directory)
+Add `criterion` to workspace dependencies:
+```toml
+[workspace.dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+```
+
+**Files:**
+- `rgaa-rs/Cargo.toml` — add `criterion` dependency
+- `rgaa-rs/benches/` — new directory with benchmark files
 
 **Acceptance:**
 - `cargo bench` runs all benchmarks
 - Results stored for comparison
+- CI job runs benchmarks on PRs and reports regression
+
+---
+
+## 6. Additional Optimizations (from skills review)
+
+### 6.1 Faster mutex implementation
+
+**Problem:** `std::sync::Mutex` has overhead for uncontended locks.
+
+**Solution:** Consider `parking_lot::Mutex` for hot paths:
+- `ToolContext` session mutex
+- Any mutex in agent evaluation loop
+
+**Trade-off:** Adds dependency, but 2-5x faster for uncontended locks.
+
+**Files:** `rgaa-browser-tools/src/session.rs`, `Cargo.toml`
+
+**Acceptance:**
+- Benchmarks show improvement for lock-heavy paths
+
+### 6.2 Integer-keyed map optimization
+
+**Problem:** `HashMap<String, Vec<String>>` for axe mapping uses string keys.
+
+**Solution:** For purely internal maps with integer-like keys, consider `FxHashMap` or `AHash`:
+- Faster hashing for integer-like strings
+- Lower allocation overhead
+
+**Trade-off:** Adds dependency, but 10-20% faster for integer keys.
+
+**Files:** `rgaa-rules/src/axe_mapper.rs`
+
+**Acceptance:**
+- Benchmarks show improvement for mapping operations
+
+### 6.3 CI benchmark regression
+
+**Problem:** No automated detection of performance regressions.
+
+**Solution:** Add GitHub Actions job:
+```yaml
+- name: Run benchmarks
+  run: cargo bench --workspace 2>&1 | tee bench-output.txt
+- name: Compare with baseline
+  # Compare against main branch baseline
+```
+
+**Files:** `.github/workflows/bench.yml` (new)
+
+**Acceptance:**
+- PRs show benchmark comparison
+- Regressions flagged as warnings
 
 ---
 
@@ -258,6 +335,7 @@ Enables `samply`, `cargo flamegraph`, `perf` without recompiling.
 3. **Concurrency** (Section 2) — depends on error types
 4. **Build & Deployment** (Section 4) — independent
 5. **Observability** (Section 5) — independent, last
+6. **Additional Optimizations** (Section 6) — based on benchmarks
 
 ## Success Metrics
 

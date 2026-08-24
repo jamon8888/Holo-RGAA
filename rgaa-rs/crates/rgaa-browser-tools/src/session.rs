@@ -77,6 +77,12 @@ impl BrowserSession {
         self.bridge.screenshot(url).await
     }
 
+    /// Get the accessibility tree for the current page
+    pub async fn get_a11y_tree(&self) -> Result<serde_json::Value, String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.get_accessibility_tree(url).await
+    }
+
     /// Returns a reference to the last accessibility tree, if available.
     #[must_use]
     pub fn last_a11y(&self) -> Option<&AXTree> {

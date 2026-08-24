@@ -864,6 +864,66 @@ impl ObscuraBridge {
         }
     }
 
+    /// Get the accessibility tree using CDP Accessibility API
+    pub async fn get_accessibility_tree(&self, url: &str) -> Result<serde_json::Value, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        // Create a target with the URL
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        // Attach to the target
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        // Enable accessibility
+        Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Accessibility.enable",
+            serde_json::json!({}),
+        )
+        .await?;
+
+        // Wait for page load
+        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+
+        // Get full accessibility tree
+        let tree = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Accessibility.getFullAXTree",
+            serde_json::json!({}),
+        )
+        .await?;
+
+        // Cleanup
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+
+        Ok(tree)
+    }
+
     /// Inner axe-core evaluation: wait for navigation, inject axe, then run it.
     async fn run_axe_core(
         &self,

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum A11yTreeError {
     #[error("a11y tree not yet connected to CDP")]
     NotConnected,
+    #[error("a11y tree capture failed: {0}")]
+    CaptureFailed(String),
 }
 
 /// Arguments for the a11y tree tool (no parameters needed).
@@ -18,6 +20,7 @@ pub struct A11yTreeArgs {}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct A11yTreeOutput {
     pub tree_json: serde_json::Value,
+    pub node_count: usize,
 }
 
 /// Tool that retrieves the full accessibility tree of the current page.
@@ -46,9 +49,18 @@ impl PortableTool for A11yTreeTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: CDP Accessibility.getFullAXTree in Task 6
-        Err(A11yTreeError::NotConnected)
+        let session = self.ctx.session().lock().await;
+        let tree = session
+            .get_a11y_tree()
+            .await
+            .map_err(A11yTreeError::CaptureFailed)?;
+
+        let node_count = count_ax_nodes(&tree);
+
+        Ok(A11yTreeOutput {
+            tree_json: tree,
+            node_count,
+        })
     }
 }
 
@@ -60,8 +72,93 @@ impl AccessibilityTreeLegacy {
     /// Returns a structured AXTree with stable backendNodeIds.
     pub async fn execute(
         &self,
-        _session: &mut crate::BrowserSession,
+        session: &mut crate::BrowserSession,
     ) -> Result<crate::AXTree, String> {
-        Err("a11y tree not yet connected to CDP".to_string())
+        let tree = session.get_a11y_tree().await?;
+        // Convert raw JSON tree to AXTree structure
+        let nodes = flatten_ax_tree(&tree);
+        Ok(crate::AXTree { nodes })
+    }
+}
+
+fn count_ax_nodes(tree: &serde_json::Value) -> usize {
+    let mut count = 0;
+    if let Some(children) = tree.get("children").and_then(|c| c.as_array()) {
+        for child in children {
+            count += 1;
+            count += count_ax_nodes(child);
+        }
+    }
+    count
+}
+
+fn flatten_ax_tree(tree: &serde_json::Value) -> Vec<crate::ax_tree::AXNode> {
+    let mut nodes = Vec::new();
+    flatten_ax_node(tree, &mut nodes);
+    nodes
+}
+
+fn flatten_ax_node(node: &serde_json::Value, acc: &mut Vec<crate::ax_tree::AXNode>) {
+    let backend_node_id = node
+        .get("backendDOMNodeId")
+        .or_else(|| node.get("backendNodeId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let role = node
+        .get("role")
+        .and_then(|r| r.get("value"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let name = node
+        .get("name")
+        .and_then(|n| n.get("value"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let children: Vec<String> = node
+        .get("children")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|child| {
+                    child
+                        .get("backendDOMNodeId")
+                        .or_else(|| child.get("backendNodeId"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut properties = std::collections::HashMap::new();
+    if let Some(props) = node.get("properties").and_then(|p| p.as_array()) {
+        for prop in props {
+            if let (Some(key), Some(val)) = (
+                prop.get("name").and_then(|v| v.as_str()),
+                prop.get("value").and_then(|v| v.as_str()),
+            ) {
+                properties.insert(key.to_string(), val.to_string());
+            }
+        }
+    }
+
+    acc.push(crate::ax_tree::AXNode {
+        backend_node_id,
+        role,
+        name,
+        children,
+        properties,
+    });
+
+    if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+        for child in children {
+            flatten_ax_node(child, acc);
+        }
     }
 }

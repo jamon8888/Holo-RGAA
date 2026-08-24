@@ -6,7 +6,7 @@ fn mcp_server_exposes_screenshot_tool() {
     let tools = server.tool_names();
     assert!(tools.contains(&"screenshot".to_string()));
     assert!(tools.contains(&"navigate".to_string()));
-    assert!(tools.contains(&"accessibility_tree".to_string()));
+    assert!(tools.contains(&"a11y_tree".to_string()));
     assert!(tools.contains(&"eval_js".to_string()));
     assert!(tools.contains(&"click".to_string()));
     assert!(tools.contains(&"type".to_string()));

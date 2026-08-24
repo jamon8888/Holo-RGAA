@@ -397,8 +397,9 @@ mod tests {
     async fn test_evaluate_parses_via_mock_server() {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#);
-        let client =
-            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}"));
+        let client = HoloClient::new("test-key".to_string())
+            .unwrap()
+            .with_base_url(format!("http://{addr}"));
 
         let res = client.evaluate("prompt").await;
         assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
@@ -412,8 +413,9 @@ mod tests {
     async fn test_evaluate_multimodal_text_only() {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"pass","confidence":0.9,"justification":"ok"}"#);
-        let client =
-            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}"));
+        let client = HoloClient::new("test-key".to_string())
+            .unwrap()
+            .with_base_url(format!("http://{addr}"));
 
         let res = client.evaluate_multimodal("prompt", None).await;
         assert!(res.is_ok(), "expected Ok, got {:?}", res.err());
@@ -436,8 +438,9 @@ mod tests {
     async fn test_evaluate_multimodal_with_image() {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"fail","confidence":0.85,"justification":"no alt"}"#);
-        let client =
-            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}"));
+        let client = HoloClient::new("test-key".to_string())
+            .unwrap()
+            .with_base_url(format!("http://{addr}"));
 
         let fake_b64 = "iVBORw0KGgoAAAANSUhEUg==";
         let res = client
@@ -455,7 +458,9 @@ mod tests {
         let (addr, handle) =
             spawn_mock_server(r#"{"verdict":"na","confidence":1.0,"justification":"n/a"}"#);
         let client = std::sync::Arc::new(
-            HoloClient::new("test-key".to_string()).unwrap().with_base_url(format!("http://{addr}")),
+            HoloClient::new("test-key".to_string())
+                .unwrap()
+                .with_base_url(format!("http://{addr}")),
         );
 
         let start = std::time::Instant::now();

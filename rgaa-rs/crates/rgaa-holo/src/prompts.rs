@@ -333,7 +333,9 @@ mod tests {
         assert!(prompt.contains("critère RGAA 1.1"));
         assert!(prompt.contains("Test Page"));
         assert!(prompt.contains("fr"));
-        assert!(prompt.contains("H1: <<<UNTRUSTED PAGE CONTENT>>>Titre principal<<<END UNTRUSTED CONTENT>>>"));
+        assert!(prompt.contains(
+            "H1: <<<UNTRUSTED PAGE CONTENT>>>Titre principal<<<END UNTRUSTED CONTENT>>>"
+        ));
     }
 
     #[test]
@@ -372,7 +374,9 @@ mod tests {
         assert!(output.contains("**Titre:**"));
         assert!(output.contains("**Langue:**"));
         assert!(output.contains("### Titres"));
-        assert!(output.contains("H1: <<<UNTRUSTED PAGE CONTENT>>>Titre principal<<<END UNTRUSTED CONTENT>>>"));
+        assert!(output.contains(
+            "H1: <<<UNTRUSTED PAGE CONTENT>>>Titre principal<<<END UNTRUSTED CONTENT>>>"
+        ));
         assert!(output.contains("### Images"));
         assert!(output.contains("### Liens"));
         assert!(output.contains("### Navigation"));

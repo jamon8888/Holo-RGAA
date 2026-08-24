@@ -93,8 +93,8 @@ fn findings_from_axe(
     let payload = validate_axe_payload(value)?;
     let normalized =
         serde_json::to_string(value).map_err(|error| ObscuraError::Json(error.to_string()))?;
-    let mapped = AxeMapper::map(&normalized)
-        .map_err(|error| ObscuraError::Evaluation(error.to_string()))?;
+    let mapped =
+        AxeMapper::map(&normalized).map_err(|error| ObscuraError::Evaluation(error.to_string()))?;
     let mut findings = Vec::new();
     for violation in payload {
         let mut criteria = mapped

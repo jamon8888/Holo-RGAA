@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AuditResult, CheckpointResult, CriterionResult, CriterionStatus, CrawlConfig, Finding,
+    AuditResult, CheckpointResult, CrawlConfig, CriterionResult, CriterionStatus, Finding,
     PageError, RgaaError, Violation,
 };
 
@@ -228,11 +228,8 @@ impl From<AuditResult> for AuditBundle {
         }
 
         let page_count = page_audits.len();
-        let total_findings = findings.len()
-            + page_audits
-                .iter()
-                .map(|p| p.findings.len())
-                .sum::<usize>();
+        let total_findings =
+            findings.len() + page_audits.iter().map(|p| p.findings.len()).sum::<usize>();
 
         let needs_review = page_audits
             .iter()

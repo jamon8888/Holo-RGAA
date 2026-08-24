@@ -128,9 +128,7 @@ impl RgaaCriteria {
             .iter()
             .map(|(id, classification, wcag_refs)| Criterion {
                 id,
-                title: RgaaCatalog::title(id)
-                    .unwrap_or("unknown")
-                    .to_string(),
+                title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
                 classification: *classification,
                 wcag_refs,
             })
@@ -183,7 +181,10 @@ mod tests {
         let all = RgaaCriteria::all();
         let det = RgaaCriteria::deterministe();
         let ia = RgaaCriteria::ia_assiste();
-        let manuel = all.iter().filter(|c| c.classification == Classification::Manuel).count();
+        let manuel = all
+            .iter()
+            .filter(|c| c.classification == Classification::Manuel)
+            .count();
         // Deterministe + IaAssiste + Manuel = all
         assert_eq!(det.len() + ia.len() + manuel, all.len());
     }

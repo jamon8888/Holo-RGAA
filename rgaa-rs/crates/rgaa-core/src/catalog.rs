@@ -1,6 +1,6 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use serde::Deserialize;
 
 const CRITERES_JSON: &str = include_str!("../data/rgaa-4.1.2/criteres.json");
 
@@ -45,8 +45,7 @@ pub struct RgaaCatalog {
 
 impl RgaaCatalog {
     fn load() -> Self {
-        let raw: RawRoot =
-            serde_json::from_str(CRITERES_JSON).expect("criteres.json must parse");
+        let raw: RawRoot = serde_json::from_str(CRITERES_JSON).expect("criteres.json must parse");
         Self { themes: raw.topics }
     }
 

@@ -1,5 +1,5 @@
-use rgaa_core::{Classification, CriterionResult, CriterionStatus, RgaaError, Violation};
 use indexmap::IndexMap;
+use rgaa_core::{Classification, CriterionResult, CriterionStatus, RgaaError, Violation};
 
 pub struct AxeMapper;
 
@@ -255,7 +255,11 @@ mod tests {
         let result = AxeMapper::map("[]").unwrap();
         assert_eq!(result.len(), 77);
         for (id, r) in &result {
-            assert_eq!(r.status, CriterionStatus::Pass, "criterion {id} should be Pass");
+            assert_eq!(
+                r.status,
+                CriterionStatus::Pass,
+                "criterion {id} should be Pass"
+            );
         }
     }
 
@@ -328,7 +332,11 @@ mod tests {
         // All 77 mapped criteria should be present and PASS
         assert_eq!(results.len(), 77);
         for (id, r) in &results {
-            assert_eq!(r.status, CriterionStatus::Pass, "criterion {id} should be Pass");
+            assert_eq!(
+                r.status,
+                CriterionStatus::Pass,
+                "criterion {id} should be Pass"
+            );
         }
     }
 

@@ -40,10 +40,7 @@ impl RgaaAgent {
             .map_err(|e| AgentError::RigAgent(e.to_string()))?;
 
         // 2. Create rate limiter from config (tactical/reasoning RPM)
-        let rate_limiter = Arc::new(Ratelimiter::new(
-            config.tactical_rpm,
-            config.reasoning_rpm,
-        ));
+        let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));
 
         // 3. Build agent with preamble
         let agent = client

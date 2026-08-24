@@ -208,7 +208,7 @@ async fn click_tool_calls_err_when_not_connected() {
     let ctx = ToolContext::new(BrowserSession::new_placeholder());
     let tool = ClickTool::new(ctx);
     let args = rgaa_browser_tools::tools::ClickArgs {
-        ref_id: "42".to_string(),
+        selector: "#btn".to_string(),
     };
     let result = tool.call(args).await;
     assert!(result.is_err());

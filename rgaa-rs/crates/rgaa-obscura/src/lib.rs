@@ -810,6 +810,67 @@ impl ObscuraBridge {
         Ok(())
     }
 
+    /// Click an element using CDP Runtime.evaluate
+    pub async fn click_element(&self, url: &str, selector: &str) -> Result<(), String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        // Create a target with the URL
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        // Attach to the target
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        // Wait for page load
+        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+
+        // Click the element
+        let click_script = format!(
+            "document.querySelector('{}')?.click()",
+            selector.replace('\'', "\\'")
+        );
+        let result = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": click_script, "returnByValue": true}),
+        )
+        .await?;
+
+        if result.get("exceptionDetails").is_some() {
+            // Cleanup before returning error
+            let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+            return Err(format!("click failed for selector '{selector}'"));
+        }
+
+        // Cleanup
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+
+        Ok(())
+    }
+
     /// Take a screenshot of the given URL using CDP Page.captureScreenshot.
     pub async fn screenshot(&self, url: &str) -> Result<String, String> {
         let ws_url = self.get_browser_ws_url().await?;

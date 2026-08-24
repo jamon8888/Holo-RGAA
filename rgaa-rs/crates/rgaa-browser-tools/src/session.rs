@@ -71,6 +71,12 @@ impl BrowserSession {
         self.bridge.eval_js(expression).await
     }
 
+    /// Click an element by CSS selector
+    pub async fn click_element(&self, selector: &str) -> Result<(), String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.click_element(url, selector).await
+    }
+
     /// Take a screenshot of the current page
     pub async fn screenshot(&self) -> Result<String, String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");

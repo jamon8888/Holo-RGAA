@@ -8,23 +8,25 @@ use serde::{Deserialize, Serialize};
 pub enum ClickError {
     #[error("click not yet connected to CDP")]
     NotConnected,
+    #[error("click failed: {0}")]
+    ClickFailed(String),
 }
 
 /// Arguments for the click tool.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ClickArgs {
-    /// The accessibility tree backend node ID of the element to click
-    pub ref_id: String,
+    /// The CSS selector of the element to click
+    pub selector: String,
 }
 
 /// Output from the click tool.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClickOutput {
     pub success: bool,
-    pub focused_element: Option<String>,
+    pub message: String,
 }
 
-/// Tool that clicks an element by its accessibility tree reference ID.
+/// Tool that clicks an element by its CSS selector.
 pub struct ClickTool {
     ctx: ToolContext,
 }
@@ -42,17 +44,23 @@ impl PortableTool for ClickTool {
     type Output = ClickOutput;
 
     fn description(&self) -> String {
-        "Click an element by its accessibility tree reference ID".to_string()
+        "Click an element by its CSS selector".to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
         serde_json::to_value(schemars::schema_for!(ClickArgs)).expect("valid schema")
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let _session = self.ctx.session().lock().await;
-        // TODO: CDP DOM.focus + Input.dispatchMouseEvent in Task 6
-        Err(ClickError::NotConnected)
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let session = self.ctx.session().lock().await;
+        session
+            .click_element(&args.selector)
+            .await
+            .map_err(ClickError::ClickFailed)?;
+        Ok(ClickOutput {
+            success: true,
+            message: format!("Clicked element: {}", args.selector),
+        })
     }
 }
 
@@ -63,8 +71,9 @@ pub struct ClickToolLegacy {
 
 impl ClickToolLegacy {
     /// Click an element by its a11y tree backendNodeId ref.
-    /// Uses CDP DOM.focus + Input.dispatchMouseEvent.
-    pub async fn execute(&self, _session: &crate::BrowserSession) -> Result<String, String> {
-        Err("click not yet connected to CDP".to_string())
+    /// Uses CDP Runtime.evaluate to click by selector.
+    pub async fn execute(&self, session: &crate::BrowserSession) -> Result<String, String> {
+        session.click_element(&self.ref_id).await?;
+        Ok(format!("Clicked element: {}", self.ref_id))
     }
 }

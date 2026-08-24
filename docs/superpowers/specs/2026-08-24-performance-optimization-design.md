@@ -276,9 +276,61 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 ---
 
-## 6. Additional Optimizations (from skills review)
+## 6. Obscura & axe-core Tuning (from documentation research)
 
-### 6.1 Faster mutex implementation
+### 6.1 Obscura worker and V8 configuration
+
+**Problem:** Default obscura settings (1 worker, default V8 heap) don't leverage available CPU cores or memory tuning.
+
+**Solution:**
+- Use `--workers N` where N = CPU cores for true V8 parallelism (each worker = separate V8 isolate)
+- Default V8 flags on 64-bit: `--max-old-space-size=4096 --max-semi-space-size=4 --optimize-for-size`
+- Override for memory-constrained hosts: `--max-old-space-size=2048`
+- Override for heavy SPAs: `--max-old-space-size=8192 --max-semi-space-size=8`
+- Tune timeouts via env vars:
+  - `OBSCURA_NAV_TIMEOUT_MS=60000` (per-navigation, default 30000)
+  - `OBSCURA_CDP_COMMAND_TIMEOUT_MS=30000` (per-CDP-command V8 deadline, default 60000)
+  - `OBSCURA_FETCH_TIMEOUT_MS=20000` (scripted fetch/XHR, default 30000)
+  - `OBSCURA_SCRIPT_DEADLINE_MS=60000` (heavy SPA script execution budget, default 30000)
+
+**Impact:** obscura achieves ~30 MB per process vs Chrome's 200+ MB; ~21x faster median latency; 10-17% RSS reduction with `--optimize-for-size`.
+
+**Files:**
+- `rgaa-obscura/src/lib.rs` — `AXE_CORE_CDN`, `ObscuraBridge` config
+- Deployment config / CLI args — workers, V8 flags, env vars
+
+**Acceptance:**
+- `obscura serve --workers N` runs N parallel worker processes
+- V8 flags tunable via `--v8-flags` CLI arg
+- Timeout env vars configurable per deployment
+
+### 6.2 axe-core result filtering
+
+**Problem:** Running `axe.run()` without `resultTypes` returns passes, inapplicable, violations, and incomplete — wasting bandwidth and parsing time.
+
+**Solution:**
+- Use `resultTypes: ['violations', 'incomplete']` in axe-core config to skip passes/inapplicable
+- Use `elementRef: false` to avoid serializing the full live DOM element (returns selector string only)
+- Use `reporter: 'v2'` for faster JSON output (strips pass details)
+- Freeze axe-core config to prevent order-dependent flake: `Object.freeze(config)`
+- Use `runOnly.type: 'tag'` with `values: ['wcag2a', 'wcag2aa']` for targeted rule execution
+
+**Impact:** Reduces axe-core output size by ~40-60%, faster JSON serialization, lower memory during evaluation.
+
+**Files:**
+- `rgaa-obscura/src/lib.rs` — axe-core injection and config
+- `rgaa-core/data/rgaa-4.1.2/axe_mapping.json` — rule mapping
+
+**Acceptance:**
+- axe-core runs with `resultTypes` filtering
+- `elementRef: false` reduces DOM serialization overhead
+- Config frozen to prevent flake
+
+---
+
+## 7. Additional Optimizations (from skills review)
+
+### 7.1 Faster mutex implementation
 
 **Problem:** `std::sync::Mutex` has overhead for uncontended locks.
 
@@ -293,7 +345,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 **Acceptance:**
 - Benchmarks show improvement for lock-heavy paths
 
-### 6.2 Integer-keyed map optimization
+### 7.2 Integer-keyed map optimization
 
 **Problem:** `HashMap<String, Vec<String>>` for axe mapping uses string keys.
 
@@ -308,7 +360,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 **Acceptance:**
 - Benchmarks show improvement for mapping operations
 
-### 6.3 CI benchmark regression
+### 7.3 CI benchmark regression
 
 **Problem:** No automated detection of performance regressions.
 
@@ -333,9 +385,10 @@ criterion = { version = "0.5", features = ["html_reports"] }
 1. **Memory** (Section 1) — zero-risk, immediate wins
 2. **Error Handling** (Section 3) — enables safe concurrency changes
 3. **Concurrency** (Section 2) — depends on error types
-4. **Build & Deployment** (Section 4) — independent
-5. **Observability** (Section 5) — independent, last
-6. **Additional Optimizations** (Section 6) — based on benchmarks
+4. **Obscura & axe-core Tuning** (Section 6) — external tool configuration
+5. **Build & Deployment** (Section 4) — independent
+6. **Observability** (Section 5) — independent, last
+7. **Additional Optimizations** (Section 7) — based on benchmarks
 
 ## Success Metrics
 
@@ -346,3 +399,5 @@ criterion = { version = "0.5", features = ["html_reports"] }
 | Peak memory (single audit) | ~50MB | ~30MB |
 | Binary size (release) | ~15MB | ~10MB |
 | `RgaaCriteria::all()` calls/s | ~1K | ~100K (cached) |
+| axe-core output size | 100% | ~40-60% (resultTypes filtering) |
+| obscura RSS per process | ~50MB | ~30MB (V8 tuning) |

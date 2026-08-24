@@ -1,12 +1,33 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 const CRITERES_JSON: &str = include_str!("../data/rgaa-4.1.2/criteres.json");
+const AUTOMATABLE_JSON: &str = include_str!("../data/rgaa-4.1.2/automatable_criteres.json");
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+pub enum Automatable {
+    FullyAutomatable,
+    PartiallyAutomatable,
+    #[default]
+    NotAutomatable,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 struct RawRoot {
     topics: Vec<CatalogTheme>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AutomatableRoot {
+    criteria: Vec<AutomatableCriterion>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AutomatableCriterion {
+    criterion_id: String,
+    classification: Automatable,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -26,6 +47,8 @@ pub struct CatalogCriterion {
     pub number: u8,
     pub title: String,
     pub tests: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub automatable: Automatable,
 }
 
 impl CatalogCriterion {
@@ -46,7 +69,22 @@ pub struct RgaaCatalog {
 impl RgaaCatalog {
     fn load() -> Self {
         let raw: RawRoot = serde_json::from_str(CRITERES_JSON).expect("criteres.json must parse");
-        Self { themes: raw.topics }
+        let automatable_root: AutomatableRoot =
+            serde_json::from_str(AUTOMATABLE_JSON).expect("automatable_criteres.json must parse");
+        let mut automatable_map: HashMap<String, Automatable> = HashMap::new();
+        for ac in automatable_root.criteria {
+            automatable_map.insert(ac.criterion_id, ac.classification);
+        }
+        let mut themes = raw.topics;
+        for theme in &mut themes {
+            for cw in &mut theme.criteria {
+                let criterion_id = cw.criterium.id_for_theme(theme.number);
+                cw.criterium.automatable = automatable_map
+                    .remove(&criterion_id)
+                    .unwrap_or_default();
+            }
+        }
+        Self { themes }
     }
 
     fn instance() -> &'static Self {
@@ -124,6 +162,19 @@ mod tests {
                 let c: u8 = parts.next().unwrap().parse().unwrap();
                 assert_eq!(t, theme.number);
                 assert_eq!(c, cw.criterium.number);
+            }
+        }
+    }
+
+    #[test]
+    fn test_all_criteria_have_automatability() {
+        let catalog = RgaaCatalog::all();
+        for theme in catalog {
+            for cw in &theme.criteria {
+                assert!(matches!(
+                    cw.criterium.automatable,
+                    Automatable::FullyAutomatable | Automatable::PartiallyAutomatable | Automatable::NotAutomatable
+                ));
             }
         }
     }

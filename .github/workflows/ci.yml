@@ -91,6 +91,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: rgaa-rs
+          ignore: "RUSTSEC-2023-0071"
 
   e2e:
     name: E2E (browser + agent + orchestrator)

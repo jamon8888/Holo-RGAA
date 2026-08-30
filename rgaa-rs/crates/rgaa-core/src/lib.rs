@@ -10,6 +10,7 @@ pub mod types;
 
 pub use audit_bundle::*;
 pub use checkpoints::*;
+pub use catalog::RgaaCatalog;
 pub use criteria::{Criterion, RgaaCriteria};
 pub use error::{Result, RgaaError};
 pub use evidence::*;

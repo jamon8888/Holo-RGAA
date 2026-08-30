@@ -42,7 +42,7 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
     let mut validated_executed = 0;
 
     for criterion in criteria {
-        let conformity = ConformityStatus::from(criterion.status);
+        let conformity = ConformityStatus::from(criterion.status.clone());
         if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion.criterion_id) {
             if matches!(cat.automatable, Automatable::FullyAutomatable | Automatable::PartiallyAutomatable) {
                 validated_total += 1;

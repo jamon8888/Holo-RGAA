@@ -1451,20 +1451,38 @@ impl ObscuraBridge {
 
     fn build_page_context_script() -> &'static str {
         r#"
- (() => {
-   const title = document.title;
-   const lang = document.documentElement.lang;
-   const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-     .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim() }));
-   const landmarks = Array.from(document.querySelectorAll('header, nav, main, aside, footer, [role="banner"], [role="navigation"], [role="main"], [role="complementary"], [role="contentinfo"]'))
-     .map(el => ({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), label: el.getAttribute('aria-label') }));
-   const images = Array.from(document.querySelectorAll('img'))
-     .map(img => ({ src: img.src, alt: img.alt, hasAlt: img.hasAttribute('alt') }));
-   const forms = Array.from(document.querySelectorAll('form'))
-     .map(form => ({ action: form.action, inputs: Array.from(form.querySelectorAll('input, select, textarea')).length }));
-   return JSON.stringify({ title, lang, headings, landmarks, images, forms });
- })()
- "#
+  (() => {
+    const title = document.title;
+    const lang = document.documentElement.lang;
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim() }));
+    const landmarks = Array.from(document.querySelectorAll('header, nav, main, aside, footer, [role="banner"], [role="navigation"], [role="main"], [role="complementary"], [role="contentinfo"]'))
+      .map(el => ({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), label: el.getAttribute('aria-label') }));
+    const images = Array.from(document.querySelectorAll('img'))
+      .map(img => ({ src: img.src, alt: img.alt, has_alt: img.hasAttribute('alt'), is_decorative: !img.hasAttribute('alt') && !img.alt }));
+    const iframes = Array.from(document.querySelectorAll('iframe'))
+      .map(iframe => ({ src: iframe.src || null, title: iframe.title || null, has_title: iframe.hasAttribute('title') }));
+    const media = Array.from(document.querySelectorAll('video, audio'))
+      .map(m => ({ media_type: m.tagName.toLowerCase(), has_captions: false, has_transcript: false, has_controls: m.hasAttribute('controls') }));
+    const links = Array.from(document.querySelectorAll('a'))
+      .map(a => ({ href: a.href, text: a.textContent.trim(), has_text: a.textContent.trim().length > 0, is_empty: a.textContent.trim().length === 0 }));
+    const navigation = Array.from(document.querySelectorAll('nav'))
+      .map(n => n.textContent.trim());
+    const forms = Array.from(document.querySelectorAll('form'))
+      .map(form => ({
+        id: form.id || null,
+        has_labels: Array.from(form.querySelectorAll('label')).length > 0,
+        has_submit: form.querySelector('button[type="submit"], input[type="submit"]') !== null,
+        inputs: Array.from(form.querySelectorAll('input, select, textarea')).map(el => ({
+          input_type: el.type || el.tagName.toLowerCase(),
+          has_label: el.id ? form.querySelector(`label[for="${el.id}"]`) !== null : false,
+          aria_label: el.getAttribute('aria-label'),
+          placeholder: el.placeholder || null
+        }))
+      }));
+    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms });
+  })()
+  "#
     }
 
     /// Send a CDP command (browser-level, no session) and get the result

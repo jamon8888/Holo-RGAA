@@ -56,6 +56,11 @@ opt-level = 2
 [profile.test]
 codegen-units = 256
 overflow-checks = false
+opt-level = 0  # faster compilation, slower runtime
+
+# Dependencies optimized at level 1 for test (faster runtime)
+[profile.test.package."*"]
+opt-level = 1
 
 # Release profile: optimized for small fast binary
 [profile.release]

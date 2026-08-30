@@ -90,7 +90,7 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          directory: rgaa-rs
+          working-directory: rgaa-rs
 
   e2e:
     name: E2E (browser + agent + orchestrator)

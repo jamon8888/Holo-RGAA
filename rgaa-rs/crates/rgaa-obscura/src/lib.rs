@@ -18,15 +18,16 @@ pub mod guided;
 pub mod results;
 
 pub use config::{
-    AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, NeedsReviewPolicy,
-    PreScanAction, ScreenshotPolicy, Viewport,
+    AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
+    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy, Viewport,
+    WaitForState, MAX_WAITFOR_TIMEOUT_MS,
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
     is_stable_accessibility_reference, GuidedAction, GuidedExecutor, GuidedObservation,
     GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
-pub use results::{AnalyzePageResult, ObscuraError};
+pub use results::{AnalyzePageResult, IgtResult, IgtResults, ObscuraError};
 use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
 use rgaa_rules::AxeMapper;
 use serde::Deserialize;
@@ -293,6 +294,7 @@ impl ObscuraBridge {
             errors: Vec::new(),
             completed,
             duration_ms: started.elapsed().as_millis() as u64,
+            igt: None,
         })
     }
 
@@ -461,34 +463,54 @@ impl ObscuraBridge {
         }
         Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({})).await?;
         for cookie in &request.config.cookie_references {
-            let key = cookie
-                .name
-                .chars()
-                .map(|character| {
-                    if character.is_ascii_alphanumeric() {
-                        character.to_ascii_uppercase()
-                    } else {
-                        '_'
-                    }
-                })
-                .collect::<String>();
-            let value = std::env::var(format!("RGAA_COOKIE_{key}"))
-                .map_err(|_| format!("missing secret for cookie reference '{}'", cookie.name))?;
+            let value = match cookie.value.clone() {
+                Some(v) => v,
+                None => {
+                    let key = cookie
+                        .name
+                        .chars()
+                        .map(|c| {
+                            if c.is_ascii_alphanumeric() {
+                                c.to_ascii_uppercase()
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect::<String>();
+                    std::env::var(format!("RGAA_COOKIE_{key}"))
+                        .map_err(|_| format!("missing secret for cookie '{}'", cookie.name))?
+                }
+            };
             let mut params = serde_json::json!({
                 "name": cookie.name,
                 "value": value,
-                "url": request.url,
             });
             if let Some(domain) = &cookie.domain {
                 params["domain"] = serde_json::Value::String(domain.clone());
             }
+            if let Some(path) = &cookie.path {
+                params["path"] = serde_json::Value::String(path.clone());
+            }
+            if let Some(same_site) = &cookie.same_site {
+                params["sameSite"] = serde_json::Value::String(match same_site {
+                    CookieSameSite::Strict => "Strict".to_string(),
+                    CookieSameSite::Lax => "Lax".to_string(),
+                    CookieSameSite::None => "None".to_string(),
+                });
+            }
+            if let Some(secure) = cookie.r#secure {
+                params["secure"] = serde_json::Value::Bool(secure);
+            }
+            if let Some(http_only) = cookie.http_only {
+                params["httpOnly"] = serde_json::Value::Bool(http_only);
+            }
+            if let Some(expires) = cookie.expires {
+                params["expires"] = serde_json::json!({ "type": "number", "value": expires });
+            }
             let result =
                 Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
-            if result.get("success").and_then(|value| value.as_bool()) == Some(false) {
-                return Err(format!(
-                    "browser rejected cookie reference '{}'",
-                    cookie.name
-                ));
+            if result.get("success").and_then(|v| v.as_bool()) == Some(false) {
+                return Err(format!("browser rejected cookie '{}'", cookie.name));
             }
         }
         Ok(())
@@ -501,24 +523,33 @@ impl ObscuraBridge {
         request: &AnalyzeRequest,
     ) -> Result<(), String> {
         for action in &request.config.pre_scan_actions {
-            let (selector, body) = match action {
+            let expression = match action {
                 PreScanAction::Click { selector } => {
-                    (selector, "element.click(); return true;".to_string())
+                    let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
+                    format!(
+                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
+                    )
                 }
                 PreScanAction::Fill { selector, value } => {
-                    let value = serde_json::to_string(value).map_err(|error| error.to_string())?;
-                    (
-                        selector,
-                        format!(
-                            "element.value = {value}; element.dispatchEvent(new Event('input', {{bubbles:true}})); element.dispatchEvent(new Event('change', {{bubbles:true}})); return true;"
-                        ),
+                    let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
+                    let value = serde_json::to_string(value).map_err(|e| e.to_string())?;
+                    format!(
+                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"
+                    )
+                }
+                PreScanAction::WaitFor { selector, state } => {
+                    let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
+                    let check = match state {
+                        WaitForState::Visible => "el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden'",
+                        WaitForState::Attached => "document.body.contains(el)",
+                        WaitForState::Hidden => "!el.offsetParent && getComputedStyle(el).visibility === 'hidden'",
+                        WaitForState::Detached => "!document.body.contains(el)",
+                    };
+                    format!(
+                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('waitFor selector not found'); const deadline = Date.now() + {MAX_WAITFOR_TIMEOUT_MS}; while (!({check})) {{ if (Date.now() > deadline) {{ throw new Error('waitFor timed out'); }} }} return true; }})()"
                     )
                 }
             };
-            let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
-            let expression = format!(
-                "(() => {{ const element = document.querySelector({selector}); if (!element) throw new Error('pre-scan selector not found'); {body} }})()"
-            );
             let result = Self::cdp_send_session(
                 ws,
                 session_id,
@@ -556,7 +587,7 @@ impl ObscuraBridge {
             .and_then(|value| value.as_str())
             .ok_or_else(|| "DOM evidence was not returned by the browser".to_string())?;
         let mut evidence = vec![Self::evidence_ref("dom_snapshot", dom.as_bytes())];
-        let should_screenshot = match request.config.screenshot_policy {
+        let should_screenshot = match request.config.screenshot.policy {
             ScreenshotPolicy::None => false,
             ScreenshotPolicy::Always => true,
             ScreenshotPolicy::OnFailure => {
@@ -564,11 +595,15 @@ impl ObscuraBridge {
             }
         };
         if should_screenshot {
+            let format_str = match request.config.screenshot.format {
+                ScreenshotFormat::Png => "png",
+                ScreenshotFormat::Jpeg => "jpeg",
+            };
             let screenshot = Self::cdp_send_session(
                 ws,
                 session_id,
                 "Page.captureScreenshot",
-                serde_json::json!({"format": "png"}),
+                serde_json::json!({ "format": format_str }),
             )
             .await?;
             let data = screenshot

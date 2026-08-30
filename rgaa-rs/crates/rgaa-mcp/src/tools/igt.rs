@@ -154,3 +154,77 @@ impl From<rgaa_obscura::GuidedRunResult> for GuidedTestResponse {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IgtStatus {
+    Complete,
+    Incomplete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct IgtIssueDto {
+    pub rule: String,
+    pub element: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct IgtElementDto {
+    pub role: String,
+    pub name: String,
+    pub value: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct IgtResultDto {
+    pub status: IgtStatus,
+    pub issues: Vec<IgtIssueDto>,
+    pub igt_elements: Vec<IgtElementDto>,
+    pub terminated_reason: Option<TerminationReasonDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct IgtResultsDto {
+    pub keyboard: IgtResultDto,
+}
+
+impl From<rgaa_obscura::IgtResult> for IgtResultDto {
+    fn from(result: rgaa_obscura::IgtResult) -> Self {
+        Self {
+            status: match result.status.as_str() {
+                "complete" => IgtStatus::Complete,
+                _ => IgtStatus::Incomplete,
+            },
+            issues: result
+                .issues
+                .into_iter()
+                .map(|i| IgtIssueDto {
+                    rule: i.rule,
+                    element: i.element,
+                    description: i.description,
+                })
+                .collect(),
+            igt_elements: result
+                .igt_elements
+                .into_iter()
+                .map(|e| IgtElementDto {
+                    role: e.role,
+                    name: e.name,
+                    value: e.value,
+                    description: e.description,
+                })
+                .collect(),
+            terminated_reason: result.terminated_reason.map(Into::into),
+        }
+    }
+}
+
+impl From<rgaa_obscura::IgtResults> for IgtResultsDto {
+    fn from(results: rgaa_obscura::IgtResults) -> Self {
+        Self {
+            keyboard: results.keyboard.into(),
+        }
+    }
+}

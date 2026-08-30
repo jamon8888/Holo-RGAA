@@ -4,6 +4,7 @@ use crate::ObscuraError;
 
 const MAX_SELECTOR_LENGTH: usize = 1024;
 const MAX_PRE_SCAN_ACTIONS: usize = 20;
+pub const MAX_WAITFOR_TIMEOUT_MS: u64 = 30_000;
 const MIN_VIEWPORT_WIDTH: u32 = 320;
 const MAX_VIEWPORT_WIDTH: u32 = 7680;
 const MIN_VIEWPORT_HEIGHT: u32 = 240;
@@ -24,12 +25,38 @@ pub struct Viewport {
 pub enum PreScanAction {
     Click { selector: String },
     Fill { selector: String, value: String },
+    WaitFor { selector: String, state: WaitForState },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitForState {
+    #[default]
+    Visible,
+    Attached,
+    Hidden,
+    Detached,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CookieReference {
     pub name: String,
+    pub value: Option<String>,
     pub domain: Option<String>,
+    pub path: Option<String>,
+    pub same_site: Option<CookieSameSite>,
+    pub r#secure: Option<bool>,
+    pub http_only: Option<bool>,
+    pub expires: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CookieSameSite {
+    #[default]
+    Lax,
+    Strict,
+    None,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -39,6 +66,20 @@ pub enum ScreenshotPolicy {
     None,
     OnFailure,
     Always,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenshotFormat {
+    #[default]
+    Png,
+    Jpeg,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ScreenshotConfig {
+    pub policy: ScreenshotPolicy,
+    pub format: ScreenshotFormat,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -64,7 +105,7 @@ pub struct AnalyzeConfig {
     pub selector: Option<String>,
     pub pre_scan_actions: Vec<PreScanAction>,
     pub cookie_references: Vec<CookieReference>,
-    pub screenshot_policy: ScreenshotPolicy,
+    pub screenshot: ScreenshotConfig,
     pub advanced_rule_policy: AdvancedRulePolicy,
     pub needs_review_policy: NeedsReviewPolicy,
     pub timeout_ms: u64,
@@ -83,7 +124,7 @@ impl Default for AnalyzeConfig {
             selector: None,
             pre_scan_actions: Vec::new(),
             cookie_references: Vec::new(),
-            screenshot_policy: ScreenshotPolicy::None,
+            screenshot: ScreenshotConfig::default(),
             advanced_rule_policy: AdvancedRulePolicy::Disabled,
             needs_review_policy: NeedsReviewPolicy::Record,
             timeout_ms: 30_000,
@@ -133,6 +174,7 @@ impl AnalyzeRequest {
             let (selector, value) = match action {
                 PreScanAction::Click { selector } => (selector, None),
                 PreScanAction::Fill { selector, value } => (selector, Some(value)),
+                PreScanAction::WaitFor { selector, .. } => (selector, None),
             };
             if selector.trim().is_empty() || selector.len() > MAX_SELECTOR_LENGTH {
                 return Err(ObscuraError::Validation(
@@ -163,6 +205,13 @@ impl AnalyzeRequest {
                 return Err(ObscuraError::Validation(
                     "cookie reference name must not be empty".into(),
                 ));
+            }
+            if let (Some(same_site), Some(secure)) = (cookie.same_site, cookie.r#secure) {
+                if same_site == CookieSameSite::None && !secure {
+                    return Err(ObscuraError::Validation(
+                        "cookie with SameSite=None requires Secure=true".into(),
+                    ));
+                }
             }
         }
         Ok(())
@@ -248,26 +297,39 @@ mod tests {
             })
             .collect();
         assert!(request.validate().is_err());
+        // WaitFor variant is valid
+        request.config.pre_scan_actions = vec![PreScanAction::WaitFor {
+            selector: "#app".into(),
+            state: WaitForState::Visible,
+        }];
+        assert!(request.validate().is_ok());
     }
 
     #[test]
-    fn cookie_serialization_contains_references_only() {
+    fn cookie_serialization_contains_name_and_domain() {
         let config = AnalyzeConfig {
             cookie_references: vec![CookieReference {
                 name: "session".into(),
+                value: Some("abc123".into()),
                 domain: Some("example.test".into()),
+                path: Some("/".into()),
+                same_site: Some(CookieSameSite::Lax),
+                r#secure: Some(false),
+                http_only: Some(true),
+                expires: None,
             }],
             ..Default::default()
         };
         let json = serde_json::to_string(&config).expect("config serializes");
         assert!(json.contains("session"));
-        assert!(!json.contains("value"));
+        assert!(json.contains("example"));
+        assert!(json.contains("abc123"));
     }
 
     #[test]
     fn screenshot_is_opt_in() {
         assert_eq!(
-            AnalyzeConfig::default().screenshot_policy,
+            AnalyzeConfig::default().screenshot.policy,
             ScreenshotPolicy::None
         );
     }

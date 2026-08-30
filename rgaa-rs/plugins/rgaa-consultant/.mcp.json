@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "rgaa-api": {
+      "type": "http",
+      "url": "http://localhost:3000",
+      "description": "RGAA REST API server. Start with: rgaa-api"
+    }
+  },
+  "cli": {
+    "rgaa-cli": {
+      "description": "RGAA CLI for local audits. Install: cargo install --path crates/rgaa-cli",
+      "commands": [
+        "rgaa audit analyze",
+        "rgaa audit igt",
+        "rgaa audit verify",
+        "rgaa audit report",
+        "rgaa audit policy"
+      ]
+    }
+  }
+}

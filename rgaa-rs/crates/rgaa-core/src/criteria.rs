@@ -1,4 +1,4 @@
-use crate::catalog::RgaaCatalog;
+use crate::catalog::{Automatable, RgaaCatalog};
 use crate::types::Classification;
 
 #[derive(Debug, Clone)]
@@ -146,6 +146,16 @@ impl RgaaCriteria {
         Self::all()
             .into_iter()
             .filter(|c| c.classification == Classification::IaAssiste)
+            .collect()
+    }
+
+    pub fn partiellement_automatique() -> Vec<Criterion> {
+        Self::all()
+            .into_iter()
+            .filter(|c| {
+                RgaaCatalog::by_id(c.id)
+                    .map_or(false, |(_, cat)| cat.automatable == Automatable::PartiallyAutomatable)
+            })
             .collect()
     }
 

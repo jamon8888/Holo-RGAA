@@ -13,6 +13,8 @@ rustflags = [
 # Use sccache as compilation cache
 [build]
 rustc-wrapper = "sccache"
-# Limit parallel jobs to avoid OOM on 8GB RAM
-# Each rustc process uses ~1-2GB, 4 jobs = ~4-8GB max
-jobs = 4
+# Parallel jobs - adjust based on RAM:
+# 8GB RAM: 4 jobs (1-2GB each = 4-8GB total)
+# 16GB RAM: 8 jobs
+# 32GB RAM: 16 jobs
+jobs = 8

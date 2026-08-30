@@ -139,4 +139,82 @@ impl RgaaAgent {
 
         results
     }
+
+    /// Evaluates PartiallyAutomatable criteria that require human review.
+    ///
+    /// Unlike IA_ASSISTE criteria which may be fully machine-evaluated,
+    /// PartiallyAutomatable criteria need human judgment on the portions
+    /// not covered by automated checks. Results are marked [`CriterionStatus::NeedsReview`].
+    pub async fn run_partially_automatable(
+        &self,
+        criteria: &[Criterion],
+        page_context: &PageContext,
+    ) -> HashMap<String, CriterionResult> {
+        use futures::stream::{self, StreamExt};
+
+        let page_context = Arc::new(page_context.clone());
+        let results = stream::iter(criteria.iter().cloned())
+            .map(|criterion| {
+                let self_ = Arc::new(self.clone());
+                let page_context = page_context.clone();
+                async move {
+                    let result = self_
+                        .evaluate_criterion_for_human_review(&criterion, &page_context)
+                        .await;
+                    (criterion.id.to_string(), result)
+                }
+            })
+            .buffer_unordered(4)
+            .collect::<HashMap<_, _>>()
+            .await;
+
+        results
+    }
+
+    /// Evaluates a criterion where human review is required.
+    async fn evaluate_criterion_for_human_review(
+        &self,
+        criterion: &Criterion,
+        page_context: &PageContext,
+    ) -> CriterionResult {
+        let prompt = PromptBuilder::build(criterion.id, page_context);
+
+        self.rate_limiter
+            .acquire(crate::ratelimit::ModelTier::Tactical)
+            .await;
+
+        match self.agent.prompt(prompt.as_str()).await {
+            Ok(response) => {
+                let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
+                    verdict: "na".to_string(),
+                    confidence: 0.0,
+                    justification: response.clone(),
+                });
+                let _ = map_verdict(&parsed);
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification,
+                    status: CriterionStatus::NeedsReview,
+                    violations: vec![],
+                    confidence: Some(parsed.confidence),
+                    justification: Some(parsed.justification),
+                    source: "agent".to_string(),
+                }
+            }
+            Err(e) => {
+                tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification,
+                    status: CriterionStatus::NeedsReview,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(format!("Erreur: {e}")),
+                    source: "agent-error".to_string(),
+                }
+            }
+        }
+    }
 }

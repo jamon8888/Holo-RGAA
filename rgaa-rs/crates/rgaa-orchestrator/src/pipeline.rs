@@ -14,6 +14,10 @@ use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
 
+fn partially_automatable_status() -> CriterionStatus {
+    CriterionStatus::NeedsReview
+}
+
 fn manual_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
 }
@@ -186,6 +190,20 @@ async fn audit_one(
         holo_results.insert(criterion_id, result);
     }
 
+    // 4b. Run agentic evaluation for PartiallyAutomatable criteria
+    let partial_criteria = RgaaCriteria::partiellement_automatique();
+    info!(
+        criteria = partial_criteria.len(),
+        "Running agentic PartiallyAutomatable evaluation"
+    );
+
+    let partial_results = agent
+        .run_partially_automatable(&partial_criteria, &page_context)
+        .await;
+    for (criterion_id, result) in partial_results {
+        holo_results.insert(criterion_id, result);
+    }
+
     // 5. Merge results
     let mut all_results: HashMap<String, CriterionResult> = HashMap::new();
     all_results.extend(axe_results);
@@ -199,6 +217,8 @@ async fn audit_one(
     // the compliance rate reflects the full 106-criterion catalog instead of
     // only the criteria that produced a violation.
     // Manuel criteria always require human review -> NeedsReview.
+    // PartiallyAutomatable criteria need human review for un-covered portions
+    // -> NeedsReview.
     let all_criteria = RgaaCriteria::all();
     for criterion in &all_criteria {
         if criterion.classification == Classification::Manuel {
@@ -215,19 +235,34 @@ async fn audit_one(
                     source: "manual".into(),
                 });
         } else if !all_results.contains_key(criterion.id) {
+            let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
+                .map_or(false, |(_, cat)| cat.automatable == Automatable::PartiallyAutomatable);
+
+            let (status, justification, source) = if is_partially_automatable {
+                (
+                    partially_automatable_status(),
+                    "Partially automatable — human review required for uncovered portions".into(),
+                    "partially-automatable".into(),
+                )
+            } else {
+                (
+                    CriterionStatus::NotTested,
+                    "Not tested — no automated check covered this criterion".into(),
+                    "automated".into(),
+                )
+            };
+
             all_results
                 .entry(criterion.id.to_string())
                 .or_insert_with(|| CriterionResult {
                     criterion_id: criterion.id.to_string(),
                     title: criterion.title.to_string(),
                     classification: criterion.classification,
-                    status: CriterionStatus::NotTested,
+                    status,
                     violations: vec![],
                     confidence: None,
-                    justification: Some(
-                        "Not tested — no automated check covered this criterion".into(),
-                    ),
-                    source: "automated".into(),
+                    justification: Some(justification),
+                    source,
                 });
         }
     }

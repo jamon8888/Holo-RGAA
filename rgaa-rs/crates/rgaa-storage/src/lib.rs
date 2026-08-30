@@ -1,8 +1,8 @@
 pub mod postgres;
 pub mod repository;
 
-pub use repository::{hash_api_key, AuditRow, CriterionResultRow, Repository};
 pub use postgres::PostgresStorage;
+pub use repository::{hash_api_key, AuditRow, CriterionResultRow, Repository};
 
 use async_trait::async_trait;
 use rgaa_core::AuditResult;
@@ -22,9 +22,18 @@ pub enum StorageError {
 pub trait Storage: Send + Sync {
     async fn save_audit(&self, audit: &AuditResult) -> Result<String, StorageError>;
     async fn get_audit(&self, id: &str) -> Result<Option<AuditResult>, StorageError>;
-    async fn list_audits(&self, limit: usize, offset: usize) -> Result<Vec<AuditSummary>, StorageError>;
+    async fn list_audits(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<AuditSummary>, StorageError>;
     async fn delete_audit(&self, id: &str) -> Result<(), StorageError>;
-    async fn save_audit_log(&self, audit_id: &str, action: &str, details: Option<Value>) -> Result<String, StorageError>;
+    async fn save_audit_log(
+        &self,
+        audit_id: &str,
+        action: &str,
+        details: Option<Value>,
+    ) -> Result<String, StorageError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

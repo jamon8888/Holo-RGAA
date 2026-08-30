@@ -129,11 +129,29 @@ mod tests {
 
     #[test]
     fn test_status_mapping() {
-        assert_eq!(ConformityStatus::from(CriterionStatus::Pass), ConformityStatus::Conforme);
-        assert_eq!(ConformityStatus::from(CriterionStatus::Fail), ConformityStatus::NonConforme);
-        assert_eq!(ConformityStatus::from(CriterionStatus::NotApplicable), ConformityStatus::NonApplicable);
-        assert_eq!(ConformityStatus::from(CriterionStatus::NeedsReview), ConformityStatus::NonTeste);
-        assert_eq!(ConformityStatus::from(CriterionStatus::NotTested), ConformityStatus::NonTeste);
-        assert_eq!(ConformityStatus::from(CriterionStatus::Error), ConformityStatus::NonConforme);
+        assert_eq!(
+            ConformityStatus::from(CriterionStatus::Pass),
+            ConformityStatus::Conforme
+        );
+        assert_eq!(
+            ConformityStatus::from(CriterionStatus::Fail),
+            ConformityStatus::NonConforme
+        );
+        assert_eq!(
+            ConformityStatus::from(CriterionStatus::NotApplicable),
+            ConformityStatus::NonApplicable
+        );
+        assert_eq!(
+            ConformityStatus::from(CriterionStatus::NeedsReview),
+            ConformityStatus::NonTeste
+        );
+        assert_eq!(
+            ConformityStatus::from(CriterionStatus::NotTested),
+            ConformityStatus::NonTeste
+        );
+        assert_eq!(
+            ConformityStatus::from(CriterionStatus::Error),
+            ConformityStatus::NonConforme
+        );
     }
 }

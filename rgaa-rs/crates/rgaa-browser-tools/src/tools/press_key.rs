@@ -54,9 +54,7 @@ impl PortableTool for PressKeyTool {
             .press_key(&args.key)
             .await
             .map_err(PressKeyError::Failed)?;
-        Ok(PressKeyOutput {
-            success: true,
-        })
+        Ok(PressKeyOutput { success: true })
     }
 }
 

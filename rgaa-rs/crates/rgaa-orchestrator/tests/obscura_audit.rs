@@ -22,7 +22,8 @@ async fn test_run_batch_obscura() {
     };
 
     let urls = vec!["https://example.com".to_string()];
-    let results = Orchestrator::run_batch(&urls, &config).await;
+    let orchestrator = Orchestrator::new();
+    let results = orchestrator.run_batch(&urls, &config).await;
 
     assert!(
         results.is_ok(),

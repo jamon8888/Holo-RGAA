@@ -152,7 +152,10 @@ fn write_html_findings(html: &mut String, bundle: &AuditBundle) {
     let findings = all_findings(bundle);
 
     if findings.is_empty() {
-        let _ = writeln!(html, r#"        <div class="no-findings">Aucun problème détecté</div>"#);
+        let _ = writeln!(
+            html,
+            r#"        <div class="no-findings">Aucun problème détecté</div>"#
+        );
         return;
     }
 
@@ -201,8 +204,11 @@ fn write_html_findings(html: &mut String, bundle: &AuditBundle) {
         );
     }
 
-    let _ = writeln!(html, r#"            </tbody>
-        </table>"#);
+    let _ = writeln!(
+        html,
+        r#"            </tbody>
+        </table>"#
+    );
 }
 
 fn write_html_footer(html: &mut String) {
@@ -256,7 +262,8 @@ mod tests {
     use rgaa_core::AuditConfig;
 
     fn sample_bundle() -> AuditBundle {
-        let mut bundle = AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
         bundle.summary.total_pages = 1;
         bundle.summary.completed_pages = 1;
         bundle.summary.total_findings = 2;

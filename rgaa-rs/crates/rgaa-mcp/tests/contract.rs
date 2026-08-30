@@ -1,4 +1,7 @@
-use rgaa_mcp::server::{AnalyzeService, GuidedService, RemediationService, RemediationServiceImpl};
+use rgaa_mcp::server::{
+    AnalyzeService, GuidedService, NoOpStorageService, OrchestrationService, RemediationService,
+    RemediationServiceImpl,
+};
 use rgaa_mcp::{
     AnalyzeConfigInput, AnalyzeRequest, ApprovalStateDto, CookieReferenceInput, GuidedTestRequest,
     LazyObscuraBridge, McpFailure, ObscuraAnalyzeService, RemediationRequest, RemediationResponse,
@@ -11,7 +14,16 @@ use std::sync::Arc;
 
 #[test]
 fn exposes_exactly_three_agent_tools() {
-    assert_eq!(ToolServer::tool_names(), ["analyze", "remediate", "igt"]);
+    assert_eq!(
+        ToolServer::tool_names(),
+        [
+            "analyze",
+            "remediate",
+            "igt",
+            "audit_url",
+            "get_audit_result"
+        ]
+    );
 }
 
 #[test]
@@ -163,6 +175,8 @@ async fn analyze_handler_distinguishes_execution_failure_and_redacts_secrets() {
         Arc::new(Failing),
         Arc::new(RemediationServiceImpl::default()),
         Arc::new(PanickingGuided),
+        Arc::new(OrchestrationService::new()),
+        Arc::new(NoOpStorageService),
     );
     let result = server
         .analyze(Parameters(AnalyzeRequest {
@@ -191,6 +205,8 @@ fn remediate_handler_rejects_mismatched_outcomes() {
         Arc::new(PanickingAnalyze),
         Arc::new(Mismatched),
         Arc::new(PanickingGuided),
+        Arc::new(OrchestrationService::new()),
+        Arc::new(NoOpStorageService),
     );
     let result = server.remediate(Parameters(RemediationRequest {
         issues: vec![valid_issue_input("one")],
@@ -272,6 +288,8 @@ fn test_server() -> ToolServer {
         Arc::new(PanickingAnalyze),
         Arc::new(RemediationServiceImpl::default()),
         Arc::new(PanickingGuided),
+        Arc::new(OrchestrationService::new()),
+        Arc::new(NoOpStorageService),
     )
 }
 

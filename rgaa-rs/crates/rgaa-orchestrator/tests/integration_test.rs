@@ -1,7 +1,6 @@
 use rgaa_core::{
     AuditResult, Classification, CriterionResult, CriterionStatus, PageResult, RgaaCriteria,
 };
-use std::collections::HashMap;
 
 fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> CriterionResult {
     CriterionResult {
@@ -14,7 +13,7 @@ fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> Criteri
         classification: RgaaCriteria::all()
             .iter()
             .find(|c| c.id == criterion_id)
-            .map(|c| c.classification.clone())
+            .map(|c| c.classification)
             .unwrap_or(Classification::Deterministe),
         status,
         violations: vec![],
@@ -42,8 +41,8 @@ fn calculate_compliance(criteria: &[CriterionResult]) -> f64 {
 }
 
 fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, String) {
-    use rgaa_core::types::ConformityStatus;
     use rgaa_core::catalog::Automatable;
+    use rgaa_core::types::ConformityStatus;
     use rgaa_core::RgaaCatalog;
 
     let mut c = 0;
@@ -163,10 +162,7 @@ mod integration_test {
             audit.passed, 106,
             "All 106 criteria should be marked as passed"
         );
-        assert_eq!(
-            audit.failed, 0,
-            "No criteria should be marked as failed"
-        );
+        assert_eq!(audit.failed, 0, "No criteria should be marked as failed");
         assert_eq!(
             audit.pages[0].criteria.len(),
             106,
@@ -195,10 +191,7 @@ mod integration_test {
             audit.failed, 106,
             "All 106 criteria should be marked as failed"
         );
-        assert_eq!(
-            audit.passed, 0,
-            "No criteria should be marked as passed"
-        );
+        assert_eq!(audit.passed, 0, "No criteria should be marked as passed");
     }
 
     #[test]
@@ -225,14 +218,8 @@ mod integration_test {
             audit.etat_conformite, "partielle",
             "etat_conformite should be 'partielle' when 50 <= taux_global < 100"
         );
-        assert!(
-            audit.passed > 0,
-            "Some criteria should be marked as passed"
-        );
-        assert!(
-            audit.failed > 0,
-            "Some criteria should be marked as failed"
-        );
+        assert!(audit.passed > 0, "Some criteria should be marked as passed");
+        assert!(audit.failed > 0, "Some criteria should be marked as failed");
         assert!(
             audit.na > 0,
             "Some criteria should be marked as NotApplicable"
@@ -261,12 +248,15 @@ mod integration_test {
             .collect();
 
         assert!(
-            image_criteria.iter().all(|c| c.status == CriterionStatus::NotApplicable),
+            image_criteria
+                .iter()
+                .all(|c| c.status == CriterionStatus::NotApplicable),
             "All 1.x criteria should be NotApplicable when page has no images"
         );
 
         assert_eq!(
-            image_criteria.len(), 9,
+            image_criteria.len(),
+            9,
             "There should be 9 image-related criteria (1.1 to 1.9)"
         );
     }
@@ -293,12 +283,15 @@ mod integration_test {
             .collect();
 
         assert!(
-            form_criteria.iter().all(|c| c.status == CriterionStatus::NotApplicable),
+            form_criteria
+                .iter()
+                .all(|c| c.status == CriterionStatus::NotApplicable),
             "All 11.x criteria should be NotApplicable when page has no forms"
         );
 
         assert_eq!(
-            form_criteria.len(), 13,
+            form_criteria.len(),
+            13,
             "There should be 13 form-related criteria (11.1 to 11.13)"
         );
     }
@@ -325,7 +318,9 @@ mod integration_test {
             .collect();
 
         assert!(
-            media_criteria.iter().all(|c| c.status == CriterionStatus::NotApplicable),
+            media_criteria
+                .iter()
+                .all(|c| c.status == CriterionStatus::NotApplicable),
             "All 4.x criteria should be NotApplicable when page has no media"
         );
     }
@@ -352,7 +347,9 @@ mod integration_test {
             .collect();
 
         assert!(
-            table_criteria.iter().all(|c| c.status == CriterionStatus::NotApplicable),
+            table_criteria
+                .iter()
+                .all(|c| c.status == CriterionStatus::NotApplicable),
             "All 5.x criteria should be NotApplicable when page has no tables"
         );
     }
@@ -372,8 +369,7 @@ mod integration_test {
 
         let audit = build_audit_result(criteria);
 
-        let iframe_criterion = audit
-            .pages[0]
+        let iframe_criterion = audit.pages[0]
             .criteria
             .iter()
             .find(|c| c.criterion_id == "2.1")
@@ -447,14 +443,8 @@ mod integration_test {
             audit.overall_compliance >= 0.0 && audit.overall_compliance <= 100.0,
             "overall_compliance should be between 0 and 100"
         );
-        assert!(
-            !audit.pages.is_empty(),
-            "pages should not be empty"
-        );
-        assert!(
-            !audit.audit_id.is_empty(),
-            "audit_id should not be empty"
-        );
+        assert!(!audit.pages.is_empty(), "pages should not be empty");
+        assert!(!audit.audit_id.is_empty(), "audit_id should not be empty");
         assert_eq!(
             audit.url, "https://example.com",
             "url should match the input"
@@ -512,7 +502,7 @@ mod integration_test {
 
         let audit = build_audit_result(criteria);
 
-        let expected_compliance = (76 as f64 / 106 as f64) * 100.0;
+        let expected_compliance = (76_f64 / 106_f64) * 100.0;
         assert!(
             (audit.overall_compliance - expected_compliance).abs() < 0.1,
             "Error should be counted as fail in compliance calculation"
@@ -619,10 +609,7 @@ mod integration_test {
             );
 
             assert!(
-                audit.pages[0]
-                    .criteria
-                    .iter()
-                    .all(|c| c.status == status),
+                audit.pages[0].criteria.iter().all(|c| c.status == status),
                 "All criteria should have the expected status {:?}",
                 status
             );
@@ -670,7 +657,7 @@ mod integration_test {
             .enumerate()
             .map(|(i, c)| {
                 let status = match i % 10 {
-                    0 | 1 | 2 | 3 => CriterionStatus::Pass,
+                    0..=3 => CriterionStatus::Pass,
                     4 | 5 => CriterionStatus::Fail,
                     6 => CriterionStatus::NotApplicable,
                     7 => CriterionStatus::NotTested,
@@ -684,8 +671,7 @@ mod integration_test {
         let audit = build_audit_result(criteria);
 
         assert!(
-            audit.pages[0].compliance_rate >= 0.0
-                && audit.pages[0].compliance_rate <= 100.0,
+            audit.pages[0].compliance_rate >= 0.0 && audit.pages[0].compliance_rate <= 100.0,
             "compliance_rate should be between 0 and 100"
         );
         assert!(

@@ -139,10 +139,9 @@ fn flatten_ax_node(node: &serde_json::Value, acc: &mut Vec<crate::ax_tree::AXNod
     let mut properties = std::collections::HashMap::new();
     if let Some(props) = node.get("properties").and_then(|p| p.as_array()) {
         for prop in props {
-            if let (Some(key), Some(val)) = (
-                prop.get("name").and_then(|v| v.as_str()),
-                prop.get("value"),
-            ) {
+            if let (Some(key), Some(val)) =
+                (prop.get("name").and_then(|v| v.as_str()), prop.get("value"))
+            {
                 let value_str = match val {
                     serde_json::Value::String(s) => s.clone(),
                     serde_json::Value::Bool(b) => b.to_string(),

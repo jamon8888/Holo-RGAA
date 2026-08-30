@@ -110,12 +110,9 @@ impl RgaaCatalog {
         for theme in &mut themes {
             for cw in &mut theme.criteria {
                 let criterion_id = cw.criterium.id_for_theme(theme.number);
-                cw.criterium.automatable = automatable_map
-                    .remove(&criterion_id)
-                    .unwrap_or_default();
-                cw.criterium.axe_rules = axe_rules_map
-                    .remove(&criterion_id)
-                    .unwrap_or_default();
+                cw.criterium.automatable =
+                    automatable_map.remove(&criterion_id).unwrap_or_default();
+                cw.criterium.axe_rules = axe_rules_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.axe_provenance = axe_provenance_map.remove(&criterion_id);
             }
         }

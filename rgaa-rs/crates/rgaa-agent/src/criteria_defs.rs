@@ -714,11 +714,7 @@ mod tests {
         let original_len = ids.len();
         ids.sort();
         ids.dedup();
-        assert_eq!(
-            ids.len(),
-            original_len,
-            "Found duplicate criterion IDs"
-        );
+        assert_eq!(ids.len(), original_len, "Found duplicate criterion IDs");
     }
 
     #[test]
@@ -751,7 +747,11 @@ mod tests {
             assert!(!def.id.is_empty(), "Empty id in definition");
             assert!(!def.title.is_empty(), "Empty title for {}", def.id);
             assert!(!def.wcag_refs.is_empty(), "Empty wcag_refs for {}", def.id);
-            assert!(!def.definition.is_empty(), "Empty definition for {}", def.id);
+            assert!(
+                !def.definition.is_empty(),
+                "Empty definition for {}",
+                def.id
+            );
         }
     }
 }

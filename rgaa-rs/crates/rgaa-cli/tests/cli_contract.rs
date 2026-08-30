@@ -56,7 +56,8 @@ fn report_renders_each_format_without_failing() {
                 format: Some(format.into()),
                 ..common()
             },
-            input: bundle_path.clone(),
+            input: Some(bundle_path.clone()),
+            audit_id: None,
         };
         assert_eq!(
             report::run(args).unwrap(),
@@ -72,7 +73,8 @@ fn report_rejects_invalid_bundle_as_invalid_input() {
     std::fs::write(&path, "{not json}").unwrap();
     let args = ReportArgs {
         common: common(),
-        input: path,
+        input: Some(path),
+        audit_id: None,
     };
     let error = report::run(args).expect_err("invalid bundle");
     assert_eq!(error.exit_code(), 2);
@@ -82,7 +84,8 @@ fn report_rejects_invalid_bundle_as_invalid_input() {
 fn report_missing_file_is_execution_error() {
     let args = ReportArgs {
         common: common(),
-        input: PathBuf::from("/nonexistent/bundle.json"),
+        input: Some(PathBuf::from("/nonexistent/bundle.json")),
+        audit_id: None,
     };
     let error = report::run(args).expect_err("missing file");
     assert_eq!(error.exit_code(), 3);

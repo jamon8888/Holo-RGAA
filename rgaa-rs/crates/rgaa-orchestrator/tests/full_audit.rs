@@ -17,7 +17,8 @@ async fn test_full_audit_example_com() {
         sample_mode: false,
     };
 
-    let result = Orchestrator::run("https://example.com", &config).await;
+    let orchestrator = Orchestrator::new();
+    let result = orchestrator.run("https://example.com", &config).await;
 
     eprintln!("Audit result: {:?}", result);
 

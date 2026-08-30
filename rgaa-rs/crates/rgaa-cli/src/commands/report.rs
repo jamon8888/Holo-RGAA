@@ -52,9 +52,9 @@ pub fn run(args: ReportArgs) -> Result<i32, CliError> {
 fn load_bundle(args: &ReportArgs) -> Result<AuditBundle, CliError> {
     match (&args.input, &args.audit_id) {
         (Some(path), None) => load_from_file(path),
-        (None, Some(_id)) => {
-            Err(CliError::invalid_input("loading from storage not yet implemented"))
-        }
+        (None, Some(_id)) => Err(CliError::invalid_input(
+            "loading from storage not yet implemented",
+        )),
         (None, None) => Err(CliError::invalid_input(
             "provide either --input <bundle> or --audit-id <id>",
         )),

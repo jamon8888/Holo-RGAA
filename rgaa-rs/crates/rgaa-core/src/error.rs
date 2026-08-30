@@ -3,7 +3,10 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum RgaaError {
     #[error("LLM error: {message}")]
-    Llm { message: String, code: Option<String> },
+    Llm {
+        message: String,
+        code: Option<String>,
+    },
 
     #[error("Rate limited: retry after {retry_after}s")]
     RateLimited { retry_after: u64 },

@@ -64,10 +64,7 @@ impl PortableTool for EvalJsTool {
             .unwrap_or(serde_json::Value::Null);
 
         let error = result.get("exceptionDetails").map(|e| {
-            let text = e
-                .get("text")
-                .and_then(|t| t.as_str())
-                .unwrap_or("unknown");
+            let text = e.get("text").and_then(|t| t.as_str()).unwrap_or("unknown");
             let message = e
                 .get("exception")
                 .and_then(|ex| ex.get("value"))

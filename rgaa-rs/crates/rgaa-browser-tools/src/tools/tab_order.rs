@@ -64,10 +64,7 @@ impl PortableTool for TabOrderTool {
             .into_iter()
             .enumerate()
             .map(|(i, v)| TabStop {
-                index: v
-                    .get("index")
-                    .and_then(|x| x.as_u64())
-                    .unwrap_or(i as u64) as usize,
+                index: v.get("index").and_then(|x| x.as_u64()).unwrap_or(i as u64) as usize,
                 tag: v
                     .get("tag")
                     .and_then(|x| x.as_str())

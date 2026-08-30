@@ -1,12 +1,12 @@
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
+use rgaa_core::catalog::Automatable;
+use rgaa_core::na_detection;
+use rgaa_core::types::ConformityStatus;
 use rgaa_core::{
     AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
     RgaaCatalog, RgaaCriteria,
 };
-use rgaa_core::catalog::Automatable;
-use rgaa_core::na_detection;
-use rgaa_core::types::ConformityStatus;
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
 use rgaa_storage::Storage;
@@ -50,7 +50,10 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
     for criterion in criteria {
         let conformity = ConformityStatus::from(criterion.status.clone());
         if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion.criterion_id) {
-            if matches!(cat.automatable, Automatable::FullyAutomatable | Automatable::PartiallyAutomatable) {
+            if matches!(
+                cat.automatable,
+                Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
+            ) {
                 validated_total += 1;
                 if criterion.status != CriterionStatus::NotTested {
                     validated_executed += 1;
@@ -103,7 +106,9 @@ impl Orchestrator {
     }
 
     pub fn with_storage(storage: Arc<dyn Storage>) -> Self {
-        Self { storage: Some(storage) }
+        Self {
+            storage: Some(storage),
+        }
     }
 
     /// Audit a single URL. Behavior is identical to the pre-batch implementation:
@@ -188,18 +193,17 @@ async fn audit_one(
     info!("Extracting page context");
     let raw_context = bridge.extract_page_context(url).await?;
     let na_map = na_detection::detect_na(&raw_context);
-    let page_context: PageContext = serde_json::from_value(raw_context)
-        .unwrap_or(PageContext {
-            title: None,
-            lang: None,
-            headings: vec![],
-            images: vec![],
-            iframes: vec![],
-            links: vec![],
-            forms: vec![],
-            media: vec![],
-            navigation: vec![],
-        });
+    let page_context: PageContext = serde_json::from_value(raw_context).unwrap_or(PageContext {
+        title: None,
+        lang: None,
+        headings: vec![],
+        images: vec![],
+        iframes: vec![],
+        links: vec![],
+        forms: vec![],
+        media: vec![],
+        navigation: vec![],
+    });
 
     drop(session); // Release the browser lock before agent calls
 
@@ -263,7 +267,7 @@ async fn audit_one(
                 });
         } else if !all_results.contains_key(criterion.id) {
             let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
-                .map_or(false, |(_, cat)| cat.automatable == Automatable::PartiallyAutomatable);
+                .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable);
 
             let (status, justification, source) = if is_partially_automatable {
                 (
@@ -509,7 +513,7 @@ mod tests {
             test_result_id("1.1", CriterionStatus::Pass),
             test_result_id("1.2", CriterionStatus::Pass),
         ];
-        let (taux, coverage, etat) = calculate_compliance_summary(&criteria);
+        let (taux, _coverage, etat) = calculate_compliance_summary(&criteria);
         assert_eq!(taux, 100.0);
         assert_eq!(etat, "totale");
     }

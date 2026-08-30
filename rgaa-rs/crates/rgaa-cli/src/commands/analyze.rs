@@ -13,9 +13,17 @@ pub struct AnalyzeArgs {
     pub common: CommonArgs,
     #[clap(long, conflicts_with = "profile", help = "URL to audit")]
     pub url: Option<String>,
-    #[clap(long, conflicts_with = "url", help = "Name of a configured URL profile")]
+    #[clap(
+        long,
+        conflicts_with = "url",
+        help = "Name of a configured URL profile"
+    )]
     pub profile: Option<String>,
-    #[clap(long, default_value = "json", help = "Output format: json, table, or html")]
+    #[clap(
+        long,
+        default_value = "json",
+        help = "Output format: json, table, or html"
+    )]
     pub format: Option<String>,
     #[clap(long, help = "Enable verbose output with detailed progress")]
     pub verbose: bool,
@@ -37,12 +45,16 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
         eprintln!("Running accessibility audit...");
     }
 
-    let result = orchestrator.run(&url, &crawl_config)
+    let result = orchestrator
+        .run(&url, &crawl_config)
         .await
         .map_err(|error| CliError::execution(error.to_string()))?;
 
     if args.verbose {
-        eprintln!("Audit complete. Generating {} report...", args.format.as_deref().unwrap_or("json"));
+        eprintln!(
+            "Audit complete. Generating {} report...",
+            args.format.as_deref().unwrap_or("json")
+        );
     }
 
     let format = args.format.as_deref().unwrap_or("json");
@@ -57,7 +69,9 @@ fn render_output(result: &rgaa_core::AuditResult, format: &str) -> Result<String
             .map_err(|error| CliError::execution(error.to_string())),
         "table" => Ok(render_table(result)),
         "html" => Ok(render_html(result)),
-        other => Err(CliError::invalid_input(format!("unsupported format '{other}'"))),
+        other => Err(CliError::invalid_input(format!(
+            "unsupported format '{other}'"
+        ))),
     }
 }
 
@@ -91,9 +105,7 @@ fn render_table(result: &rgaa_core::AuditResult) -> String {
             let _ = writeln!(
                 &mut out,
                 "  {} {} - {}",
-                status_symbol,
-                criterion.criterion_id,
-                criterion.title
+                status_symbol, criterion.criterion_id, criterion.title
             );
         }
     }

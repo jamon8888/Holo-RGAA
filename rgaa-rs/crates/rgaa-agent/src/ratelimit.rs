@@ -246,7 +246,13 @@ mod tests {
         let result = limiter.try_acquire(ModelTier::Tactical).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, RateLimitError::LimitExceeded { tier: "tactical", .. }));
+        assert!(matches!(
+            err,
+            RateLimitError::LimitExceeded {
+                tier: "tactical",
+                ..
+            }
+        ));
     }
 
     #[tokio::test]

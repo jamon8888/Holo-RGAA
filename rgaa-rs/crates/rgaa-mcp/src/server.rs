@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use rgaa_orchestrator::Orchestrator;
 use rgaa_core::CrawlConfig;
+use rgaa_orchestrator::Orchestrator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AnalyzeRequest {
@@ -340,11 +340,7 @@ pub trait AuditOrchestrationService: Send + Sync {
         url: &str,
         config: &CrawlConfig,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>>
-                + Send
-                + '_,
-        >,
+        Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
     >;
 }
 
@@ -521,11 +517,7 @@ impl AuditOrchestrationService for OrchestrationService {
         url: &str,
         config: &CrawlConfig,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>>
-                + Send
-                + '_,
-        >,
+        Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
     > {
         let url = url.to_string();
         let config = config.clone();
@@ -586,7 +578,13 @@ pub struct ToolServer {
 
 impl ToolServer {
     pub const fn tool_names() -> [&'static str; 5] {
-        ["analyze", "remediate", "igt", "audit_url", "get_audit_result"]
+        [
+            "analyze",
+            "remediate",
+            "igt",
+            "audit_url",
+            "get_audit_result",
+        ]
     }
 
     pub fn new(
@@ -691,9 +689,9 @@ impl ToolServer {
             .run_audit(&input.url, &config)
             .await
             .map_err(|e| McpFailure::execution(e).into_error_data())?;
-        Ok(rmcp::handler::server::wrapper::Json(
-            AuditUrlResult::from(result),
-        ))
+        Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(
+            result,
+        )))
     }
 
     #[tool(
@@ -729,9 +727,9 @@ impl ToolServer {
                 classification: format!("{:?}", c.classification),
             })
             .collect();
-        Ok(rmcp::handler::server::wrapper::Json(
-            ListCriteriaResponse { criteria },
-        ))
+        Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
+            criteria,
+        }))
     }
 }
 

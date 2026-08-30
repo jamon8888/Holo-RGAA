@@ -59,7 +59,13 @@ pub async fn run_audit(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if let Some(storage) = state.storage.get_audit(&result.audit_id).await.ok().flatten() {
+    if let Some(storage) = state
+        .storage
+        .get_audit(&result.audit_id)
+        .await
+        .ok()
+        .flatten()
+    {
         return Ok(Json(AuditResponse::from(storage)));
     }
 

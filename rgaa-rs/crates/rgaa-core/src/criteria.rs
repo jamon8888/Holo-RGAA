@@ -154,7 +154,7 @@ impl RgaaCriteria {
             .into_iter()
             .filter(|c| {
                 RgaaCatalog::by_id(c.id)
-                    .map_or(false, |(_, cat)| cat.automatable == Automatable::PartiallyAutomatable)
+                    .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable)
             })
             .collect()
     }

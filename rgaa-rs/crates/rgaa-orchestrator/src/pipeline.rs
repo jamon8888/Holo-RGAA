@@ -9,7 +9,9 @@ use rgaa_core::na_detection;
 use rgaa_core::types::ConformityStatus;
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
+use rgaa_storage::Storage;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
@@ -85,13 +87,29 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
     (taux_global, coverage_percent, etat_conformite)
 }
 
-pub struct Orchestrator;
+pub struct Orchestrator {
+    storage: Option<Arc<dyn Storage>>,
+}
+
+impl Default for Orchestrator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Orchestrator {
+    pub fn new() -> Self {
+        Self { storage: None }
+    }
+
+    pub fn with_storage(storage: Arc<dyn Storage>) -> Self {
+        Self { storage: Some(storage) }
+    }
+
     /// Audit a single URL. Behavior is identical to the pre-batch implementation:
     /// it runs the per-URL pipeline and returns a single [`AuditResult`].
-    pub async fn run(url: &str, config: &CrawlConfig) -> Result<AuditResult, String> {
-        let mut results = Self::run_batch(&[url.to_string()], config).await?;
+    pub async fn run(&self, url: &str, config: &CrawlConfig) -> Result<AuditResult, String> {
+        let mut results = self.run_batch(&[url.to_string()], config).await?;
         results
             .remove(url)
             .ok_or_else(|| format!("audit result missing for {url}"))
@@ -101,6 +119,7 @@ impl Orchestrator {
     /// The Obscura CDP server is started once before the loop and stopped via
     /// [`ObscuraBridge`] `Drop` after the loop completes.
     pub async fn run_batch(
+        &self,
         urls: &[String],
         config: &CrawlConfig,
     ) -> Result<HashMap<String, AuditResult>, String> {
@@ -110,7 +129,6 @@ impl Orchestrator {
             b
         };
 
-        // Create shared tool context from browser session
         let session = BrowserSession::new(bridge);
         let tool_ctx = ToolContext::new(session);
 
@@ -124,6 +142,15 @@ impl Orchestrator {
             let audit = audit_one(&agent, &tool_ctx, url, config).await?;
             results.insert(url.clone(), audit);
         }
+
+        if let Some(storage) = &self.storage {
+            for (url, audit) in &results {
+                if let Err(e) = storage.save_audit(audit).await {
+                    tracing::warn!(url, error = %e, "failed to save audit to storage");
+                }
+            }
+        }
+
         Ok(results)
     }
 }

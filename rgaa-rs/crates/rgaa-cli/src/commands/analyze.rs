@@ -21,7 +21,8 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
     let url = resolve_url(&config, args.url, args.profile)?;
 
     let crawl_config = crawl_config(&config);
-    let result = Orchestrator::run(&url, &crawl_config)
+    let orchestrator = Orchestrator::new();
+    let result = orchestrator.run(&url, &crawl_config)
         .await
         .map_err(|error| CliError::execution(error.to_string()))?;
 

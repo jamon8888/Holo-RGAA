@@ -40,7 +40,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   build:
@@ -52,7 +52,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Build workspace
         run: cargo build --workspace --release
       - name: Upload binaries
@@ -74,7 +74,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Run tests
         # E2E tests in rgaa-orchestrator self-skip unless RUN_E2E=1 is set.
         run: cargo test --workspace
@@ -103,7 +103,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Prepare Obscura backend
         working-directory: ${{ github.workspace }}
         run: |

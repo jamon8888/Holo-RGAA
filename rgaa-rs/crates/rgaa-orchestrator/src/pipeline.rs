@@ -5,6 +5,7 @@ use rgaa_core::{
     RgaaCatalog, RgaaCriteria,
 };
 use rgaa_core::catalog::Automatable;
+use rgaa_core::na_detection;
 use rgaa_core::types::ConformityStatus;
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
@@ -154,7 +155,9 @@ async fn audit_one(
 
     // 3. Extract page context for Holo3 prompts
     info!("Extracting page context");
-    let page_context: PageContext = serde_json::from_value(bridge.extract_page_context(url).await?)
+    let raw_context = bridge.extract_page_context(url).await?;
+    let na_map = na_detection::detect_na(&raw_context);
+    let page_context: PageContext = serde_json::from_value(raw_context)
         .unwrap_or(PageContext {
             title: None,
             lang: None,
@@ -229,8 +232,14 @@ async fn audit_one(
         }
     }
 
-    // 7. Calculate compliance rate
-    let criteria: Vec<CriterionResult> = all_results.into_values().collect();
+    // 7. Apply NA detection
+    let mut criteria: Vec<CriterionResult> = all_results.into_values().collect();
+    for criterion in &mut criteria {
+        if let Some(&false) = na_map.get(&criterion.criterion_id) {
+            criterion.status = CriterionStatus::NotApplicable;
+        }
+    }
+
     let pass_count = criteria
         .iter()
         .filter(|c| c.status == CriterionStatus::Pass)

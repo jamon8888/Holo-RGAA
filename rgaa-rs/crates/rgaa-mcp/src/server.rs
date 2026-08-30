@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use rgaa_orchestrator::Orchestrator;
+use rgaa_core::CrawlConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AnalyzeRequest {
     pub url: String,
@@ -331,6 +334,33 @@ pub trait GuidedService: Send + Sync {
     >;
 }
 
+pub trait AuditOrchestrationService: Send + Sync {
+    fn run_audit(
+        &self,
+        url: &str,
+        config: &CrawlConfig,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>>
+                + Send
+                + '_,
+        >,
+    >;
+}
+
+pub trait AuditStorageService: Send + Sync {
+    fn get_audit(
+        &self,
+        audit_id: &str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Option<rgaa_core::AuditResult>, String>>
+                + Send
+                + '_,
+        >,
+    >;
+}
+
 pub struct LazyObscuraBridge {
     bridge: tokio::sync::Mutex<rgaa_obscura::ObscuraBridge>,
     started: AtomicBool,
@@ -467,6 +497,59 @@ impl GuidedService for ObscuraGuidedService {
     }
 }
 
+pub struct OrchestrationService {
+    orchestrator: Orchestrator,
+}
+
+impl OrchestrationService {
+    pub fn new() -> Self {
+        Self {
+            orchestrator: Orchestrator::new(),
+        }
+    }
+}
+
+impl Default for OrchestrationService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AuditOrchestrationService for OrchestrationService {
+    fn run_audit(
+        &self,
+        url: &str,
+        config: &CrawlConfig,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>>
+                + Send
+                + '_,
+        >,
+    > {
+        let url = url.to_string();
+        let config = config.clone();
+        Box::pin(async move { self.orchestrator.run(&url, &config).await })
+    }
+}
+
+pub struct NoOpStorageService;
+
+impl AuditStorageService for NoOpStorageService {
+    fn get_audit(
+        &self,
+        _audit_id: &str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Option<rgaa_core::AuditResult>, String>>
+                + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async move { Ok(None) })
+    }
+}
+
 fn outcome_issue_id(outcome: &rgaa_remediation::RemediationOutcome) -> &str {
     match outcome {
         rgaa_remediation::RemediationOutcome::Ok(guidance) => &guidance.issue_id,
@@ -497,22 +580,28 @@ pub struct ToolServer {
     analyze_service: Arc<dyn AnalyzeService>,
     remediation_service: Arc<dyn RemediationService>,
     guided_service: Arc<dyn GuidedService>,
+    audit_service: Arc<dyn AuditOrchestrationService>,
+    storage_service: Arc<dyn AuditStorageService>,
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 3] {
-        ["analyze", "remediate", "igt"]
+    pub const fn tool_names() -> [&'static str; 5] {
+        ["analyze", "remediate", "igt", "audit_url", "get_audit_result"]
     }
 
     pub fn new(
         analyze: Arc<dyn AnalyzeService>,
         remediation: Arc<dyn RemediationService>,
         guided: Arc<dyn GuidedService>,
+        audit: Arc<dyn AuditOrchestrationService>,
+        storage: Arc<dyn AuditStorageService>,
     ) -> Self {
         Self {
             analyze_service: analyze,
             remediation_service: remediation,
             guided_service: guided,
+            audit_service: audit,
+            storage_service: storage,
         }
     }
 }
@@ -584,6 +673,64 @@ impl ToolServer {
             .map_err(McpFailure::into_error_data)?;
         Ok(rmcp::handler::server::wrapper::Json(
             GuidedTestResponse::from(result),
+        ))
+    }
+
+    #[tool(
+        name = "audit_url",
+        description = "Run a full RGAA audit on a URL using the orchestrator pipeline."
+    )]
+    pub async fn audit_url(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<AuditUrlInput>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<AuditUrlResult>, ErrorData> {
+        let input = request.0;
+        let config = input.config.unwrap_or_default().into();
+        let result = self
+            .audit_service
+            .run_audit(&input.url, &config)
+            .await
+            .map_err(|e| McpFailure::execution(e).into_error_data())?;
+        Ok(rmcp::handler::server::wrapper::Json(
+            AuditUrlResult::from(result),
+        ))
+    }
+
+    #[tool(
+        name = "get_audit_result",
+        description = "Retrieve a previously run audit by its ID."
+    )]
+    pub async fn get_audit_result(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<GetAuditInput>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<Option<AuditResultDto>>, ErrorData> {
+        let result = self
+            .storage_service
+            .get_audit(&request.0.audit_id)
+            .await
+            .map_err(|e| McpFailure::execution(e).into_error_data())?;
+        Ok(rmcp::handler::server::wrapper::Json(
+            result.map(AuditResultDto::from),
+        ))
+    }
+
+    #[tool(
+        name = "list_criteria",
+        description = "List all 106 RGAA criteria with their IDs, titles, and classifications."
+    )]
+    pub fn list_criteria(
+        &self,
+    ) -> Result<rmcp::handler::server::wrapper::Json<ListCriteriaResponse>, ErrorData> {
+        let criteria = rgaa_core::RgaaCriteria::all()
+            .iter()
+            .map(|c| CriterionDto {
+                id: c.id.to_string(),
+                title: c.title.clone(),
+                classification: format!("{:?}", c.classification),
+            })
+            .collect();
+        Ok(rmcp::handler::server::wrapper::Json(
+            ListCriteriaResponse { criteria },
         ))
     }
 }

@@ -1,6 +1,6 @@
 use rgaa_mcp::{
-    LazyObscuraBridge, ObscuraAnalyzeService, ObscuraGuidedService, RemediationServiceImpl,
-    ToolServer,
+    LazyObscuraBridge, NoOpStorageService, ObscuraAnalyzeService, ObscuraGuidedService,
+    OrchestrationService, RemediationServiceImpl, ToolServer,
 };
 use rmcp::{transport::io::stdio, ServiceExt};
 use std::sync::Arc;
@@ -15,6 +15,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(ObscuraAnalyzeService::new(Arc::clone(&bridge))),
         Arc::new(RemediationServiceImpl::default()),
         Arc::new(ObscuraGuidedService::new(bridge)),
+        Arc::new(OrchestrationService::new()),
+        Arc::new(NoOpStorageService),
     );
     service.serve(stdio()).await?.waiting().await?;
     Ok(())

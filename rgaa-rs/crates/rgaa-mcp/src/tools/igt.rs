@@ -1,6 +1,40 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use rgaa_core::AuditResult;
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetAuditInput {
+    pub audit_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AuditResultDto {
+    pub audit_id: String,
+    pub url: String,
+    pub taux_global: f64,
+    pub etat_conformite: String,
+    pub passed: usize,
+    pub failed: usize,
+    pub na: usize,
+    pub duration_ms: u64,
+}
+
+impl From<AuditResult> for AuditResultDto {
+    fn from(result: AuditResult) -> Self {
+        Self {
+            audit_id: result.audit_id,
+            url: result.url,
+            taux_global: result.taux_global,
+            etat_conformite: result.etat_conformite,
+            passed: result.passed,
+            failed: result.failed,
+            na: result.na,
+            duration_ms: result.duration_ms,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GuidedStepDto {

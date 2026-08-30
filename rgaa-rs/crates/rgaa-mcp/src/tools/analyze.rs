@@ -1,6 +1,88 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use rgaa_core::CrawlConfig;
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AuditUrlInput {
+    pub url: String,
+    #[serde(default)]
+    pub config: Option<CrawlConfigInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CrawlConfigInput {
+    #[serde(default = "default_max_pages")]
+    pub max_pages: usize,
+    #[serde(default = "default_max_depth")]
+    pub max_depth: u32,
+    #[serde(default = "default_respect_robots")]
+    pub respect_robots: bool,
+    #[serde(default)]
+    pub sample_mode: bool,
+}
+
+impl Default for CrawlConfigInput {
+    fn default() -> Self {
+        Self {
+            max_pages: 50,
+            max_depth: 5,
+            respect_robots: true,
+            sample_mode: false,
+        }
+    }
+}
+
+impl From<CrawlConfigInput> for CrawlConfig {
+    fn from(input: CrawlConfigInput) -> Self {
+        Self {
+            max_pages: input.max_pages,
+            max_depth: input.max_depth,
+            respect_robots: input.respect_robots,
+            sample_mode: input.sample_mode,
+        }
+    }
+}
+
+fn default_max_pages() -> usize {
+    50
+}
+fn default_max_depth() -> u32 {
+    5
+}
+fn default_respect_robots() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AuditUrlResult {
+    pub audit_id: String,
+    pub taux_global: f64,
+    pub etat_conformite: String,
+}
+
+impl From<rgaa_core::AuditResult> for AuditUrlResult {
+    fn from(result: rgaa_core::AuditResult) -> Self {
+        Self {
+            audit_id: result.audit_id,
+            taux_global: result.taux_global,
+            etat_conformite: result.etat_conformite,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CriterionDto {
+    pub id: String,
+    pub title: String,
+    pub classification: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListCriteriaResponse {
+    pub criteria: Vec<CriterionDto>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AnalyzeConfigInput {
     #[serde(default = "default_profile")]

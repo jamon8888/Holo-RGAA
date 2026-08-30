@@ -5848,6 +5848,7 @@ version = "0.1.0"
 dependencies = [
  "rgaa-core",
  "rgaa-obscura",
+ "rgaa-orchestrator",
  "rgaa-remediation",
  "rmcp",
  "schemars 1.2.2",

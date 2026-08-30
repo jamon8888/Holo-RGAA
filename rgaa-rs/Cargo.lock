@@ -5760,6 +5760,7 @@ dependencies = [
  "chrono",
  "rgaa-core",
  "rgaa-obscura",
+ "rgaa-orchestrator",
  "rgaa-remediation",
  "rgaa-storage",
  "serde",

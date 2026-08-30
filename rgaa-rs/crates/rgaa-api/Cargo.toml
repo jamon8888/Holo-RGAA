@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
 rgaa-storage = { path = "../rgaa-storage" }
+rgaa-orchestrator = { path = "../rgaa-orchestrator" }
 rgaa-remediation = { path = "../rgaa-remediation" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 axum = "0.7"

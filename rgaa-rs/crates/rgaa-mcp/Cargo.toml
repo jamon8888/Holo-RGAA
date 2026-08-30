@@ -1,4 +1,6 @@
 [package]
+description = "MCP (Model Context Protocol) server for RGAA auditing"
+license = "MIT"
 name = "rgaa-mcp"
 version = "0.1.0"
 edition = "2021"

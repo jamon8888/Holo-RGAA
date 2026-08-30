@@ -1,4 +1,6 @@
 [package]
+description = "Holo3 LLM client for AI-assisted RGAA evaluation"
+license = "MIT"
 name = "rgaa-holo"
 version = "0.1.0"
 edition = "2021"

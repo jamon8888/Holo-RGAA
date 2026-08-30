@@ -1,4 +1,6 @@
 [package]
+description = "Rig-based agentic evaluator with dual model routing"
+license = "MIT"
 name = "rgaa-agent"
 version = "0.1.0"
 edition = "2021"

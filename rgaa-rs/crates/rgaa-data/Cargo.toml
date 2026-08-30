@@ -1,4 +1,6 @@
 [package]
+description = "Shared data types for the RGAA workspace"
+license = "MIT"
 name = "rgaa-data"
 version = "0.1.0"
 edition = "2021"

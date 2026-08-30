@@ -1,4 +1,6 @@
 [package]
+description = "CLI tool for RGAA accessibility auditing"
+license = "MIT"
 name = "rgaa-cli"
 version = "0.1.0"
 edition = "2021"

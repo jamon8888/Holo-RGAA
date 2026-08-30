@@ -1,4 +1,6 @@
 [package]
+description = "Test corpus and fixtures for RGAA validation"
+license = "MIT"
 name = "rgaa-test-corpus"
 version = "0.1.0"
 edition = "2021"

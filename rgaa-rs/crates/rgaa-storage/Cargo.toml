@@ -1,4 +1,6 @@
 [package]
+description = "PostgreSQL storage for RGAA audit results and logs"
+license = "MIT"
 name = "rgaa-storage"
 version = "0.1.0"
 edition = "2021"

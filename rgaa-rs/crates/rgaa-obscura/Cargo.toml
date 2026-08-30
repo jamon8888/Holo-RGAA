@@ -1,4 +1,6 @@
 [package]
+description = "Browser automation via CDP (Chrome DevTools Protocol)"
+license = "MIT"
 name = "rgaa-obscura"
 version = "0.1.0"
 edition = "2021"

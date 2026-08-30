@@ -1,4 +1,6 @@
 [package]
+description = "Browser automation tools for accessibility testing"
+license = "MIT"
 name = "rgaa-browser-tools"
 version = "0.1.0"
 edition = "2021"

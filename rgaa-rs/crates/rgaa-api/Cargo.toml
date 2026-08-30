@@ -1,4 +1,6 @@
 [package]
+description = "Axum HTTP API for RGAA audit operations"
+license = "MIT"
 name = "rgaa-api"
 version = "0.1.0"
 edition = "2021"

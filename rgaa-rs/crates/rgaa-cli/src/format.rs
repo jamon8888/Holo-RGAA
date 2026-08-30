@@ -12,11 +12,13 @@ pub enum ReportFormat {
     Sarif,
     /// JUnit XML format.
     Junit,
+    /// HTML format.
+    Html,
 }
 
 impl ReportFormat {
     /// List of all supported format names.
-    pub const ALL: [&'static str; 4] = ["json", "markdown", "sarif", "junit"];
+    pub const ALL: [&'static str; 5] = ["json", "markdown", "sarif", "junit", "html"];
 
     /// Returns the format as a static string.
     pub fn as_str(self) -> &'static str {
@@ -25,6 +27,7 @@ impl ReportFormat {
             Self::Markdown => "markdown",
             Self::Sarif => "sarif",
             Self::Junit => "junit",
+            Self::Html => "html",
         }
     }
 }
@@ -38,6 +41,7 @@ impl FromStr for ReportFormat {
             "markdown" | "md" => Ok(Self::Markdown),
             "sarif" => Ok(Self::Sarif),
             "junit" | "xml" => Ok(Self::Junit),
+            "html" => Ok(Self::Html),
             other => Err(format!("unsupported format '{other}'")),
         }
     }

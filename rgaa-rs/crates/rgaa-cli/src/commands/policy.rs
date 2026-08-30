@@ -1,6 +1,6 @@
 use rgaa_core::CriterionStatus;
 
-use crate::commands::report::load_bundle;
+use crate::commands::report::load_bundle_from_path;
 use crate::commands::CommonArgs;
 use crate::config::Config;
 use crate::CliError;
@@ -33,7 +33,7 @@ pub struct PolicyArgs {
 pub fn run(args: PolicyArgs) -> Result<i32, CliError> {
     let config = Config::load(args.common.config.as_deref())
         .map_err(|error| CliError::invalid_input(error.to_string()))?;
-    let bundle = load_bundle(&args.input)?;
+    let bundle = load_bundle_from_path(&args.input)?;
     bundle
         .validate()
         .map_err(|error| CliError::invalid_input(error.to_string()))?;

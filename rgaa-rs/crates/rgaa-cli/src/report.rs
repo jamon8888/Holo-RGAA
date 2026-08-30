@@ -2,6 +2,8 @@ use std::fmt::Write;
 
 use rgaa_core::{AuditBundle, CriterionStatus, Finding};
 
+pub mod html;
+
 use crate::format::ReportFormat;
 use crate::CliError;
 
@@ -12,6 +14,7 @@ pub fn render(bundle: &AuditBundle, format: ReportFormat) -> Result<String, CliE
         ReportFormat::Markdown => Ok(render_markdown(bundle)),
         ReportFormat::Sarif => Ok(render_sarif(bundle)),
         ReportFormat::Junit => Ok(render_junit(bundle)),
+        ReportFormat::Html => Ok(html::generate_html_report(bundle)),
     }
 }
 

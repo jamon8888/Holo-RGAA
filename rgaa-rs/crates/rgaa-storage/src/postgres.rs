@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rgaa_core::AuditResult;
+use serde_json::Value;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use uuid::Uuid;
 
@@ -26,6 +27,20 @@ impl PostgresStorage {
                 taux_global REAL NOT NULL,
                 etat_conformite TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id TEXT PRIMARY KEY,
+                audit_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                details JSONB
             )
             "#,
         )
@@ -133,5 +148,27 @@ impl Storage for PostgresStorage {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    async fn save_audit_log(
+        &self,
+        audit_id: &str,
+        action: &str,
+        details: Option<Value>,
+    ) -> Result<String, StorageError> {
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (id, audit_id, action, timestamp, details)
+            VALUES ($1, $2, $3, NOW(), $4)
+            "#,
+        )
+        .bind(&id)
+        .bind(audit_id)
+        .bind(action)
+        .bind(details)
+        .execute(&self.pool)
+        .await?;
+        Ok(id)
     }
 }

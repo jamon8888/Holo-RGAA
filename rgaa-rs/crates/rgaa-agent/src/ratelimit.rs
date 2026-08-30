@@ -2,7 +2,19 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use thiserror::Error;
 use tokio::sync::Mutex;
+
+/// Errors that can occur during rate limiting.
+#[derive(Debug, Error)]
+pub enum RateLimitError {
+    #[error("rate limit exceeded for {tier} tier: {rpm} requests/minute, try again in {retry_after_secs:.1}s")]
+    LimitExceeded {
+        tier: &'static str,
+        rpm: u32,
+        retry_after_secs: f64,
+    },
+}
 
 /// Configuration snapshot for a [`Ratelimiter`] instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +32,15 @@ pub enum ModelTier {
     Tactical,
     /// Slower reasoning model (used for hard criteria).
     Reasoning,
+}
+
+impl ModelTier {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Tactical => "tactical",
+            Self::Reasoning => "reasoning",
+        }
+    }
 }
 
 struct Inner {
@@ -110,6 +131,54 @@ impl Ratelimiter {
         }
     }
 
+    /// Attempts to acquire a token for `tier` without blocking.
+    ///
+    /// Returns `Ok(())` if a token was acquired. Returns `Err(RateLimitError)` if no
+    /// tokens are available, containing the time until the next token is available.
+    pub async fn try_acquire(&self, tier: ModelTier) -> Result<(), RateLimitError> {
+        let (rpm, tokens, _capacity) = match tier {
+            ModelTier::Tactical => (
+                self.inner.tactical_rpm,
+                &self.inner.tactical_tokens,
+                self.inner.tactical_capacity,
+            ),
+            ModelTier::Reasoning => (
+                self.inner.reasoning_rpm,
+                &self.inner.reasoning_tokens,
+                self.inner.reasoning_capacity,
+            ),
+        };
+
+        // Zero RPM = unlimited
+        if rpm == 0 {
+            return Ok(());
+        }
+
+        self.refill(tier).await;
+
+        let prev = tokens.load(Ordering::Acquire);
+        if prev > 0 {
+            tokens
+                .compare_exchange(prev, prev - 1, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| {
+                    let retry_after = 60.0 / rpm as f64;
+                    RateLimitError::LimitExceeded {
+                        tier: tier.label(),
+                        rpm,
+                        retry_after_secs: retry_after,
+                    }
+                })?;
+            Ok(())
+        } else {
+            let retry_after = 60.0 / rpm as f64;
+            Err(RateLimitError::LimitExceeded {
+                tier: tier.label(),
+                rpm,
+                retry_after_secs: retry_after,
+            })
+        }
+    }
+
     /// Refills the bucket belonging to `tier` based on elapsed real time.
     /// Uses fractional replenishment: gained = elapsed_seconds * RPM / 60.
     /// Does not advance the refill timestamp if RPM is 0 (preserves accumulated time).
@@ -159,5 +228,31 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(1), limiter.acquire(ModelTier::Tactical))
             .await
             .expect("acquire must not deadlock on zero RPM");
+    }
+
+    #[tokio::test]
+    async fn try_acquire_succeeds_when_tokens_available() {
+        let limiter = Ratelimiter::new(60, 30);
+        limiter.reset();
+        let result = limiter.try_acquire(ModelTier::Tactical).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn try_acquire_returns_error_when_exhausted() {
+        let limiter = Ratelimiter::new(1, 1);
+        limiter.reset();
+        limiter.try_acquire(ModelTier::Tactical).await.unwrap();
+        let result = limiter.try_acquire(ModelTier::Tactical).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, RateLimitError::LimitExceeded { tier: "tactical", .. }));
+    }
+
+    #[tokio::test]
+    async fn try_acquire_unlimited_with_zero_rpm() {
+        let limiter = Ratelimiter::new(0, 0);
+        let result = limiter.try_acquire(ModelTier::Tactical).await;
+        assert!(result.is_ok());
     }
 }

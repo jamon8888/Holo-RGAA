@@ -2,6 +2,18 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum RgaaError {
+    #[error("LLM error: {message}")]
+    Llm { message: String, code: Option<String> },
+
+    #[error("Rate limited: retry after {retry_after}s")]
+    RateLimited { retry_after: u64 },
+
+    #[error("Timeout after {duration}s")]
+    Timeout { duration: u64 },
+
+    #[error("Criterion not found: {0}")]
+    CriterionNotFound(String),
+
     #[error("Crawl error: {0}")]
     Crawl(String),
     #[error("Browser error: {0}")]
@@ -28,8 +40,6 @@ pub enum RgaaError {
     InvalidStatus(String),
     #[error("incomplete evidence for {0}")]
     IncompleteEvidence(String),
-    #[error("Timeout after {0}ms")]
-    Timeout(u64),
 }
 
 pub type Result<T> = std::result::Result<T, RgaaError>;

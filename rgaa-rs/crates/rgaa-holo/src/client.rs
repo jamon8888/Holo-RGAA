@@ -180,24 +180,36 @@ impl HoloClient {
             max_tokens: 512,
         };
 
-        let mut last_error = String::new();
+        let mut last_error = RgaaError::Holo3("initial error".to_string());
+        let mut consecutive_failures = 0u32;
+        const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
 
         for attempt in 1..=MAX_RETRIES {
+            if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD {
+                warn!("Circuit breaker open after {} consecutive failures", consecutive_failures);
+                return Err(RgaaError::Llm {
+                    message: "Circuit breaker open: too many consecutive failures".to_string(),
+                    code: Some("CIRCUIT_BREAKER_OPEN".to_string()),
+                });
+            }
+
             info!(attempt, max_retries = MAX_RETRIES, "Calling Holo3 API");
 
-            match self
+            let result = self
                 .http_client
                 .post(&self.base_url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("Content-Type", "application/json")
                 .json(&request)
                 .send()
-                .await
-            {
+                .await;
+
+            match result {
                 Ok(response) => {
                     let status = response.status();
 
                     if status.is_success() {
+                        consecutive_failures = 0;
                         match response.text().await {
                             Ok(text) => {
                                 if let Some(parsed) = Self::extract_json(&text) {
@@ -205,33 +217,47 @@ impl HoloClient {
                                     return Ok(parsed);
                                 } else {
                                     warn!("Failed to extract JSON from response");
-                                    last_error = "Failed to parse response JSON".to_string();
+                                    last_error = RgaaError::Llm {
+                                        message: "Failed to parse response JSON".to_string(),
+                                        code: Some("JSON_PARSE_ERROR".to_string()),
+                                    };
+                                    consecutive_failures += 1;
                                 }
                             }
                             Err(e) => {
                                 error!("Failed to read response body: {}", e);
-                                last_error = format!("Response read error: {}", e);
+                                last_error = RgaaError::Holo3(format!("Response read error: {}", e));
+                                consecutive_failures += 1;
                             }
                         }
                     } else if status.as_u16() == 429 {
-                        let backoff = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
-                        let sleep_ms = backoff + Self::jitter_for(backoff);
-                        warn!(attempt, backoff_ms = sleep_ms, "Rate limited, backing off");
+                        let retry_after = response
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(INITIAL_BACKOFF_MS / 1000);
+
+                        let backoff_ms = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
+                        let sleep_ms = backoff_ms + Self::jitter_for(backoff_ms);
+                        warn!(attempt, backoff_ms = sleep_ms, retry_after, "Rate limited, backing off");
                         tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
-                        last_error = "Rate limited (429)".to_string();
+                        last_error = RgaaError::RateLimited { retry_after };
+                        consecutive_failures += 1;
                     } else {
                         let body = response.text().await.unwrap_or_default();
-                        error!(
-                            status = status.as_u16(),
-                            body = %body,
-                            "API error"
-                        );
-                        last_error = format!("API error {}: {}", status.as_u16(), body);
+                        error!(status = status.as_u16(), body = %body, "API error");
+                        last_error = RgaaError::Llm {
+                            message: format!("API error {}: {}", status.as_u16(), body),
+                            code: Some(status.as_u16().to_string()),
+                        };
+                        consecutive_failures += 1;
                     }
                 }
                 Err(e) => {
                     error!("Request failed: {}", e);
-                    last_error = format!("Request error: {}", e);
+                    last_error = RgaaError::Holo3(format!("Request error: {}", e));
+                    consecutive_failures += 1;
 
                     if attempt < MAX_RETRIES {
                         let backoff = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
@@ -244,10 +270,7 @@ impl HoloClient {
             }
         }
 
-        Err(RgaaError::Holo3(format!(
-            "Failed after {} attempts. Last error: {}",
-            MAX_RETRIES, last_error
-        )))
+        Err(last_error)
     }
 
     /// Attempts to extract a `HoloResponse` from raw text.

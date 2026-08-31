@@ -3,9 +3,9 @@ use rgaa_mcp::server::{
     RemediationServiceImpl,
 };
 use rgaa_mcp::{
-    AnalyzeConfigInput, AnalyzeRequest, ApprovalStateDto, CookieReferenceInput, GuidedTestRequest,
+    AnalyzeConfigInput, AnalyzeRequest, ApprovalStateDto, CookieInput, GuidedTestRequest,
     LazyObscuraBridge, McpFailure, ObscuraAnalyzeService, RemediationRequest, RemediationResponse,
-    ScreenshotPolicyInput, ToolServer,
+    ToolServer,
 };
 use rgaa_remediation::{RemediationIssue, RemediationOutcome, SourceLocation};
 use rmcp::handler::server::wrapper::Parameters;
@@ -87,17 +87,22 @@ fn serialized_inputs_never_contain_cookie_values() {
     let request = AnalyzeRequest {
         url: "https://example.test".into(),
         config: AnalyzeConfigInput {
-            cookie_references: vec![CookieReferenceInput {
+            cookies: vec![CookieInput {
                 name: "session".into(),
-                domain: None,
+                value: "super-secret-value".into(),
+                domain: "example.test".into(),
+                path: None,
+                same_site: None,
+                r#secure: None,
+                http_only: None,
+                expires: None,
             }],
-            screenshot_policy: ScreenshotPolicyInput::None,
             ..Default::default()
         },
     };
     let json = serde_json::to_string(&request).expect("serialize");
     assert!(!json.contains("super-secret"));
-    assert!(!json.contains("RGAA_COOKIE_SESSION"));
+    assert!(!json.contains("secret-value"));
 }
 
 #[test]

@@ -1,0 +1,8 @@
+{
+  "name": "rgaa-accessibility",
+  "version": "1.0.0",
+  "description": "RGAA 4.1.2 accessibility auditing for French compliance. Run audits, triage findings, generate remediation proposals, verify fixes, and produce compliance reports. Covers all 106 RGAA criteria with deterministic, AI-assisted, and manual testing tiers.",
+  "author": {
+    "name": "RGAA Team"
+  }
+}

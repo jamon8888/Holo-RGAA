@@ -13,6 +13,10 @@ pub struct AnalyzeRequest {
     pub url: String,
     #[serde(default)]
     pub config: AnalyzeConfigInput,
+    #[serde(default)]
+    pub viewport_width: Option<u32>,
+    #[serde(default)]
+    pub viewport_height: Option<u32>,
 }
 
 impl AnalyzeRequest {
@@ -20,11 +24,16 @@ impl AnalyzeRequest {
         let request = Self {
             url: url.into(),
             config: Default::default(),
+            viewport_width: None,
+            viewport_height: None,
         };
         request.to_domain().map(|_| request)
     }
 
     fn to_domain(&self) -> Result<rgaa_obscura::AnalyzeRequest, McpFailure> {
+        if self.viewport_height.is_some() && self.viewport_width.is_none() {
+            return Err(McpFailure::invalid("viewportHeight requires viewportWidth to be set"));
+        }
         let config = &self.config;
         let actions = config
             .pre_scan_actions
@@ -37,6 +46,17 @@ impl AnalyzeRequest {
                     selector: selector.clone(),
                     value: value.clone(),
                 },
+                PreScanActionInput::WaitFor { selector, state } => {
+                    rgaa_obscura::PreScanAction::WaitFor {
+                        selector: selector.clone(),
+                        state: match *state {
+                            crate::tools::WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
+                            crate::tools::WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
+                            crate::tools::WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
+                            crate::tools::WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
+                        },
+                    }
+                }
             })
             .collect();
         let domain = rgaa_obscura::AnalyzeRequest {
@@ -44,26 +64,35 @@ impl AnalyzeRequest {
             config: rgaa_obscura::AnalyzeConfig {
                 profile: config.profile.clone(),
                 viewport: rgaa_obscura::Viewport {
-                    width: config.viewport_width,
-                    height: config.viewport_height,
+                    width: self.viewport_width.unwrap_or(config.viewport_width),
+                    height: self.viewport_height.unwrap_or(config.viewport_height),
                 },
                 selector: config.selector.clone(),
                 pre_scan_actions: actions,
                 cookie_references: config
-                    .cookie_references
+                    .cookies
                     .iter()
-                    .map(|cookie| rgaa_obscura::CookieReference {
-                        name: cookie.name.clone(),
-                        domain: cookie.domain.clone(),
-                    })
+                    .map(|cookie| rgaa_obscura::CookieReference::from(cookie.clone()))
                     .collect(),
-                screenshot_policy: match config.screenshot_policy {
-                    ScreenshotPolicyInput::None => rgaa_obscura::ScreenshotPolicy::None,
-                    ScreenshotPolicyInput::OnFailure => rgaa_obscura::ScreenshotPolicy::OnFailure,
-                    ScreenshotPolicyInput::Always => rgaa_obscura::ScreenshotPolicy::Always,
-                },
-                advanced_rule_policy: Default::default(),
-                needs_review_policy: Default::default(),
+                screenshot: config
+                    .screenshot
+                    .clone()
+                    .map(Into::into)
+                    .unwrap_or_default(),
+                advanced_rule_policy: config
+                    .advanced_rules
+                    .as_ref()
+                    .map(|v| match v.as_str() {
+                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Enabled,
+                        _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
+                    })
+                    .unwrap_or_default(),
+                needs_review_policy: config
+                    .needs_review_policy
+                    .clone()
+                    .map(Into::into)
+                    .unwrap_or_default(),
+                igt_tools: config.igt_tools.clone().unwrap_or_default(),
                 timeout_ms: config.timeout_ms.unwrap_or(30_000),
                 retry_limit: config.retry_limit.unwrap_or(0),
                 concurrency: 1,
@@ -626,7 +655,7 @@ impl ToolServer {
                     .into_error_data(),
             );
         }
-        Ok(rmcp::handler::server::wrapper::Json(AnalyzeResponse::from(
+        Ok(rmcp::handler::server::wrapper::Json(AnalyzeResponse::from_result(
             result,
         )))
     }

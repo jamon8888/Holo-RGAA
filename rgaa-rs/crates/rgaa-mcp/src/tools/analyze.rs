@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use rgaa_core::CrawlConfig;
+use crate::tools::igt::IgtResultsDto;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditUrlInput {
@@ -96,13 +97,36 @@ pub struct AnalyzeConfigInput {
     #[serde(default)]
     pub pre_scan_actions: Vec<PreScanActionInput>,
     #[serde(default)]
-    pub cookie_references: Vec<CookieReferenceInput>,
+    pub cookies: Vec<CookieInput>,
     #[serde(default)]
-    pub screenshot_policy: ScreenshotPolicyInput,
+    pub screenshot: Option<ScreenshotInput>,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
     #[serde(default)]
     pub retry_limit: Option<u8>,
+    #[serde(default)]
+    pub advanced_rules: Option<String>,
+    #[serde(default)]
+    pub igt_tools: Option<Vec<String>>,
+    #[serde(default)]
+    pub needs_review_policy: Option<NeedsReviewPolicyInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NeedsReviewPolicyInput {
+    #[default]
+    Record,
+    Fail,
+}
+
+impl From<NeedsReviewPolicyInput> for rgaa_obscura::NeedsReviewPolicy {
+    fn from(policy: NeedsReviewPolicyInput) -> Self {
+        match policy {
+            NeedsReviewPolicyInput::Record => rgaa_obscura::NeedsReviewPolicy::Record,
+            NeedsReviewPolicyInput::Fail => rgaa_obscura::NeedsReviewPolicy::Fail,
+        }
+    }
 }
 
 impl Default for AnalyzeConfigInput {
@@ -114,21 +138,64 @@ impl Default for AnalyzeConfigInput {
             viewport_height: config.viewport.height,
             selector: config.selector,
             pre_scan_actions: Vec::new(),
-            cookie_references: Vec::new(),
-            screenshot_policy: ScreenshotPolicyInput::None,
+            cookies: Vec::new(),
+            screenshot: None,
             timeout_ms: None,
             retry_limit: None,
+            advanced_rules: None,
+            igt_tools: None,
+            needs_review_policy: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum ScreenshotPolicyInput {
+pub enum ScreenshotFormat {
     #[default]
-    None,
-    OnFailure,
-    Always,
+    Png,
+    Jpeg,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ScreenshotInput {
+    #[serde(default)]
+    pub format: Option<ScreenshotFormat>,
+    #[serde(default)]
+    pub save_to: Option<String>,
+    #[serde(default)]
+    pub save: Option<bool>,
+    #[serde(default)]
+    pub inline: Option<bool>,
+}
+
+impl Default for ScreenshotInput {
+    fn default() -> Self {
+        Self {
+            format: None,
+            save_to: None,
+            save: None,
+            inline: None,
+        }
+    }
+}
+
+impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
+    fn from(input: ScreenshotInput) -> Self {
+        let policy = match input.save {
+            Some(false) => rgaa_obscura::ScreenshotPolicy::None,
+            Some(true) => rgaa_obscura::ScreenshotPolicy::Always,
+            None => rgaa_obscura::ScreenshotPolicy::Always,
+        };
+        let format = input
+            .format
+            .map(|f| match f {
+                ScreenshotFormat::Png => rgaa_obscura::ScreenshotFormat::Png,
+                ScreenshotFormat::Jpeg => rgaa_obscura::ScreenshotFormat::Jpeg,
+            })
+            .unwrap_or(rgaa_obscura::ScreenshotFormat::Png);
+        Self { policy, format }
+    }
 }
 
 fn default_profile() -> String {
@@ -142,17 +209,96 @@ fn default_height() -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum PreScanActionInput {
-    Click { selector: String },
-    Fill { selector: String, value: String },
+#[serde(rename_all = "snake_case")]
+pub enum WaitForState {
+    Visible,
+    Attached,
+    Hidden,
+    Detached,
+}
+
+impl Default for WaitForState {
+    fn default() -> Self {
+        WaitForState::Visible
+    }
+}
+
+impl From<rgaa_obscura::WaitForState> for WaitForState {
+    fn from(state: rgaa_obscura::WaitForState) -> Self {
+        match state {
+            rgaa_obscura::WaitForState::Visible => WaitForState::Visible,
+            rgaa_obscura::WaitForState::Attached => WaitForState::Attached,
+            rgaa_obscura::WaitForState::Hidden => WaitForState::Hidden,
+            rgaa_obscura::WaitForState::Detached => WaitForState::Detached,
+        }
+    }
+}
+
+impl From<WaitForState> for rgaa_obscura::WaitForState {
+    fn from(state: WaitForState) -> Self {
+        match state {
+            WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
+            WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
+            WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
+            WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct CookieReferenceInput {
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum PreScanActionInput {
+    Click { selector: String },
+    Fill { selector: String, value: String },
+    WaitFor {
+        selector: String,
+        #[serde(default)]
+        state: WaitForState,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CookieInput {
     pub name: String,
+    pub value: String,
+    pub domain: String,
     #[serde(default)]
-    pub domain: Option<String>,
+    pub path: Option<String>,
+    #[serde(default)]
+    pub same_site: Option<SameSiteInput>,
+    #[serde(default)]
+    pub r#secure: Option<bool>,
+    #[serde(default)]
+    pub http_only: Option<bool>,
+    #[serde(default)]
+    pub expires: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SameSiteInput {
+    Strict,
+    Lax,
+    None,
+}
+
+impl From<CookieInput> for rgaa_obscura::CookieReference {
+    fn from(cookie: CookieInput) -> Self {
+        Self {
+            name: cookie.name,
+            value: Some(cookie.value),
+            domain: Some(cookie.domain),
+            path: cookie.path,
+            same_site: cookie.same_site.map(|s| match s {
+                SameSiteInput::Strict => rgaa_obscura::CookieSameSite::Strict,
+                SameSiteInput::Lax => rgaa_obscura::CookieSameSite::Lax,
+                SameSiteInput::None => rgaa_obscura::CookieSameSite::None,
+            }),
+            r#secure: cookie.r#secure,
+            http_only: cookie.http_only,
+            expires: cookie.expires,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -250,8 +396,31 @@ impl From<rgaa_core::PageError> for PageErrorDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-pub struct AnalyzeResponse {
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum AnalyzeResponse {
+    Nested(NestedAnalyzeResponse),
+    Flat(AnalyzeResponseFlat),
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct NestedAnalyzeResponse {
+    pub url: String,
+    pub data: NestedData,
+    pub evidence: Vec<EvidenceRefDto>,
+    pub errors: Vec<PageErrorDto>,
+    pub completed: bool,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct NestedData {
+    pub axe: Vec<FindingDto>,
+    pub igt: IgtResultsDto,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq)]
+pub struct AnalyzeResponseFlat {
     pub url: String,
     pub findings: Vec<FindingDto>,
     pub evidence: Vec<EvidenceRefDto>,
@@ -260,15 +429,29 @@ pub struct AnalyzeResponse {
     pub duration_ms: u64,
 }
 
-impl From<rgaa_obscura::AnalyzePageResult> for AnalyzeResponse {
-    fn from(result: rgaa_obscura::AnalyzePageResult) -> Self {
-        Self {
-            url: result.url,
+impl AnalyzeResponse {
+    pub fn from_result(result: rgaa_obscura::AnalyzePageResult) -> Self {
+        let flat = AnalyzeResponseFlat {
+            url: result.url.clone(),
             findings: result.findings.into_iter().map(Into::into).collect(),
             evidence: result.evidence.into_iter().map(Into::into).collect(),
             errors: result.errors.into_iter().map(Into::into).collect(),
             completed: result.completed,
             duration_ms: result.duration_ms,
+        };
+        match result.igt {
+            Some(igt) => Self::Nested(NestedAnalyzeResponse {
+                url: result.url,
+                data: NestedData {
+                    axe: flat.findings,
+                    igt: igt.into(),
+                },
+                evidence: flat.evidence,
+                errors: flat.errors,
+                completed: flat.completed,
+                duration_ms: flat.duration_ms,
+            }),
+            None => Self::Flat(flat),
         }
     }
 }

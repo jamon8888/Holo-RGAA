@@ -1,3 +1,4 @@
+use crate::guided::TerminationReason;
 use rgaa_core::{EvidenceRef, Finding, PageError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -48,6 +49,34 @@ impl ObscuraError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IgtResults {
+    pub keyboard: IgtResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IgtResult {
+    pub status: String,
+    pub issues: Vec<IgtIssue>,
+    pub igt_elements: Vec<IgtElement>,
+    pub terminated_reason: Option<TerminationReason>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IgtIssue {
+    pub rule: String,
+    pub element: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IgtElement {
+    pub role: String,
+    pub name: String,
+    pub value: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AnalyzePageResult {
     pub url: String,
     pub findings: Vec<Finding>,
@@ -55,6 +84,8 @@ pub struct AnalyzePageResult {
     pub errors: Vec<PageError>,
     pub completed: bool,
     pub duration_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub igt: Option<IgtResults>,
 }
 
 impl AnalyzePageResult {
@@ -66,6 +97,7 @@ impl AnalyzePageResult {
             errors: vec![error.page_error()],
             completed: false,
             duration_ms,
+            igt: None,
         }
     }
 
@@ -122,6 +154,7 @@ mod tests {
             errors: Vec::new(),
             completed: true,
             duration_ms: 1,
+            igt: None,
         };
         assert!(!result.is_clean_complete());
     }

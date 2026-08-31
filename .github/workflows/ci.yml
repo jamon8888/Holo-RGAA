@@ -13,10 +13,6 @@ env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
 
-defaults:
-  run:
-    working-directory: rgaa-rs
-
 jobs:
   fmt:
     name: Format
@@ -26,14 +22,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+        working-directory: rgaa-rs
 
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.cargo/registry/index
+            ${{ env.HOME }}/.cargo/registry/cache
+            ${{ env.HOME }}/.cargo/git/db
+            ${{ github.workspace }}/rgaa-rs/target
+          key: cargo-build-${{ runner.os }}-${{ hashFiles('rgaa-rs/Cargo.lock') }}
+          restore-keys: cargo-build-${{ runner.os }}-
       - uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies
         run: |
@@ -41,30 +47,48 @@ jobs:
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Build workspace
         run: cargo build --workspace --release
+        working-directory: rgaa-rs
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: rgaa-rs-bin-linux-x86_64
-          path: |
-            rgaa-rs/target/release/rgaa-cli
-            rgaa-rs/target/release/rgaa-api
-            rgaa-rs/target/release/rgaa-mcp
+          path: ${{ github.workspace }}/rgaa-rs/target/release/rgaa-cli
+          if-no-files-found: error
+      - name: Upload API binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-rs-bin-api
+          path: ${{ github.workspace }}/rgaa-rs/target/release/rgaa-api
+          if-no-files-found: error
+      - name: Upload MCP binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-rs-bin-mcp
+          path: ${{ github.workspace }}/rgaa-rs/target/release/rgaa-mcp
           if-no-files-found: error
       - name: Run tests
         env:
           RUST_MIN_STACK: 8388608
         run: |
-          # Use all available cores for both compilation and test execution
           CORES=$(nproc)
           echo "Using $CORES cores"
-          cargo test --workspace --jobs $CORES --test-threads=$CORES
+          cargo test --workspace --jobs $CORES
+        working-directory: rgaa-rs
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.cargo/registry/index
+            ${{ env.HOME }}/.cargo/registry/cache
+            ${{ env.HOME }}/.cargo/git/db
+            ${{ github.workspace }}/rgaa-rs/target
+          key: cargo-build-${{ runner.os }}-${{ hashFiles('rgaa-rs/Cargo.lock') }}
+          restore-keys: cargo-build-${{ runner.os }}-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -72,7 +96,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: rgaa-rs
 
   audit:
     name: Security audit
@@ -100,10 +126,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Prepare Obscura backend
-        working-directory: ${{ github.workspace }}
         run: |
           chmod +x obscura obscura-worker
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+        working-directory: ${{ github.workspace }}
       - name: Validate Holo3 API key
         env:
           HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
@@ -119,3 +145,4 @@ jobs:
           HOLO3_BASE_URL: ${{ secrets.HOLO3_BASE_URL }}
           HOLO3_MODEL: ${{ secrets.HOLO3_MODEL }}
         run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture
+        working-directory: rgaa-rs

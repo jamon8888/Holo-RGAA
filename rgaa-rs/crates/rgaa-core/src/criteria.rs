@@ -163,6 +163,7 @@ impl RgaaCriteria {
         CLASSIFICATION.len()
     }
 
+    /// Returns the classification for a given criterion ID, or None if not found.
     pub fn classification_for(id: &str) -> Option<Classification> {
         CLASSIFICATION
             .iter()

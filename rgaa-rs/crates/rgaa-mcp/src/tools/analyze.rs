@@ -180,6 +180,7 @@ impl Default for ScreenshotInput {
     }
 }
 
+/// Converts MCP ScreenshotInput to domain ScreenshotConfig, propagating save_to and inline options.
 impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
     fn from(input: ScreenshotInput) -> Self {
         let policy = match input.save {
@@ -288,6 +289,7 @@ pub enum SameSiteInput {
     None,
 }
 
+/// Converts MCP CookieInput to domain CookieReference for browser injection.
 impl From<CookieInput> for rgaa_obscura::CookieReference {
     fn from(cookie: CookieInput) -> Self {
         Self {
@@ -436,6 +438,10 @@ pub struct AnalyzeResponseFlat {
 }
 
 impl AnalyzeResponse {
+    /// Converts domain AnalyzePageResult to MCP response DTO.
+    ///
+    /// Uses NestedAnalyzeResponse when IGT results are present (to provide both
+    /// axe findings and IGT data), otherwise uses flat AnalyzeResponseFlat.
     pub fn from_result(result: rgaa_obscura::AnalyzePageResult) -> Self {
         let flat = AnalyzeResponseFlat {
             url: result.url.clone(),

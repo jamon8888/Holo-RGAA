@@ -20,6 +20,7 @@ pub struct AnalyzeRequest {
 }
 
 impl AnalyzeRequest {
+    /// Validates that the URL is a valid http/https URL and returns the request if valid.
     pub fn malformed(url: &str) -> Result<Self, McpFailure> {
         let request = Self {
             url: url.into(),
@@ -30,6 +31,10 @@ impl AnalyzeRequest {
         request.to_domain().map(|_| request)
     }
 
+    /// Converts MCP AnalyzeRequest to domain AnalyzeRequest, validating and mapping fields.
+    ///
+    /// Validates viewport consistency, maps pre_scan_actions, cookies, screenshot config,
+    /// advanced_rules, needs_review_policy, and igt_tools to domain types.
     fn to_domain(&self) -> Result<rgaa_obscura::AnalyzeRequest, McpFailure> {
         if self.viewport_height.is_some() && self.viewport_width.is_none() {
             return Err(McpFailure::invalid("viewportHeight requires viewportWidth to be set"));

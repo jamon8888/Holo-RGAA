@@ -94,6 +94,11 @@ fn validate_axe_payload(
     Ok(payload)
 }
 
+/// Converts axe-core JSON violations into RGAA Findings.
+///
+/// For each violation, maps to its corresponding RGAA criterion using AxeMapper.
+/// Findings for IaAssiste/Manuel criteria are marked NeedsReview since they
+/// require AI-assisted or manual verification.
 fn findings_from_axe(
     url: &str,
     value: &serde_json::Value,
@@ -483,6 +488,10 @@ impl ObscuraBridge {
         Ok((raw, evidence, igt))
     }
 
+    /// Injects cookies into the browser session via Network.setCookie.
+    ///
+    /// Cookie values are read from the CookieReference, falling back to
+    /// environment variables (RGAA_COOKIE_<NAME>) when value is None.
     async fn apply_cookies(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -547,6 +556,10 @@ impl ObscuraBridge {
         Ok(())
     }
 
+    /// Executes pre-scan actions: Click, Fill, and WaitFor.
+    ///
+    /// Click and Fill use synchronous JS execution. WaitFor uses async
+    /// Promise-based polling via setTimeout to avoid blocking the browser.
     async fn apply_pre_scan_actions(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -1903,6 +1916,11 @@ impl ObscuraBridge {
             .ok_or_else(|| "No tab order data returned".to_string())
     }
 
+    /// Runs keyboard navigation IGT: Tab through focusable elements and detect traps.
+    ///
+    /// Iterates up to 50 Tab key presses, tracking focused elements and detecting
+    /// keyboard traps (same element focused 5+ consecutive tabs). Uses stable
+    /// element IDs for trap detection. Records termination_reason if Tab dispatch fails.
     async fn run_igt_keyboard(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,

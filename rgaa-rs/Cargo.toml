@@ -15,6 +15,7 @@ members = [
     "crates/rgaa-browser-tools",
     "crates/rgaa-data",
     "crates/rgaa-test-corpus",
+    "crates/rgaa-spider",
 ]
 
 [workspace.package]
@@ -41,6 +42,7 @@ fastembed = "4.0"
 futures = "0.3"
 indexmap = "2"
 chrono = { version = "0.4", features = ["serde"] }
+spider = { version = "2.53", default-features = false, features = ["sync", "reqwest_native_tls_native_roots"] }
 
 [profile.dev]
 debug = 1

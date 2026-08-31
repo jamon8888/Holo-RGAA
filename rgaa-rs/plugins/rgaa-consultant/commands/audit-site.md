@@ -23,7 +23,40 @@ Run a full RGAA 4.1.2 accessibility audit against a live URL. Analyzes all 106 c
 | `--viewport` | string | No | Device viewport (default: `desktop`) |
 | `--format` | string | No | Output format (default: `markdown`) |
 
+## Advanced Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `--viewport-width` | integer | No | Viewport width in pixels (default: 1000) |
+| `--viewport-height` | integer | No | Viewport height in pixels (default: 1080) |
+| `--selector` | string | No | CSS selector to scope audit to a sub-tree |
+| `--timeout` | integer | No | Per-page timeout in milliseconds |
+| `--retry` | integer | No | Retry limit on failure (default: 3) |
+| `--advanced-rules` | string | No | Rule strictness: `thorough`, `standard`, `disabled` |
+| `--igt-tools` | string | No | IGT tools to run: `keyboard` (runs keyboard navigation test) |
+| `--needs-review` | string | No | NeedsReview handling: `record` (default) or `fail` |
+| `--wait-for` | string | No | Pre-scan: `selector:visible|attached|hidden|detached` |
+| `--click` | string | No | Pre-scan: click selector before scanning |
+| `--fill` | string | No | Pre-scan: `selector:value` — fill input before scanning |
+| `--cookie` | string | No | Pre-scan: `name=value@domain` — inject cookie |
+| `--screenshot-format` | string | No | Screenshot format: `png` (default) or `jpeg` |
+| `--screenshot-save` | string | No | Save screenshots to file |
+| `--screenshot-inline` | bool | No | Return screenshots inline in response |
+
 ## Examples
+
+```
+/audit-site https://example.gouv.fr
+/audit-site https://example.test --viewport mobile
+/audit-site https://example.test --format sarif
+/audit-site https://example.test --viewport-width 1920 --viewport-height 1080
+/audit-site https://example.test --advanced-rules thorough
+/audit-site https://example.test --igt-tools keyboard
+/audit-site https://example.test --wait-for "#modal:visible" --click "#accept-cookies"
+/audit-site https://example.test --cookie "session=abc@example.test" --cookie "analytics=no@.example.test"
+/audit-site https://example.test --screenshot-format jpeg --screenshot-save /tmp/screenshots
+/audit-site https://example.test --needs-review fail
+```
 
 ```
 /audit-site https://example.gouv.fr

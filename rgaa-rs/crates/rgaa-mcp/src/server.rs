@@ -83,7 +83,10 @@ impl AnalyzeRequest {
                     .advanced_rules
                     .as_ref()
                     .map(|v| match v.as_str() {
-                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Enabled,
+                        // FIXME: "thorough" and "standard" should map to Enabled
+                        // once advanced rules are supported by the domain runner.
+                        // Currently rejected by validate_supported().
+                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Disabled,
                         _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
                     })
                     .unwrap_or_default(),

@@ -80,6 +80,8 @@ pub enum ScreenshotFormat {
 pub struct ScreenshotConfig {
     pub policy: ScreenshotPolicy,
     pub format: ScreenshotFormat,
+    pub save_to: Option<String>,
+    pub inline: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

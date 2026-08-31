@@ -147,10 +147,12 @@ fn approval_state_and_token_are_surfaced_in_response_dto() {
 #[tokio::test]
 async fn analyze_handler_preserves_invalid_input_code() {
     let server = test_server();
-    let result = server
+        let result = server
         .analyze(Parameters(AnalyzeRequest {
             url: "file:///etc/passwd".into(),
             config: Default::default(),
+            viewport_width: None,
+            viewport_height: None,
         }))
         .await;
     let err = unwrap_err(result, "must reject non-http URL");
@@ -187,6 +189,8 @@ async fn analyze_handler_distinguishes_execution_failure_and_redacts_secrets() {
         .analyze(Parameters(AnalyzeRequest {
             url: "https://example.test".into(),
             config: Default::default(),
+            viewport_width: None,
+            viewport_height: None,
         }))
         .await;
     let err = unwrap_err(result, "service failed");

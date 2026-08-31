@@ -28,7 +28,7 @@ pub use guided::{
     GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
 pub use results::{AnalyzePageResult, IgtElement, IgtIssue, IgtResult, IgtResults, ObscuraError};
-use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
+use rgaa_core::{CriterionStatus, Finding, FindingFingerprint, RgaaCriteria};
 use rgaa_rules::AxeMapper;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -134,7 +134,15 @@ fn findings_from_axe(
                     .failure_summary
                     .clone()
                     .or_else(|| Some(violation.description.clone()));
-                finding.status = CriterionStatus::Fail;
+                finding.status = if criterion_id != "unmapped"
+                    && matches!(
+                        RgaaCriteria::classification_for(criterion_id),
+                        Some(rgaa_core::Classification::IaAssiste | rgaa_core::Classification::Manuel)
+                    ) {
+                    CriterionStatus::NeedsReview
+                } else {
+                    CriterionStatus::Fail
+                };
                 finding.severity = violation.impact.clone().or_else(|| Some("unknown".into()));
                 finding.description = Some(violation.description.clone());
                 finding.remediation = violation.help.clone();
@@ -370,7 +378,7 @@ impl ObscuraBridge {
         let target_id = Self::cdp_send(
             &mut ws,
             "Target.createTarget",
-            serde_json::json!({"url": request.url}),
+            serde_json::json!({}),
         )
         .await
         .map_err(Self::classify_error)?
@@ -408,6 +416,16 @@ impl ObscuraBridge {
         request: &AnalyzeRequest,
         axe_source: &str,
     ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), String> {
+        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({}))
+            .await?;
+        self.apply_cookies(ws, session_id, request).await?;
+        Self::cdp_send_session(
+            ws,
+            session_id,
+            "Page.navigate",
+            serde_json::json!({"url": request.url}),
+        )
+        .await?;
         Self::wait_for_load(
             ws,
             session_id,
@@ -518,7 +536,7 @@ impl ObscuraBridge {
                 params["httpOnly"] = serde_json::Value::Bool(http_only);
             }
             if let Some(expires) = cookie.expires {
-                params["expires"] = serde_json::json!({ "type": "number", "value": expires });
+                params["expires"] = serde_json::json!(expires);
             }
             let result =
                 Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
@@ -536,18 +554,24 @@ impl ObscuraBridge {
         request: &AnalyzeRequest,
     ) -> Result<(), String> {
         for action in &request.config.pre_scan_actions {
-            let expression = match action {
+            let (expression, await_promise) = match action {
                 PreScanAction::Click { selector } => {
                     let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
-                    format!(
-                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
+                    (
+                        format!(
+                            "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
+                        ),
+                        false,
                     )
                 }
                 PreScanAction::Fill { selector, value } => {
                     let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
                     let value = serde_json::to_string(value).map_err(|e| e.to_string())?;
-                    format!(
-                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"
+                    (
+                        format!(
+                            "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"
+                        ),
+                        false,
                     )
                 }
                 PreScanAction::WaitFor { selector, state } => {
@@ -558,16 +582,45 @@ impl ObscuraBridge {
                         WaitForState::Hidden => "!el.offsetParent && getComputedStyle(el).visibility === 'hidden'",
                         WaitForState::Detached => "!document.body.contains(el)",
                     };
-                    format!(
-                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('waitFor selector not found'); const deadline = Date.now() + {MAX_WAITFOR_TIMEOUT_MS}; while (!({check})) {{ if (Date.now() > deadline) {{ throw new Error('waitFor timed out'); }} }} return true; }})()"
+                    (
+                        format!(
+                            r#"((selector, check, timeout) => {{
+  const deadline = Date.now() + timeout;
+  return new Promise((resolve, reject) => {{
+    function poll() {{
+      const el = document.querySelector(selector);
+      if (el && ({check})) {{
+        resolve(true);
+        return;
+      }}
+      if (Date.now() > deadline) {{
+        reject(new Error('waitFor timed out'));
+        return;
+      }}
+      setTimeout(poll, 50);
+    }}
+    const el = document.querySelector(selector);
+    if (!el) {{
+      reject(new Error('waitFor selector not found'));
+      return;
+    }}
+    poll();
+  }});
+}})({selector}, function() {{ return {check}; }}, {MAX_WAITFOR_TIMEOUT_MS})"#
+                        ),
+                        true,
                     )
                 }
             };
+            let mut params = serde_json::json!({"expression": expression, "returnByValue": true});
+            if await_promise {
+                params["awaitPromise"] = serde_json::Value::Bool(true);
+            }
             let result = Self::cdp_send_session(
                 ws,
                 session_id,
                 "Runtime.evaluate",
-                serde_json::json!({"expression": expression, "returnByValue": true}),
+                params,
             )
             .await?;
             if result.get("exceptionDetails").is_some() {
@@ -1864,6 +1917,7 @@ impl ObscuraBridge {
         let mut igt_elements = Vec::new();
         let mut previous_focused: Option<String> = None;
         let mut trap_counter = 0;
+        let mut termination_reason: Option<String> = None;
 
         let interactive_roles = [
             "button", "link", "textbox", "checkbox", "radio", "menuitem",
@@ -1880,6 +1934,7 @@ impl ObscuraBridge {
             )
             .await;
             if tab_result.is_err() {
+                termination_reason = Some("tab key dispatch failed".to_string());
                 break;
             }
             let get_focused = Self::cdp_send_session(
@@ -1899,13 +1954,14 @@ impl ObscuraBridge {
             } else {
                 None
             };
-            let (role, name, tag) = if let Some(fv) = &focused {
+            let (role, name, tag, elem_id) = if let Some(fv) = &focused {
                 let role = fv.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
                 let name = fv.get("name").and_then(|r| r.as_str()).unwrap_or("");
                 let tag = fv.get("tag").and_then(|r| r.as_str()).unwrap_or("");
-                (role.to_string(), name.to_string(), tag.to_string())
+                let elem_id = fv.get("id").and_then(|r| r.as_str()).unwrap_or("");
+                (role.to_string(), name.to_string(), tag.to_string(), elem_id.to_string())
             } else {
-                (String::new(), String::new(), String::new())
+                (String::new(), String::new(), String::new(), String::new())
             };
 
             if !tag.is_empty() {
@@ -1919,7 +1975,7 @@ impl ObscuraBridge {
                 }
 
                 if let Some(prev) = &previous_focused {
-                    if prev == &(tag.clone() + &role.clone()) {
+                    if prev == &elem_id {
                         trap_counter += 1;
                     } else {
                         trap_counter = 0;
@@ -1935,7 +1991,7 @@ impl ObscuraBridge {
                     break;
                 }
 
-                previous_focused = Some(tag.clone() + &role.clone());
+                previous_focused = Some(elem_id);
             }
 
             let key_up = Self::cdp_send_session(
@@ -1946,6 +2002,7 @@ impl ObscuraBridge {
             )
             .await;
             if key_up.is_err() {
+                termination_reason = Some("tab key release failed".to_string());
                 break;
             }
         }
@@ -1960,14 +2017,16 @@ impl ObscuraBridge {
 
         Some(IgtResults {
             keyboard: IgtResult {
-                status: if issues.iter().any(|i| i.rule == "keyboard-trap") {
+                status: if termination_reason.is_some()
+                    || issues.iter().any(|i| i.rule == "keyboard-trap")
+                {
                     "incomplete".to_string()
                 } else {
                     "complete".to_string()
                 },
                 issues,
                 igt_elements,
-                terminated_reason: None,
+                terminated_reason,
             },
         })
     }

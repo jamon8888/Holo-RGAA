@@ -141,6 +141,11 @@ User: "Create an HTML compliance report for management"
 Claude: → Runs full audit
 Claude: → Generates styled HTML with charts
 Claude: → "Report saved as compliance-2026-08-30.html"
+
+User: "I need a full-site compliance report"
+Claude: → Runs /audit-url on the starting URL
+Claude: → Retrieves results via get_audit_result MCP tool
+Claude: → Generates formatted report in requested format
 ```
 
 ## CI/CD Usage

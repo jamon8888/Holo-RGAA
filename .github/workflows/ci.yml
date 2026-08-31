@@ -6,17 +6,12 @@ on:
   pull_request:
     branches: [main]
 
-# Workflow-level read permission for contents; write only where needed
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
-
-defaults:
-  run:
-    working-directory: rgaa-rs
 
 jobs:
   fmt:
@@ -29,22 +24,8 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-
-  build:
-    name: Build (release)
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,26 +46,33 @@ jobs:
             rgaa-rs/target/release/rgaa-api
             rgaa-rs/target/release/rgaa-mcp
           if-no-files-found: error
+      - name: Run tests
+        env:
+          RUST_MIN_STACK: 8388608
+        run: |
+          # Use all available cores for both compilation and test execution
+          CORES=$(nproc)
+          echo "Using $CORES cores"
+          cargo test --workspace --jobs $CORES --test-threads=$CORES
 
-  test:
-    name: Test
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
-      - name: Run tests
-        # E2E tests in rgaa-orchestrator self-skip unless RUN_E2E=1 is set.
-        run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   audit:
     name: Security audit
     runs-on: ubuntu-latest
-    # Does not block the pipeline; reports vulnerabilities as a check.
     permissions:
       contents: read
       checks: write
@@ -99,8 +87,6 @@ jobs:
   e2e:
     name: E2E (browser + agent + orchestrator)
     runs-on: ubuntu-latest
-    # Enabled via repository variable HOLO3_E2E_ENABLED == 'true'
-    # (not secret-based, so the workflow can run on forks without secrets)
     if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4

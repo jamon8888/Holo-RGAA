@@ -64,8 +64,11 @@ Claude will ask for a URL, run the full RGAA audit, and present findings with se
 
 | Command | Description |
 |---------|-------------|
-| `/audit-site` | Audit a live URL for RGAA compliance |
+| `/audit-site` | Audit a live URL for RGAA compliance (single page) |
+| `/audit-url` | Run a full-site crawl audit (multiple pages) |
 | `/audit-project` | Audit a local project (requires rgaa-cli) |
+| `/run-igt` | Execute a guided accessibility test (keyboard, focus, contrast) |
+| `/remediate` | Generate approval-gated source-level fix proposals |
 | `/generate-report` | Produce a formatted compliance report |
 
 ## Skills
@@ -77,9 +80,9 @@ Skills activate automatically when relevant — no need to invoke them directly.
 | `audit` | URL or project accessibility check requested |
 | `triage` | Findings need prioritization and categorization |
 | `remediate` | Fix proposals needed for accessibility violations |
-| `verify` | Post-fix validation or re-audit requested |
 | `report` | Compliance documentation or export needed |
 | `guided-test` | Manual accessibility testing (keyboard, focus, contrast) |
+| `criteria` | RGAA criterion knowledge lookup |
 
 ## RGAA Compliance Tiers
 
@@ -152,7 +155,10 @@ rgaa-consultant/
 ├── commands/
 │   ├── audit-site.md
 │   ├── audit-project.md
-│   └── generate-report.md
+│   ├── audit-url.md
+│   ├── generate-report.md
+│   ├── run-igt.md
+│   └── remediate.md
 └── skills/
     ├── audit/
     ├── triage/

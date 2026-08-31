@@ -13,6 +13,10 @@ env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
 
+defaults:
+  run:
+    working-directory: rgaa-rs
+
 jobs:
   fmt:
     name: Format

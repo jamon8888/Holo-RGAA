@@ -29,6 +29,11 @@ Run a full RGAA 4.1.2 accessibility audit against a URL or local project. Return
 | `format` | string | No | Output: `json`, `markdown`, `sarif`, `junit`, `html` |
 | `scope` | string | No | CSS selector to limit audit to specific component |
 | `pre_scan_actions` | array | No | Actions before scan: `click`, `fill`, `navigate` |
+| `igt_tools` | string[] | No | IGT tools to run, e.g. `["keyboard"]` — runs keyboard navigation test |
+| `needs_review_policy` | string | No | `"record"` (default) or `"fail"` — when set to `fail`, audit returns failed status if any NeedsReview findings exist |
+| `advanced_rules` | string | No | `"thorough"` / `"standard"` / `"disabled"` |
+| `viewport_width` | u32 | No | Flat viewport width override |
+| `viewport_height` | u32 | No | Flat viewport height override |
 
 ## Outputs
 
@@ -62,6 +67,35 @@ Run a full RGAA 4.1.2 accessibility audit against a URL or local project. Return
     }
   ],
   "evidence": [...]
+}
+```
+
+### Nested Response (when igt_tools is set)
+
+When `igt_tools: ["keyboard"]` is passed, results include IGT keyboard test results under `data.igt.keyboard`:
+
+```json
+{
+  "data": {
+    "axe": { "url": "...", "findings": [...], ... },
+    "igt": {
+      "keyboard": {
+        "status": "completed",
+        "issues": [
+          {
+            "type": "keyboard_trap",
+            "selector": "#modal",
+            "description": "Focus cannot escape modal dialog"
+          }
+        ],
+        "interactive_elements": [
+          { "role": "button", "label": "Close", "focusable": true, "has_keyboard_handler": true }
+        ],
+        "terminated_reason": "completed",
+        "completed_steps": 12
+      }
+    }
+  }
 }
 ```
 

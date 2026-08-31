@@ -46,9 +46,9 @@ DATABASE_URL=postgres://localhost/rgaa rgaa-api
 }
 ```
 
-### 3. RGAA MCP Server (For Claude Code)
+### 3. RGAA MCP Server (For Claude Code) — PRIMARY
 
-The `rgaa-mcp` crate provides MCP tools for Claude Code integration.
+The `rgaa-mcp` crate provides 6 MCP tools: `analyze`, `audit_url`, `igt`, `remediate`, `get_audit_result`, `list_criteria`. This is the recommended integration path for Claude Code.
 
 ```bash
 cargo install --path rgaa-rs/crates/rgaa-mcp
@@ -58,10 +58,11 @@ cargo install --path rgaa-rs/crates/rgaa-mcp
 ```json
 {
   "mcpServers": {
-    "rgaa": {
-      "command": "rgaa-mcp",
+    "rgaa-mcp": {
+      "type": "local",
+      "command": ["rgaa-mcp"],
       "env": {
-        "RGAA_OBSCURA_BIN": "/path/to/obscura"
+        "RGAA_OBSCURA_BIN": "${CLAUDE_PLUGIN_ROOT}/bin/obscura"
       }
     }
   }

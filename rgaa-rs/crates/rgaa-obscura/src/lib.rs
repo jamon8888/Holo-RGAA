@@ -27,7 +27,7 @@ pub use guided::{
     is_stable_accessibility_reference, GuidedAction, GuidedExecutor, GuidedObservation,
     GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
-pub use results::{AnalyzePageResult, IgtResult, IgtResults, ObscuraError};
+pub use results::{AnalyzePageResult, IgtElement, IgtIssue, IgtResult, IgtResults, ObscuraError};
 use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
 use rgaa_rules::AxeMapper;
 use serde::Deserialize;
@@ -230,7 +230,7 @@ impl ObscuraBridge {
             }
         };
         let mut attempt = 0;
-        let (raw, evidence) = loop {
+        let (raw, evidence, igt) = loop {
             let result = timeout(
                 Duration::from_millis(request.config.timeout_ms),
                 self.run_configured_axe(request, &axe_source),
@@ -286,6 +286,18 @@ impl ObscuraBridge {
             }
         };
 
+        if request.config.needs_review_policy == NeedsReviewPolicy::Fail
+            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::NeedsReview)
+        {
+            return Ok(AnalyzePageResult::failed(
+                &request.url,
+                ObscuraError::PolicyDenied(
+                    "analysis returned findings that require manual review".into(),
+                ),
+                started.elapsed().as_millis() as u64,
+            ));
+        }
+
         let completed = !evidence.is_empty();
         Ok(AnalyzePageResult {
             url: request.url.clone(),
@@ -294,7 +306,7 @@ impl ObscuraBridge {
             errors: Vec::new(),
             completed,
             duration_ms: started.elapsed().as_millis() as u64,
-            igt: None,
+            igt,
         })
     }
 
@@ -347,7 +359,7 @@ impl ObscuraBridge {
         &self,
         request: &AnalyzeRequest,
         axe_source: &str,
-    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>), ObscuraError> {
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), ObscuraError> {
         let ws_url = self
             .get_browser_ws_url()
             .await
@@ -395,7 +407,7 @@ impl ObscuraBridge {
         session_id: &str,
         request: &AnalyzeRequest,
         axe_source: &str,
-    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>), String> {
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), String> {
         Self::wait_for_load(
             ws,
             session_id,
@@ -449,7 +461,8 @@ impl ObscuraBridge {
         let evidence = self
             .capture_evidence(ws, session_id, request, &violations)
             .await?;
-        Ok((raw, evidence))
+        let igt = self.run_igt_keyboard(ws, session_id, request).await;
+        Ok((raw, evidence, igt))
     }
 
     async fn apply_cookies(
@@ -1835,6 +1848,128 @@ impl ObscuraBridge {
             .and_then(|v| v.as_array())
             .cloned()
             .ok_or_else(|| "No tab order data returned".to_string())
+    }
+
+    async fn run_igt_keyboard(
+        &self,
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        request: &AnalyzeRequest,
+    ) -> Option<IgtResults> {
+        if !request.config.igt_tools.contains(&"keyboard".to_string()) {
+            return None;
+        }
+        let max_tabs = 50;
+        let mut issues = Vec::new();
+        let mut igt_elements = Vec::new();
+        let mut previous_focused: Option<String> = None;
+        let mut trap_counter = 0;
+
+        let interactive_roles = [
+            "button", "link", "textbox", "checkbox", "radio", "menuitem",
+            "tab", "menuitemcheckbox", "menuitemradio", "switch", "searchbox",
+            "spinbutton", "combobox", "slider",
+        ];
+
+        for _ in 0..max_tabs {
+            let tab_result = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Input.dispatchKeyEvent",
+                serde_json::json!({"type": "keyDown", "key": "Tab"}),
+            )
+            .await;
+            if tab_result.is_err() {
+                break;
+            }
+            let get_focused = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Runtime.evaluate",
+                serde_json::json!({
+                    "expression": "(function() { var el = document.activeElement; if (!el || el === document.body) return null; return { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || el.tagName.toLowerCase(), name: (el.textContent || el.value || '').trim().substring(0, 100), id: el.id, className: el.className }; })()",
+                    "returnByValue": true
+                }),
+            )
+            .await;
+            let focused = if let Ok(r) = get_focused {
+                let result_val = r.get("result")?;
+                let v = result_val.get("value")?;
+                Some(v.clone())
+            } else {
+                None
+            };
+            let (role, name, tag) = if let Some(fv) = &focused {
+                let role = fv.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
+                let name = fv.get("name").and_then(|r| r.as_str()).unwrap_or("");
+                let tag = fv.get("tag").and_then(|r| r.as_str()).unwrap_or("");
+                (role.to_string(), name.to_string(), tag.to_string())
+            } else {
+                (String::new(), String::new(), String::new())
+            };
+
+            if !tag.is_empty() {
+                if interactive_roles.contains(&role.as_str()) || tag == "a" || tag == "button" || tag == "input" {
+                    igt_elements.push(IgtElement {
+                        role: role.clone(),
+                        name: name.clone(),
+                        value: None,
+                        description: None,
+                    });
+                }
+
+                if let Some(prev) = &previous_focused {
+                    if prev == &(tag.clone() + &role.clone()) {
+                        trap_counter += 1;
+                    } else {
+                        trap_counter = 0;
+                    }
+                }
+
+                if trap_counter >= 5 {
+                    issues.push(IgtIssue {
+                        rule: "keyboard-trap".to_string(),
+                        element: format!("{}:{}", tag, name),
+                        description: format!("Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs", name, tag, role, trap_counter),
+                    });
+                    break;
+                }
+
+                previous_focused = Some(tag.clone() + &role.clone());
+            }
+
+            let key_up = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Input.dispatchKeyEvent",
+                serde_json::json!({"type": "keyUp", "key": "Tab"}),
+            )
+            .await;
+            if key_up.is_err() {
+                break;
+            }
+        }
+
+        if igt_elements.is_empty() {
+            issues.push(IgtIssue {
+                rule: "no-interactive-elements".to_string(),
+                element: "document".to_string(),
+                description: "No interactive elements found via keyboard navigation".to_string(),
+            });
+        }
+
+        Some(IgtResults {
+            keyboard: IgtResult {
+                status: if issues.iter().any(|i| i.rule == "keyboard-trap") {
+                    "incomplete".to_string()
+                } else {
+                    "complete".to_string()
+                },
+                issues,
+                igt_elements,
+                terminated_reason: None,
+            },
+        })
     }
 
     /// Assert page state by evaluating a JavaScript predicate via CDP Runtime.evaluate

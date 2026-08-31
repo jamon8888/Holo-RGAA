@@ -108,6 +108,7 @@ pub struct AnalyzeConfig {
     pub screenshot: ScreenshotConfig,
     pub advanced_rule_policy: AdvancedRulePolicy,
     pub needs_review_policy: NeedsReviewPolicy,
+    pub igt_tools: Vec<String>,
     pub timeout_ms: u64,
     pub retry_limit: u8,
     pub concurrency: usize,
@@ -127,6 +128,7 @@ impl Default for AnalyzeConfig {
             screenshot: ScreenshotConfig::default(),
             advanced_rule_policy: AdvancedRulePolicy::Disabled,
             needs_review_policy: NeedsReviewPolicy::Record,
+            igt_tools: Vec::new(),
             timeout_ms: 30_000,
             retry_limit: 0,
             concurrency: 1,
@@ -236,12 +238,6 @@ impl AnalyzeRequest {
         if self.config.advanced_rule_policy == AdvancedRulePolicy::Enabled {
             return Err(ObscuraError::UnsupportedConfiguration(
                 "advanced rules are not available in the local axe runner".into(),
-            ));
-        }
-        if self.config.needs_review_policy == NeedsReviewPolicy::Fail {
-            return Err(ObscuraError::PolicyDenied(
-                "needs-review fail policy requires a manual-review sink not provided by analyze"
-                    .into(),
             ));
         }
         Ok(())

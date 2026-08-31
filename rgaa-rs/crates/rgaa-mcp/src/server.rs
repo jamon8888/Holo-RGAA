@@ -87,7 +87,12 @@ impl AnalyzeRequest {
                         _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
                     })
                     .unwrap_or_default(),
-                needs_review_policy: Default::default(),
+                needs_review_policy: config
+                    .needs_review_policy
+                    .clone()
+                    .map(Into::into)
+                    .unwrap_or_default(),
+                igt_tools: config.igt_tools.clone().unwrap_or_default(),
                 timeout_ms: config.timeout_ms.unwrap_or(30_000),
                 retry_limit: config.retry_limit.unwrap_or(0),
                 concurrency: 1,

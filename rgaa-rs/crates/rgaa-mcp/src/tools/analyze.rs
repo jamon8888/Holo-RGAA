@@ -108,6 +108,25 @@ pub struct AnalyzeConfigInput {
     pub advanced_rules: Option<String>,
     #[serde(default)]
     pub igt_tools: Option<Vec<String>>,
+    #[serde(default)]
+    pub needs_review_policy: Option<NeedsReviewPolicyInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NeedsReviewPolicyInput {
+    #[default]
+    Record,
+    Fail,
+}
+
+impl From<NeedsReviewPolicyInput> for rgaa_obscura::NeedsReviewPolicy {
+    fn from(policy: NeedsReviewPolicyInput) -> Self {
+        match policy {
+            NeedsReviewPolicyInput::Record => rgaa_obscura::NeedsReviewPolicy::Record,
+            NeedsReviewPolicyInput::Fail => rgaa_obscura::NeedsReviewPolicy::Fail,
+        }
+    }
 }
 
 impl Default for AnalyzeConfigInput {
@@ -125,6 +144,7 @@ impl Default for AnalyzeConfigInput {
             retry_limit: None,
             advanced_rules: None,
             igt_tools: None,
+            needs_review_policy: None,
         }
     }
 }

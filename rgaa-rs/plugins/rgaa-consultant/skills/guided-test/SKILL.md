@@ -173,7 +173,7 @@ criterion_mapping:
 ## Example Interactions
 
 ```
-User: "Run a keyboard navigation test on the checkout flow"
+User: `/run-igt --test keyboard-navigation --url https://example.test/checkout`
 Claude: → Loads keyboard-navigation test definition
 Claude: → Executes steps against checkout URL
 Claude: → Captures screenshots at each focus change

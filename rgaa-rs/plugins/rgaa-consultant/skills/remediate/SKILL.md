@@ -16,7 +16,7 @@ Generate approval-gated source-level patch proposals for accessibility findings.
 
 1. **Load findings** — From triage report or direct input (max 25 per batch)
 2. **Detect framework** — Auto-detect from source files (React, Vue, Angular, Next) or use override
-3. **Generate proposals** — Call `remediate` tool via rgaa-mcp or `rgaa audit verify` CLI
+3. **Generate proposals** — Call `remediate` MCP tool via `/remediate` command, or `rgaa audit verify` CLI
 4. **Present approval request** — Each proposal includes diff, rationale, risks, approval token
 5. **Wait for approval** — User confirms before any source changes
 6. **Apply on approval** — Apply only after user confirms approval token

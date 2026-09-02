@@ -99,6 +99,8 @@ fn serialized_inputs_never_contain_cookie_values() {
             }],
             ..Default::default()
         },
+        viewport_width: None,
+        viewport_height: None,
     };
     let json = serde_json::to_string(&request).expect("serialize");
     assert!(!json.contains("super-secret"));
@@ -151,6 +153,8 @@ async fn analyze_handler_preserves_invalid_input_code() {
         .analyze(Parameters(AnalyzeRequest {
             url: "file:///etc/passwd".into(),
             config: Default::default(),
+            viewport_width: None,
+            viewport_height: None,
         }))
         .await;
     let err = unwrap_err(result, "must reject non-http URL");
@@ -187,6 +191,8 @@ async fn analyze_handler_distinguishes_execution_failure_and_redacts_secrets() {
         .analyze(Parameters(AnalyzeRequest {
             url: "https://example.test".into(),
             config: Default::default(),
+            viewport_width: None,
+            viewport_height: None,
         }))
         .await;
     let err = unwrap_err(result, "service failed");

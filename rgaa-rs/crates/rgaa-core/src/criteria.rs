@@ -162,6 +162,14 @@ impl RgaaCriteria {
     pub fn count() -> usize {
         CLASSIFICATION.len()
     }
+
+    /// Returns the classification for a given criterion ID, or None if not found.
+    pub fn classification_for(id: &str) -> Option<Classification> {
+        CLASSIFICATION
+            .iter()
+            .find(|(criterion_id, _, _)| *criterion_id == id)
+            .map(|(_, classification, _)| *classification)
+    }
 }
 
 #[cfg(test)]

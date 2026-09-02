@@ -20,6 +20,7 @@ pub struct AnalyzeRequest {
 }
 
 impl AnalyzeRequest {
+    /// Validates that the URL is a valid http/https URL and returns the request if valid.
     pub fn malformed(url: &str) -> Result<Self, McpFailure> {
         let request = Self {
             url: url.into(),
@@ -30,9 +31,15 @@ impl AnalyzeRequest {
         request.to_domain().map(|_| request)
     }
 
+    /// Converts MCP AnalyzeRequest to domain AnalyzeRequest, validating and mapping fields.
+    ///
+    /// Validates viewport consistency, maps pre_scan_actions, cookies, screenshot config,
+    /// advanced_rules, needs_review_policy, and igt_tools to domain types.
     fn to_domain(&self) -> Result<rgaa_obscura::AnalyzeRequest, McpFailure> {
         if self.viewport_height.is_some() && self.viewport_width.is_none() {
-            return Err(McpFailure::invalid("viewportHeight requires viewportWidth to be set"));
+            return Err(McpFailure::invalid(
+                "viewportHeight requires viewportWidth to be set",
+            ));
         }
         let config = &self.config;
         let actions = config
@@ -50,10 +57,18 @@ impl AnalyzeRequest {
                     rgaa_obscura::PreScanAction::WaitFor {
                         selector: selector.clone(),
                         state: match *state {
-                            crate::tools::WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
-                            crate::tools::WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
-                            crate::tools::WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
-                            crate::tools::WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
+                            crate::tools::WaitForState::Visible => {
+                                rgaa_obscura::WaitForState::Visible
+                            }
+                            crate::tools::WaitForState::Attached => {
+                                rgaa_obscura::WaitForState::Attached
+                            }
+                            crate::tools::WaitForState::Hidden => {
+                                rgaa_obscura::WaitForState::Hidden
+                            }
+                            crate::tools::WaitForState::Detached => {
+                                rgaa_obscura::WaitForState::Detached
+                            }
                         },
                     }
                 }
@@ -83,7 +98,10 @@ impl AnalyzeRequest {
                     .advanced_rules
                     .as_ref()
                     .map(|v| match v.as_str() {
-                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Enabled,
+                        // FIXME: "thorough" and "standard" should map to Enabled
+                        // once advanced rules are supported by the domain runner.
+                        // Currently rejected by validate_supported().
+                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Disabled,
                         _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
                     })
                     .unwrap_or_default(),
@@ -655,9 +673,9 @@ impl ToolServer {
                     .into_error_data(),
             );
         }
-        Ok(rmcp::handler::server::wrapper::Json(AnalyzeResponse::from_result(
-            result,
-        )))
+        Ok(rmcp::handler::server::wrapper::Json(
+            AnalyzeResponse::from_result(result),
+        ))
     }
 
     #[tool(

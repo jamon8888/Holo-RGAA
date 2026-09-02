@@ -1,8 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use rgaa_core::CrawlConfig;
 use crate::tools::igt::IgtResultsDto;
+use rgaa_core::CrawlConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditUrlInput {
@@ -157,7 +157,7 @@ pub enum ScreenshotFormat {
     Jpeg,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ScreenshotInput {
     #[serde(default)]
     pub format: Option<ScreenshotFormat>,
@@ -169,17 +169,7 @@ pub struct ScreenshotInput {
     pub inline: Option<bool>,
 }
 
-impl Default for ScreenshotInput {
-    fn default() -> Self {
-        Self {
-            format: None,
-            save_to: None,
-            save: None,
-            inline: None,
-        }
-    }
-}
-
+/// Converts MCP ScreenshotInput to domain ScreenshotConfig, propagating save_to and inline options.
 impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
     fn from(input: ScreenshotInput) -> Self {
         let policy = match input.save {
@@ -194,7 +184,12 @@ impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
                 ScreenshotFormat::Jpeg => rgaa_obscura::ScreenshotFormat::Jpeg,
             })
             .unwrap_or(rgaa_obscura::ScreenshotFormat::Png);
-        Self { policy, format }
+        Self {
+            policy,
+            format,
+            save_to: input.save_to,
+            inline: input.inline,
+        }
     }
 }
 
@@ -208,19 +203,14 @@ fn default_height() -> u32 {
     1080
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitForState {
+    #[default]
     Visible,
     Attached,
     Hidden,
     Detached,
-}
-
-impl Default for WaitForState {
-    fn default() -> Self {
-        WaitForState::Visible
-    }
 }
 
 impl From<rgaa_obscura::WaitForState> for WaitForState {
@@ -248,8 +238,13 @@ impl From<WaitForState> for rgaa_obscura::WaitForState {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum PreScanActionInput {
-    Click { selector: String },
-    Fill { selector: String, value: String },
+    Click {
+        selector: String,
+    },
+    Fill {
+        selector: String,
+        value: String,
+    },
     WaitFor {
         selector: String,
         #[serde(default)]
@@ -260,6 +255,7 @@ pub enum PreScanActionInput {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CookieInput {
     pub name: String,
+    #[serde(skip_serializing)]
     pub value: String,
     pub domain: String,
     #[serde(default)]
@@ -282,6 +278,7 @@ pub enum SameSiteInput {
     None,
 }
 
+/// Converts MCP CookieInput to domain CookieReference for browser injection.
 impl From<CookieInput> for rgaa_obscura::CookieReference {
     fn from(cookie: CookieInput) -> Self {
         Self {
@@ -430,6 +427,10 @@ pub struct AnalyzeResponseFlat {
 }
 
 impl AnalyzeResponse {
+    /// Converts domain AnalyzePageResult to MCP response DTO.
+    ///
+    /// Uses NestedAnalyzeResponse when IGT results are present (to provide both
+    /// axe findings and IGT data), otherwise uses flat AnalyzeResponseFlat.
     pub fn from_result(result: rgaa_obscura::AnalyzePageResult) -> Self {
         let flat = AnalyzeResponseFlat {
             url: result.url.clone(),

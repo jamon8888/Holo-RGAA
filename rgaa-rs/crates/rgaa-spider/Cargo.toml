@@ -1,0 +1,17 @@
+[package]
+description = "Spider crawler integration for RGAA agentic evaluation"
+license = "MIT"
+name = "rgaa-spider"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[dependencies]
+spider = { version = "2.53", default-features = false, features = ["sync", "reqwest_native_tls_native_roots"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rig-core = { workspace = true }

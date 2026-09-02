@@ -1,10 +1,11 @@
 use crate::config::AgentConfig;
 use crate::error::AgentError;
-use crate::prompts::PromptBuilder;
+use crate::prompts::{page_discovery_preamble, PromptBuilder};
 use crate::ratelimit::Ratelimiter;
 use crate::verify::map_verdict;
 use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
 use rgaa_holo::{HoloClient, HoloResponse, PageContext};
+use rgaa_spider::SpiderTool;
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
 use rig_agent::completion::Prompt;
@@ -42,12 +43,14 @@ impl RgaaAgent {
         // 2. Create rate limiter from config (tactical/reasoning RPM)
         let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));
 
-        // 3. Build agent with preamble
+        // 3. Build agent with preamble and spider tool
         let agent = client
             .agent(config.model.as_str())
             .preamble(
                 "You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.",
             )
+            .append_preamble(&page_discovery_preamble())
+            .tool(SpiderTool::new())
             .build();
 
         Ok(Self {

@@ -2044,7 +2044,7 @@ impl ObscuraBridge {
                 },
                 issues,
                 igt_elements,
-                terminated_reason,
+                terminated_reason: termination_reason.map(|_| TerminationReason::ExecutionError),
             },
         })
     }

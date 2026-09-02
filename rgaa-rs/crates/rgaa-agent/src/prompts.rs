@@ -60,3 +60,39 @@ impl PromptBuilder {
         prompt
     }
 }
+
+/// Returns the page discovery section of the agent preamble.
+///
+/// Tells the LLM how to use the `crawl_site` tool and how to prioritize
+/// pages for RGAA accessibility auditing: mandatory pages first, then
+/// site-specific pages (forms, search, checkout, etc.), then a random sample.
+pub fn page_discovery_preamble() -> String {
+    r#"## Page Discovery
+
+You have access to the `crawl_site` tool to discover pages on the target website.
+
+**How to use it:**
+- Call `crawl_site` with the website URL, optional `max_pages` (default 20), and `max_depth` (default 3)
+- The tool returns each discovered page with its URL, raw HTML, links, and HTTP status code
+- HTML content is truncated to 50,000 characters per page; `truncated: true` indicates truncation
+
+**Page selection strategy for accessibility auditing:**
+
+1. **Mandatory pages** — always audit these when present:
+   - Home page (/)
+   - Sitemap (/sitemap.xml or /sitemap)
+   - Contact page (/contact, /nous-contacter)
+   - Legal mentions (/legal, /mentions-legales, /politique-de-confidentialite)
+
+2. **Site-specific pages** — audit these when present:
+   - Forms: /contact, /signup, /register, /signin, /login, /newsletter, /comment
+   - Search: /search, /recherche, /find
+   - Product/catalogue: /products, /catalogue, /shop, /boutique, /produit/*
+   - User account: /account, /profile, /dashboard, /mon-compte
+   - Navigation: any page with more than 10 links in the main nav
+
+3. **Random sample** — if the site has >10 non-mandatory pages, audit a random sample of up to 5 additional pages to catch edge cases.
+
+**After crawling:** Use the discovered pages to determine which ones to audit for RGAA criteria. Prioritize pages with forms, authentication, navigation, and interactive content.
+"#.to_string()
+}

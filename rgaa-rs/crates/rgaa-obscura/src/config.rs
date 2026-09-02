@@ -122,6 +122,15 @@ pub struct AnalyzeConfig {
     pub timeout_ms: u64,
     pub retry_limit: u8,
     pub concurrency: usize,
+    /// Inject a global WeakMap side-channel that exposes ElementInternals
+    /// to accessibility tooling. This overrides HTMLElement.attachInternals
+    /// globally so that axe-core (and any probe using axe.getElementInternals)
+    /// can access internals on any custom element on the page.
+    ///
+    /// Only applicable when auditing pages that use ElementInternals but do
+    /// not already populate the community-protocol WeakMap themselves.
+    #[serde(default)]
+    pub patch_attach_internals: bool,
 }
 
 impl Default for AnalyzeConfig {
@@ -142,6 +151,7 @@ impl Default for AnalyzeConfig {
             timeout_ms: 30_000,
             retry_limit: 0,
             concurrency: 1,
+            patch_attach_internals: false,
         }
     }
 }

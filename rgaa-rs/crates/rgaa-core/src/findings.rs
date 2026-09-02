@@ -21,6 +21,13 @@ pub struct Finding {
     pub details: Option<String>,
     #[serde(default)]
     pub source: String,
+    /// Set to true when this finding was generated from axe-core's `incomplete`
+    /// results array rather than a definite `violations` entry. Indicates that
+    /// axe-core could not determine accessibility — often because the element
+    /// was inside Shadow DOM or used ElementInternals in a way that was not
+    /// yet resolvable. The criterion status is `NeedsReview`.
+    #[serde(default)]
+    pub previously_incomplete: bool,
 }
 
 impl Finding {
@@ -40,6 +47,7 @@ impl Finding {
             html: None,
             details: None,
             source: String::new(),
+            previously_incomplete: false,
         }
     }
 }

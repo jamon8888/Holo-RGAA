@@ -1,3 +1,7 @@
+pub mod install;
+
+pub use install::run_install_wizard;
+
 use ratatui::crossterm::event::{self, Event, KeyCode};
 use ratatui::layout::Alignment;
 

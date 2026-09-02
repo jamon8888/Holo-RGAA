@@ -50,21 +50,17 @@ impl Storage {
     pub fn save_audit(&self, audit: &rgaa_core::AuditResult) -> Result<String, StorageError> {
         let id = uuid::Uuid::new_v4().to_string();
         let data = serde_json::to_string(audit)?;
-        let json: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(&data).unwrap_or_default();
-        let taux_global = json
-            .get("taux_global")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
-        let etat_conformite = json
-            .get("etat_conformite")
-            .and_then(|v| v.as_str())
-            .unwrap_or("INCONNUE")
-            .to_string();
         let created_at = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO audits (id, url, data, taux_global, etat_conformite, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, &audit.url, &data, taux_global, etat_conformite, created_at],
+            params![
+                id,
+                &audit.url,
+                &data,
+                audit.taux_global,
+                &audit.etat_conformite,
+                created_at
+            ],
         )?;
         Ok(id)
     }
@@ -83,30 +79,28 @@ impl Storage {
         }
     }
 
-    pub fn list_audits(
-        &self,
-        limit: usize,
-        offset: usize,
-    ) -> Result<Vec<AuditSummary>, StorageError> {
+    pub fn list_audits(&self, limit: usize) -> Result<Vec<AuditSummary>, StorageError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, url, taux_global, etat_conformite, created_at FROM audits ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
+            "SELECT id, url, taux_global, etat_conformite, created_at FROM audits ORDER BY created_at DESC LIMIT ?1",
         )?;
-        let audits = stmt
-            .query_map(params![limit as i64, offset as i64], |row| {
-                let created_str: String = row.get(4)?;
-                let created_at = chrono::DateTime::parse_from_rfc3339(&created_str)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::Utc::now());
-                Ok(AuditSummary {
-                    id: row.get(0)?,
-                    url: row.get(1)?,
-                    taux_global: row.get(2)?,
-                    etat_conformite: row.get(3)?,
-                    created_at,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(audits)
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            let created_str: String = row.get(4)?;
+            let created_at = chrono::DateTime::parse_from_rfc3339(&created_str)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now());
+            Ok(AuditSummary {
+                id: row.get(0)?,
+                url: row.get(1)?,
+                taux_global: row.get(2)?,
+                etat_conformite: row.get(3)?,
+                created_at,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
     }
 
     pub fn delete_audit(&self, id: &str) -> Result<(), StorageError> {
@@ -118,4 +112,12 @@ impl Storage {
         }
         Ok(())
     }
+}
+
+pub async fn storage() -> Result<Storage, StorageError> {
+    let db_path = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".rgaa")
+        .join("audits.db");
+    Storage::new(&db_path)
 }

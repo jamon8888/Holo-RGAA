@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod export;
 pub mod install;
 pub mod setup;
 
@@ -10,7 +11,6 @@ use ratatui::crossterm::event::{self, Event, KeyCode};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
-use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 

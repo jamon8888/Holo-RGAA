@@ -19,8 +19,8 @@ pub mod results;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
-    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy,
-    Viewport, WaitForState, MAX_WAITFOR_TIMEOUT_MS,
+    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy, Viewport,
+    WaitForState, MAX_WAITFOR_TIMEOUT_MS,
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
@@ -28,12 +28,12 @@ pub use guided::{
     GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
 pub use results::{AnalyzePageResult, IgtElement, IgtIssue, IgtResult, IgtResults, ObscuraError};
-use rgaa_core::{CriterionStatus, Finding, FindingFingerprint, RgaaCriteria};
+use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
 use rgaa_rules::AxeMapper;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.13.0/axe.min.js";
+const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
 
 fn escape_js_string(s: &str) -> String {
     s.replace('\\', "\\\\")
@@ -43,9 +43,8 @@ fn escape_js_string(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub(crate) struct AxeViolationPayload {
+#[derive(Debug, Deserialize)]
+struct AxeViolationPayload {
     id: String,
     impact: Option<String>,
     description: String,
@@ -53,20 +52,12 @@ pub(crate) struct AxeViolationPayload {
     nodes: Vec<AxeNodePayload>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
 struct AxeNodePayload {
     target: Vec<String>,
     html: String,
     #[serde(rename = "failureSummary")]
     failure_summary: Option<String>,
-}
-
-/// The two relevant slices from axe-core's full response.
-#[derive(Debug)]
-pub struct AxeResponse {
-    pub(crate) violations: Vec<AxeViolationPayload>,
-    pub(crate) incomplete: Vec<AxeViolationPayload>,
 }
 
 fn validate_axe_payload(
@@ -103,29 +94,17 @@ fn validate_axe_payload(
     Ok(payload)
 }
 
-/// Converts axe-core JSON violations and incomplete results into RGAA Findings.
-///
-/// For violations: maps to corresponding RGAA criterion using AxeMapper.
-/// For incomplete: generates NeedsReview findings since axe-core could not
-/// determine accessibility — often due to Shadow DOM or ElementInternals
-/// that could not be resolved at scan time.
 fn findings_from_axe(
     url: &str,
-    violations: &serde_json::Value,
+    value: &serde_json::Value,
     evidence: &[rgaa_core::EvidenceRef],
-    incomplete: &serde_json::Value,
 ) -> Result<Vec<Finding>, ObscuraError> {
-    let payload = validate_axe_payload(violations)?;
-    let incomplete_payload: Vec<AxeViolationPayload> =
-        serde_json::from_value(incomplete.clone())
-            .unwrap_or_default();
+    let payload = validate_axe_payload(value)?;
     let normalized =
-        serde_json::to_string(violations).map_err(|error| ObscuraError::Json(error.to_string()))?;
+        serde_json::to_string(value).map_err(|error| ObscuraError::Json(error.to_string()))?;
     let mapped =
         AxeMapper::map(&normalized).map_err(|error| ObscuraError::Evaluation(error.to_string()))?;
     let mut findings = Vec::new();
-
-    // Process definite violations
     for violation in payload {
         let mut criteria = mapped
             .iter()
@@ -155,18 +134,7 @@ fn findings_from_axe(
                     .failure_summary
                     .clone()
                     .or_else(|| Some(violation.description.clone()));
-                finding.status = if criterion_id != "unmapped"
-                    && matches!(
-                        RgaaCriteria::classification_for(criterion_id),
-                        Some(
-                            rgaa_core::Classification::IaAssiste
-                                | rgaa_core::Classification::Manuel
-                        )
-                    ) {
-                    CriterionStatus::NeedsReview
-                } else {
-                    CriterionStatus::Fail
-                };
+                finding.status = CriterionStatus::Fail;
                 finding.severity = violation.impact.clone().or_else(|| Some("unknown".into()));
                 finding.description = Some(violation.description.clone());
                 finding.remediation = violation.help.clone();
@@ -176,32 +144,6 @@ fn findings_from_axe(
             }
         }
     }
-
-    // Process incomplete: always NeedsReview, marked previously_incomplete
-    for (idx, item) in incomplete_payload.iter().enumerate() {
-        let _nodes_json = serde_json::to_value(&item.nodes).unwrap_or_default();
-        let target = item
-            .nodes
-            .first()
-            .map(|n| n.target.join(" | "))
-            .unwrap_or_default();
-        let html = item.nodes.first().map(|n| n.html.clone()).unwrap_or_default();
-
-        let mut finding = Finding::new(format!("rgaa-incomplete-{}-{idx}", item.id));
-        finding.rule = item.id.clone();
-        finding.url = url.into();
-        finding.target = target.clone();
-        finding.html = Some(html.clone());
-        finding.status = CriterionStatus::NeedsReview;
-        finding.severity = item.impact.clone().or_else(|| Some("unknown".into()));
-        finding.description = Some(item.description.clone());
-        finding.remediation = item.help.clone();
-        finding.evidence = evidence.to_vec();
-        finding.source = "axe-core".into();
-        finding.previously_incomplete = true;
-        findings.push(finding);
-    }
-
     findings.sort_by_key(|finding| {
         (
             finding.id.clone(),
@@ -288,7 +230,7 @@ impl ObscuraBridge {
             }
         };
         let mut attempt = 0;
-        let (raw, evidence, igt, incomplete) = loop {
+        let (raw, evidence, igt) = loop {
             let result = timeout(
                 Duration::from_millis(request.config.timeout_ms),
                 self.run_configured_axe(request, &axe_source),
@@ -333,17 +275,7 @@ impl ObscuraBridge {
                 ))
             }
         };
-        let incomplete_value: serde_json::Value = match serde_json::to_value(&incomplete) {
-            Ok(v) => v,
-            Err(error) => {
-                return Ok(AnalyzePageResult::failed(
-                    &request.url,
-                    ObscuraError::Json(error.to_string()),
-                    started.elapsed().as_millis() as u64,
-                ))
-            }
-        };
-        let findings = match findings_from_axe(&request.url, &violations, &evidence, &incomplete_value) {
+        let findings = match findings_from_axe(&request.url, &violations, &evidence) {
             Ok(findings) => findings,
             Err(error) => {
                 return Ok(AnalyzePageResult::failed(
@@ -355,9 +287,7 @@ impl ObscuraBridge {
         };
 
         if request.config.needs_review_policy == NeedsReviewPolicy::Fail
-            && findings
-                .iter()
-                .any(|f| f.status == rgaa_core::CriterionStatus::NeedsReview)
+            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::NeedsReview)
         {
             return Ok(AnalyzePageResult::failed(
                 &request.url,
@@ -429,7 +359,7 @@ impl ObscuraBridge {
         &self,
         request: &AnalyzeRequest,
         axe_source: &str,
-    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>, Vec<AxeViolationPayload>), ObscuraError> {
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), ObscuraError> {
         let ws_url = self
             .get_browser_ws_url()
             .await
@@ -437,13 +367,17 @@ impl ObscuraBridge {
         let (mut ws, _) = connect_async(&ws_url)
             .await
             .map_err(|error| ObscuraError::CdpTransport(error.to_string()))?;
-        let target_id = Self::cdp_send(&mut ws, "Target.createTarget", serde_json::json!({}))
-            .await
-            .map_err(Self::classify_error)?
-            .get("targetId")
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
-            .to_owned();
+        let target_id = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": request.url}),
+        )
+        .await
+        .map_err(Self::classify_error)?
+        .get("targetId")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
+        .to_owned();
         let session_id = Self::cdp_send(
             &mut ws,
             "Target.attachToTarget",
@@ -473,16 +407,7 @@ impl ObscuraBridge {
         session_id: &str,
         request: &AnalyzeRequest,
         axe_source: &str,
-    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>, Vec<AxeViolationPayload>), String> {
-        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({})).await?;
-        self.apply_cookies(ws, session_id, request).await?;
-        Self::cdp_send_session(
-            ws,
-            session_id,
-            "Page.navigate",
-            serde_json::json!({"url": request.url}),
-        )
-        .await?;
+    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), String> {
         Self::wait_for_load(
             ws,
             session_id,
@@ -503,27 +428,6 @@ impl ObscuraBridge {
         .await?;
         self.apply_cookies(ws, session_id, request).await?;
         self.apply_pre_scan_actions(ws, session_id, request).await?;
-        if request.config.patch_attach_internals {
-            let patch = r#"
-                globalThis._elementInternals ??= new WeakMap();
-                const __origAttachInternals = HTMLElement.attachInternals;
-                HTMLElement.attachInternals = function(...args) {
-                    const internals = __origAttachInternals.apply(this, args);
-                    globalThis._elementInternals.set(this, internals);
-                    return internals;
-                };
-            "#;
-            let patch_result = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Runtime.evaluate",
-                serde_json::json!({"expression": format!("(function() {{ {} }})()", patch)}),
-            )
-            .await?;
-            if patch_result.get("exceptionDetails").is_some() {
-                return Err("patch_attach_internals injection threw".into());
-            }
-        }
         let inject = Self::cdp_send_session(
             ws,
             session_id,
@@ -534,17 +438,15 @@ impl ObscuraBridge {
         if inject.get("exceptionDetails").is_some() {
             return Err("axe-core injection threw an exception".into());
         }
-        let axe_options = request.config.selector.as_ref().map(|selector| {
-            let selector_json = serde_json::to_string(selector)
-                .map_err(|error| error.to_string())?;
-            Ok::<_, String>(format!(
-                "{{ selector: {}, elementRef: true }}",
-                selector_json
-            ))
-        }).transpose()?;
-        let expression = match axe_options {
-            Some(opts) => format!("axe.run({})", opts),
-            None => "axe.run({ elementRef: true })".into(),
+        let axe_argument = request
+            .config
+            .selector
+            .as_ref()
+            .map(|selector| serde_json::to_string(selector).map_err(|error| error.to_string()))
+            .transpose()?;
+        let expression = match axe_argument {
+            Some(selector) => format!("axe.run({selector})"),
+            None => "axe.run()".into(),
         };
         let result = Self::cdp_send_session(
             ws,
@@ -553,22 +455,16 @@ impl ObscuraBridge {
             serde_json::json!({"expression": expression, "awaitPromise": true, "returnByValue": true}),
         )
         .await?;
-        let axe_response = Self::validate_axe_result(&result)?;
-        let violations = serde_json::to_value(&axe_response.violations)
-            .map_err(|error| format!("invalid axe JSON: {error}"))?;
-        let raw = serde_json::to_string(&violations)
+        let raw = Self::validate_axe_result(&result)?;
+        let violations = serde_json::from_str::<serde_json::Value>(&raw)
             .map_err(|error| format!("invalid axe JSON: {error}"))?;
         let evidence = self
             .capture_evidence(ws, session_id, request, &violations)
             .await?;
         let igt = self.run_igt_keyboard(ws, session_id, request).await;
-        Ok((raw, evidence, igt, axe_response.incomplete))
+        Ok((raw, evidence, igt))
     }
 
-    /// Injects cookies into the browser session via Network.setCookie.
-    ///
-    /// Cookie values are read from the CookieReference, falling back to
-    /// environment variables (RGAA_COOKIE_<NAME>) when value is None.
     async fn apply_cookies(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -622,7 +518,7 @@ impl ObscuraBridge {
                 params["httpOnly"] = serde_json::Value::Bool(http_only);
             }
             if let Some(expires) = cookie.expires {
-                params["expires"] = serde_json::json!(expires);
+                params["expires"] = serde_json::json!({ "type": "number", "value": expires });
             }
             let result =
                 Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
@@ -633,10 +529,6 @@ impl ObscuraBridge {
         Ok(())
     }
 
-    /// Executes pre-scan actions: Click, Fill, and WaitFor.
-    ///
-    /// Click and Fill use synchronous JS execution. WaitFor uses async
-    /// Promise-based polling via setTimeout to avoid blocking the browser.
     async fn apply_pre_scan_actions(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -644,24 +536,18 @@ impl ObscuraBridge {
         request: &AnalyzeRequest,
     ) -> Result<(), String> {
         for action in &request.config.pre_scan_actions {
-            let (expression, await_promise) = match action {
+            let expression = match action {
                 PreScanAction::Click { selector } => {
                     let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
-                    (
-                        format!(
-                            "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
-                        ),
-                        false,
+                    format!(
+                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
                     )
                 }
                 PreScanAction::Fill { selector, value } => {
                     let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
                     let value = serde_json::to_string(value).map_err(|e| e.to_string())?;
-                    (
-                        format!(
-                            "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"
-                        ),
-                        false,
+                    format!(
+                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"
                     )
                 }
                 PreScanAction::WaitFor { selector, state } => {
@@ -672,41 +558,18 @@ impl ObscuraBridge {
                         WaitForState::Hidden => "!el.offsetParent && getComputedStyle(el).visibility === 'hidden'",
                         WaitForState::Detached => "!document.body.contains(el)",
                     };
-                    (
-                        format!(
-                            r#"((selector, check, timeout) => {{
-  const deadline = Date.now() + timeout;
-  return new Promise((resolve, reject) => {{
-    function poll() {{
-      const el = document.querySelector(selector);
-      if (el && ({check})) {{
-        resolve(true);
-        return;
-      }}
-      if (Date.now() > deadline) {{
-        reject(new Error('waitFor timed out'));
-        return;
-      }}
-      setTimeout(poll, 50);
-    }}
-    const el = document.querySelector(selector);
-    if (!el) {{
-      reject(new Error('waitFor selector not found'));
-      return;
-    }}
-    poll();
-  }});
-}})({selector}, function() {{ return {check}; }}, {MAX_WAITFOR_TIMEOUT_MS})"#
-                        ),
-                        true,
+                    format!(
+                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('waitFor selector not found'); const deadline = Date.now() + {MAX_WAITFOR_TIMEOUT_MS}; while (!({check})) {{ if (Date.now() > deadline) {{ throw new Error('waitFor timed out'); }} }} return true; }})()"
                     )
                 }
             };
-            let mut params = serde_json::json!({"expression": expression, "returnByValue": true});
-            if await_promise {
-                params["awaitPromise"] = serde_json::Value::Bool(true);
-            }
-            let result = Self::cdp_send_session(ws, session_id, "Runtime.evaluate", params).await?;
+            let result = Self::cdp_send_session(
+                ws,
+                session_id,
+                "Runtime.evaluate",
+                serde_json::json!({"expression": expression, "returnByValue": true}),
+            )
+            .await?;
             if result.get("exceptionDetails").is_some() {
                 return Err("pre-scan action evaluation failed".into());
             }
@@ -907,12 +770,7 @@ impl ObscuraBridge {
 
         let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
         match (outcome, cleanup) {
-            (Ok(ax), Ok(())) => {
-                // Return violations JSON for backward compatibility
-                let json = serde_json::to_string(&ax.violations)
-                    .map_err(|e| format!("failed to serialize violations: {e}"))?;
-                Ok(json)
-            }
+            (Ok(value), Ok(())) => Ok(value),
             (Ok(_), Err(error)) => Err(error),
             (Err(error), _) => Err(error),
         }
@@ -1185,103 +1043,13 @@ impl ObscuraBridge {
         Ok(tree)
     }
 
-    /// Probe the ElementInternals of the first element matching `selector` on `url`.
-    ///
-    /// Requires axe-core to be loaded in the page first (injected automatically).
-    /// Returns the raw axe-core ElementInternals object: role, aria-*, states, etc.
-    /// Returns `Ok(serde_json::Value::Null)` if no element matches or if the element
-    /// has no ElementInternals (i.e. is not a custom element with `attachInternals`).
-    pub async fn get_element_internals(
-        &self,
-        url: &str,
-        selector: &str,
-    ) -> Result<serde_json::Value, String> {
-        let axe_source = self
-            .fetch_axe_source()
-            .await
-            .map_err(|e| format!("Failed to fetch axe-core: {e}"))?;
-
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        // Inject axe-core
-        let inject = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": format!("(function() {{ {} }})()", axe_source)}),
-        )
-        .await?;
-        if inject.get("exceptionDetails").is_some() {
-            let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-            return Err("axe-core injection threw".into());
-        }
-
-        // Probe ElementInternals via axe.getElementInternals.
-        // Use JSON serialization to safely embed the selector string without
-        // introducing quote conflicts in the JS expression.
-        let selector_json = serde_json::to_string(selector)
-            .map_err(|e| format!("selector serialization failed: {e}"))?;
-        let probe_expr = format!(
-            "(function() {{ \
-                var el = document.querySelector({selector_json}); \
-                if (!el) return null; \
-                return axe.getElementInternals(el); \
-            }})()"
-        );
-        let result = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": probe_expr, "awaitPromise": true, "returnByValue": true}),
-        )
-        .await?;
-
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        // Extract value from CDP result wrapper
-        Ok(result
-            .get("result")
-            .and_then(|r| r.get("value"))
-            .cloned()
-            .unwrap_or(serde_json::Value::Null))
-    }
-
     /// Inner axe-core evaluation: wait for navigation, inject axe, then run it.
     async fn run_axe_core(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
         session_id: &str,
         axe_source: &str,
-    ) -> Result<AxeResponse, String> {
+    ) -> Result<String, String> {
         // Wait for the page to load (lifecycle event or readyState), bounded.
         Self::wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
 
@@ -1301,15 +1069,12 @@ impl ObscuraBridge {
         }
 
         // 6. Run axe.run() and capture the resolved value directly.
-        // elementRef: true adds DOM element references to each node result,
-        // enabling precise violation→element mapping for web components
-        // that use ElementInternals (axe-core 4.13+).
         let result = Self::cdp_send_session(
             ws,
             session_id,
             "Runtime.evaluate",
             serde_json::json!({
-                "expression": "axe.run({ elementRef: true })",
+                "expression": "axe.run()",
                 "awaitPromise": true,
                 "returnByValue": true,
             }),
@@ -1319,10 +1084,11 @@ impl ObscuraBridge {
         Self::validate_axe_result(&result)
     }
 
-    /// Validate and extract the axe.run() result. Returns violations + incomplete.
-    /// Any missing/exception/null/subtype result is treated as an error so a
-    /// failure cannot masquerade as a clean run.
-    fn validate_axe_result(result: &serde_json::Value) -> Result<AxeResponse, String> {
+    /// Validate the resolved axe.run() result. Any missing/exception/null/subtype
+    /// result is treated as an error so a failure cannot masquerade as a clean run.
+    ///
+    /// `result` is the CDP `Runtime.evaluate` "result" object: `{ result: <RemoteObject>, exceptionDetails? }`.
+    fn validate_axe_result(result: &serde_json::Value) -> Result<String, String> {
         if let Some(ex) = result.get("exceptionDetails") {
             return Err(format!("axe.run() raised an exception: {ex}"));
         }
@@ -1343,19 +1109,16 @@ impl ObscuraBridge {
             return Err("axe.run() result value is null".to_string());
         }
 
-        let violations_arr = value
+        let violations = value
             .get("violations")
             .ok_or_else(|| "axe result is missing the 'violations' field".to_string())?;
 
-        let violations: Vec<AxeViolationPayload> = serde_json::from_value(violations_arr.clone())
-            .map_err(|e| format!("failed to deserialize violations: {e}"))?;
+        if !violations.is_array() {
+            return Err("axe result 'violations' is not an array".to_string());
+        }
 
-        let empty_incomplete = serde_json::Value::Array(vec![]);
-        let incomplete_arr = value.get("incomplete").unwrap_or(&empty_incomplete);
-        let incomplete: Vec<AxeViolationPayload> = serde_json::from_value(incomplete_arr.clone())
-            .map_err(|e| format!("failed to deserialize incomplete: {e}"))?;
-
-        Ok(AxeResponse { violations, incomplete })
+        serde_json::to_string(violations)
+            .map_err(|e| format!("failed to serialize axe violations: {e}"))
     }
 
     /// Wait for navigation to finish by observing `Page.loadEventFired` /
@@ -2087,11 +1850,6 @@ impl ObscuraBridge {
             .ok_or_else(|| "No tab order data returned".to_string())
     }
 
-    /// Runs keyboard navigation IGT: Tab through focusable elements and detect traps.
-    ///
-    /// Iterates up to 50 Tab key presses, tracking focused elements and detecting
-    /// keyboard traps (same element focused 5+ consecutive tabs). Uses stable
-    /// element IDs for trap detection. Records termination_reason if Tab dispatch fails.
     async fn run_igt_keyboard(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -2106,23 +1864,11 @@ impl ObscuraBridge {
         let mut igt_elements = Vec::new();
         let mut previous_focused: Option<String> = None;
         let mut trap_counter = 0;
-        let mut termination_reason: Option<String> = None;
 
         let interactive_roles = [
-            "button",
-            "link",
-            "textbox",
-            "checkbox",
-            "radio",
-            "menuitem",
-            "tab",
-            "menuitemcheckbox",
-            "menuitemradio",
-            "switch",
-            "searchbox",
-            "spinbutton",
-            "combobox",
-            "slider",
+            "button", "link", "textbox", "checkbox", "radio", "menuitem",
+            "tab", "menuitemcheckbox", "menuitemradio", "switch", "searchbox",
+            "spinbutton", "combobox", "slider",
         ];
 
         for _ in 0..max_tabs {
@@ -2134,7 +1880,6 @@ impl ObscuraBridge {
             )
             .await;
             if tab_result.is_err() {
-                termination_reason = Some("tab key dispatch failed".to_string());
                 break;
             }
             let get_focused = Self::cdp_send_session(
@@ -2154,27 +1899,17 @@ impl ObscuraBridge {
             } else {
                 None
             };
-            let (role, name, tag, elem_id) = if let Some(fv) = &focused {
+            let (role, name, tag) = if let Some(fv) = &focused {
                 let role = fv.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
                 let name = fv.get("name").and_then(|r| r.as_str()).unwrap_or("");
                 let tag = fv.get("tag").and_then(|r| r.as_str()).unwrap_or("");
-                let elem_id = fv.get("id").and_then(|r| r.as_str()).unwrap_or("");
-                (
-                    role.to_string(),
-                    name.to_string(),
-                    tag.to_string(),
-                    elem_id.to_string(),
-                )
+                (role.to_string(), name.to_string(), tag.to_string())
             } else {
-                (String::new(), String::new(), String::new(), String::new())
+                (String::new(), String::new(), String::new())
             };
 
             if !tag.is_empty() {
-                if interactive_roles.contains(&role.as_str())
-                    || tag == "a"
-                    || tag == "button"
-                    || tag == "input"
-                {
+                if interactive_roles.contains(&role.as_str()) || tag == "a" || tag == "button" || tag == "input" {
                     igt_elements.push(IgtElement {
                         role: role.clone(),
                         name: name.clone(),
@@ -2184,7 +1919,7 @@ impl ObscuraBridge {
                 }
 
                 if let Some(prev) = &previous_focused {
-                    if prev == &elem_id {
+                    if prev == &(tag.clone() + &role.clone()) {
                         trap_counter += 1;
                     } else {
                         trap_counter = 0;
@@ -2195,15 +1930,12 @@ impl ObscuraBridge {
                     issues.push(IgtIssue {
                         rule: "keyboard-trap".to_string(),
                         element: format!("{}:{}", tag, name),
-                        description: format!(
-                            "Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs",
-                            name, tag, role, trap_counter
-                        ),
+                        description: format!("Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs", name, tag, role, trap_counter),
                     });
                     break;
                 }
 
-                previous_focused = Some(elem_id);
+                previous_focused = Some(tag.clone() + &role.clone());
             }
 
             let key_up = Self::cdp_send_session(
@@ -2214,7 +1946,6 @@ impl ObscuraBridge {
             )
             .await;
             if key_up.is_err() {
-                termination_reason = Some("tab key release failed".to_string());
                 break;
             }
         }
@@ -2229,16 +1960,14 @@ impl ObscuraBridge {
 
         Some(IgtResults {
             keyboard: IgtResult {
-                status: if termination_reason.is_some()
-                    || issues.iter().any(|i| i.rule == "keyboard-trap")
-                {
+                status: if issues.iter().any(|i| i.rule == "keyboard-trap") {
                     "incomplete".to_string()
                 } else {
                     "complete".to_string()
                 },
                 issues,
                 igt_elements,
-                terminated_reason: termination_reason.map(|_| TerminationReason::ExecutionError),
+                terminated_reason: None,
             },
         })
     }

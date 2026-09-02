@@ -57,18 +57,10 @@ impl AnalyzeRequest {
                     rgaa_obscura::PreScanAction::WaitFor {
                         selector: selector.clone(),
                         state: match *state {
-                            crate::tools::WaitForState::Visible => {
-                                rgaa_obscura::WaitForState::Visible
-                            }
-                            crate::tools::WaitForState::Attached => {
-                                rgaa_obscura::WaitForState::Attached
-                            }
-                            crate::tools::WaitForState::Hidden => {
-                                rgaa_obscura::WaitForState::Hidden
-                            }
-                            crate::tools::WaitForState::Detached => {
-                                rgaa_obscura::WaitForState::Detached
-                            }
+                            crate::tools::WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
+                            crate::tools::WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
+                            crate::tools::WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
+                            crate::tools::WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
                         },
                     }
                 }
@@ -98,10 +90,7 @@ impl AnalyzeRequest {
                     .advanced_rules
                     .as_ref()
                     .map(|v| match v.as_str() {
-                        // FIXME: "thorough" and "standard" should map to Enabled
-                        // once advanced rules are supported by the domain runner.
-                        // Currently rejected by validate_supported().
-                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Disabled,
+                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Enabled,
                         _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
                     })
                     .unwrap_or_default(),

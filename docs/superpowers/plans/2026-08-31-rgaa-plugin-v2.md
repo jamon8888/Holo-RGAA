@@ -434,7 +434,7 @@ Run a full-site crawl via the orchestrator pipeline. Unlike `/audit-site` which 
 | `url` | string | Yes | Seed URL to start crawling |
 | `--max-pages` | integer | No | Maximum pages to crawl (default: 50) |
 | `--max-depth` | integer | No | Maximum crawl depth (default: 5) |
-| `--respect-robots` | flag | No | Honor robots.txt directives (default: true) |
+| `--respect-robots` | flag | No | Honor robots.txt directives (default: true). The slash command cannot disable robots protection — set `config.respect_robots: false` via the `audit_url` MCP tool to override |
 | `--sample-mode` | flag | No | Sample mode — audit a subset (default: false) |
 
 ## Examples
@@ -475,7 +475,7 @@ Audit ID:   aud_abc123
 ## Retrieve Results
 
 After the audit:
-- `/get-audit <audit-id>` — Retrieve full audit via `get_audit_result` MCP tool
+- `get_audit_result <audit-id>` — Retrieve full audit via `get_audit_result` MCP tool (no slash command exists — call the MCP tool directly)
 - `/generate-report --input <audit-id>` — Generate a formatted report
 
 ## Error Codes

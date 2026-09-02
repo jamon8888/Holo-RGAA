@@ -59,8 +59,8 @@ cargo install --path rgaa-rs/crates/rgaa-mcp
 {
   "mcpServers": {
     "rgaa-mcp": {
-      "type": "local",
-      "command": ["rgaa-mcp"],
+      "type": "stdio",
+      "command": "rgaa-mcp",
       "env": {
         "RGAA_OBSCURA_BIN": "${CLAUDE_PLUGIN_ROOT}/bin/obscura"
       }

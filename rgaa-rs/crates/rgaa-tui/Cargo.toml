@@ -1,0 +1,35 @@
+[package]
+description = "Interactive TUI for RGAA accessibility auditing"
+license = "MIT"
+name = "rgaa-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+rgaa-orchestrator = { path = "../rgaa-orchestrator" }
+rgaa-agent = { path = "../rgaa-agent" }
+rgaa-holo = { path = "../rgaa-holo" }
+rgaa-storage = { path = "../rgaa-storage" }
+rgaa-obscura = { path = "../rgaa-obscura" }
+rgaa-spider = { path = "../rgaa-spider" }
+
+clap = { workspace = true }
+tokio = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+keyring = "3"
+ratatui = "0.28"
+ratatui_input = "0.1"
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = { workspace = true }
+dirs = "6"
+reqwest = { version = "0.12", features = ["json"] }
+uuid = { version = "1.0", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winuser"] }

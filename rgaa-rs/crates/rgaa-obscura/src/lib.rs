@@ -19,8 +19,8 @@ pub mod results;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
-    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy, Viewport,
-    WaitForState, MAX_WAITFOR_TIMEOUT_MS,
+    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy,
+    Viewport, WaitForState, MAX_WAITFOR_TIMEOUT_MS,
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
@@ -142,7 +142,10 @@ fn findings_from_axe(
                 finding.status = if criterion_id != "unmapped"
                     && matches!(
                         RgaaCriteria::classification_for(criterion_id),
-                        Some(rgaa_core::Classification::IaAssiste | rgaa_core::Classification::Manuel)
+                        Some(
+                            rgaa_core::Classification::IaAssiste
+                                | rgaa_core::Classification::Manuel
+                        )
                     ) {
                     CriterionStatus::NeedsReview
                 } else {
@@ -300,7 +303,9 @@ impl ObscuraBridge {
         };
 
         if request.config.needs_review_policy == NeedsReviewPolicy::Fail
-            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::NeedsReview)
+            && findings
+                .iter()
+                .any(|f| f.status == rgaa_core::CriterionStatus::NeedsReview)
         {
             return Ok(AnalyzePageResult::failed(
                 &request.url,
@@ -380,17 +385,13 @@ impl ObscuraBridge {
         let (mut ws, _) = connect_async(&ws_url)
             .await
             .map_err(|error| ObscuraError::CdpTransport(error.to_string()))?;
-        let target_id = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({}),
-        )
-        .await
-        .map_err(Self::classify_error)?
-        .get("targetId")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
-        .to_owned();
+        let target_id = Self::cdp_send(&mut ws, "Target.createTarget", serde_json::json!({}))
+            .await
+            .map_err(Self::classify_error)?
+            .get("targetId")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
+            .to_owned();
         let session_id = Self::cdp_send(
             &mut ws,
             "Target.attachToTarget",
@@ -421,8 +422,7 @@ impl ObscuraBridge {
         request: &AnalyzeRequest,
         axe_source: &str,
     ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), String> {
-        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({}))
-            .await?;
+        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({})).await?;
         self.apply_cookies(ws, session_id, request).await?;
         Self::cdp_send_session(
             ws,
@@ -629,13 +629,7 @@ impl ObscuraBridge {
             if await_promise {
                 params["awaitPromise"] = serde_json::Value::Bool(true);
             }
-            let result = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Runtime.evaluate",
-                params,
-            )
-            .await?;
+            let result = Self::cdp_send_session(ws, session_id, "Runtime.evaluate", params).await?;
             if result.get("exceptionDetails").is_some() {
                 return Err("pre-scan action evaluation failed".into());
             }
@@ -1938,9 +1932,20 @@ impl ObscuraBridge {
         let mut termination_reason: Option<String> = None;
 
         let interactive_roles = [
-            "button", "link", "textbox", "checkbox", "radio", "menuitem",
-            "tab", "menuitemcheckbox", "menuitemradio", "switch", "searchbox",
-            "spinbutton", "combobox", "slider",
+            "button",
+            "link",
+            "textbox",
+            "checkbox",
+            "radio",
+            "menuitem",
+            "tab",
+            "menuitemcheckbox",
+            "menuitemradio",
+            "switch",
+            "searchbox",
+            "spinbutton",
+            "combobox",
+            "slider",
         ];
 
         for _ in 0..max_tabs {
@@ -1977,13 +1982,22 @@ impl ObscuraBridge {
                 let name = fv.get("name").and_then(|r| r.as_str()).unwrap_or("");
                 let tag = fv.get("tag").and_then(|r| r.as_str()).unwrap_or("");
                 let elem_id = fv.get("id").and_then(|r| r.as_str()).unwrap_or("");
-                (role.to_string(), name.to_string(), tag.to_string(), elem_id.to_string())
+                (
+                    role.to_string(),
+                    name.to_string(),
+                    tag.to_string(),
+                    elem_id.to_string(),
+                )
             } else {
                 (String::new(), String::new(), String::new(), String::new())
             };
 
             if !tag.is_empty() {
-                if interactive_roles.contains(&role.as_str()) || tag == "a" || tag == "button" || tag == "input" {
+                if interactive_roles.contains(&role.as_str())
+                    || tag == "a"
+                    || tag == "button"
+                    || tag == "input"
+                {
                     igt_elements.push(IgtElement {
                         role: role.clone(),
                         name: name.clone(),
@@ -2004,7 +2018,10 @@ impl ObscuraBridge {
                     issues.push(IgtIssue {
                         rule: "keyboard-trap".to_string(),
                         element: format!("{}:{}", tag, name),
-                        description: format!("Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs", name, tag, role, trap_counter),
+                        description: format!(
+                            "Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs",
+                            name, tag, role, trap_counter
+                        ),
                     });
                     break;
                 }

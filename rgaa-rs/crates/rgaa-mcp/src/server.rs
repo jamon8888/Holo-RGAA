@@ -37,7 +37,9 @@ impl AnalyzeRequest {
     /// advanced_rules, needs_review_policy, and igt_tools to domain types.
     fn to_domain(&self) -> Result<rgaa_obscura::AnalyzeRequest, McpFailure> {
         if self.viewport_height.is_some() && self.viewport_width.is_none() {
-            return Err(McpFailure::invalid("viewportHeight requires viewportWidth to be set"));
+            return Err(McpFailure::invalid(
+                "viewportHeight requires viewportWidth to be set",
+            ));
         }
         let config = &self.config;
         let actions = config
@@ -55,10 +57,18 @@ impl AnalyzeRequest {
                     rgaa_obscura::PreScanAction::WaitFor {
                         selector: selector.clone(),
                         state: match *state {
-                            crate::tools::WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
-                            crate::tools::WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
-                            crate::tools::WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
-                            crate::tools::WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
+                            crate::tools::WaitForState::Visible => {
+                                rgaa_obscura::WaitForState::Visible
+                            }
+                            crate::tools::WaitForState::Attached => {
+                                rgaa_obscura::WaitForState::Attached
+                            }
+                            crate::tools::WaitForState::Hidden => {
+                                rgaa_obscura::WaitForState::Hidden
+                            }
+                            crate::tools::WaitForState::Detached => {
+                                rgaa_obscura::WaitForState::Detached
+                            }
                         },
                     }
                 }
@@ -663,9 +673,9 @@ impl ToolServer {
                     .into_error_data(),
             );
         }
-        Ok(rmcp::handler::server::wrapper::Json(AnalyzeResponse::from_result(
-            result,
-        )))
+        Ok(rmcp::handler::server::wrapper::Json(
+            AnalyzeResponse::from_result(result),
+        ))
     }
 
     #[tool(

@@ -1,8 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use rgaa_core::CrawlConfig;
 use crate::tools::igt::IgtResultsDto;
+use rgaa_core::CrawlConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditUrlInput {
@@ -254,8 +254,13 @@ impl From<WaitForState> for rgaa_obscura::WaitForState {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum PreScanActionInput {
-    Click { selector: String },
-    Fill { selector: String, value: String },
+    Click {
+        selector: String,
+    },
+    Fill {
+        selector: String,
+        value: String,
+    },
     WaitFor {
         selector: String,
         #[serde(default)]

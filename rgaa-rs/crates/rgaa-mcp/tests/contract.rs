@@ -147,7 +147,7 @@ fn approval_state_and_token_are_surfaced_in_response_dto() {
 #[tokio::test]
 async fn analyze_handler_preserves_invalid_input_code() {
     let server = test_server();
-        let result = server
+    let result = server
         .analyze(Parameters(AnalyzeRequest {
             url: "file:///etc/passwd".into(),
             config: Default::default(),

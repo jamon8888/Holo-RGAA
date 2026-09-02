@@ -31,12 +31,12 @@ impl PortableTool for SpiderTool {
         "Crawl a website and discover pages for RGAA accessibility auditing. \
          Returns raw HTML and links for each discovered page so the LLM can \
          determine which pages are RGAA-relevant (mandatory pages, forms, \
-         navigation, etc.).".to_string()
+         navigation, etc.)."
+            .to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
-        serde_json::to_value(schemars::schema_for!(CrawlSiteArgs))
-            .expect("valid schema")
+        serde_json::to_value(schemars::schema_for!(CrawlSiteArgs)).expect("valid schema")
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {

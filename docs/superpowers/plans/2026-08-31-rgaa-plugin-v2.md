@@ -14,7 +14,7 @@
 
 ## File Map
 
-```
+```text
 rgaa-rs/plugins/rgaa-consultant/
 ├── .claude-plugin/plugin.json          # Modify: version 1.0.0 → 2.0.0
 ├── .mcp.json                           # Modify: add rgaa-mcp server + update description
@@ -340,7 +340,7 @@ No parameters.
   }
 }
 ```
-```
+```markdown
 
 - [ ] **Step 2: Commit**
 
@@ -386,7 +386,7 @@ cargo install --path rgaa-rs/crates/rgaa-mcp
   }
 }
 ```
-```
+```markdown
 
 Also update the "Tools used" section under ### 1 to include the 5 CLI commands as-is.
 
@@ -666,7 +666,7 @@ Generate approval-gated source-level patch proposals for accessibility findings.
 
 ## Examples
 
-```
+```bash
 /remediate --findings findings.json
 /remediate --findings findings.json --framework react
 /audit-site https://example.test → /triage → /remediate
@@ -683,7 +683,7 @@ Generate approval-gated source-level patch proposals for accessibility findings.
 
 ## Proposal Output
 
-```
+```text
 PROPOSAL (prop-abc123)
 ══════════════════════════════════════
 Finding:   RGAA 1.1 — Image missing alt
@@ -734,6 +734,7 @@ rgaa audit verify --issues fixes.json
 | `INSUFFICIENT_CONTEXT` | Cannot locate source element | Suggest manual fix |
 | `UNSUPPORTED_FRAMEWORK` | Framework not detected | Return NeedsReview |
 | `POLICY_DENIED` | Approval required but not granted | Block application |
+
 ```
 
 - [ ] **Step 2: Commit**
@@ -758,7 +759,7 @@ git commit -m "feat(plugin): add /remediate command for remediation proposals"
 
 After the existing "Arguments" table (after the `--format` row), insert:
 
-```
+```markdown
 ## Advanced Arguments
 
 | Argument | Type | Required | Description |
@@ -782,7 +783,7 @@ After the existing "Arguments" table (after the `--format` row), insert:
 
 Then update the "Examples" section to:
 
-```
+```markdown
 ## Examples
 
 ```
@@ -821,7 +822,7 @@ git commit -m "feat(plugin): update /audit-site with all new analyze params"
 
 Add to the Inputs table after the `pre_scan_actions` row:
 
-```
+```markdown
 | `igt_tools` | string[] | No | IGT tools to run, e.g. `["keyboard"]` — runs keyboard navigation test |
 | `needs_review_policy` | string | No | `"record"` (default) or `"fail"` — when set to `fail`, audit returns failed status if any NeedsReview findings exist |
 | `advanced_rules` | string | No | `"thorough"` / `"standard"` / `"disabled"` |
@@ -833,7 +834,7 @@ Add to the Inputs table after the `pre_scan_actions` row:
 
 After the existing output JSON block, add:
 
-```
+```markdown
 ### Nested Response (when igt_tools is set)
 
 When `igt_tools: ["keyboard"]` is passed, results include IGT keyboard test results under `data.igt.keyboard`:
@@ -911,7 +912,7 @@ git commit -m "feat(plugin): update remediate and guided-test skills to referenc
 
 In "Example Interactions", add after the existing audit workflow:
 
-```
+```text
 User: "I need a full-site compliance report"
 Claude: → Runs /audit-url on the starting URL
 Claude: → Retrieves results via get_audit_result MCP tool
@@ -939,7 +940,7 @@ git commit -m "feat(plugin): update report skill to reference /audit-url workflo
 
 Replace the existing Commands table with:
 
-```
+```markdown
 ## Commands
 
 | Command | Description |
@@ -956,7 +957,7 @@ Replace the existing Commands table with:
 
 Replace the existing Skills table with:
 
-```
+```markdown
 ## Skills
 
 Skills activate automatically when relevant — no need to invoke them directly.
@@ -975,7 +976,7 @@ Skills activate automatically when relevant — no need to invoke them directly.
 
 Replace the `commands/` section in the file structure with:
 
-```
+```text
 ├── commands/
 │   ├── audit-site.md
 │   ├── audit-project.md

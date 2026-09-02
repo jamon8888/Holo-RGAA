@@ -114,6 +114,7 @@ impl AnalyzeRequest {
                 timeout_ms: config.timeout_ms.unwrap_or(30_000),
                 retry_limit: config.retry_limit.unwrap_or(0),
                 concurrency: 1,
+                patch_attach_internals: false,
             },
         };
         domain

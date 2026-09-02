@@ -200,6 +200,8 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
         screenshot: ScreenshotConfig {
             policy: ScreenshotPolicy::Always,
             format: ScreenshotFormat::Png,
+            inline: Some(false),
+            save_to: None,
         },
         timeout_ms: 30_000,
         retry_limit: 1,

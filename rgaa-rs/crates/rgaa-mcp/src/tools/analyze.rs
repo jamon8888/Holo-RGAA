@@ -157,7 +157,7 @@ pub enum ScreenshotFormat {
     Jpeg,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ScreenshotInput {
     #[serde(default)]
     pub format: Option<ScreenshotFormat>,
@@ -167,17 +167,6 @@ pub struct ScreenshotInput {
     pub save: Option<bool>,
     #[serde(default)]
     pub inline: Option<bool>,
-}
-
-impl Default for ScreenshotInput {
-    fn default() -> Self {
-        Self {
-            format: None,
-            save_to: None,
-            save: None,
-            inline: None,
-        }
-    }
 }
 
 /// Converts MCP ScreenshotInput to domain ScreenshotConfig, propagating save_to and inline options.
@@ -214,19 +203,14 @@ fn default_height() -> u32 {
     1080
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitForState {
+    #[default]
     Visible,
     Attached,
     Hidden,
     Detached,
-}
-
-impl Default for WaitForState {
-    fn default() -> Self {
-        WaitForState::Visible
-    }
 }
 
 impl From<rgaa_obscura::WaitForState> for WaitForState {

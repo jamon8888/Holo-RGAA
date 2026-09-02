@@ -99,6 +99,8 @@ fn serialized_inputs_never_contain_cookie_values() {
             }],
             ..Default::default()
         },
+        viewport_width: None,
+        viewport_height: None,
     };
     let json = serde_json::to_string(&request).expect("serialize");
     assert!(!json.contains("super-secret"));

@@ -260,6 +260,7 @@ pub enum PreScanActionInput {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CookieInput {
     pub name: String,
+    #[serde(skip_serializing)]
     pub value: String,
     pub domain: String,
     #[serde(default)]

@@ -41,6 +41,18 @@ impl AnalyzeRequest {
                 "viewportHeight requires viewportWidth to be set",
             ));
         }
+        if let Some(ref sc) = self.config.screenshot {
+            if sc.save_to.is_some() {
+                return Err(McpFailure::invalid(
+                    "screenshot.saveTo is not yet supported",
+                ));
+            }
+            if sc.inline.is_some() {
+                return Err(McpFailure::invalid(
+                    "screenshot.inline is not yet supported",
+                ));
+            }
+        }
         let config = &self.config;
         let actions = config
             .pre_scan_actions
@@ -90,7 +102,7 @@ impl AnalyzeRequest {
                     .advanced_rules
                     .as_ref()
                     .map(|v| match v.as_str() {
-                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Enabled,
+                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Disabled, // TODO: implement Enabled variant
                         _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
                     })
                     .unwrap_or_default(),

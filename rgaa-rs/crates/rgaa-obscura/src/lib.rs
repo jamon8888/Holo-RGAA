@@ -287,7 +287,7 @@ impl ObscuraBridge {
         };
 
         if request.config.needs_review_policy == NeedsReviewPolicy::Fail
-            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::NeedsReview)
+            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::Fail)
         {
             return Ok(AnalyzePageResult::failed(
                 &request.url,
@@ -370,7 +370,7 @@ impl ObscuraBridge {
         let target_id = Self::cdp_send(
             &mut ws,
             "Target.createTarget",
-            serde_json::json!({"url": request.url}),
+            serde_json::json!({"url": "about:blank"}),
         )
         .await
         .map_err(Self::classify_error)?
@@ -408,6 +408,13 @@ impl ObscuraBridge {
         request: &AnalyzeRequest,
         axe_source: &str,
     ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), String> {
+        Self::cdp_send_session(
+            ws,
+            session_id,
+            "Page.navigate",
+            serde_json::json!({"url": request.url}),
+        )
+        .await?;
         Self::wait_for_load(
             ws,
             session_id,
@@ -518,7 +525,7 @@ impl ObscuraBridge {
                 params["httpOnly"] = serde_json::Value::Bool(http_only);
             }
             if let Some(expires) = cookie.expires {
-                params["expires"] = serde_json::json!({ "type": "number", "value": expires });
+                params["expires"] = serde_json::Value::Number(expires.into());
             }
             let result =
                 Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
@@ -553,21 +560,27 @@ impl ObscuraBridge {
                 PreScanAction::WaitFor { selector, state } => {
                     let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
                     let check = match state {
-                        WaitForState::Visible => "el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden'",
-                        WaitForState::Attached => "document.body.contains(el)",
-                        WaitForState::Hidden => "!el.offsetParent && getComputedStyle(el).visibility === 'hidden'",
-                        WaitForState::Detached => "!document.body.contains(el)",
+                        WaitForState::Visible => "el => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden'",
+                        WaitForState::Attached => "el => document.body.contains(el)",
+                        WaitForState::Hidden => "el => !el.offsetParent && getComputedStyle(el).visibility === 'hidden'",
+                        WaitForState::Detached => "el => !document.body.contains(el)",
                     };
+                    let allow_missing = matches!(state, WaitForState::Detached);
                     format!(
-                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('waitFor selector not found'); const deadline = Date.now() + {MAX_WAITFOR_TIMEOUT_MS}; while (!({check})) {{ if (Date.now() > deadline) {{ throw new Error('waitFor timed out'); }} }} return true; }})()"
+                        "(async () => {{ const selector = {selector}; const checkFn = {check}; const deadline = Date.now() + {MAX_WAITFOR_TIMEOUT_MS}; while (Date.now() < deadline) {{ const el = document.querySelector(selector); if (el && checkFn(el)) return true; if ({allow_missing} && !el) return true; await new Promise(r => setTimeout(r, 50)); }} throw new Error('waitFor timed out'); }})()"
                     )
                 }
             };
+            let is_async = matches!(action, PreScanAction::WaitFor { .. });
             let result = Self::cdp_send_session(
                 ws,
                 session_id,
                 "Runtime.evaluate",
-                serde_json::json!({"expression": expression, "returnByValue": true}),
+                if is_async {
+                    serde_json::json!({"expression": expression, "returnByValue": true, "awaitPromise": true})
+                } else {
+                    serde_json::json!({"expression": expression, "returnByValue": true})
+                },
             )
             .await?;
             if result.get("exceptionDetails").is_some() {
@@ -1864,6 +1877,7 @@ impl ObscuraBridge {
         let mut igt_elements = Vec::new();
         let mut previous_focused: Option<String> = None;
         let mut trap_counter = 0;
+        let mut terminated_reason: Option<TerminationReason> = None;
 
         let interactive_roles = [
             "button", "link", "textbox", "checkbox", "radio", "menuitem",
@@ -1880,6 +1894,7 @@ impl ObscuraBridge {
             )
             .await;
             if tab_result.is_err() {
+                terminated_reason = Some(TerminationReason::ExecutionError);
                 break;
             }
             let get_focused = Self::cdp_send_session(
@@ -1887,7 +1902,7 @@ impl ObscuraBridge {
                 session_id,
                 "Runtime.evaluate",
                 serde_json::json!({
-                    "expression": "(function() { var el = document.activeElement; if (!el || el === document.body) return null; return { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || el.tagName.toLowerCase(), name: (el.textContent || el.value || '').trim().substring(0, 100), id: el.id, className: el.className }; })()",
+                    "expression": "(function() { var el = document.activeElement; if (!el || el === document.body) return null; var path = []; var current = el; while (current && current.nodeType === Node.ELEMENT_NODE) { var idx = 0; var sibling = current.previousElementSibling; while (sibling) { idx++; sibling = sibling.previousElementSibling; } path.unshift(current.tagName.toLowerCase() + '[' + idx + ']'); current = current.parentElement; } return { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || el.tagName.toLowerCase(), name: (el.textContent || el.value || '').trim().substring(0, 100), id: el.id, path: path.join('/') }; })()",
                     "returnByValue": true
                 }),
             )
@@ -1899,13 +1914,20 @@ impl ObscuraBridge {
             } else {
                 None
             };
-            let (role, name, tag) = if let Some(fv) = &focused {
+            let (role, name, tag, identity) = if let Some(fv) = &focused {
                 let role = fv.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
                 let name = fv.get("name").and_then(|r| r.as_str()).unwrap_or("");
                 let tag = fv.get("tag").and_then(|r| r.as_str()).unwrap_or("");
-                (role.to_string(), name.to_string(), tag.to_string())
+                let id = fv.get("id").and_then(|r| r.as_str()).unwrap_or("");
+                let path = fv.get("path").and_then(|r| r.as_str()).unwrap_or("");
+                let identity = if !id.is_empty() {
+                    format!("id:{}", id)
+                } else {
+                    path.to_string()
+                };
+                (role.to_string(), name.to_string(), tag.to_string(), identity)
             } else {
-                (String::new(), String::new(), String::new())
+                (String::new(), String::new(), String::new(), String::new())
             };
 
             if !tag.is_empty() {
@@ -1919,7 +1941,7 @@ impl ObscuraBridge {
                 }
 
                 if let Some(prev) = &previous_focused {
-                    if prev == &(tag.clone() + &role.clone()) {
+                    if prev == &identity {
                         trap_counter += 1;
                     } else {
                         trap_counter = 0;
@@ -1935,7 +1957,7 @@ impl ObscuraBridge {
                     break;
                 }
 
-                previous_focused = Some(tag.clone() + &role.clone());
+                previous_focused = Some(identity);
             }
 
             let key_up = Self::cdp_send_session(
@@ -1946,6 +1968,7 @@ impl ObscuraBridge {
             )
             .await;
             if key_up.is_err() {
+                terminated_reason = Some(TerminationReason::ExecutionError);
                 break;
             }
         }
@@ -1960,14 +1983,14 @@ impl ObscuraBridge {
 
         Some(IgtResults {
             keyboard: IgtResult {
-                status: if issues.iter().any(|i| i.rule == "keyboard-trap") {
+                status: if terminated_reason.is_some() || issues.iter().any(|i| i.rule == "keyboard-trap") {
                     "incomplete".to_string()
                 } else {
                     "complete".to_string()
                 },
                 issues,
                 igt_elements,
-                terminated_reason: None,
+                terminated_reason,
             },
         })
     }

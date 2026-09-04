@@ -1,5 +1,6 @@
 use crate::catalog::{Automatable, RgaaCatalog};
 use crate::types::Classification;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
 pub struct Criterion {
@@ -8,6 +9,8 @@ pub struct Criterion {
     pub classification: Classification,
     pub wcag_refs: &'static str,
 }
+
+static CRITERIA_CACHE: OnceLock<Vec<Criterion>> = OnceLock::new();
 
 /// Static classification + WCAG references for all 106 RGAA 4.1.2 criteria.
 /// Titles are derived from the official `criteres.json` catalog at runtime.
@@ -123,39 +126,44 @@ const CLASSIFICATION: &[(&str, Classification, &str)] = &[
 pub struct RgaaCriteria;
 
 impl RgaaCriteria {
-    pub fn all() -> Vec<Criterion> {
-        CLASSIFICATION
-            .iter()
-            .map(|(id, classification, wcag_refs)| Criterion {
-                id,
-                title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
-                classification: *classification,
-                wcag_refs,
-            })
-            .collect()
+    pub fn all() -> &'static Vec<Criterion> {
+        CRITERIA_CACHE.get_or_init(|| {
+            CLASSIFICATION
+                .iter()
+                .map(|(id, classification, wcag_refs)| Criterion {
+                    id,
+                    title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
+                    classification: *classification,
+                    wcag_refs,
+                })
+                .collect()
+        })
     }
 
     pub fn deterministe() -> Vec<Criterion> {
         Self::all()
-            .into_iter()
+            .iter()
             .filter(|c| c.classification == Classification::Deterministe)
+            .cloned()
             .collect()
     }
 
     pub fn ia_assiste() -> Vec<Criterion> {
         Self::all()
-            .into_iter()
+            .iter()
             .filter(|c| c.classification == Classification::IaAssiste)
+            .cloned()
             .collect()
     }
 
     pub fn partiellement_automatique() -> Vec<Criterion> {
         Self::all()
-            .into_iter()
+            .iter()
             .filter(|c| {
                 RgaaCatalog::by_id(c.id)
                     .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable)
             })
+            .cloned()
             .collect()
     }
 

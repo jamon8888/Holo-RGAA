@@ -1,11 +1,15 @@
-use rgaa_api::{build_app, init_tracing, AppState};
+use rgaa_api::{build_app, AppState};
 use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::PostgresStorage;
 use std::sync::Arc;
+use tracing_subscriber::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .try_init()
+        .ok();
 
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost/rgaa".into());

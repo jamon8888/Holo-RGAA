@@ -222,18 +222,6 @@ impl Repository {
         Ok(rows)
     }
 
-    pub async fn get_bundle(&self, id: Uuid) -> anyhow::Result<Option<Value>> {
-        self.get_audit(id).await
-    }
-
-    pub async fn list_audits_paginated(
-        &self,
-        limit: i64,
-        offset: i64,
-    ) -> anyhow::Result<Vec<AuditRow>> {
-        self.list_audits(limit, offset).await
-    }
-
     // API key validation
     pub async fn validate_api_key(
         &self,

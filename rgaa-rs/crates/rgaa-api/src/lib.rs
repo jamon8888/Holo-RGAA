@@ -6,8 +6,6 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
 
 use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::Storage;
@@ -31,11 +29,4 @@ pub fn build_app(state: AppState) -> Router {
         .route("/health", get(routes::health))
         .layer(cors)
         .with_state(state)
-}
-
-pub fn init_tracing() {
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    let _ = tracing::subscriber::set_global_default(subscriber);
 }

@@ -158,11 +158,12 @@ impl RgaaCriteria {
 
     pub fn partiellement_automatique() -> Vec<Criterion> {
         Self::all()
-            .into_iter()
+            .iter()
             .filter(|c| {
                 RgaaCatalog::by_id(c.id)
                     .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable)
             })
+            .cloned()
             .collect()
     }
 

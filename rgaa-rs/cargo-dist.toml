@@ -1,16 +1,31 @@
 [workspace]
 cargo-version = "1.80"
- ci = "github"
+ci = "github"
 
 [project]
 name = "rgaa-cli"
 version = "0.1.0"
 description = "RGAA accessibility audit CLI + TUI"
 license = "MIT"
-repository = "https://github.com/your-org/rgaa-cli"
-windows-msi = true
-linux-packages = ["deb", "rpm"]
-macos-packages = ["app", "dmg"]
+readme = "README.md"
+homepage = "https://github.com/jamon8888/Holo-RGAA"
+repository = "https://github.com/jamon8888/Holo-RGAA"
+authors = ["Holo-RGAA contributors"]
+edition = "2021"
+
+[executables]
+rgaa-cli = "rgaa-cli"
+rgaa-api = "rgaa-api"
+rgaa-mcp = "rgaa-mcp"
+
+[linux-packages]
+rgaa-cli = { targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"], formats = ["deb", "rpm"] }
+
+[macos-packages]
+rgaa-cli = { targets = ["x86_64-apple-darwin", "aarch64-apple-darwin"], formats = ["app", "dmg"] }
+
+[windows-packages]
+rgaa-cli = { targets = ["x86_64-pc-windows-msvc"], formats = ["msi", "zip"] }
 
 [installers]
 powershell = { priority = 1 }
@@ -20,5 +35,5 @@ windows-msi = { priority = 3 }
 [adapters]
 github = "github"
 
-[metadata.rgaa-cli]
-create-artifacts = ["linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-aarch64", "windows-x86_64"]
+[metadata]
+rgaa-cli.create-artifacts = ["linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-aarch64", "windows-x86_64"]

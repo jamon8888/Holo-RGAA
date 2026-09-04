@@ -2,12 +2,13 @@ use rgaa_api::{build_app, AppState};
 use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::PostgresStorage;
 use std::sync::Arc;
+use tracing::Level;
 use tracing_subscriber::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_max_level(Level::INFO))
         .try_init()
         .ok();
 

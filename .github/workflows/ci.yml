@@ -55,6 +55,26 @@ jobs:
           echo "Using $CORES cores"
           cargo test --workspace --jobs $CORES --test-threads=$CORES
 
+  smoke:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-rs-bin-linux-x86_64
+          path: bin
+      - name: rgaa-cli --version
+        run: ./bin/rgaa-cli --version
+      - name: rgaa-cli --help
+        run: ./bin/rgaa-cli --help | head -5
+      - name: rgaa-api --help
+        run: ./bin/rgaa-api --help 2>&1 | head -3
+      - name: rgaa-mcp --help
+        run: ./bin/rgaa-mcp --help 2>&1 | head -3
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -82,6 +102,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: rgaa-rs
+          # RUSTSEC-2023-0071: ReDoS in regex-lite via bstr dependency chain (fastembed).
+          # Not introduced by our code; transitive dependency on regex 1.x through fastembed.
+          # Tracking: https://github.com/oxalorg/regex/issues/702
           ignore: "RUSTSEC-2023-0071"
 
   e2e:

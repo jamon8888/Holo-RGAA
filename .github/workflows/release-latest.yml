@@ -1,0 +1,159 @@
+name: Latest Build
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+# Build-only: no secrets needed, no test
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: ""
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            cross: false
+            tarball: rgaa-rs-latest-x86_64-unknown-linux-gnu.tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
+            tarball: rgaa-rs-latest-aarch64-unknown-linux-gnu.tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            cross: false
+            tarball: rgaa-rs-latest-x86_64-apple-darwin.tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            cross: false
+            tarball: rgaa-rs-latest-aarch64-apple-darwin.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            cross: false
+            ext: .exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki1978/install-action@v2
+        with:
+          tool: cross
+
+      - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
+        if: runner.os == 'Windows'
+        run: choco install nasm strawberryperl -y
+        shell: bash
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --target ${{ matrix.target }} --release
+          else
+            cargo build --target ${{ matrix.target }} --release
+          fi
+        shell: bash
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa-cli rgaa-api rgaa-mcp
+        shell: bash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p dist
+          cd target/${{ matrix.target }}/release
+          powershell -Command "Compress-Archive -Path 'rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-latest-x86_64-pc-windows-msvc.zip'"
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-rs-latest-${{ matrix.target }}
+          path: rgaa-rs/dist/${{ matrix.tarball }}
+
+  smoke:
+    name: Smoke Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-rs-latest-x86_64-unknown-linux-gnu
+          path: artifact
+
+      - name: Extract
+        run: tar xzf artifact/*.tar.gz -C artifact/
+
+      - name: rgaa-cli --version
+        run: ./artifact/rgaa-cli --version
+
+      - name: rgaa-cli --help
+        run: ./artifact/rgaa-cli --help | head -3
+
+  # Upload to GitHub Release "latest" as pre-release
+  publish-latest:
+    name: Publish Latest Release
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Delete existing latest release
+        run: |
+          gh release delete latest --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create/update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          tag_name: latest
+          name: Latest Build (${{ github.sha }})
+          body: "Latest master/main build. Use tagged releases for stable versions."
+          prerelease: true
+          target: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}

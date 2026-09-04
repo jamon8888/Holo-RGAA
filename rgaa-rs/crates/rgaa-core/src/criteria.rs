@@ -126,33 +126,33 @@ const CLASSIFICATION: &[(&str, Classification, &str)] = &[
 pub struct RgaaCriteria;
 
 impl RgaaCriteria {
-    pub fn all() -> &'static Vec<Criterion> {
-        CRITERIA_CACHE.get_or_init(|| {
-            CLASSIFICATION
-                .iter()
-                .map(|(id, classification, wcag_refs)| Criterion {
-                    id,
-                    title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
-                    classification: *classification,
-                    wcag_refs,
-                })
-                .collect()
-        })
+    pub fn all() -> Vec<Criterion> {
+        CRITERIA_CACHE
+            .get_or_init(|| {
+                CLASSIFICATION
+                    .iter()
+                    .map(|(id, classification, wcag_refs)| Criterion {
+                        id,
+                        title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
+                        classification: *classification,
+                        wcag_refs,
+                    })
+                    .collect()
+            })
+            .clone()
     }
 
     pub fn deterministe() -> Vec<Criterion> {
         Self::all()
-            .iter()
+            .into_iter()
             .filter(|c| c.classification == Classification::Deterministe)
-            .cloned()
             .collect()
     }
 
     pub fn ia_assiste() -> Vec<Criterion> {
         Self::all()
-            .iter()
+            .into_iter()
             .filter(|c| c.classification == Classification::IaAssiste)
-            .cloned()
             .collect()
     }
 

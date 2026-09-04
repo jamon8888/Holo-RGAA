@@ -9,16 +9,15 @@ on:
       tag:
         description: 'Release tag (e.g. v0.1.0)'
         required: true
-
-# Build jobs only need read; publish job needs write
-permissions:
-  contents: read
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
 
 jobs:
+  # ─── Build ─────────────────────────────────────────────────────────────────
+
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -32,20 +31,27 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             cross: false
+            tarball: rgaa-rs-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             cross: true
+            tarball: rgaa-rs-${{ github.ref_name }}-aarch64-unknown-linux-gnu.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
             cross: false
+            tarball: rgaa-rs-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
             cross: false
+            tarball: rgaa-rs-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             cross: false
+            ext: .exe
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Install cross
         if: matrix.cross
@@ -82,48 +88,124 @@ jobs:
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
+          mkdir -p dist
           cd target/${{ matrix.target }}/release
-          tar czf ../../../rgaa-rs-${{ matrix.target }}.tar.gz rgaa-cli rgaa-api rgaa-mcp
+          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa-cli rgaa-api rgaa-mcp
         shell: bash
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
+          mkdir -p dist
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path rgaa-cli.exe, rgaa-api.exe, rgaa-mcp.exe -DestinationPath ../../../rgaa-rs-${{ matrix.target }}.zip
+          powershell -Command "Compress-Archive -Path 'rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip'"
         shell: pwsh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: rgaa-rs-${{ matrix.target }}
-          path: rgaa-rs/rgaa-rs-${{ matrix.target }}.*
+          path: rgaa-rs/dist/${{ matrix.tarball }}
           if-no-files-found: error
 
-  release:
-    name: Publish GitHub release
+  # ─── Smoke test ───────────────────────────────────────────────────────────
+
+  smoke:
+    name: Smoke Test
     needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-rs-${{ matrix.target }}
+          path: artifact
+
+      - name: Extract (Unix)
+        if: runner.os != 'Windows'
+        run: tar xzf artifact/*.tar.gz -C artifact/
+
+      - name: Extract (Windows)
+        if: runner.os == 'Windows'
+        run: powershell -Command "Expand-Archive -Path 'artifact/*.zip' -DestinationPath 'artifact/'"
+
+      - name: Run rgaa-cli --version
+        id: version
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./artifact/rgaa-cli.exe --version
+          else
+            ./artifact/rgaa-cli --version
+          fi
+
+      - name: Run rgaa-cli --help
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./artifact/rgaa-cli.exe --help | head -5
+          else
+            ./artifact/rgaa-cli --help | head -5
+          fi
+
+      - name: Run rgaa-api --help
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./artifact/rgaa-api.exe --help 2>&1 | head -3
+          else
+            ./artifact/rgaa-api --help 2>&1 | head -3
+          fi
+
+      - name: Run rgaa-mcp --help
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./artifact/rgaa-mcp.exe --help 2>&1 | head -3
+          else
+            ./artifact/rgaa-mcp --help 2>&1 | head -3
+          fi
+
+  # ─── Publish GitHub Release ────────────────────────────────────────────────
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*/*
+          files: artifacts/*
           generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+
+  # ─── Publish to crates.io ─────────────────────────────────────────────────
 
   publish:
     name: Publish to crates.io
-    needs: build
+    needs: [build, smoke]
     runs-on: ubuntu-latest
-    # Crates are published in dependency order so each publish succeeds.
-    # Skip test-corpus and data (internal test utilities).
     strategy:
       fail-fast: false
       matrix:
@@ -140,8 +222,11 @@ jobs:
           - rgaa-mcp
           - rgaa-cli
           - rgaa-browser-tools
+          - rgaa-data
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -149,6 +234,5 @@ jobs:
       - name: Publish ${{ matrix.crate }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          cargo publish -p ${{ matrix.crate }}
+        run: cargo publish -p ${{ matrix.crate }}
         working-directory: rgaa-rs

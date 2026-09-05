@@ -52,10 +52,14 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
+      - name: Install Windows build deps (Perl + NASM for aws-lc-sys, protoc for lance)
         if: runner.os == 'Windows'
-        run: choco install nasm strawberryperl -y
+        run: choco install nasm strawberryperl protoc -y
         shell: bash
+
+      - name: Install macOS build deps (protoc for lance)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
 
       - uses: dtolnay/rust-toolchain@stable
         with:

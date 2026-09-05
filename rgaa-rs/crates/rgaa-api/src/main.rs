@@ -3,14 +3,14 @@ use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::PostgresStorage;
 use std::sync::Arc;
 use tracing::Level;
-use tracing_subscriber::prelude::*;
+use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_max_level(Level::INFO))
-        .try_init()
-        .ok();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost/rgaa".into());

@@ -26,14 +26,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # NOTE: no aarch64-unknown-linux-gnu cross job — openssl-sys cannot
+          # find ARM OpenSSL inside the cross container (pkg-config fails).
+          # ARM Linux users build from source: install.sh --build
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             cross: false
             tarball: rgaa-rs-latest-x86_64-unknown-linux-gnu.tar.gz
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            cross: true
-            tarball: rgaa-rs-latest-aarch64-unknown-linux-gnu.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
             cross: false
@@ -48,10 +47,6 @@ jobs:
             ext: .exe
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install cross
-        if: matrix.cross
-        uses: taiki-e/install-action@cross
 
       - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
         if: runner.os == 'Windows'
@@ -71,12 +66,7 @@ jobs:
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
 
       - name: Build
-        run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --target ${{ matrix.target }} --release
-          else
-            cargo build --target ${{ matrix.target }} --release
-          fi
+        run: cargo build --target ${{ matrix.target }} --release
         shell: bash
 
       - name: Package (Unix)

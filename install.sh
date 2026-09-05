@@ -77,10 +77,12 @@ ensure_dep() {
 # ── GitHub release download ───────────────────────────────────────────────────
 
 # Maps install.sh platform names (os-arch) to Rust target triples used in release assets.
+# NOTE: linux-aarch64 has no prebuilt binary (openssl-sys can't cross-compile).
+# ARM Linux users must build from source: install.sh --build
 platform_to_target() {
     case "$1" in
         linux-x86_64)    echo "x86_64-unknown-linux-gnu" ;;
-        linux-aarch64)   echo "aarch64-unknown-linux-gnu" ;;
+        linux-aarch64)   die "No prebuilt binary for linux-aarch64. Use: install.sh --build" ;;
         darwin-x86_64)   echo "x86_64-apple-darwin" ;;
         darwin-aarch64)  echo "aarch64-apple-darwin" ;;
         *)               die "Unsupported platform: $1" ;;

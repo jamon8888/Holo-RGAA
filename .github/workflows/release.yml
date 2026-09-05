@@ -55,9 +55,7 @@ jobs:
 
       - name: Install cross
         if: matrix.cross
-        uses: taiki1978/install-action@v2
-        with:
-          tool: cross
+        uses: taiki-e/install-action@cross
 
       - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
         if: runner.os == 'Windows'

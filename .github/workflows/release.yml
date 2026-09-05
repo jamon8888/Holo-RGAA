@@ -52,10 +52,20 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Install Windows build deps (Perl + NASM for aws-lc-sys, protoc for lance)
+      - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
         if: runner.os == 'Windows'
-        run: choco install nasm strawberryperl protoc -y
+        run: choco install nasm strawberryperl -y
         shell: bash
+
+      - name: Install protoc (Windows, for lance-encoding)
+        if: runner.os == 'Windows'
+        run: |
+          $v = "28.3"
+          curl -sSL -o protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v$v/protoc-$v-win64.zip"
+          Expand-Archive protoc.zip -DestinationPath protoc
+          "PROTOC=$pwd\protoc\bin\protoc.exe" >> $env:GITHUB_ENV
+          & "$pwd\protoc\bin\protoc.exe" --version
+        shell: pwsh
 
       - name: Install macOS build deps (protoc for lance)
         if: runner.os == 'macOS'

@@ -42,6 +42,7 @@ jobs:
         with:
           name: rgaa-rs-bin-linux-x86_64
           path: |
+            rgaa-rs/target/release/rgaa
             rgaa-rs/target/release/rgaa-cli
             rgaa-rs/target/release/rgaa-api
             rgaa-rs/target/release/rgaa-mcp
@@ -66,6 +67,8 @@ jobs:
         with:
           name: rgaa-rs-bin-linux-x86_64
           path: bin
+      - name: rgaa --version (TUI)
+        run: ./bin/rgaa --version
       - name: rgaa-cli --version
         run: ./bin/rgaa-cli --version
       - name: rgaa-cli --help

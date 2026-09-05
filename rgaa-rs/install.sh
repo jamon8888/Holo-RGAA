@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REPO="your-org/rgaa-cli"
+REPO="jamon8888/Holo-RGAA"
 INSTALL_DIR="${HOME}/.local/bin"
 TMPDIR=$(mktemp -d)
 

@@ -76,18 +76,29 @@ ensure_dep() {
 
 # ── GitHub release download ───────────────────────────────────────────────────
 
+# Maps install.sh platform names (os-arch) to Rust target triples used in release assets.
+platform_to_target() {
+    case "$1" in
+        linux-x86_64)    echo "x86_64-unknown-linux-gnu" ;;
+        linux-aarch64)   echo "aarch64-unknown-linux-gnu" ;;
+        darwin-x86_64)   echo "x86_64-apple-darwin" ;;
+        darwin-aarch64)  echo "aarch64-apple-darwin" ;;
+        *)               die "Unsupported platform: $1" ;;
+    esac
+}
+
 get_release_url() {
     local platform="$1"
     local tag="$2"
-    local url
+    local target
+    target=$(platform_to_target "$platform")
 
     if [[ "$tag" == "latest" ]]; then
-        url="https://github.com/${REPO}/releases/latest/download/rgaa-${platform}.tar.gz"
+        # 'latest' is a prerelease tag, so address it explicitly (releases/latest skips prereleases)
+        echo "https://github.com/${REPO}/releases/download/latest/rgaa-rs-latest-${target}.tar.gz"
     else
-        url="https://github.com/${REPO}/releases/download/${tag}/rgaa-${platform}.tar.gz"
+        echo "https://github.com/${REPO}/releases/download/${tag}/rgaa-rs-${tag}-${target}.tar.gz"
     fi
-
-    echo "$url"
 }
 
 download_and_install() {
@@ -117,8 +128,10 @@ download_and_install() {
     tar -xzf "${tmpdir}/rgaa.tar.gz" -C "$INSTALL_DIR"
 
     # Make binaries executable
+    chmod +x "${INSTALL_DIR}/rgaa" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/rgaa-mcp" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/rgaa-cli" 2>/dev/null || true
+    chmod +x "${INSTALL_DIR}/rgaa-api" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/obscura" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/obscura-worker" 2>/dev/null || true
 
@@ -158,7 +171,7 @@ build_from_source() {
 
     # Install binaries
     mkdir -p "$INSTALL_DIR"
-    local binaries=("rgaa-mcp" "rgaa-cli")
+    local binaries=("rgaa" "rgaa-mcp" "rgaa-cli" "rgaa-api")
     for bin in "${binaries[@]}"; do
         local src="${repo_dir}/rgaa-rs/target/release/${bin}"
         if [[ -f "$src" ]]; then
@@ -315,7 +328,7 @@ verify_install() {
     local failures=0
 
     # Check binaries
-    for bin in rgaa-mcp rgaa-cli; do
+    for bin in rgaa rgaa-mcp rgaa-cli rgaa-api; do
         if [[ -x "${INSTALL_DIR}/${bin}" ]] || command -v "$bin" &>/dev/null; then
             ok "  ${bin}: found"
         else
@@ -383,8 +396,10 @@ verify_install() {
 uninstall() {
     info "Uninstalling rgaa-rs..."
 
+    rm -f "${INSTALL_DIR}/rgaa" && ok "Removed rgaa (TUI)"
     rm -f "${INSTALL_DIR}/rgaa-mcp" && ok "Removed rgaa-mcp"
     rm -f "${INSTALL_DIR}/rgaa-cli" && ok "Removed rgaa-cli"
+    rm -f "${INSTALL_DIR}/rgaa-api" && ok "Removed rgaa-api"
     rm -f "${INSTALL_DIR}/obscura" && ok "Removed obscura"
     rm -f "${INSTALL_DIR}/obscura-worker" && ok "Removed obscura-worker"
     rm -f "$PLUGIN_DIR" && ok "Removed Claude Code plugin"

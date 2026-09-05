@@ -14,6 +14,7 @@ authors = ["Holo-RGAA contributors"]
 edition = "2021"
 
 [executables]
+rgaa = "rgaa-tui"
 rgaa-cli = "rgaa-cli"
 rgaa-api = "rgaa-api"
 rgaa-mcp = "rgaa-mcp"

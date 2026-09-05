@@ -90,7 +90,7 @@ jobs:
         run: |
           mkdir -p dist
           cd target/${{ matrix.target }}/release
-          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa-cli rgaa-api rgaa-mcp
+          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa rgaa-cli rgaa-api rgaa-mcp
         shell: bash
 
       - name: Package (Windows)
@@ -98,7 +98,7 @@ jobs:
         run: |
           mkdir -p dist
           cd target/${{ matrix.target }}/release
-          powershell -Command "Compress-Archive -Path 'rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip'"
+          powershell -Command "Compress-Archive -Path 'rgaa.exe','rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip'"
         shell: pwsh
 
       - name: Upload artifact
@@ -140,6 +140,14 @@ jobs:
       - name: Extract (Windows)
         if: runner.os == 'Windows'
         run: powershell -Command "Expand-Archive -Path 'artifact/*.zip' -DestinationPath 'artifact/'"
+
+      - name: Run rgaa --version (TUI)
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./artifact/rgaa.exe --version
+          else
+            ./artifact/rgaa --version
+          fi
 
       - name: Run rgaa-cli --version
         id: version
@@ -221,6 +229,7 @@ jobs:
           - rgaa-api
           - rgaa-mcp
           - rgaa-cli
+          - rgaa-tui
           - rgaa-browser-tools
           - rgaa-data
     steps:

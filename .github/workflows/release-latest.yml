@@ -86,7 +86,7 @@ jobs:
         run: |
           mkdir -p dist
           cd target/${{ matrix.target }}/release
-          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa-cli rgaa-api rgaa-mcp
+          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa rgaa-cli rgaa-api rgaa-mcp
         shell: bash
 
       - name: Package (Windows)
@@ -94,7 +94,7 @@ jobs:
         run: |
           mkdir -p dist
           cd target/${{ matrix.target }}/release
-          powershell -Command "Compress-Archive -Path 'rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-latest-x86_64-pc-windows-msvc.zip'"
+          powershell -Command "Compress-Archive -Path 'rgaa.exe','rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-latest-x86_64-pc-windows-msvc.zip'"
         shell: pwsh
 
       - name: Upload artifact
@@ -118,6 +118,9 @@ jobs:
 
       - name: Extract
         run: tar xzf artifact/*.tar.gz -C artifact/
+
+      - name: rgaa --version (TUI)
+        run: ./artifact/rgaa --version
 
       - name: rgaa-cli --version
         run: ./artifact/rgaa-cli --version

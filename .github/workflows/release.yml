@@ -91,9 +91,9 @@ jobs:
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          mkdir -p dist
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../rgaa-rs/dist/${{ matrix.tarball }} rgaa rgaa-cli rgaa-api rgaa-mcp
+          mkdir -p "$GITHUB_WORKSPACE/rgaa-rs/dist"
+          cd "$GITHUB_WORKSPACE/rgaa-rs/target/${{ matrix.target }}/release"
+          tar czf "$GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.tarball }}" rgaa rgaa-cli rgaa-api rgaa-mcp
         shell: bash
 
       - name: Package (Windows)

@@ -135,85 +135,55 @@ Structured manual testing protocols for criteria that require human observation:
 
 ## Installation
 
-> **First install?** You need the `rgaa` binary before `rgaa install` works
-> (chicken-and-egg). Use the one-command script below first, then `rgaa install`
-> for the interactive wizard on subsequent machines.
-
-### One-Command Install
-
 ```bash
 curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
 ```
 
-Downloads the `rgaa` (TUI), `rgaa-cli`, `rgaa-api`, `rgaa-mcp` binaries for your
-platform from the latest GitHub release, symlinks the Claude Code plugin, writes
-the MCP config, and verifies the installation. No prompts, no Rust toolchain needed.
+C'est tout. Le TUI se lance ensuite avec `rgaa`.
 
-Want the bleeding edge instead of the last tagged release? The `latest`
-pre-release is rebuilt on every push to `main`:
+<details>
+<summary>Détails (optionnel)</summary>
 
-```bash
-RGAA_VERSION=latest curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
-```
+Le script détecte ta plateforme (Linux/macOS, x86_64/aarch64), télécharge
+`rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` depuis la dernière release GitHub,
+installe dans `~/.local/bin/`, configure le plugin Claude Code et vérifie tout.
 
-### TUI Install Wizard
+- Version bleeding edge (rebuild à chaque push sur `main`) :
+  ```bash
+  RGAA_VERSION=latest curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+  ```
+- Wizard interactif (une fois `rgaa` installé) : `rgaa install`
+- Build depuis les sources (Rust 1.80+, ~20-40 min la première fois) :
+  ```bash
+  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --build
+  ```
+- Désinstaller :
+  ```bash
+  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --uninstall
+  ```
 
-Once `rgaa` is on your PATH:
-
-```bash
-rgaa install
-```
-
-Launches the interactive terminal installer (platform detection, progress bar,
-MCP/plugin setup). Same steps as the script, but visual.
-
-### Build from Source
-
-```bash
-curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --build
-```
-
-Requires Rust 1.80+. First build compiles heavy dependencies
-(LanceDB, Arrow, DataFusion) — expect 20-40 minutes. Subsequent builds are incremental.
-
-### What the Installer Does
-
-| Step | Action |
+| Étape | Action |
 |------|--------|
-| 1 | Detect platform (Linux/macOS, x86_64/aarch64) |
-| 2 | Download `rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` binaries |
-| 3 | Install to `~/.local/bin/` |
-| 4 | Symlink Claude Code plugin |
-| 5 | Write MCP config to `~/.claude/mcp.json` |
-| 6 | Create `.rgaa/config.yaml` if missing |
-| 7 | Verify installation |
+| 1 | Détecte la plateforme (Linux/macOS, x86_64/aarch64) |
+| 2 | Télécharge `rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` |
+| 3 | Installe dans `~/.local/bin/` |
+| 4 | Symlink le plugin Claude Code |
+| 5 | Écrit la config MCP dans `~/.claude/mcp.json` |
+| 6 | Crée `.rgaa/config.yaml` si absent |
+| 7 | Vérifie l'installation |
 
-### After Install
+</details>
+
+### Après l'install
 
 ```bash
-# Ensure ~/.local/bin is in your PATH
 export PATH="$HOME/.local/bin:$PATH"
-
-# Launch the interactive TUI (recommended)
-rgaa
-
-# Or run a headless audit
-rgaa audit https://example.test
-
-# Set your Holo3 API key for AI-assisted evaluation
-rgaa config set api-key "your-key"
-
-# Or set via environment variable
-export HOLO3_API_KEY="your-key"
+rgaa                                # TUI interactif
+rgaa audit https://example.test  # audit headless
+export HOLO3_API_KEY="your-key"     # évaluation IA
 ```
 
-The TUI also supports keyboard shortcuts: `a` for Audit, `h` for History, `s` for Settings, `q` to Quit.
-
-### Uninstall
-
-```bash
-curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --uninstall
-```
+Raccourcis TUI : `a` audit, `h` historique, `s` réglages, `q` quitter.
 
 ---
 

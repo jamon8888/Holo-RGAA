@@ -47,6 +47,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             cross: false
             ext: .exe
+            zip: rgaa-rs-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,16 +99,26 @@ jobs:
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir -p dist
-          cd target/${{ matrix.target }}/release
-          powershell -Command "Compress-Archive -Path 'rgaa.exe','rgaa-cli.exe','rgaa-api.exe','rgaa-mcp.exe' -DestinationPath '../../../rgaa-rs/dist/rgaa-rs-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip'"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Push-Location target/${{ matrix.target }}/release
+          Compress-Archive -Path rgaa.exe,rgaa-cli.exe,rgaa-api.exe,rgaa-mcp.exe -DestinationPath "$env:GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.zip }}" -Force
+          Pop-Location
         shell: pwsh
 
-      - name: Upload artifact
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: rgaa-rs-${{ matrix.target }}
           path: rgaa-rs/dist/${{ matrix.tarball }}
+          if-no-files-found: error
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-rs-${{ matrix.target }}
+          path: rgaa-rs/dist/${{ matrix.zip }}
           if-no-files-found: error
 
   # ─── Smoke test ───────────────────────────────────────────────────────────

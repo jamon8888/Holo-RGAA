@@ -139,51 +139,51 @@ Structured manual testing protocols for criteria that require human observation:
 curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
 ```
 
-C'est tout. Le TUI se lance ensuite avec `rgaa`.
+That's it. Launch the TUI with `rgaa`.
 
 <details>
-<summary>Détails (optionnel)</summary>
+<summary>Details (optional)</summary>
 
-Le script détecte ta plateforme (Linux/macOS, x86_64/aarch64), télécharge
-`rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` depuis la dernière release GitHub,
-installe dans `~/.local/bin/`, configure le plugin Claude Code et vérifie tout.
+The script detects your platform (Linux/macOS, x86_64/aarch64), downloads
+`rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` from the latest GitHub release,
+installs to `~/.local/bin/`, configures the Claude Code plugin, and verifies everything.
 
-- Version bleeding edge (rebuild à chaque push sur `main`) :
+- Bleeding edge (rebuilt on every push to `main`):
   ```bash
   RGAA_VERSION=latest curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
   ```
-- Wizard interactif (une fois `rgaa` installé) : `rgaa install`
-- Build depuis les sources (Rust 1.80+, ~20-40 min la première fois) :
+- Interactive wizard (once `rgaa` is installed): `rgaa install`
+- Build from source (Rust 1.80+, ~20-40 min first build):
   ```bash
   curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --build
   ```
-- Désinstaller :
+- Uninstall:
   ```bash
   curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --uninstall
   ```
 
-| Étape | Action |
+| Step | Action |
 |------|--------|
-| 1 | Détecte la plateforme (Linux/macOS, x86_64/aarch64) |
-| 2 | Télécharge `rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` |
-| 3 | Installe dans `~/.local/bin/` |
-| 4 | Symlink le plugin Claude Code |
-| 5 | Écrit la config MCP dans `~/.claude/mcp.json` |
-| 6 | Crée `.rgaa/config.yaml` si absent |
-| 7 | Vérifie l'installation |
+| 1 | Detect platform (Linux/macOS, x86_64/aarch64) |
+| 2 | Download `rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` |
+| 3 | Install to `~/.local/bin/` |
+| 4 | Symlink Claude Code plugin |
+| 5 | Write MCP config to `~/.claude/mcp.json` |
+| 6 | Create `.rgaa/config.yaml` if missing |
+| 7 | Verify installation |
 
 </details>
 
-### Après l'install
+### After Install
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-rgaa                                # TUI interactif
-rgaa audit https://example.test  # audit headless
-export HOLO3_API_KEY="your-key"     # évaluation IA
+rgaa                                # interactive TUI
+rgaa audit https://example.test  # headless audit
+export HOLO3_API_KEY="your-key"     # AI-assisted evaluation
 ```
 
-Raccourcis TUI : `a` audit, `h` historique, `s` réglages, `q` quitter.
+TUI shortcuts: `a` audit, `h` history, `s` settings, `q` quit.
 
 ---
 

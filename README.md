@@ -135,25 +135,37 @@ Structured manual testing protocols for criteria that require human observation:
 
 ## Installation
 
-### TUI Install Wizard (Recommended)
+> **First install?** You need the `rgaa` binary before `rgaa install` works
+> (chicken-and-egg). Use the one-command script below first, then `rgaa install`
+> for the interactive wizard on subsequent machines.
 
-```bash
-rgaa install
-```
-
-Launches an interactive terminal installer that:
-- Detects your platform automatically (Linux/macOS, x86_64/arm64)
-- Shows a progress bar during download
-- Installs to `~/.local/bin/rgaa`
-- Works entirely offline once downloaded
-
-### One-Command Install (No TUI)
+### One-Command Install
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
 ```
 
-Headless install — downloads binaries and configures MCP without interactive prompts.
+Downloads the `rgaa` (TUI), `rgaa-cli`, `rgaa-api`, `rgaa-mcp` binaries for your
+platform from the latest GitHub release, symlinks the Claude Code plugin, writes
+the MCP config, and verifies the installation. No prompts, no Rust toolchain needed.
+
+Want the bleeding edge instead of the last tagged release? The `latest`
+pre-release is rebuilt on every push to `main`:
+
+```bash
+RGAA_VERSION=latest curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+```
+
+### TUI Install Wizard
+
+Once `rgaa` is on your PATH:
+
+```bash
+rgaa install
+```
+
+Launches the interactive terminal installer (platform detection, progress bar,
+MCP/plugin setup). Same steps as the script, but visual.
 
 ### Build from Source
 
@@ -161,14 +173,15 @@ Headless install — downloads binaries and configures MCP without interactive p
 curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash -s -- --build
 ```
 
-Requires Rust 1.80+. Build takes ~5-10 minutes.
+Requires Rust 1.80+. First build compiles heavy dependencies
+(LanceDB, Arrow, DataFusion) — expect 20-40 minutes. Subsequent builds are incremental.
 
 ### What the Installer Does
 
 | Step | Action |
 |------|--------|
-| 1 | Detect platform (Linux x86-64, macOS arm64/x86-64) |
-| 2 | Download `rgaa-mcp`, `rgaa-cli`, `obscura` binaries |
+| 1 | Detect platform (Linux/macOS, x86_64/aarch64) |
+| 2 | Download `rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` binaries |
 | 3 | Install to `~/.local/bin/` |
 | 4 | Symlink Claude Code plugin |
 | 5 | Write MCP config to `~/.claude/mcp.json` |

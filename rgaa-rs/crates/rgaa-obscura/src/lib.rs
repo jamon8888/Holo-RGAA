@@ -191,6 +191,35 @@ impl ObscuraBridge {
         }
     }
 
+    /// The resolved substrate binary path.
+    #[must_use]
+    pub fn binary_path(&self) -> &str {
+        &self.binary_path
+    }
+
+    /// Report the substrate binary's self-declared version (`<binary> --version`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObscuraError::ProcessStartup`] when the binary cannot be
+    /// executed or reports failure.
+    pub async fn binary_version(&self) -> Result<String, ObscuraError> {
+        let output = Command::new(&self.binary_path)
+            .arg("--version")
+            .output()
+            .await
+            .map_err(|error| {
+                ObscuraError::ProcessStartup(format!("failed to query obscura version: {error}"))
+            })?;
+        if !output.status.success() {
+            return Err(ObscuraError::ProcessStartup(format!(
+                "obscura --version exited with {}",
+                output.status
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
     pub fn with_port(mut self, port: u16) -> Self {
         self.server_port = port;
         self
@@ -674,7 +703,13 @@ impl ObscuraBridge {
             .await
             {
                 if resp.status().is_success() {
-                    info!(attempt = i, "Obscura CDP server ready");
+                    // Best-effort substrate attribution for the audit trail.
+                    match self.binary_version().await {
+                        Ok(version) => info!(attempt = i, %version, "Obscura CDP server ready"),
+                        Err(error) => {
+                            warn!(attempt = i, %error, "Obscura CDP server ready, version unknown")
+                        }
+                    }
                     return Ok(());
                 }
             }
@@ -2140,5 +2175,32 @@ mod tests {
         assert_eq!(finding.criterion_id.as_deref(), Some("1.1"));
         assert_eq!(finding.source, "axe-core");
         assert_eq!(finding.evidence, evidence);
+    }
+
+    // Single test (not two) because env vars are process-global and Rust
+    // runs tests in parallel threads: split set/remove steps could interleave.
+    #[test]
+    fn from_env_resolution() {
+        let prior = std::env::var("RGAA_OBSCURA_BIN").ok();
+        std::env::set_var("RGAA_OBSCURA_BIN", "/custom/obscura");
+        assert_eq!(ObscuraBridge::from_env().binary_path(), "/custom/obscura");
+        std::env::remove_var("RGAA_OBSCURA_BIN");
+        assert_eq!(ObscuraBridge::from_env().binary_path(), "obscura");
+        if let Some(value) = prior {
+            std::env::set_var("RGAA_OBSCURA_BIN", value);
+        }
+    }
+
+    #[tokio::test]
+    async fn binary_version_reports_binary_output() {
+        let bridge = ObscuraBridge::with_binary_path("/bin/echo".into());
+        let version = bridge.binary_version().await.expect("echo --version");
+        assert!(!version.trim().is_empty());
+    }
+
+    #[tokio::test]
+    async fn binary_version_fails_for_missing_binary() {
+        let bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into());
+        assert!(bridge.binary_version().await.is_err());
     }
 }

@@ -129,7 +129,7 @@ impl Orchestrator {
         config: &CrawlConfig,
     ) -> Result<HashMap<String, AuditResult>, String> {
         let bridge = {
-            let mut b = ObscuraBridge::new();
+            let mut b = ObscuraBridge::from_env();
             b.start_server().await?;
             b
         };

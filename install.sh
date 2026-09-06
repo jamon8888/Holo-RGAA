@@ -22,6 +22,7 @@ MCP_CONFIG="${HOME}/.claude/mcp.json"
 # Pinned browser substrate: default-render variant. Keep in sync with the
 # version gate in .github/workflows/ci.yml (e2e Prepare step).
 OBSCURA_VERSION="0.2.2"
+OBSCURA_REPO="h4ckf0r0day/obscura"
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
 
@@ -161,6 +162,41 @@ download_and_install() {
     chmod +x "${INSTALL_DIR}/obscura-worker" 2>/dev/null || true
 
     ok "Binaries installed to ${INSTALL_DIR}"
+}
+
+# ── Obscura browser substrate (upstream, linux x86_64 only) ─────────────────
+
+install_obscura() {
+    local platform="$1"
+
+    # Upstream only ships linux x86_64
+    if [[ "$platform" != "linux-x86_64" ]]; then
+        warn "obscura has no prebuilt binary for ${platform}; browser automation unavailable."
+        return
+    fi
+
+    # Skip if pinned version already installed
+    if [[ -x "${INSTALL_DIR}/obscura" ]] \
+        && "${INSTALL_DIR}/obscura" --version 2>/dev/null | grep -q "obscura ${OBSCURA_VERSION}"; then
+        ok "obscura ${OBSCURA_VERSION} already installed"
+        return
+    fi
+
+    local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/obscura-x86_64-linux.tar.gz"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    trap "rm -rf '$tmpdir'" EXIT
+
+    info "Downloading obscura ${OBSCURA_VERSION}..."
+    if ! curl -fSL --progress-bar -o "${tmpdir}/obscura.tar.gz" "$url"; then
+        warn "obscura download failed (${url}); browser automation unavailable."
+        return
+    fi
+
+    tar -xzf "${tmpdir}/obscura.tar.gz" -C "$INSTALL_DIR"
+    chmod +x "${INSTALL_DIR}/obscura" 2>/dev/null || true
+    chmod +x "${INSTALL_DIR}/obscura-worker" 2>/dev/null || true
+    ok "obscura installed to ${INSTALL_DIR}"
 }
 
 # ── Build from source ─────────────────────────────────────────────────────────
@@ -500,6 +536,7 @@ main() {
 
     if [[ "$mode" == "download" ]]; then
         download_and_install "$platform"
+        install_obscura "$platform"
     else
         build_from_source
     fi

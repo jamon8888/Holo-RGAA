@@ -73,6 +73,8 @@ jobs:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rgaa-rs
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -81,7 +83,7 @@ jobs:
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
 
       - name: Build
-        run: cargo build --target ${{ matrix.target }} --release
+        run: cargo build --target ${{ matrix.target }} --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp
         shell: bash
 
       - name: Package (Unix)

@@ -82,6 +82,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
 
+      # OOM guard: fat-LTO release link of the lance/arrow tree can exceed
+      # runner memory with default parallelism. Halve codegen jobs on Linux.
+      - name: Limit build parallelism (Linux OOM guard)
+        if: runner.os == 'Linux'
+        run: echo "CARGO_BUILD_JOBS=2" >> $GITHUB_ENV
+
       - name: Build
         run: cargo build --target ${{ matrix.target }} --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp
         shell: bash

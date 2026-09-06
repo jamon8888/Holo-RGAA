@@ -326,3 +326,55 @@ async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
         .iter()
         .any(|target| target.get("url").and_then(serde_json::Value::as_str) == Some(url)));
 }
+
+// Live: label-aware pre-scan fill on a labeled third-party form (v0.2.2
+// substrate resolves the wrapping-label association; the multiline value
+// exercises newline/quote-safe insertion).
+#[tokio::test]
+async fn test_prescan_fill_on_labeled_form_completes_without_label_findings() {
+    let mut bridge = ObscuraBridge::new().with_port(9230);
+    bridge
+        .start_server()
+        .await
+        .expect("failed to start fill-verification CDP server");
+
+    let config = AnalyzeConfig {
+        pre_scan_actions: vec![PreScanAction::Fill {
+            selector: "input[name=custname]".into(),
+            value: "Ada \"Lovelace\"\nAnalytical Engine".into(),
+        }],
+        timeout_ms: 30_000,
+        retry_limit: 1,
+        ..Default::default()
+    };
+    let request = AnalyzeRequest {
+        url: "https://httpbin.org/forms/post".into(),
+        config,
+    };
+
+    let result = bridge.analyze(&request).await;
+    bridge.stop_server().await;
+
+    let result = result.expect("labeled-form analysis should be accepted");
+    assert!(
+        result.completed,
+        "fill must not break completion: {result:?}"
+    );
+    assert!(
+        result.errors.is_empty(),
+        "fill returned errors: {:?}",
+        result.errors
+    );
+    assert!(
+        result.obscura_version.is_some(),
+        "result must carry substrate version"
+    );
+    assert!(
+        !result
+            .findings
+            .iter()
+            .any(|finding| finding.rule == "label"),
+        "wrapping-label input must not raise label findings: {:?}",
+        result.findings
+    );
+}

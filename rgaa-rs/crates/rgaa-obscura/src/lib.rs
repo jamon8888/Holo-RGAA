@@ -577,6 +577,31 @@ impl ObscuraBridge {
         Ok(())
     }
 
+    /// Build the pre-scan fill snippet: focus the element, assign through the
+    /// native prototype setter so framework value trackers observe a real
+    /// change, then fire trusted-shape input/change events. Both interpolated
+    /// values are JSON string literals, so newlines and quotes survive intact.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a selector or value fails JSON serialization, which cannot
+    /// happen for `&str` and therefore signals a `serde_json` bug.
+    fn fill_expression(selector: &str, value: &str) -> String {
+        // Infallible in practice: any &str serializes as JSON. expect() marks
+        // the invariant instead of silently injecting an empty string.
+        let selector = serde_json::to_string(selector).expect("selector must serialize as JSON");
+        let value = serde_json::to_string(value).expect("value must serialize as JSON");
+        format!(
+            "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); \
+            if (typeof el.focus === 'function') el.focus(); \
+            const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : (el instanceof HTMLInputElement ? HTMLInputElement.prototype : null); \
+            const setter = proto ? Object.getOwnPropertyDescriptor(proto, 'value').set : null; \
+            if (setter) {{ setter.call(el, {value}); }} else {{ el.value = {value}; }} \
+            el.dispatchEvent(new InputEvent('input', {{bubbles: true}})); \
+            el.dispatchEvent(new Event('change', {{bubbles: true}})); return true; }})()"
+        )
+    }
+
     async fn apply_pre_scan_actions(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -591,13 +616,7 @@ impl ObscuraBridge {
                         "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
                     )
                 }
-                PreScanAction::Fill { selector, value } => {
-                    let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
-                    let value = serde_json::to_string(value).map_err(|e| e.to_string())?;
-                    format!(
-                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"
-                    )
-                }
+                PreScanAction::Fill { selector, value } => Self::fill_expression(selector, value),
                 PreScanAction::WaitFor { selector, state } => {
                     let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
                     let check = match state {
@@ -2214,5 +2233,24 @@ mod tests {
     async fn binary_version_fails_for_missing_binary() {
         let bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into());
         assert!(bridge.binary_version().await.is_err());
+    }
+
+    #[test]
+    fn fill_snippet_focuses_and_uses_native_setter() {
+        let snippet = ObscuraBridge::fill_expression("input[name=custname]", "plain");
+        assert!(snippet.contains("querySelector(\"input[name=custname]\")"));
+        assert!(snippet.contains("el.focus()"));
+        assert!(snippet.contains("getOwnPropertyDescriptor(proto, 'value').set"));
+        assert!(snippet.contains("new InputEvent('input'"));
+        assert!(snippet.contains("new Event('change'"));
+        assert!(snippet.contains("pre-scan selector not found"));
+    }
+
+    #[test]
+    fn fill_snippet_preserves_newlines_and_quotes() {
+        let value = "line one\nline \"two\"";
+        let snippet = ObscuraBridge::fill_expression("#notes", value);
+        // Interpolated as a JSON string literal: safe to embed, intact on read.
+        assert!(snippet.contains(&serde_json::to_string(value).expect("value serializes")));
     }
 }

@@ -164,13 +164,25 @@ download_and_install() {
     ok "Binaries installed to ${INSTALL_DIR}"
 }
 
-# ── Obscura browser substrate (upstream, linux x86_64 only) ─────────────────
+# ── Obscura browser substrate (upstream, per-platform) ──────────────────────
+# Upstream ships default-render + stealth + no-render variants for
+# linux/macOS (x86_64/aarch64) and Windows. We pin the default-render variant.
+# Maps install.sh platform names to upstream asset names.
+obscura_asset_for() {
+    case "$1" in
+        linux-x86_64)   echo "obscura-x86_64-linux.tar.gz" ;;
+        linux-aarch64)  echo "obscura-aarch64-linux.tar.gz" ;;
+        darwin-x86_64)  echo "obscura-x86_64-macos.tar.gz" ;;
+        darwin-aarch64) echo "obscura-aarch64-macos.tar.gz" ;;
+        *)              return 1 ;;
+    esac
+}
 
 install_obscura() {
     local platform="$1"
 
-    # Upstream only ships linux x86_64
-    if [[ "$platform" != "linux-x86_64" ]]; then
+    local asset
+    if ! asset=$(obscura_asset_for "$platform"); then
         warn "obscura has no prebuilt binary for ${platform}; browser automation unavailable."
         return
     fi
@@ -182,7 +194,7 @@ install_obscura() {
         return
     fi
 
-    local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/obscura-x86_64-linux.tar.gz"
+    local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d)
     trap "rm -rf '$tmpdir'" EXIT

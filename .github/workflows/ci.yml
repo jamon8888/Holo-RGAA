@@ -124,8 +124,11 @@ jobs:
       - name: Prepare Obscura backend
         working-directory: ${{ github.workspace }}
         run: |
-          chmod +x obscura obscura-worker
           # Substrate pin gate (keep in sync with OBSCURA_VERSION in install.sh).
+          # Binaries are fetched from upstream, never stored in git.
+          curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.2/obscura-x86_64-linux.tar.gz"
+          tar -xzf obscura.tar.gz
+          chmod +x obscura obscura-worker
           ./obscura --version | grep -q "obscura 0.2.2" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
       - name: Validate Holo3 API key

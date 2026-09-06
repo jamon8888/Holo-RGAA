@@ -2,3 +2,8 @@ node_modules/
 rgaa-rs/node_modules/
 rgaa-rs/target/
 target/
+
+# Browser substrate binaries (fetched from upstream releases, never stored)
+obscura
+obscura-worker
+obscura-*.tar.gz

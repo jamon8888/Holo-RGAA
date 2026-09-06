@@ -139,7 +139,11 @@ Structured manual testing protocols for criteria that require human observation:
 curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
 ```
 
-That's it. Launch the TUI with `rgaa`.
+That's it. Launch the TUI with `rgaa`. Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/rgaa-rs/install.ps1 | iex
+```
 
 <details>
 <summary>Details (optional)</summary>

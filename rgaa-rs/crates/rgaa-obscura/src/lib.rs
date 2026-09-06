@@ -632,6 +632,10 @@ impl ObscuraBridge {
                 }
             };
             let is_async = matches!(action, PreScanAction::WaitFor { .. });
+            // Clicks can trigger navigations (submits, links): settle the page
+            // before the next action runs, or axe would race the navigation.
+            // Fill mutates in place and WaitFor already polls.
+            let settles_navigation = matches!(action, PreScanAction::Click { .. });
             let result = Self::cdp_send_session(
                 ws,
                 session_id,
@@ -645,6 +649,9 @@ impl ObscuraBridge {
             .await?;
             if result.get("exceptionDetails").is_some() {
                 return Err("pre-scan action evaluation failed".into());
+            }
+            if settles_navigation {
+                Self::wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
             }
         }
         Ok(())

@@ -378,3 +378,54 @@ async fn test_prescan_fill_on_labeled_form_completes_without_label_findings() {
         result.findings
     );
 }
+
+// Live: a pre-scan submit click must settle the navigation before axe runs,
+// so the audit observes the post-submit page instead of racing it.
+#[tokio::test]
+async fn test_prescan_submit_click_audits_post_navigation_page() {
+    let mut bridge = ObscuraBridge::new().with_port(9231);
+    bridge
+        .start_server()
+        .await
+        .expect("failed to start submit-settle CDP server");
+
+    let config = AnalyzeConfig {
+        pre_scan_actions: vec![
+            PreScanAction::Fill {
+                selector: "input[name=custname]".into(),
+                value: "Ada".into(),
+            },
+            PreScanAction::Click {
+                selector: "input[type=submit], button[type=submit], button:not([type])".into(),
+            },
+        ],
+        timeout_ms: 30_000,
+        retry_limit: 1,
+        ..Default::default()
+    };
+    let request = AnalyzeRequest {
+        url: "https://httpbin.org/forms/post".into(),
+        config,
+    };
+
+    let result = bridge.analyze(&request).await;
+    bridge.stop_server().await;
+
+    let result = result.expect("submit flow analysis should be accepted");
+    assert!(
+        result.completed,
+        "submit must settle before axe runs: {result:?}"
+    );
+    assert!(
+        result.errors.is_empty(),
+        "submit flow returned errors: {:?}",
+        result.errors
+    );
+    assert!(
+        result
+            .evidence
+            .iter()
+            .any(|evidence| evidence.kind == "dom_snapshot"),
+        "post-navigation page must leave evidence"
+    );
+}

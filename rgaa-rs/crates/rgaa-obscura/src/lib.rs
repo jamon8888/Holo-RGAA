@@ -229,8 +229,19 @@ impl ObscuraBridge {
     ///
     /// Request validation failures are returned as [`ObscuraError`]. Browser
     /// failures are returned in the page envelope so callers cannot mistake a
-    /// failed page for a clean page.
+    /// failed page for a clean page. The returned page carries the substrate
+    /// [`binary_version`](Self::binary_version) when it can be determined.
     pub async fn analyze(
+        &self,
+        request: &AnalyzeRequest,
+    ) -> Result<AnalyzePageResult, ObscuraError> {
+        let mut result = self.analyze_inner(request).await?;
+        // Best-effort: a missing version must not fail the audit itself.
+        result.obscura_version = self.binary_version().await.ok();
+        Ok(result)
+    }
+
+    async fn analyze_inner(
         &self,
         request: &AnalyzeRequest,
     ) -> Result<AnalyzePageResult, ObscuraError> {
@@ -336,6 +347,7 @@ impl ObscuraBridge {
             completed,
             duration_ms: started.elapsed().as_millis() as u64,
             igt,
+            obscura_version: None,
         })
     }
 

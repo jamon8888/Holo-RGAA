@@ -86,6 +86,9 @@ pub struct AnalyzePageResult {
     pub duration_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub igt: Option<IgtResults>,
+    /// Self-reported substrate version (`<binary> --version`), set by `analyze`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub obscura_version: Option<String>,
 }
 
 impl AnalyzePageResult {
@@ -98,6 +101,7 @@ impl AnalyzePageResult {
             completed: false,
             duration_ms,
             igt: None,
+            obscura_version: None,
         }
     }
 
@@ -155,7 +159,23 @@ mod tests {
             completed: true,
             duration_ms: 1,
             igt: None,
+            obscura_version: None,
         };
         assert!(!result.is_clean_complete());
+    }
+
+    #[test]
+    fn substrate_version_round_trips_when_present() {
+        let mut result = AnalyzePageResult::failed(
+            "https://example.test",
+            ObscuraError::Navigation("unreachable".into()),
+            1,
+        );
+        // Absent by default: older payloads keep their shape.
+        let json = serde_json::to_string(&result).expect("result serializes");
+        assert!(!json.contains("obscura_version"));
+        result.obscura_version = Some("obscura 0.2.2".into());
+        let json = serde_json::to_string(&result).expect("result serializes");
+        assert!(json.contains("obscura 0.2.2"));
     }
 }

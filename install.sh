@@ -19,6 +19,10 @@ PLUGIN_DIR="${HOME}/.claude/plugins/rgaa-audit"
 CONFIG_DIR=".rgaa"
 MCP_CONFIG="${HOME}/.claude/mcp.json"
 
+# Pinned browser substrate: default-render variant. Keep in sync with the
+# version gate in .github/workflows/ci.yml (e2e Prepare step).
+OBSCURA_VERSION="0.2.2"
+
 # ── Colors ─────────────────────────────────────────────────────────────────────
 
 RED='\033[0;31m'
@@ -72,6 +76,25 @@ ensure_dep() {
         err "  Install: ${install_hint}"
         exit 1
     fi
+}
+
+# Fail the install when the installed obscura is not the pinned substrate.
+verify_obscura_version() {
+    local bin=""
+    if [[ -x "${INSTALL_DIR}/obscura" ]]; then
+        bin="${INSTALL_DIR}/obscura"
+    elif command -v obscura &>/dev/null; then
+        bin="obscura"
+    else
+        warn "obscura binary not found; skipping version check."
+        return 0
+    fi
+    local version
+    version="$("$bin" --version 2>/dev/null)" || die "Failed to query obscura version."
+    if [[ "$version" != *"obscura ${OBSCURA_VERSION}"* ]]; then
+        die "obscura version mismatch: got '${version}', want 'obscura ${OBSCURA_VERSION}'. Re-run install or update OBSCURA_VERSION."
+    fi
+    ok "obscura version: ${version}"
 }
 
 # ── GitHub release download ───────────────────────────────────────────────────
@@ -196,6 +219,7 @@ build_from_source() {
         warn "obscura binary not found. Browser automation will not work."
         warn "  Place obscura in ${INSTALL_DIR}/ or install separately."
     fi
+    verify_obscura_version
 
     ok "Build complete. Binaries in ${INSTALL_DIR}"
 }
@@ -342,6 +366,7 @@ verify_install() {
     # Check obscura
     if [[ -x "${INSTALL_DIR}/obscura" ]] || command -v obscura &>/dev/null; then
         ok "  obscura: found"
+        verify_obscura_version
     else
         warn "  obscura: NOT FOUND (browser automation unavailable)"
     fi

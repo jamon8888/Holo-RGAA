@@ -125,6 +125,8 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           chmod +x obscura obscura-worker
+          # Substrate pin gate (keep in sync with OBSCURA_VERSION in install.sh).
+          ./obscura --version | grep -q "obscura 0.2.2" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
       - name: Validate Holo3 API key
         env:

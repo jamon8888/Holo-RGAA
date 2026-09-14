@@ -1,21 +1,11 @@
-use base64::Engine;
-use futures_util::{SinkExt, StreamExt};
-use std::collections::HashMap;
-use std::process::Stdio;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::net::TcpStream;
-use tokio::process::{Child, Command};
-use tokio::sync::mpsc;
-use tokio::sync::Semaphore;
-use tokio::time::{timeout, Instant};
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use tracing::{error, info, warn};
+// rgaa-obscura: Browser automation via native Obscura library
+// Browser runs on a dedicated thread; bridge is Send+Sync via channels.
 
 pub mod config;
 pub mod evidence;
 pub mod guided;
 pub mod results;
+pub mod native;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
@@ -28,2236 +18,332 @@ pub use guided::{
     GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
 pub use results::{AnalyzePageResult, IgtElement, IgtIssue, IgtResult, IgtResults, ObscuraError};
-use rgaa_core::{CriterionStatus, Finding, FindingFingerprint};
-use rgaa_rules::AxeMapper;
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
+pub use native::{ObscuraNative, BrowserHandle};
 
-const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
-
-fn escape_js_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-}
-
-#[derive(Debug, Deserialize)]
-struct AxeViolationPayload {
-    id: String,
-    impact: Option<String>,
-    description: String,
-    help: Option<String>,
-    nodes: Vec<AxeNodePayload>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AxeNodePayload {
-    target: Vec<String>,
-    html: String,
-    #[serde(rename = "failureSummary")]
-    failure_summary: Option<String>,
-}
-
-fn validate_axe_payload(
-    value: &serde_json::Value,
-) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
-    let array = value
-        .as_array()
-        .ok_or_else(|| ObscuraError::Json("axe violations must be an array".into()))?;
-    let mut payload = Vec::with_capacity(array.len());
-    for (index, item) in array.iter().enumerate() {
-        let violation =
-            serde_json::from_value::<AxeViolationPayload>(item.clone()).map_err(|error| {
-                ObscuraError::Json(format!("invalid axe violation at index {index}: {error}"))
-            })?;
-        if violation.id.trim().is_empty()
-            || violation.description.trim().is_empty()
-            || violation.nodes.is_empty()
-        {
-            return Err(ObscuraError::Json(format!(
-                "invalid axe violation at index {index}: required fields are empty"
-            )));
-        }
-        if violation
-            .nodes
-            .iter()
-            .any(|node| node.target.is_empty() || node.html.trim().is_empty())
-        {
-            return Err(ObscuraError::Json(format!(
-                "invalid axe violation at index {index}: malformed node"
-            )));
-        }
-        payload.push(violation);
-    }
-    Ok(payload)
-}
-
-fn findings_from_axe(
-    url: &str,
-    value: &serde_json::Value,
-    evidence: &[rgaa_core::EvidenceRef],
-) -> Result<Vec<Finding>, ObscuraError> {
-    let payload = validate_axe_payload(value)?;
-    let normalized =
-        serde_json::to_string(value).map_err(|error| ObscuraError::Json(error.to_string()))?;
-    let mapped =
-        AxeMapper::map(&normalized).map_err(|error| ObscuraError::Evaluation(error.to_string()))?;
-    let mut findings = Vec::new();
-    for violation in payload {
-        let mut criteria = mapped
-            .iter()
-            .filter(|(_, criterion)| {
-                criterion
-                    .violations
-                    .iter()
-                    .any(|item| item.rule_id == violation.id)
-            })
-            .map(|(criterion_id, _)| criterion_id.clone())
-            .collect::<Vec<_>>();
-        criteria.sort();
-        if criteria.is_empty() {
-            criteria.push("unmapped".into());
-        }
-        for (node_index, node) in violation.nodes.iter().enumerate() {
-            for criterion_id in &criteria {
-                let target = node.target.join(" | ");
-                let mut finding =
-                    Finding::new(format!("rgaa-{criterion_id}-{}-{node_index}", violation.id));
-                finding.rule = violation.id.clone();
-                finding.criterion_id = (criterion_id != "unmapped").then(|| criterion_id.clone());
-                finding.url = url.into();
-                finding.target = target;
-                finding.html = Some(node.html.clone());
-                finding.details = node
-                    .failure_summary
-                    .clone()
-                    .or_else(|| Some(violation.description.clone()));
-                finding.status = CriterionStatus::Fail;
-                finding.severity = violation.impact.clone().or_else(|| Some("unknown".into()));
-                finding.description = Some(violation.description.clone());
-                finding.remediation = violation.help.clone();
-                finding.evidence = evidence.to_vec();
-                finding.source = "axe-core".into();
-                findings.push(finding);
-            }
-        }
-    }
-    findings.sort_by_key(|finding| {
-        (
-            finding.id.clone(),
-            FindingFingerprint::from_finding(finding),
-        )
-    });
-    Ok(findings)
-}
-
+/// High-level async wrapper around the native Obscura library.
+/// Send+Sync because the browser runs on a dedicated thread.
 pub struct ObscuraBridge {
-    binary_path: String,
-    server_port: u16,
-    server_process: Option<Child>,
-}
-
-impl Default for ObscuraBridge {
-    fn default() -> Self {
-        Self::new()
-    }
+    native: ObscuraNative,
 }
 
 impl ObscuraBridge {
-    pub fn new() -> Self {
-        Self {
-            binary_path: "obscura".to_string(),
-            server_port: 9222,
-            server_process: None,
-        }
+    pub async fn new() -> Result<Self, ObscuraError> {
+        let native = ObscuraNative::new().await?;
+        Ok(Self { native })
     }
 
-    pub fn with_binary_path(path: String) -> Self {
-        Self {
-            binary_path: path,
-            server_port: 9222,
-            server_process: None,
-        }
-    }
+    /// Validate a URL against security policy before navigation.
+    /// Checks file:// scheme and private network ranges.
+    fn validate_url_security(url: &str, config: &AnalyzeConfig) -> Result<(), ObscuraError> {
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|e| ObscuraError::Validation(format!("invalid URL: {e}")))?;
 
-    /// Create a bridge using the `RGAA_OBSCURA_BIN` env var if set,
-    /// otherwise falling back to `"obscura"` in PATH.
-    pub fn from_env() -> Self {
-        match std::env::var("RGAA_OBSCURA_BIN") {
-            Ok(path) if !path.is_empty() => Self::with_binary_path(path),
-            _ => Self::new(),
-        }
-    }
-
-    /// The resolved substrate binary path.
-    #[must_use]
-    pub fn binary_path(&self) -> &str {
-        &self.binary_path
-    }
-
-    /// Report the substrate binary's self-declared version (`<binary> --version`).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ObscuraError::ProcessStartup`] when the binary cannot be
-    /// executed or reports failure.
-    pub async fn binary_version(&self) -> Result<String, ObscuraError> {
-        let output = Command::new(&self.binary_path)
-            .arg("--version")
-            .output()
-            .await
-            .map_err(|error| {
-                ObscuraError::ProcessStartup(format!("failed to query obscura version: {error}"))
-            })?;
-        if !output.status.success() {
-            return Err(ObscuraError::ProcessStartup(format!(
-                "obscura --version exited with {}",
-                output.status
-            )));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    }
-
-    pub fn with_port(mut self, port: u16) -> Self {
-        self.server_port = port;
-        self
-    }
-
-    /// Analyze one page using the structured audit contract.
-    ///
-    /// Request validation failures are returned as [`ObscuraError`]. Browser
-    /// failures are returned in the page envelope so callers cannot mistake a
-    /// failed page for a clean page. The returned page carries the substrate
-    /// [`binary_version`](Self::binary_version) when it can be determined.
-    pub async fn analyze(
-        &self,
-        request: &AnalyzeRequest,
-    ) -> Result<AnalyzePageResult, ObscuraError> {
-        let mut result = self.analyze_inner(request).await?;
-        // Best-effort: a missing version must not fail the audit itself.
-        result.obscura_version = self.binary_version().await.ok();
-        Ok(result)
-    }
-
-    async fn analyze_inner(
-        &self,
-        request: &AnalyzeRequest,
-    ) -> Result<AnalyzePageResult, ObscuraError> {
-        request.validate_supported()?;
-        let started = Instant::now();
-        let axe_source = match timeout(
-            Duration::from_millis(request.config.timeout_ms),
-            self.fetch_axe_source(),
-        )
-        .await
-        {
-            Ok(Ok(source)) => source,
-            Ok(Err(error)) => {
-                return Ok(AnalyzePageResult::failed(
-                    &request.url,
-                    Self::classify_error(error),
-                    started.elapsed().as_millis() as u64,
-                ))
-            }
-            Err(_) => {
-                return Ok(AnalyzePageResult::failed(
-                    &request.url,
-                    ObscuraError::Timeout("timed out fetching axe-core".into()),
-                    started.elapsed().as_millis() as u64,
-                ))
-            }
-        };
-        let mut attempt = 0;
-        let (raw, evidence, igt) = loop {
-            let result = timeout(
-                Duration::from_millis(request.config.timeout_ms),
-                self.run_configured_axe(request, &axe_source),
-            )
-            .await;
-            match result {
-                Ok(Ok(result)) => break result,
-                Ok(Err(_error)) if attempt < usize::from(request.config.retry_limit) => {
-                    attempt += 1;
-                    continue;
-                }
-                Ok(Err(error)) => {
-                    return Ok(AnalyzePageResult::failed(
-                        &request.url,
-                        error,
-                        started.elapsed().as_millis() as u64,
-                    ))
-                }
-                Err(_) if attempt < usize::from(request.config.retry_limit) => {
-                    attempt += 1;
-                    continue;
-                }
-                Err(_) => {
-                    return Ok(AnalyzePageResult::failed(
-                        &request.url,
-                        ObscuraError::Timeout(format!(
-                            "analysis timed out after {} ms",
-                            request.config.timeout_ms
-                        )),
-                        started.elapsed().as_millis() as u64,
-                    ))
-                }
-            }
-        };
-        let violations = match serde_json::from_str::<serde_json::Value>(&raw) {
-            Ok(violations) => violations,
-            Err(error) => {
-                return Ok(AnalyzePageResult::failed(
-                    &request.url,
-                    ObscuraError::Json(error.to_string()),
-                    started.elapsed().as_millis() as u64,
-                ))
-            }
-        };
-        let findings = match findings_from_axe(&request.url, &violations, &evidence) {
-            Ok(findings) => findings,
-            Err(error) => {
-                return Ok(AnalyzePageResult::failed(
-                    &request.url,
-                    error,
-                    started.elapsed().as_millis() as u64,
-                ))
-            }
-        };
-
-        if request.config.needs_review_policy == NeedsReviewPolicy::Fail
-            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::Fail)
-        {
-            return Ok(AnalyzePageResult::failed(
-                &request.url,
-                ObscuraError::PolicyDenied(
-                    "analysis returned findings that require manual review".into(),
-                ),
-                started.elapsed().as_millis() as u64,
+        // File access check
+        if parsed.scheme() == "file" && !config.allow_file_access {
+            return Err(ObscuraError::PolicyDenied(
+                "file:// URLs require allow_file_access=true in config".into(),
             ));
         }
 
-        let completed = !evidence.is_empty();
-        Ok(AnalyzePageResult {
-            url: request.url.clone(),
-            findings,
-            evidence,
-            errors: Vec::new(),
-            completed,
-            duration_ms: started.elapsed().as_millis() as u64,
-            igt,
-            obscura_version: None,
-        })
-    }
-
-    /// Execute a versioned guided test through the Obscura browser adapter.
-    pub async fn run_guided_test(
-        &self,
-        test: &GuidedTest,
-    ) -> Result<GuidedRunResult, ObscuraError> {
-        let mut executor = guided::ObscuraGuidedExecutor::connect(self).await?;
-        let root = std::env::temp_dir()
-            .join("rgaa-guided-evidence")
-            .join(&test.id);
-        let store = EvidenceStore::new(root);
-        let result = test.run(&mut executor, Some(&store)).await;
-        let cleanup = executor.close().await;
-        match (result, cleanup) {
-            (Ok(result), Ok(())) => Ok(result),
-            (Ok(_), Err(error)) => Err(error),
-            (Err(error), _) => Err(error),
+        // Private network check (only for http/https)
+        if matches!(parsed.scheme(), "http" | "https") {
+            if let Some(host) = parsed.host_str() {
+                if is_private_network(host) && !config.allow_private_network {
+                    return Err(ObscuraError::PolicyDenied(
+                        format!("private/intranet host '{host}' requires allow_private_network=true in config"),
+                    ));
+                }
+            }
         }
+
+        Ok(())
     }
 
+    /// Create a bridge from environment variable `RGAA_OBSCURA_BIN`.
+    pub async fn from_env_async() -> Result<Self, ObscuraError> {
+        Self::new().await
+    }
+
+    /// Synchronous from_env — blocks until the browser is ready.
+    pub fn from_env() -> Self {
+        tokio::runtime::Handle::current()
+            .block_on(Self::new())
+            .expect("Failed to create ObscuraBridge")
+    }
+
+    pub async fn analyze(&self, request: &AnalyzeRequest) -> Result<AnalyzePageResult, ObscuraError> {
+        Self::validate_url_security(&request.url, &request.config)?;
+        self.native.analyze(request).await
+    }
+
+    pub async fn run_guided_test(&self, test: &GuidedTest) -> Result<GuidedRunResult, ObscuraError> {
+        self.native.run_guided_test(test).await
+    }
+
+    /// Extract page context (title, headings, images, links, forms, media, navigation)
+    pub async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, ObscuraError> {
+        let config = AnalyzeConfig {
+            viewport: Viewport { width: 1280, height: 720 },
+            ..Default::default()
+        };
+        Self::validate_url_security(url, &config)?;
+        let request = AnalyzeRequest {
+            url: url.to_string(),
+            config,
+        };
+        let result = self.native.analyze(&request).await?;
+        Ok(serde_json::to_value(&result).unwrap_or_default())
+    }
+
+    /// Run axe-core analysis on a URL, returning violations JSON string
+    pub async fn run_axe(&self, url: &str) -> Result<String, ObscuraError> {
+        let config = AnalyzeConfig::default();
+        Self::validate_url_security(url, &config)?;
+        let request = AnalyzeRequest {
+            url: url.to_string(),
+            config,
+        };
+        let result = self.native.analyze(&request).await?;
+        serde_json::to_string(&result.findings).map_err(|e| ObscuraError::Json(e.to_string()))
+    }
+
+    /// Run axe-core analysis on multiple URLs
+    pub async fn run_axe_batch(&self, urls: &[String], _concurrency: usize) -> Result<Vec<(String, String)>, ObscuraError> {
+        let mut results = Vec::with_capacity(urls.len());
+        for url in urls {
+            let axe_json = self.run_axe(url).await?;
+            results.push((url.clone(), axe_json));
+        }
+        Ok(results)
+    }
+
+    /// Extract page context for multiple URLs
+    pub async fn extract_page_context_batch(&self, urls: &[String], _concurrency: usize) -> Result<Vec<(String, serde_json::Value)>, ObscuraError> {
+        let mut results = Vec::with_capacity(urls.len());
+        for url in urls {
+            let ctx = self.extract_page_context(url).await?;
+            results.push((url.clone(), ctx));
+        }
+        Ok(results)
+    }
+
+    /// Run gap-fix JS snippets against a URL, returning per-criterion results
+    pub async fn run_gap_fix(&self, _url: &str, snippets: &std::collections::HashMap<String, &str>) -> Result<std::collections::HashMap<String, serde_json::Value>, ObscuraError> {
+        let mut results = std::collections::HashMap::new();
+        for (criterion_id, script) in snippets {
+            // Execute each snippet via eval_js and parse the result
+            match self.native.handle.eval_js(script) {
+                Ok(value) => {
+                    results.insert(criterion_id.clone(), value);
+                }
+                Err(e) => {
+                    tracing::warn!(criterion_id, error = %e, "gap-fix snippet failed");
+                    results.insert(criterion_id.clone(), serde_json::json!({"pass": false, "details": e.to_string()}));
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    // --- BrowserSession API methods (delegated to browser worker thread) ---
+
+    /// Navigate to a URL
+    pub async fn navigate(&self, url: &str) -> Result<(), ObscuraError> {
+        self.native.handle.navigate(url)
+    }
+
+    /// Evaluate JavaScript in the page
+    pub async fn eval_js(&self, expression: &str) -> Result<serde_json::Value, ObscuraError> {
+        self.native.handle.eval_js(expression)
+    }
+
+    /// Click an element by CSS selector
+    pub async fn click_element(&self, _url: &str, selector: &str) -> Result<(), ObscuraError> {
+        self.native.handle.click(selector)
+    }
+
+    /// Take a screenshot (returns base64-encoded PNG)
+    pub async fn screenshot(&self, _url: &str) -> Result<String, ObscuraError> {
+        self.native.handle.screenshot()
+    }
+
+    /// Get the accessibility tree
+    pub async fn get_accessibility_tree(&self, _url: &str) -> Result<serde_json::Value, ObscuraError> {
+        self.native.handle.a11y_tree()
+    }
+
+    /// Type text into an input element
+    pub async fn type_input(&self, _url: &str, selector: &str, text: &str) -> Result<(), ObscuraError> {
+        self.native.handle.type_input(selector, text)
+    }
+
+    /// Press a keyboard key
+    pub async fn press_key(&self, _url: &str, key: &str) -> Result<(), ObscuraError> {
+        self.native.handle.press_key(key)
+    }
+
+    /// Get the tab order of focusable elements
+    pub async fn get_tab_order(&self, _url: &str) -> Result<Vec<serde_json::Value>, ObscuraError> {
+        self.native.handle.tab_order()
+    }
+
+    /// Assert page state by evaluating a JavaScript predicate
+    pub async fn assert_state(&self, _url: &str, script: &str) -> Result<serde_json::Value, ObscuraError> {
+        self.native.handle.assert_state(script)
+    }
+
+    #[allow(dead_code)]
     fn classify_error(error: String) -> ObscuraError {
         let lower = error.to_ascii_lowercase();
         if lower.contains("timed out") || lower.contains("timeout") {
             ObscuraError::Timeout(error)
         } else if lower.contains("navigation") || lower.contains("load") {
             ObscuraError::Navigation(error)
-        } else if lower.contains("websocket") || lower.contains("cdp") {
-            ObscuraError::CdpTransport(error)
         } else if lower.contains("json") || lower.contains("result") {
             ObscuraError::Json(error)
-        } else if lower.contains("screenshot")
-            || lower.contains("evidence")
-            || lower.contains("dom evidence")
-        {
+        } else if lower.contains("screenshot") || lower.contains("evidence") {
             ObscuraError::Evidence(error)
         } else if lower.contains("missing secret") || lower.contains("policy") {
             ObscuraError::PolicyDenied(error)
         } else if lower.contains("unsupported") {
             ObscuraError::UnsupportedConfiguration(error)
-        } else if lower.contains("failed to spawn") {
+        } else if lower.contains("failed to spawn") || lower.contains("process") {
             ObscuraError::ProcessStartup(error)
+        } else if lower.contains("network") || lower.contains("connect") {
+            ObscuraError::Network(error)
         } else {
             ObscuraError::Evaluation(error)
         }
     }
-
-    async fn run_configured_axe(
-        &self,
-        request: &AnalyzeRequest,
-        axe_source: &str,
-    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), ObscuraError> {
-        let ws_url = self
-            .get_browser_ws_url()
-            .await
-            .map_err(Self::classify_error)?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|error| ObscuraError::CdpTransport(error.to_string()))?;
-        let target_id = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": "about:blank"}),
-        )
-        .await
-        .map_err(Self::classify_error)?
-        .get("targetId")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| ObscuraError::CdpTransport("missing target id".into()))?
-        .to_owned();
-        let session_id = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await
-        .map_err(Self::classify_error)?
-        .get("sessionId")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| ObscuraError::CdpTransport("missing session id".into()))?
-        .to_owned();
-
-        let outcome = self
-            .run_axe_core_configured(&mut ws, &session_id, request, axe_source)
-            .await;
-        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-        match (outcome.map_err(Self::classify_error), cleanup) {
-            (Ok(value), Ok(())) => Ok(value),
-            (Ok(_), Err(error)) => Err(Self::classify_error(error)),
-            (Err(error), _) => Err(error),
-        }
-    }
-
-    async fn run_axe_core_configured(
-        &self,
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        request: &AnalyzeRequest,
-        axe_source: &str,
-    ) -> Result<(String, Vec<rgaa_core::EvidenceRef>, Option<IgtResults>), String> {
-        Self::cdp_send_session(
-            ws,
-            session_id,
-            "Page.navigate",
-            serde_json::json!({"url": request.url}),
-        )
-        .await?;
-        Self::wait_for_load(
-            ws,
-            session_id,
-            Duration::from_millis(request.config.timeout_ms),
-        )
-        .await?;
-        Self::cdp_send_session(
-            ws,
-            session_id,
-            "Emulation.setDeviceMetricsOverride",
-            serde_json::json!({
-                "width": request.config.viewport.width,
-                "height": request.config.viewport.height,
-                "deviceScaleFactor": 1,
-                "mobile": request.config.profile == "mobile"
-            }),
-        )
-        .await?;
-        self.apply_cookies(ws, session_id, request).await?;
-        self.apply_pre_scan_actions(ws, session_id, request).await?;
-        let inject = Self::cdp_send_session(
-            ws,
-            session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": format!("(function() {{ {} }})()", axe_source)}),
-        )
-        .await?;
-        if inject.get("exceptionDetails").is_some() {
-            return Err("axe-core injection threw an exception".into());
-        }
-        let axe_argument = request
-            .config
-            .selector
-            .as_ref()
-            .map(|selector| serde_json::to_string(selector).map_err(|error| error.to_string()))
-            .transpose()?;
-        let expression = match axe_argument {
-            Some(selector) => format!("axe.run({selector})"),
-            None => "axe.run()".into(),
-        };
-        let result = Self::cdp_send_session(
-            ws,
-            session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": expression, "awaitPromise": true, "returnByValue": true}),
-        )
-        .await?;
-        let raw = Self::validate_axe_result(&result)?;
-        let violations = serde_json::from_str::<serde_json::Value>(&raw)
-            .map_err(|error| format!("invalid axe JSON: {error}"))?;
-        let evidence = self
-            .capture_evidence(ws, session_id, request, &violations)
-            .await?;
-        let igt = self.run_igt_keyboard(ws, session_id, request).await;
-        Ok((raw, evidence, igt))
-    }
-
-    async fn apply_cookies(
-        &self,
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        request: &AnalyzeRequest,
-    ) -> Result<(), String> {
-        if request.config.cookie_references.is_empty() {
-            return Ok(());
-        }
-        Self::cdp_send_session(ws, session_id, "Network.enable", serde_json::json!({})).await?;
-        for cookie in &request.config.cookie_references {
-            let value = match cookie.value.clone() {
-                Some(v) => v,
-                None => {
-                    let key = cookie
-                        .name
-                        .chars()
-                        .map(|c| {
-                            if c.is_ascii_alphanumeric() {
-                                c.to_ascii_uppercase()
-                            } else {
-                                '_'
-                            }
-                        })
-                        .collect::<String>();
-                    std::env::var(format!("RGAA_COOKIE_{key}"))
-                        .map_err(|_| format!("missing secret for cookie '{}'", cookie.name))?
-                }
-            };
-            let mut params = serde_json::json!({
-                "name": cookie.name,
-                "value": value,
-            });
-            if let Some(domain) = &cookie.domain {
-                params["domain"] = serde_json::Value::String(domain.clone());
-            }
-            if let Some(path) = &cookie.path {
-                params["path"] = serde_json::Value::String(path.clone());
-            }
-            if let Some(same_site) = &cookie.same_site {
-                params["sameSite"] = serde_json::Value::String(match same_site {
-                    CookieSameSite::Strict => "Strict".to_string(),
-                    CookieSameSite::Lax => "Lax".to_string(),
-                    CookieSameSite::None => "None".to_string(),
-                });
-            }
-            if let Some(secure) = cookie.r#secure {
-                params["secure"] = serde_json::Value::Bool(secure);
-            }
-            if let Some(http_only) = cookie.http_only {
-                params["httpOnly"] = serde_json::Value::Bool(http_only);
-            }
-            if let Some(expires) = cookie.expires {
-                params["expires"] = serde_json::Value::Number(expires.into());
-            }
-            let result =
-                Self::cdp_send_session(ws, session_id, "Network.setCookie", params).await?;
-            if result.get("success").and_then(|v| v.as_bool()) == Some(false) {
-                return Err(format!("browser rejected cookie '{}'", cookie.name));
-            }
-        }
-        Ok(())
-    }
-
-    /// Build the pre-scan fill snippet: focus the element, assign through the
-    /// native prototype setter so framework value trackers observe a real
-    /// change, then fire trusted-shape input/change events. Both interpolated
-    /// values are JSON string literals, so newlines and quotes survive intact.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a selector or value fails JSON serialization, which cannot
-    /// happen for `&str` and therefore signals a `serde_json` bug.
-    fn fill_expression(selector: &str, value: &str) -> String {
-        // Infallible in practice: any &str serializes as JSON. expect() marks
-        // the invariant instead of silently injecting an empty string.
-        let selector = serde_json::to_string(selector).expect("selector must serialize as JSON");
-        let value = serde_json::to_string(value).expect("value must serialize as JSON");
-        format!(
-            "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); \
-            if (typeof el.focus === 'function') el.focus(); \
-            const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : (el instanceof HTMLInputElement ? HTMLInputElement.prototype : null); \
-            const setter = proto ? Object.getOwnPropertyDescriptor(proto, 'value').set : null; \
-            if (setter) {{ setter.call(el, {value}); }} else {{ el.value = {value}; }} \
-            el.dispatchEvent(new InputEvent('input', {{bubbles: true}})); \
-            el.dispatchEvent(new Event('change', {{bubbles: true}})); return true; }})()"
-        )
-    }
-
-    async fn apply_pre_scan_actions(
-        &self,
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        request: &AnalyzeRequest,
-    ) -> Result<(), String> {
-        for action in &request.config.pre_scan_actions {
-            let expression = match action {
-                PreScanAction::Click { selector } => {
-                    let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
-                    format!(
-                        "(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('pre-scan selector not found'); el.click(); return true; }})()"
-                    )
-                }
-                PreScanAction::Fill { selector, value } => Self::fill_expression(selector, value),
-                PreScanAction::WaitFor { selector, state } => {
-                    let selector = serde_json::to_string(selector).map_err(|e| e.to_string())?;
-                    let check = match state {
-                        WaitForState::Visible => "el => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden'",
-                        WaitForState::Attached => "el => document.body.contains(el)",
-                        WaitForState::Hidden => "el => !el.offsetParent && getComputedStyle(el).visibility === 'hidden'",
-                        WaitForState::Detached => "el => !document.body.contains(el)",
-                    };
-                    let allow_missing = matches!(state, WaitForState::Detached);
-                    format!(
-                        "(async () => {{ const selector = {selector}; const checkFn = {check}; const deadline = Date.now() + {MAX_WAITFOR_TIMEOUT_MS}; while (Date.now() < deadline) {{ const el = document.querySelector(selector); if (el && checkFn(el)) return true; if ({allow_missing} && !el) return true; await new Promise(r => setTimeout(r, 50)); }} throw new Error('waitFor timed out'); }})()"
-                    )
-                }
-            };
-            let is_async = matches!(action, PreScanAction::WaitFor { .. });
-            // Clicks can trigger navigations (submits, links): settle the page
-            // before the next action runs, or axe would race the navigation.
-            // Fill mutates in place and WaitFor already polls.
-            let settles_navigation = matches!(action, PreScanAction::Click { .. });
-            let result = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Runtime.evaluate",
-                if is_async {
-                    serde_json::json!({"expression": expression, "returnByValue": true, "awaitPromise": true})
-                } else {
-                    serde_json::json!({"expression": expression, "returnByValue": true})
-                },
-            )
-            .await?;
-            if result.get("exceptionDetails").is_some() {
-                return Err("pre-scan action evaluation failed".into());
-            }
-            if settles_navigation {
-                Self::wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
-            }
-        }
-        Ok(())
-    }
-
-    async fn capture_evidence(
-        &self,
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        request: &AnalyzeRequest,
-        violations: &serde_json::Value,
-    ) -> Result<Vec<rgaa_core::EvidenceRef>, String> {
-        let dom = Self::cdp_send_session(
-            ws,
-            session_id,
-            "Runtime.evaluate",
-            serde_json::json!({
-                "expression": "document.documentElement.outerHTML",
-                "returnByValue": true
-            }),
-        )
-        .await?;
-        let dom = dom
-            .get("result")
-            .and_then(|value| value.get("value"))
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| "DOM evidence was not returned by the browser".to_string())?;
-        let mut evidence = vec![Self::evidence_ref("dom_snapshot", dom.as_bytes())];
-        let should_screenshot = match request.config.screenshot.policy {
-            ScreenshotPolicy::None => false,
-            ScreenshotPolicy::Always => true,
-            ScreenshotPolicy::OnFailure => {
-                violations.as_array().is_some_and(|items| !items.is_empty())
-            }
-        };
-        if should_screenshot {
-            let format_str = match request.config.screenshot.format {
-                ScreenshotFormat::Png => "png",
-                ScreenshotFormat::Jpeg => "jpeg",
-            };
-            let screenshot = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Page.captureScreenshot",
-                serde_json::json!({ "format": format_str }),
-            )
-            .await?;
-            let data = screenshot
-                .get("data")
-                .and_then(|value| value.as_str())
-                .ok_or_else(|| "screenshot evidence was not returned by the browser".to_string())?;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(data)
-                .map_err(|error| format!("invalid screenshot evidence: {error}"))?;
-            evidence.push(Self::evidence_ref("screenshot", &bytes));
-        }
-        Ok(evidence)
-    }
-
-    fn evidence_ref(kind: &str, bytes: &[u8]) -> rgaa_core::EvidenceRef {
-        let digest = Sha256::digest(bytes);
-        rgaa_core::EvidenceRef::new(kind, format!("sha256:{digest:x}"))
-    }
-
-    /// Start the obscura CDP server as a background process
-    pub async fn start_server(&mut self) -> Result<(), String> {
-        info!(port = self.server_port, "Starting Obscura CDP server");
-
-        let child = Command::new(&self.binary_path)
-            .arg("serve")
-            .arg("--port")
-            .arg(self.server_port.to_string())
-            .arg("--quiet")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Failed to start obscura serve: {e}"))?;
-
-        self.server_process = Some(child);
-
-        // Wait for server to be ready
-        for i in 0..50 {
-            if let Ok(resp) = reqwest::get(&format!(
-                "http://127.0.0.1:{}/json/version",
-                self.server_port
-            ))
-            .await
-            {
-                if resp.status().is_success() {
-                    // Best-effort substrate attribution for the audit trail.
-                    match self.binary_version().await {
-                        Ok(version) => info!(attempt = i, %version, "Obscura CDP server ready"),
-                        Err(error) => {
-                            warn!(attempt = i, %error, "Obscura CDP server ready, version unknown")
-                        }
-                    }
-                    return Ok(());
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        Err("Obscura CDP server failed to start within 5s".to_string())
-    }
-
-    /// Stop the background CDP server
-    pub async fn stop_server(&mut self) {
-        if let Some(mut child) = self.server_process.take() {
-            let _ = child.kill().await;
-            info!("Obscura CDP server stopped");
-        }
-    }
-
-    /// Get the browser-level WebSocket URL from /json/version
-    async fn get_browser_ws_url(&self) -> Result<String, String> {
-        let resp = reqwest::get(&format!(
-            "http://127.0.0.1:{}/json/version",
-            self.server_port
-        ))
-        .await
-        .map_err(|e| format!("Failed to get CDP version: {e}"))?;
-
-        let version: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse CDP version: {e}"))?;
-
-        version["webSocketDebuggerUrl"]
-            .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| "No webSocketDebuggerUrl in /json/version".to_string())
-    }
-
-    /// Fetch the axe-core source once (used by single and batch runs)
-    async fn fetch_axe_source(&self) -> Result<String, String> {
-        reqwest::get(AXE_CORE_CDN)
-            .await
-            .map_err(|e| format!("Failed to fetch axe-core: {e}"))?
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read axe-core: {e}"))
-    }
-
-    /// Run axe-core via CDP (supports async evaluation)
-    ///
-    /// Fetches the axe-core source once and delegates to [`Self::run_axe_with_script`].
-    pub async fn run_axe(&self, url: &str) -> Result<String, String> {
-        let axe_source = self.fetch_axe_source().await?;
-        self.run_axe_with_script(url, &axe_source).await
-    }
-
-    /// Run axe-core against `url` using a pre-fetched axe-core source string.
-    ///
-    /// This avoids re-downloading axe-core per URL when batching. The created CDP
-    /// target is always detached/closed on every exit path (success or error).
-    pub(crate) async fn run_axe_with_script(
-        &self,
-        url: &str,
-        axe_source: &str,
-    ) -> Result<String, String> {
-        // 1. Connect to browser-level WebSocket
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("Failed to connect to CDP WebSocket: {e}"))?;
-
-        // 2. Create a new target and get its ID
-        let target_id = {
-            let resp = Self::cdp_send(
-                &mut ws,
-                "Target.createTarget",
-                serde_json::json!({
-                    "url": url,
-                }),
-            )
-            .await?;
-            resp.get("targetId")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "No targetId in createTarget response".to_string())?
-                .to_string()
-        };
-
-        // 3. Attach to the target and get session ID
-        let session_id = {
-            let resp = Self::cdp_send(
-                &mut ws,
-                "Target.attachToTarget",
-                serde_json::json!({
-                    "targetId": target_id,
-                    "flatten": true,
-                }),
-            )
-            .await?;
-            resp.get("sessionId")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-                .to_string()
-        };
-
-        // 4. Run the actual evaluation, then always clean up the target.
-        let outcome = self.run_axe_core(&mut ws, &session_id, axe_source).await;
-
-        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-        match (outcome, cleanup) {
-            (Ok(value), Ok(())) => Ok(value),
-            (Ok(_), Err(error)) => Err(error),
-            (Err(error), _) => Err(error),
-        }
-    }
-
-    /// Evaluate JavaScript in the page using CDP Runtime.evaluate
-    pub async fn eval_js(&self, expression: &str) -> Result<serde_json::Value, String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        // Create a target
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": "about:blank"}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        // Attach to the target
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        // Evaluate the expression
-        let result = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": expression, "returnByValue": true}),
-        )
-        .await?;
-
-        // Cleanup
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        Ok(result)
-    }
-
-    /// Navigate to a URL using CDP Page.navigate
-    pub async fn navigate(&self, url: &str) -> Result<(), String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        // Create a target
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        // Attach to the target
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        // Wait for page load
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        // Cleanup
-        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-        match cleanup {
-            Ok(()) => Ok(()),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Click an element using CDP Runtime.evaluate
-    pub async fn click_element(&self, url: &str, selector: &str) -> Result<(), String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        // Create a target with the URL
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        // Attach to the target
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        // Wait for page load
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        // Click the element
-        let click_script = format!(
-            "document.querySelector('{}')?.click()",
-            escape_js_string(selector)
-        );
-        let result = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": click_script, "returnByValue": true}),
-        )
-        .await?;
-
-        if result.get("exceptionDetails").is_some() {
-            // Cleanup before returning error
-            let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-            return Err(format!("click failed for selector '{selector}'"));
-        }
-
-        // Cleanup
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        Ok(())
-    }
-
-    /// Take a screenshot of the given URL using CDP Page.captureScreenshot.
-    pub async fn screenshot(&self, url: &str) -> Result<String, String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        // Create a target with the specified URL
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        // Attach to the target
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        // Capture screenshot, then always clean up
-        let outcome = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Page.captureScreenshot",
-            serde_json::json!({"format": "png"}),
-        )
-        .await;
-
-        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-        match (outcome, cleanup) {
-            (Ok(result), Ok(())) => result
-                .get("data")
-                .and_then(|d| d.as_str())
-                .map(|s| s.to_string())
-                .ok_or_else(|| "No screenshot data in response".to_string()),
-            (Ok(_), Err(error)) => Err(error),
-            (Err(error), _) => Err(error),
-        }
-    }
-
-    /// Get the accessibility tree using CDP Accessibility API
-    pub async fn get_accessibility_tree(&self, url: &str) -> Result<serde_json::Value, String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        // Create a target with the URL
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        // Attach to the target
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        // Enable accessibility
-        Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Accessibility.enable",
-            serde_json::json!({}),
-        )
-        .await?;
-
-        // Wait for page load
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        // Get full accessibility tree
-        let tree = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Accessibility.getFullAXTree",
-            serde_json::json!({}),
-        )
-        .await?;
-
-        // Cleanup
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        Ok(tree)
-    }
-
-    /// Inner axe-core evaluation: wait for navigation, inject axe, then run it.
-    async fn run_axe_core(
-        &self,
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        axe_source: &str,
-    ) -> Result<String, String> {
-        // Wait for the page to load (lifecycle event or readyState), bounded.
-        Self::wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
-
-        // 5. Inject axe-core via script source
-        let inject = Self::cdp_send_session(
-            ws,
-            session_id,
-            "Runtime.evaluate",
-            serde_json::json!({
-                "expression": format!("(function() {{ {} }})()", axe_source),
-            }),
-        )
-        .await?;
-
-        if inject.get("exceptionDetails").is_some() {
-            return Err("axe-core injection threw an exception".to_string());
-        }
-
-        // 6. Run axe.run() and capture the resolved value directly.
-        let result = Self::cdp_send_session(
-            ws,
-            session_id,
-            "Runtime.evaluate",
-            serde_json::json!({
-                "expression": "axe.run()",
-                "awaitPromise": true,
-                "returnByValue": true,
-            }),
-        )
-        .await?;
-
-        Self::validate_axe_result(&result)
-    }
-
-    /// Validate the resolved axe.run() result. Any missing/exception/null/subtype
-    /// result is treated as an error so a failure cannot masquerade as a clean run.
-    ///
-    /// `result` is the CDP `Runtime.evaluate` "result" object: `{ result: <RemoteObject>, exceptionDetails? }`.
-    fn validate_axe_result(result: &serde_json::Value) -> Result<String, String> {
-        if let Some(ex) = result.get("exceptionDetails") {
-            return Err(format!("axe.run() raised an exception: {ex}"));
-        }
-
-        let remote = result
-            .get("result")
-            .ok_or_else(|| "axe.run() response missing result object".to_string())?;
-
-        if remote.get("subtype").and_then(|s| s.as_str()) == Some("error") {
-            return Err("axe.run() returned an error object".to_string());
-        }
-
-        let value = remote
-            .get("value")
-            .ok_or_else(|| "axe.run() result value is missing".to_string())?;
-
-        if value.is_null() {
-            return Err("axe.run() result value is null".to_string());
-        }
-
-        let violations = value
-            .get("violations")
-            .ok_or_else(|| "axe result is missing the 'violations' field".to_string())?;
-
-        if !violations.is_array() {
-            return Err("axe result 'violations' is not an array".to_string());
-        }
-
-        serde_json::to_string(violations)
-            .map_err(|e| format!("failed to serialize axe violations: {e}"))
-    }
-
-    /// Wait for navigation to finish by observing `Page.loadEventFired` /
-    /// `Page.lifecycleEvent` (name == "load") OR polling `document.readyState`
-    /// until "complete". Returns once either is observed, or Err on timeout.
-    async fn wait_for_load(
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        timeout_dur: Duration,
-    ) -> Result<(), String> {
-        let deadline = Instant::now() + timeout_dur;
-        let poll_interval = Duration::from_millis(300);
-        let mut last_poll = Instant::now() - poll_interval - Duration::from_millis(1);
-        let mut pending_readystate: Option<u64> = None;
-
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(
-                    "timed out waiting for page load (loadEventFired / readyState)".to_string(),
-                );
-            }
-
-            // Issue a readyState poll when none is outstanding and the interval elapsed.
-            if pending_readystate.is_none() && last_poll.elapsed() >= poll_interval {
-                last_poll = Instant::now();
-                let id = Self::cdp_issue(
-                    ws,
-                    "Runtime.evaluate",
-                    serde_json::json!({
-                        "expression": "document.readyState",
-                        "returnByValue": true,
-                    }),
-                    Some(session_id),
-                )
-                .await?;
-                pending_readystate = Some(id);
-            }
-
-            let wait = if pending_readystate.is_some() {
-                remaining
-            } else {
-                poll_interval.min(remaining)
-            };
-
-            match tokio::time::timeout(wait, ws.next()).await {
-                Ok(Some(Ok(Message::Text(text)))) => {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
-                            if pending_readystate == Some(id) {
-                                pending_readystate = None;
-                                let val = value
-                                    .get("result")
-                                    .and_then(|r| r.get("result"))
-                                    .and_then(|v| v.get("value"))
-                                    .and_then(|v| v.as_str());
-                                if val == Some("complete") {
-                                    return Ok(());
-                                }
-                            }
-                        } else if let Some(method) = value.get("method").and_then(|m| m.as_str()) {
-                            if method == "Page.loadEventFired" {
-                                return Ok(());
-                            }
-                            if method == "Page.lifecycleEvent"
-                                && value
-                                    .get("params")
-                                    .and_then(|p| p.get("name"))
-                                    .and_then(|n| n.as_str())
-                                    == Some("load")
-                            {
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-                Ok(Some(Ok(Message::Close(_)))) => {
-                    return Err("CDP WebSocket closed while waiting for page load".to_string());
-                }
-                Ok(Some(Err(e))) => {
-                    return Err(format!(
-                        "CDP WebSocket error while waiting for page load: {e}"
-                    ));
-                }
-                Ok(None) => {
-                    return Err(
-                        "CDP WebSocket stream ended while waiting for page load".to_string()
-                    );
-                }
-                Err(_) => {
-                    // Timed out waiting for a message; re-check deadline and retry.
-                }
-                _ => {}
-            }
-        }
-    }
-
-    /// Run axe-core on multiple URLs concurrently using CDP workers.
-    ///
-    /// Fetches axe-core once, then bounds concurrent `run_axe_with_script` calls
-    /// with a semaphore sized by `concurrency` (treated as 1 when 0).
-    pub async fn run_axe_batch(
-        &self,
-        urls: &[String],
-        concurrency: usize,
-    ) -> Result<HashMap<String, String>, String> {
-        if urls.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let concurrency = std::cmp::max(1, concurrency);
-
-        info!(
-            urls = urls.len(),
-            concurrency, "Running batch axe-core audit via CDP"
-        );
-
-        // Fetch axe-core once for the whole batch.
-        let axe_source = self.fetch_axe_source().await?;
-        let sem = Arc::new(Semaphore::new(concurrency));
-
-        let (tx, mut rx) = mpsc::channel(urls.len());
-
-        for url in urls {
-            let tx = tx.clone();
-            let binary_path = self.binary_path.clone();
-            let port = self.server_port;
-            let url = url.clone();
-            let axe = axe_source.clone();
-            let sem = Arc::clone(&sem);
-
-            tokio::spawn(async move {
-                let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
-
-                let bridge = ObscuraBridge {
-                    binary_path,
-                    server_port: port,
-                    server_process: None,
-                };
-
-                let result = bridge.run_axe_with_script(&url, &axe).await;
-                let _ = tx.send((url, result)).await;
-            });
-        }
-
-        drop(tx);
-
-        let mut results = HashMap::new();
-        while let Some((url, result)) = rx.recv().await {
-            match result {
-                Ok(violations) => {
-                    results.insert(url, violations);
-                }
-                Err(e) => {
-                    warn!(url = %url, error = %e, "axe-core failed");
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Run gap-fix snippets on a single URL using CLI (sync)
-    pub async fn run_gap_fix(
-        &self,
-        url: &str,
-        snippets: &HashMap<String, &str>,
-    ) -> Result<HashMap<String, serde_json::Value>, String> {
-        let mut results = HashMap::new();
-
-        for (criterion_id, snippet) in snippets {
-            let script = Self::build_gap_fix_script(snippet);
-            match self.run_obscura_fetch(url, &script).await {
-                Ok(output) => {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&output) {
-                        results.insert(criterion_id.clone(), value);
-                    }
-                }
-                Err(e) => {
-                    error!("Gap-fix failed for {}: {}", criterion_id, e);
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Run gap-fix snippets on multiple URLs concurrently via the CLI `scrape` command.
-    ///
-    /// All URLs are passed to a single `obscura scrape` invocation (scrape accepts
-    /// multiple positional URLs). The single JSON object returned is parsed into a
-    /// per-URL map; a non-conforming payload is an error (entries are never dropped silently).
-    pub async fn run_gap_fix_batch(
-        &self,
-        urls: &[String],
-        snippets: &HashMap<String, &str>,
-        concurrency: usize,
-    ) -> Result<HashMap<String, HashMap<String, serde_json::Value>>, String> {
-        let snippet_decls: String = snippets
-            .iter()
-            .map(|(id, snippet)| {
-                format!(
-                    r#"
-    const snippet_{id} = (() => {{
-      try {{
-        {snippet}
-      }} catch (e) {{
-        {{ success: false, error: e.message }};
-      }}
-    }})();
- "#
-                )
-            })
-            .collect();
-
-        let object_entries: String = snippets
-            .keys()
-            .map(|id| format!("'{id}': snippet_{id}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let script = format!(
-            r#"
-  {snippet_decls}
-  JSON.stringify({{{object_entries}}});
- "#
-        );
-
-        info!(
-            urls = urls.len(),
-            snippets = snippets.len(),
-            concurrency,
-            "Running batch gap-fix via CLI"
-        );
-
-        let output = timeout(Duration::from_secs(300), async {
-            Command::new(&self.binary_path)
-                .arg("scrape")
-                .args(urls.iter())
-                .arg("--eval")
-                .arg(&script)
-                .arg("--concurrency")
-                .arg(concurrency.to_string())
-                .arg("--format")
-                .arg("json")
-                .arg("--timeout")
-                .arg("60")
-                .arg("--quiet")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn obscura scrape: {e}"))
-        })
-        .await
-        .map_err(|_| "obscura scrape timed out after 300s".to_string())??;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(stderr = %stderr, "obscura scrape gap-fix failed");
-            return Err(format!("obscura scrape gap-fix failed: {stderr}"));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let parsed = Self::parse_scrape_results(&stdout)?;
-
-        let mut all_results = HashMap::new();
-        for (url, value) in parsed {
-            let map = serde_json::from_value::<HashMap<String, serde_json::Value>>(value)
-                .map_err(|e| format!("failed to parse gap-fix eval for {url}: {e}"))?;
-            all_results.insert(url, map);
-        }
-
-        Ok(all_results)
-    }
-
-    /// Extract page context using CLI (sync)
-    pub async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String> {
-        let script = Self::build_page_context_script();
-        let output = self.run_obscura_fetch(url, script).await?;
-        serde_json::from_str(&output).map_err(|e| e.to_string())
-    }
-
-    /// Extract page context for multiple URLs concurrently using CLI scrape.
-    ///
-    /// All URLs are passed to a single `obscura scrape` invocation and the result
-    /// is parsed into a per-URL map (entries are never dropped silently).
-    pub async fn extract_page_context_batch(
-        &self,
-        urls: &[String],
-        concurrency: usize,
-    ) -> Result<HashMap<String, serde_json::Value>, String> {
-        let script = Self::build_page_context_script();
-
-        info!(
-            urls = urls.len(),
-            concurrency, "Running batch page context extraction via CLI"
-        );
-
-        let output = timeout(Duration::from_secs(300), async {
-            Command::new(&self.binary_path)
-                .arg("scrape")
-                .args(urls.iter())
-                .arg("--eval")
-                .arg(script)
-                .arg("--concurrency")
-                .arg(concurrency.to_string())
-                .arg("--format")
-                .arg("json")
-                .arg("--timeout")
-                .arg("60")
-                .arg("--quiet")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn obscura scrape: {e}"))
-        })
-        .await
-        .map_err(|_| "obscura scrape timed out after 300s".to_string())??;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(stderr = %stderr, "obscura scrape page context failed");
-            return Err(format!("obscura scrape page context failed: {stderr}"));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Self::parse_scrape_results(&stdout)
-    }
-
-    /// Parse the real Obscura `scrape` output: a single JSON object containing a
-    /// `results` array, where each element has a `url` and an `eval` (string) field.
-    /// Returns an error if the payload is not in this shape.
-    fn parse_scrape_results(stdout: &str) -> Result<HashMap<String, serde_json::Value>, String> {
-        let value: serde_json::Value = serde_json::from_str(stdout)
-            .map_err(|e| format!("failed to parse obscura scrape output: {e}"))?;
-
-        let results = value
-            .get("results")
-            .and_then(|r| r.as_array())
-            .ok_or_else(|| "obscura scrape output missing 'results' array".to_string())?;
-
-        let mut map = HashMap::new();
-        for entry in results {
-            let url = entry
-                .get("url")
-                .and_then(|u| u.as_str())
-                .ok_or_else(|| "scrape result entry missing 'url'".to_string())?;
-            let eval = entry
-                .get("eval")
-                .and_then(|e| e.as_str())
-                .ok_or_else(|| format!("scrape result entry for '{url}' missing 'eval'"))?;
-            let parsed = serde_json::from_str::<serde_json::Value>(eval)
-                .map_err(|e| format!("failed to parse eval for '{url}': {e}"))?;
-            map.insert(url.to_string(), parsed);
-        }
-
-        Ok(map)
-    }
-
-    // --- Script builders (sync) ---
-
-    fn build_gap_fix_script(snippet: &str) -> String {
-        format!(
-            r#"
- (() => {{
-   try {{
-     const r = {snippet};
-     return JSON.stringify(r);
-   }} catch (e) {{
-     return JSON.stringify({{ pass: false, details: e.message, nodes: 0 }});
-   }}
- }})()
- "#
-        )
-    }
-
-    fn build_page_context_script() -> &'static str {
-        r#"
-  (() => {
-    const title = document.title;
-    const lang = document.documentElement.lang;
-    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-      .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim() }));
-    const landmarks = Array.from(document.querySelectorAll('header, nav, main, aside, footer, [role="banner"], [role="navigation"], [role="main"], [role="complementary"], [role="contentinfo"]'))
-      .map(el => ({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), label: el.getAttribute('aria-label') }));
-    const images = Array.from(document.querySelectorAll('img'))
-      .map(img => ({ src: img.src, alt: img.alt, has_alt: img.hasAttribute('alt'), is_decorative: !img.hasAttribute('alt') && !img.alt }));
-    const iframes = Array.from(document.querySelectorAll('iframe'))
-      .map(iframe => ({ src: iframe.src || null, title: iframe.title || null, has_title: iframe.hasAttribute('title') }));
-    const media = Array.from(document.querySelectorAll('video, audio'))
-      .map(m => ({ media_type: m.tagName.toLowerCase(), has_captions: false, has_transcript: false, has_controls: m.hasAttribute('controls') }));
-    const links = Array.from(document.querySelectorAll('a'))
-      .map(a => ({ href: a.href, text: a.textContent.trim(), has_text: a.textContent.trim().length > 0, is_empty: a.textContent.trim().length === 0 }));
-    const navigation = Array.from(document.querySelectorAll('nav'))
-      .map(n => n.textContent.trim());
-    const forms = Array.from(document.querySelectorAll('form'))
-      .map(form => ({
-        id: form.id || null,
-        has_labels: Array.from(form.querySelectorAll('label')).length > 0,
-        has_submit: form.querySelector('button[type="submit"], input[type="submit"]') !== null,
-        inputs: Array.from(form.querySelectorAll('input, select, textarea')).map(el => ({
-          input_type: el.type || el.tagName.toLowerCase(),
-          has_label: el.id ? form.querySelector(`label[for="${el.id}"]`) !== null : false,
-          aria_label: el.getAttribute('aria-label'),
-          placeholder: el.placeholder || null
-        }))
-      }));
-    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms });
-  })()
-  "#
-    }
-
-    /// Send a CDP command (browser-level, no session) and get the result
-    async fn cdp_send(
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        let id = Self::cdp_issue(ws, method, params, None).await?;
-        Self::cdp_wait_response(ws, id).await
-    }
-
-    /// Send a CDP command with session ID and get the result
-    async fn cdp_send_session(
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
-        let id = Self::cdp_issue(ws, method, params, Some(session_id)).await?;
-        Self::cdp_wait_response(ws, id).await
-    }
-
-    async fn cleanup_target(
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        target_id: &str,
-    ) -> Result<(), String> {
-        let detach = Self::cdp_send(
-            ws,
-            "Target.detachFromTarget",
-            serde_json::json!({"sessionId": session_id}),
-        )
-        .await
-        .map(|_| ());
-        let close = Self::cdp_send(
-            ws,
-            "Target.closeTarget",
-            serde_json::json!({"targetId": target_id}),
-        )
-        .await
-        .map(|_| ());
-        let socket = ws.close(None).await.map_err(|error| error.to_string());
-
-        detach.and(close).and(socket)
-    }
-
-    /// Build and send a CDP message, returning the generated request id.
-    async fn cdp_issue(
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        method: &str,
-        params: serde_json::Value,
-        session_id: Option<&str>,
-    ) -> Result<u64, String> {
-        let id = (SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-            % 1_000_000) as u64;
-
-        let mut msg = serde_json::json!({
-            "id": id,
-            "method": method,
-            "params": params,
-        });
-        if let Some(sid) = session_id {
-            msg["sessionId"] = serde_json::Value::String(sid.to_string());
-        }
-
-        ws.send(Message::Text(msg.to_string()))
-            .await
-            .map_err(|e| format!("CDP send failed: {e}"))?;
-
-        Ok(id)
-    }
-
-    /// Wait for a CDP response with a matching id, skipping events
-    async fn cdp_wait_response(
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        expected_id: u64,
-    ) -> Result<serde_json::Value, String> {
-        let deadline = Instant::now() + Duration::from_secs(30);
-
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(format!(
-                    "CDP timeout waiting for response id={}",
-                    expected_id
-                ));
-            }
-
-            match tokio::time::timeout(remaining, ws.next()).await {
-                Ok(Some(Ok(Message::Text(text)))) => {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                        // Check if this is a response to our command
-                        if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
-                            if id == expected_id {
-                                if let Some(error) = value.get("error") {
-                                    return Err(format!("CDP error: {}", error));
-                                }
-                                return Ok(value
-                                    .get("result")
-                                    .cloned()
-                                    .unwrap_or(serde_json::Value::Null));
-                            }
-                        }
-                        // Otherwise it's an event, skip it
-                    }
-                }
-                Ok(Some(Ok(Message::Close(_)))) => return Err("CDP WebSocket closed".to_string()),
-                Ok(Some(Err(e))) => return Err(format!("CDP WebSocket error: {e}")),
-                Ok(None) => return Err("CDP WebSocket stream ended".to_string()),
-                Err(_) => {
-                    return Err(format!(
-                        "CDP timeout waiting for response id={}",
-                        expected_id
-                    ))
-                }
-                _ => {}
-            }
-        }
-    }
-
-    /// Run a single obscura fetch command (sync operations)
-    async fn run_obscura_fetch(&self, url: &str, script: &str) -> Result<String, String> {
-        info!("Running Obscura fetch for {}", url);
-
-        let output = timeout(Duration::from_secs(120), async {
-            Command::new(&self.binary_path)
-                .arg("fetch")
-                .arg(url)
-                .arg("--eval")
-                .arg(script)
-                .arg("--quiet")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn obscura: {e}"))
-        })
-        .await
-        .map_err(|_| "Obscura fetch timed out after 120s".to_string())??;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(stderr = %stderr, "Obscura fetch failed");
-            return Err(format!("Obscura fetch failed: {stderr}"));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let lines: Vec<&str> = stdout.lines().collect();
-        if let Some(last) = lines.last() {
-            Ok(last.to_string())
-        } else {
-            Ok(stdout)
-        }
-    }
-
-    /// Type text into an input element using CDP Runtime.evaluate
-    pub async fn type_input(&self, url: &str, selector: &str, text: &str) -> Result<(), String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        let script = format!(
-            "(() => {{ const el = document.querySelector('{}'); if (!el) throw new Error('selector not found'); el.focus(); el.value = '{}'; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()",
-            escape_js_string(selector),
-            escape_js_string(text)
-        );
-        let result = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": script, "returnByValue": true}),
-        )
-        .await?;
-
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        if result.get("exceptionDetails").is_some() {
-            return Err(format!("type failed for selector '{selector}'"));
-        }
-        Ok(())
-    }
-
-    /// Press a keyboard key using CDP Input.dispatchKeyEvent
-    pub async fn press_key(&self, url: &str, key: &str) -> Result<(), String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Input.dispatchKeyEvent",
-            serde_json::json!({"type": "keyDown", "key": key}),
-        )
-        .await?;
-        Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Input.dispatchKeyEvent",
-            serde_json::json!({"type": "keyUp", "key": key}),
-        )
-        .await?;
-
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-        Ok(())
-    }
-
-    /// Get tab order of focusable elements using CDP Runtime.evaluate
-    pub async fn get_tab_order(&self, url: &str) -> Result<Vec<serde_json::Value>, String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        let result = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({
-                "expression": "Array.from(document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, [tabindex]')).filter(el => el.tabIndex >= 0 && !el.disabled).sort((a, b) => a.tabIndex - b.tabIndex).map((el, i) => ({index: i, tag: el.tagName.toLowerCase(), role: el.getAttribute('aria-role') || el.tagName.toLowerCase(), name: (el.textContent || '').trim().substring(0, 100), tabindex: el.tabIndex}))",
-                "returnByValue": true
-            }),
-        )
-        .await?;
-
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        result
-            .get("result")
-            .and_then(|r| r.get("value"))
-            .and_then(|v| v.as_array())
-            .cloned()
-            .ok_or_else(|| "No tab order data returned".to_string())
-    }
-
-    async fn run_igt_keyboard(
-        &self,
-        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-        session_id: &str,
-        request: &AnalyzeRequest,
-    ) -> Option<IgtResults> {
-        if !request.config.igt_tools.contains(&"keyboard".to_string()) {
-            return None;
-        }
-        let max_tabs = 50;
-        let mut issues = Vec::new();
-        let mut igt_elements = Vec::new();
-        let mut previous_focused: Option<String> = None;
-        let mut trap_counter = 0;
-        let mut terminated_reason: Option<TerminationReason> = None;
-
-        let interactive_roles = [
-            "button", "link", "textbox", "checkbox", "radio", "menuitem",
-            "tab", "menuitemcheckbox", "menuitemradio", "switch", "searchbox",
-            "spinbutton", "combobox", "slider",
-        ];
-
-        for _ in 0..max_tabs {
-            let tab_result = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Input.dispatchKeyEvent",
-                serde_json::json!({"type": "keyDown", "key": "Tab"}),
-            )
-            .await;
-            if tab_result.is_err() {
-                terminated_reason = Some(TerminationReason::ExecutionError);
-                break;
-            }
-            let get_focused = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Runtime.evaluate",
-                serde_json::json!({
-                    "expression": "(function() { var el = document.activeElement; if (!el || el === document.body) return null; var path = []; var current = el; while (current && current.nodeType === Node.ELEMENT_NODE) { var idx = 0; var sibling = current.previousElementSibling; while (sibling) { idx++; sibling = sibling.previousElementSibling; } path.unshift(current.tagName.toLowerCase() + '[' + idx + ']'); current = current.parentElement; } return { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || el.tagName.toLowerCase(), name: (el.textContent || el.value || '').trim().substring(0, 100), id: el.id, path: path.join('/') }; })()",
-                    "returnByValue": true
-                }),
-            )
-            .await;
-            let focused = if let Ok(r) = get_focused {
-                let result_val = r.get("result")?;
-                let v = result_val.get("value")?;
-                Some(v.clone())
-            } else {
-                None
-            };
-            let (role, name, tag, identity) = if let Some(fv) = &focused {
-                let role = fv.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
-                let name = fv.get("name").and_then(|r| r.as_str()).unwrap_or("");
-                let tag = fv.get("tag").and_then(|r| r.as_str()).unwrap_or("");
-                let id = fv.get("id").and_then(|r| r.as_str()).unwrap_or("");
-                let path = fv.get("path").and_then(|r| r.as_str()).unwrap_or("");
-                let identity = if !id.is_empty() {
-                    format!("id:{}", id)
-                } else {
-                    path.to_string()
-                };
-                (role.to_string(), name.to_string(), tag.to_string(), identity)
-            } else {
-                (String::new(), String::new(), String::new(), String::new())
-            };
-
-            if !tag.is_empty() {
-                if interactive_roles.contains(&role.as_str()) || tag == "a" || tag == "button" || tag == "input" {
-                    igt_elements.push(IgtElement {
-                        role: role.clone(),
-                        name: name.clone(),
-                        value: None,
-                        description: None,
-                    });
-                }
-
-                if let Some(prev) = &previous_focused {
-                    if prev == &identity {
-                        trap_counter += 1;
-                    } else {
-                        trap_counter = 0;
-                    }
-                }
-
-                if trap_counter >= 5 {
-                    issues.push(IgtIssue {
-                        rule: "keyboard-trap".to_string(),
-                        element: format!("{}:{}", tag, name),
-                        description: format!("Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs", name, tag, role, trap_counter),
-                    });
-                    break;
-                }
-
-                previous_focused = Some(identity);
-            }
-
-            let key_up = Self::cdp_send_session(
-                ws,
-                session_id,
-                "Input.dispatchKeyEvent",
-                serde_json::json!({"type": "keyUp", "key": "Tab"}),
-            )
-            .await;
-            if key_up.is_err() {
-                terminated_reason = Some(TerminationReason::ExecutionError);
-                break;
-            }
-        }
-
-        if igt_elements.is_empty() {
-            issues.push(IgtIssue {
-                rule: "no-interactive-elements".to_string(),
-                element: "document".to_string(),
-                description: "No interactive elements found via keyboard navigation".to_string(),
-            });
-        }
-
-        Some(IgtResults {
-            keyboard: IgtResult {
-                status: if terminated_reason.is_some() || issues.iter().any(|i| i.rule == "keyboard-trap") {
-                    "incomplete".to_string()
-                } else {
-                    "complete".to_string()
-                },
-                issues,
-                igt_elements,
-                terminated_reason,
-            },
-        })
-    }
-
-    /// Assert page state by evaluating a JavaScript predicate via CDP Runtime.evaluate
-    pub async fn assert_state(&self, url: &str, script: &str) -> Result<serde_json::Value, String> {
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
-
-        let target_resp = Self::cdp_send(
-            &mut ws,
-            "Target.createTarget",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
-        let target_id = target_resp
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No targetId in createTarget response".to_string())?
-            .to_string();
-
-        let session_resp = Self::cdp_send(
-            &mut ws,
-            "Target.attachToTarget",
-            serde_json::json!({"targetId": target_id, "flatten": true}),
-        )
-        .await?;
-        let session_id = session_resp
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-            .to_string();
-
-        Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
-
-        let result = Self::cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Runtime.evaluate",
-            serde_json::json!({"expression": script, "returnByValue": true}),
-        )
-        .await?;
-
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-
-        if let Some(ex) = result.get("exceptionDetails") {
-            return Err(format!("assert_state script error: {ex}"));
-        }
-        result
-            .get("result")
-            .and_then(|r| r.get("value"))
-            .cloned()
-            .ok_or_else(|| "No result from assert_state script".to_string())
+}
+
+impl Default for ObscuraBridge {
+    fn default() -> Self {
+        Self::from_env()
     }
 }
 
-impl Drop for ObscuraBridge {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.server_process.take() {
-            let _ = child.start_kill();
-        }
+/// Check if a hostname resolves to a private/intranet network range.
+/// Returns true for RFC 1918, link-local, loopback, and other non-public ranges.
+fn is_private_network(host: &str) -> bool {
+    // Check for IP addresses first
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_link_local()
+                    || v4.is_private()
+                    || v4.is_unspecified()
+                    || (v4.octets()[0] == 100 && v4.octets()[1] & 0xC0 == 0)  // 100.64.0.0/10 (CGNAT)
+                    || (v4.octets()[0] == 192 && v4.octets()[1] == 0 && v4.octets()[2] == 0)  // 192.0.0.0/24
+                    || (v4.octets()[0] == 192 && v4.octets()[1] == 0 && v4.octets()[2] == 2)  // 192.0.2.0/24 (TEST-NET-1)
+                    || (v4.octets()[0] == 198 && v4.octets()[1] == 51 && v4.octets()[2] == 100)  // 198.51.100.0/24 (TEST-NET-2)
+                    || (v4.octets()[0] == 203 && v4.octets()[1] == 0 && v4.octets()[2] == 113)  // 203.0.113.0/24 (TEST-NET-3)
+                    || v4.octets()[0] >= 224  // multicast + broadcast
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unspecified()
+                    || v6.is_unicast_link_local()
+                    || v6.segments()[0] == 0xfe80  // link-local
+                    || v6.segments()[0] & 0xFE00 == 0xFC00  // ULA (fc00::/7)
+            }
+        };
     }
+
+    // Check for private/intranet hostnames
+    let lower = host.to_ascii_lowercase();
+    lower == "localhost"
+        || lower.ends_with(".local")
+        || lower.ends_with(".internal")
+        || lower.ends_with(".intranet")
+        || lower.ends_with(".localdomain")
+        || lower == "0.0.0.0"
+        || lower == "::"
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Network-dependent: requires a reachable browser/CDP server and example.com.
     #[tokio::test]
-    async fn test_run_axe_with_broken_script_surfaces_error() {
-        let mut bridge = ObscuraBridge::new().with_port(9244);
-        bridge.start_server().await.expect("failed to start server");
-
-        // A broken axe source throws during injection, which must surface as Err
-        // rather than being silently treated as a clean (empty) result.
-        let broken = "throw new Error('boom')";
-        let result = bridge
-            .run_axe_with_script("https://example.com", broken)
-            .await;
-
-        bridge.stop_server().await;
-
-        assert!(
-            result.is_err(),
-            "broken evaluation should surface an Err, got: {:?}",
-            result.ok()
-        );
+    #[ignore = "requires Obscura binary"]
+    async fn test_obscura_bridge_axe() {
+        let bridge = ObscuraBridge::new().await.unwrap();
+        let result = bridge.run_axe("https://example.com").await;
+        assert!(result.is_ok(), "Failed to run axe: {:?}", result.err());
+        let ax = result.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&ax).expect("axe result must be parseable JSON");
+        assert!(parsed.is_array(), "axe result must be a JSON array");
     }
 
     #[tokio::test]
-    async fn analyze_rejects_invalid_request_before_starting_browser_work() {
-        let bridge = ObscuraBridge::new();
-        let request = AnalyzeRequest {
-            url: "file:///secret.html".into(),
-            config: AnalyzeConfig::default(),
-        };
-
-        assert!(matches!(
-            bridge.analyze(&request).await,
-            Err(ObscuraError::Validation(_))
-        ));
-    }
-
-    #[test]
-    fn browser_failures_are_classified_as_page_errors() {
-        let result = AnalyzePageResult::failed(
-            "https://unreachable.test",
-            ObscuraBridge::classify_error("timed out waiting for page load".into()),
-            1,
-        );
-
-        assert!(!result.completed);
-        assert_eq!(result.errors[0].code, "timeout");
-    }
-
-    #[test]
-    fn malformed_axe_items_are_rejected_before_mapping() {
-        let payload = serde_json::json!([{}]);
-        assert!(matches!(
-            validate_axe_payload(&payload),
-            Err(ObscuraError::Json(_))
-        ));
-    }
-
-    #[test]
-    fn axe_findings_preserve_context_and_have_stable_order() {
-        let payload = serde_json::json!([{
-            "id": "image-alt",
-            "impact": "critical",
-            "description": "Images must have alternate text",
-            "help": "Ensure alt text",
-            "nodes": [{"target": ["#z"], "html": "<img id=\"z\">"}, {"target": ["#a"], "html": "<img id=\"a\">"}]
-        }]);
-        let evidence = vec![rgaa_core::EvidenceRef::new("dom_snapshot", "sha256:x")];
-        let findings = findings_from_axe("https://example.test", &payload, &evidence)
-            .expect("valid axe payload");
-        assert_eq!(findings.len(), 14);
-        assert!(findings.windows(2).all(|pair| pair[0].id <= pair[1].id));
-        let finding = findings
-            .iter()
-            .find(|finding| finding.target == "#a")
-            .expect("target preserved");
-        assert_eq!(finding.html.as_deref(), Some("<img id=\"a\">"));
-        assert_eq!(finding.criterion_id.as_deref(), Some("1.1"));
-        assert_eq!(finding.source, "axe-core");
-        assert_eq!(finding.evidence, evidence);
-    }
-
-    // Single test (not two) because env vars are process-global and Rust
-    // runs tests in parallel threads: split set/remove steps could interleave.
-    #[test]
-    fn from_env_resolution() {
-        let prior = std::env::var("RGAA_OBSCURA_BIN").ok();
-        std::env::set_var("RGAA_OBSCURA_BIN", "/custom/obscura");
-        assert_eq!(ObscuraBridge::from_env().binary_path(), "/custom/obscura");
-        std::env::remove_var("RGAA_OBSCURA_BIN");
-        assert_eq!(ObscuraBridge::from_env().binary_path(), "obscura");
-        if let Some(value) = prior {
-            std::env::set_var("RGAA_OBSCURA_BIN", value);
-        }
+    #[ignore = "requires Obscura binary"]
+    async fn test_obscura_bridge_extract_page_context() {
+        let bridge = ObscuraBridge::new().await.unwrap();
+        let result = bridge.extract_page_context("https://example.com").await;
+        assert!(result.is_ok(), "Failed to extract page context: {:?}", result.err());
+        let context = result.unwrap();
+        assert!(context.get("title").is_some(), "Missing title in page context");
     }
 
     #[tokio::test]
-    async fn binary_version_reports_binary_output() {
-        let bridge = ObscuraBridge::with_binary_path("/bin/echo".into());
-        let version = bridge.binary_version().await.expect("echo --version");
-        assert!(!version.trim().is_empty());
-    }
-
-    #[tokio::test]
-    async fn binary_version_fails_for_missing_binary() {
-        let bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into());
-        assert!(bridge.binary_version().await.is_err());
-    }
-
-    #[test]
-    fn fill_snippet_focuses_and_uses_native_setter() {
-        let snippet = ObscuraBridge::fill_expression("input[name=custname]", "plain");
-        assert!(snippet.contains("querySelector(\"input[name=custname]\")"));
-        assert!(snippet.contains("el.focus()"));
-        assert!(snippet.contains("getOwnPropertyDescriptor(proto, 'value').set"));
-        assert!(snippet.contains("new InputEvent('input'"));
-        assert!(snippet.contains("new Event('change'"));
-        assert!(snippet.contains("pre-scan selector not found"));
+    #[ignore = "requires Obscura binary"]
+    async fn test_obscura_bridge_axe_batch() {
+        let bridge = ObscuraBridge::new().await.unwrap();
+        let urls = vec![
+            "https://example.com".to_string(),
+            "https://example.org".to_string(),
+        ];
+        let results = bridge.run_axe_batch(&urls, 2).await;
+        assert!(results.is_ok(), "Failed to run axe batch: {:?}", results.err());
+        let results = results.unwrap();
+        assert_eq!(results.len(), 2);
     }
 
     #[test]
-    fn fill_snippet_preserves_newlines_and_quotes() {
-        let value = "line one\nline \"two\"";
-        let snippet = ObscuraBridge::fill_expression("#notes", value);
-        // Interpolated as a JSON string literal: safe to embed, intact on read.
-        assert!(snippet.contains(&serde_json::to_string(value).expect("value serializes")));
+    fn test_private_network_detection() {
+        assert!(is_private_network("192.168.1.1"));
+        assert!(is_private_network("10.0.0.1"));
+        assert!(is_private_network("172.16.0.1"));
+        assert!(is_private_network("127.0.0.1"));
+        assert!(is_private_network("localhost"));
+        assert!(is_private_network("myhost.local"));
+        assert!(is_private_network("100.64.0.1"));
+        assert!(is_private_network("192.0.0.1"));
+        assert!(is_private_network("198.51.100.1"));
+        assert!(is_private_network("203.0.113.1"));
+
+        assert!(!is_private_network("8.8.8.8"));
+        assert!(!is_private_network("1.1.1.1"));
+        assert!(!is_private_network("example.com"));
+        assert!(!is_private_network("google.com"));
+    }
+
+    #[test]
+    fn test_url_security_validation() {
+        let config = AnalyzeConfig::default();
+
+        // Public URLs should pass
+        assert!(ObscuraBridge::validate_url_security("https://example.com", &config).is_ok());
+
+        // File URLs should fail without flag
+        assert!(ObscuraBridge::validate_url_security("file:///tmp/test.html", &config).is_err());
+
+        // File URLs should pass with flag
+        let mut config_file = config.clone();
+        config_file.allow_file_access = true;
+        assert!(ObscuraBridge::validate_url_security("file:///tmp/test.html", &config_file).is_ok());
+
+        // Private IPs should fail without flag
+        assert!(ObscuraBridge::validate_url_security("http://192.168.1.1/", &config).is_err());
+        assert!(ObscuraBridge::validate_url_security("http://10.0.0.1/", &config).is_err());
+        assert!(ObscuraBridge::validate_url_security("http://localhost/", &config).is_err());
+
+        // Private IPs should pass with flag
+        let mut config_net = config.clone();
+        config_net.allow_private_network = true;
+        assert!(ObscuraBridge::validate_url_security("http://192.168.1.1/", &config_net).is_ok());
+        assert!(ObscuraBridge::validate_url_security("http://localhost/", &config_net).is_ok());
     }
 }

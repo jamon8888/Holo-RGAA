@@ -128,11 +128,9 @@ impl Orchestrator {
         urls: &[String],
         config: &CrawlConfig,
     ) -> Result<HashMap<String, AuditResult>, String> {
-        let bridge = {
-            let mut b = ObscuraBridge::from_env();
-            b.start_server().await?;
-            b
-        };
+        let bridge = ObscuraBridge::from_env_async()
+            .await
+            .map_err(|e| format!("failed to create browser bridge: {e}"))?;
 
         let session = BrowserSession::new(bridge);
         let tool_ctx = ToolContext::new(session);
@@ -180,18 +178,18 @@ async fn audit_one(
 
     // 1. Run axe-core
     info!("Running axe-core");
-    let axe_violations = bridge.run_axe(url).await?;
+    let axe_violations = bridge.run_axe(url).await.map_err(|e| e.to_string())?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
     // 2. Run gap-fix rules for 10 false negatives
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
-    let gap_js_results = bridge.run_gap_fix(url, &gap_snippets).await?;
+    let gap_js_results = bridge.run_gap_fix(url, &gap_snippets).await.map_err(|e| e.to_string())?;
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
     info!("Extracting page context");
-    let raw_context = bridge.extract_page_context(url).await?;
+    let raw_context = bridge.extract_page_context(url).await.map_err(|e| e.to_string())?;
     let na_map = na_detection::detect_na(&raw_context);
     let page_context: PageContext = serde_json::from_value(raw_context).unwrap_or(PageContext {
         title: None,

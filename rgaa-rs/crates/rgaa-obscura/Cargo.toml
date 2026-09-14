@@ -1,5 +1,5 @@
 [package]
-description = "Browser automation via CDP (Chrome DevTools Protocol)"
+description = "Browser automation via Obscura native library"
 license = "MIT"
 name = "rgaa-obscura"
 version = "0.1.0"
@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
 rgaa-rules = { path = "../rgaa-rules" }
+obscura = { git = "https://github.com/h4ckf0r0day/obscura", tag = "v0.1.7" }
 tokio = { workspace = true, features = ["process", "time", "macros", "io-util", "net", "sync", "fs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -17,9 +18,9 @@ thiserror = "1.0"
 base64 = "0.22"
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 uuid = { version = "1.0", features = ["v4"] }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

@@ -121,6 +121,14 @@ pub struct AnalyzeConfig {
     /// not already populate the community-protocol WeakMap themselves.
     #[serde(default)]
     pub patch_attach_internals: bool,
+    /// Allow navigation to private/intranet network ranges (RFC 1918, link-local, etc).
+    /// Denied by default — set explicitly to audit internal targets.
+    #[serde(default)]
+    pub allow_private_network: bool,
+    /// Allow file:// URL access and file-upload automation.
+    /// Denied by default — set explicitly to audit local files.
+    #[serde(default)]
+    pub allow_file_access: bool,
 }
 
 impl Default for AnalyzeConfig {
@@ -142,6 +150,8 @@ impl Default for AnalyzeConfig {
             retry_limit: 0,
             concurrency: 1,
             patch_attach_internals: false,
+            allow_private_network: false,
+            allow_file_access: false,
         }
     }
 }

@@ -2,7 +2,7 @@ use crate::tools::*;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+
 use std::sync::Arc;
 
 use rgaa_core::CrawlConfig;
@@ -116,6 +116,8 @@ impl AnalyzeRequest {
                 retry_limit: config.retry_limit.unwrap_or(0),
                 concurrency: 1,
                 patch_attach_internals: false,
+                allow_private_network: false,
+                allow_file_access: false,
             },
         };
         domain
@@ -408,29 +410,18 @@ pub trait AuditStorageService: Send + Sync {
 
 pub struct LazyObscuraBridge {
     bridge: tokio::sync::Mutex<rgaa_obscura::ObscuraBridge>,
-    started: AtomicBool,
 }
 
 impl LazyObscuraBridge {
     pub fn new(bridge: rgaa_obscura::ObscuraBridge) -> Self {
         Self {
             bridge: tokio::sync::Mutex::new(bridge),
-            started: AtomicBool::new(false),
         }
     }
 
     async fn ensure_started(&self) -> Result<(), McpFailure> {
-        if self.started.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        let mut guard = self.bridge.lock().await;
-        if self.started.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        guard.start_server().await.map_err(|error| {
-            McpFailure::unsupported(format!("obscura browser service unavailable: {error}"))
-        })?;
-        self.started.store(true, Ordering::Release);
+        // Native browser is started automatically during bridge creation.
+        // No separate start_server needed.
         Ok(())
     }
 }
@@ -783,7 +774,19 @@ impl ToolServer {
 }
 
 #[tool_handler]
-impl ServerHandler for ToolServer {}
+impl ServerHandler for ToolServer {
+    fn get_info(&self) -> rmcp::model::ServerInfo {
+        rmcp::model::InitializeResult::new(rmcp::model::ServerCapabilities::default())
+            .with_server_info(
+                rmcp::model::Implementation::new("rgaa-holo-mcp", env!("CARGO_PKG_VERSION"))
+                    .with_title("Holo-RGAA Accessibility Audit MCP Server")
+                    .with_description("RGAA 4.1.2 accessibility audit with Obscura browser automation"),
+            )
+            .with_instructions(
+                "Analyze URLs for RGAA accessibility compliance using axe-core, gap-fix rules, and Holo3 AI-assisted evaluation.",
+            )
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -25,6 +25,8 @@ pub enum ObscuraError {
     UnsupportedConfiguration(String),
     #[error("analysis policy denied: {0}")]
     PolicyDenied(String),
+    #[error("network error: {0}")]
+    Network(String),
 }
 
 impl ObscuraError {
@@ -40,6 +42,7 @@ impl ObscuraError {
             Self::Json(_) => "json",
             Self::UnsupportedConfiguration(_) => "unsupported_configuration",
             Self::PolicyDenied(_) => "policy_denied",
+            Self::Network(_) => "network",
         };
         PageError {
             code: code.into(),

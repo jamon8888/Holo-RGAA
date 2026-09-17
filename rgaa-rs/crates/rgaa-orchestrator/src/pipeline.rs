@@ -12,9 +12,14 @@ use rgaa_rules::{AxeMapper, GapFixRules};
 use rgaa_storage::Storage;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
+
+/// At most this many audits run concurrently in a batch — the operating
+/// point #42 locks in (1000-audit batches, 8 concurrent).
+const MAX_CONCURRENT_AUDITS: usize = 8;
 
 fn partially_automatable_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
@@ -120,38 +125,82 @@ impl Orchestrator {
             .ok_or_else(|| format!("audit result missing for {url}"))
     }
 
-    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the URL.
-    /// The Obscura CDP server is started once before the loop and stopped via
-    /// [`ObscuraBridge`] `Drop` after the loop completes.
+    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the
+    /// URL (successful audits only — a failed URL is logged and skipped, not
+    /// allowed to abort the rest of the batch).
+    ///
+    /// Runs up to [`MAX_CONCURRENT_AUDITS`] audits concurrently under one
+    /// shared semaphore rather than one at a time: each audit gets its own
+    /// [`BrowserSession`] (via [`ObscuraBridge::handle`], a handle to the
+    /// same running server — not a `BrowserSession`/mutex shared across every
+    /// in-flight audit), and is persisted to storage as soon as it completes
+    /// instead of being held in an accumulator until the whole batch is
+    /// done — a crash or kill mid-batch loses only the audits still
+    /// in-flight, not every audit that had already finished. The Obscura CDP
+    /// server itself is started once before the fan-out and stopped via
+    /// [`ObscuraBridge`] `Drop` after every audit has finished.
     pub async fn run_batch(
         &self,
         urls: &[String],
         config: &CrawlConfig,
     ) -> Result<HashMap<String, AuditResult>, String> {
+        use futures::stream::{self, StreamExt};
+
         let bridge = {
             let mut b = ObscuraBridge::from_env();
             b.start_server().await?;
             b
         };
 
-        let session = BrowserSession::new(bridge);
-        let tool_ctx = ToolContext::new(session);
-
         let agent_config = rgaa_agent::config::AgentConfig::from_env()
             .map_err(|e| format!("invalid agent configuration: {e}"))?;
-        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
-            .await
-            .map_err(|e| format!("failed to create agent: {e}"))?;
-        let mut results = HashMap::new();
-        for url in urls {
-            let audit = audit_one(&agent, &tool_ctx, url, config).await?;
-            results.insert(url.clone(), audit);
-        }
+        let agent = Arc::new(
+            rgaa_agent::agent::RgaaAgent::new(&agent_config)
+                .await
+                .map_err(|e| format!("failed to create agent: {e}"))?,
+        );
 
-        if let Some(storage) = &self.storage {
-            for (url, audit) in &results {
-                if let Err(e) = storage.save_audit(audit).await {
-                    tracing::warn!(url, error = %e, "failed to save audit to storage");
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_AUDITS));
+        let storage = self.storage.clone();
+
+        let outcomes = stream::iter(urls.iter().cloned())
+            .map(|url| {
+                let agent = Arc::clone(&agent);
+                let tool_ctx = ToolContext::new(BrowserSession::new(bridge.handle()));
+                let semaphore = Arc::clone(&semaphore);
+                let storage = storage.clone();
+                let config = config.clone();
+                async move {
+                    let _permit = semaphore
+                        .acquire()
+                        .await
+                        .expect("semaphore is never closed");
+
+                    let outcome = audit_one(&agent, &tool_ctx, &url, &config).await;
+
+                    if let Ok(audit) = &outcome {
+                        if let Some(storage) = &storage {
+                            if let Err(e) = storage.save_audit(audit).await {
+                                tracing::warn!(url, error = %e, "failed to save audit to storage");
+                            }
+                        }
+                    }
+
+                    (url, outcome)
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT_AUDITS)
+            .collect::<Vec<_>>()
+            .await;
+
+        let mut results = HashMap::new();
+        for (url, outcome) in outcomes {
+            match outcome {
+                Ok(audit) => {
+                    results.insert(url, audit);
+                }
+                Err(e) => {
+                    tracing::warn!(url, error = %e, "audit failed; excluded from batch results");
                 }
             }
         }

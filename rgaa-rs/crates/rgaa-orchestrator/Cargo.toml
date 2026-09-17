@@ -14,6 +14,7 @@ rgaa-agent = { path = "../rgaa-agent" }
 rgaa-browser-tools = { path = "../rgaa-browser-tools" }
 rgaa-storage = { path = "../rgaa-storage" }
 tokio = { workspace = true }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

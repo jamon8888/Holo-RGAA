@@ -5,6 +5,11 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+/// Hard ceiling on how long [`Ratelimiter::acquire`] will wait for a token
+/// before giving up and letting the caller proceed anyway — see that
+/// method's docs.
+const ACQUIRE_DEADLINE: Duration = Duration::from_secs(60);
+
 /// Errors that can occur during rate limiting.
 #[derive(Debug, Error)]
 pub enum RateLimitError {
@@ -98,9 +103,30 @@ impl Ratelimiter {
             .store(self.inner.reasoning_capacity, Ordering::Relaxed);
     }
 
-    /// Acquires a token for `tier`, blocking (with bounded sleeps) until one is
-    /// available. If the tier's RPM is 0, returns immediately (unlimited).
+    /// Acquires a token for `tier`, blocking (with bounded sleeps) until one
+    /// is available or [`ACQUIRE_DEADLINE`] elapses. If the tier's RPM is 0,
+    /// returns immediately (unlimited).
+    ///
+    /// A saturated limiter surfaces as a logged warning and this call
+    /// proceeding without ever having taken a token, rather than hanging the
+    /// caller indefinitely — this limiter is advisory backpressure on our
+    /// own outbound rate, not a hard gate in front of a resource that would
+    /// be corrupted by exceeding it (the upstream API still enforces its
+    /// own limit regardless).
     pub async fn acquire(&self, tier: ModelTier) {
+        match tokio::time::timeout(ACQUIRE_DEADLINE, self.acquire_unbounded(tier)).await {
+            Ok(()) => {}
+            Err(_elapsed) => {
+                tracing::warn!(
+                    tier = tier.label(),
+                    deadline_secs = ACQUIRE_DEADLINE.as_secs(),
+                    "rate limiter saturated past deadline; proceeding without a token"
+                );
+            }
+        }
+    }
+
+    async fn acquire_unbounded(&self, tier: ModelTier) {
         let rpm = match tier {
             ModelTier::Tactical => self.inner.tactical_rpm,
             ModelTier::Reasoning => self.inner.reasoning_rpm,
@@ -260,5 +286,28 @@ mod tests {
         let limiter = Ratelimiter::new(0, 0);
         let result = limiter.try_acquire(ModelTier::Tactical).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_gives_up_after_deadline_when_saturated() {
+        // A saturated limiter that never refills (0 RPM would be
+        // "unlimited", so use a tiny nonzero rate whose refill is
+        // negligible over the deadline) must not hang `acquire` forever:
+        // it gives up once ACQUIRE_DEADLINE elapses. `start_paused` fast-
+        // forwards the retry loop's internal sleeps so this resolves near-
+        // instantly in real time despite exercising the full 60s deadline.
+        let limiter = Ratelimiter::new(1, 1);
+        limiter.try_acquire(ModelTier::Tactical).await.unwrap();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(65),
+            limiter.acquire(ModelTier::Tactical),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "acquire() must return on its own once ACQUIRE_DEADLINE elapses, not hang past it"
+        );
     }
 }

@@ -7,16 +7,25 @@ use ratatui::widgets::{Block, Borders, Paragraph, Row, Table};
 use ratatui::Frame;
 use std::time::Duration;
 
+/// Interactive history view over past audits.
 pub struct HistoryView {
+    /// Audits newest-first, as returned by `storage::list_audits`.
     pub audits: Vec<crate::storage::AuditSummary>,
     pub selected: usize,
+    /// Load failure to display instead of the empty state. `None` on success.
+    pub load_error: Option<String>,
 }
 
 impl HistoryView {
     pub fn new(audits: Vec<crate::storage::AuditSummary>) -> Self {
-        Self { audits, selected: 0 }
+        Self {
+            audits,
+            selected: 0,
+            load_error: None,
+        }
     }
 
+    /// Move the selection, clamped to the list bounds. No-op when empty.
     pub fn move_selection(&mut self, delta: i32) {
         if self.audits.is_empty() {
             self.selected = 0;
@@ -26,9 +35,10 @@ impl HistoryView {
         self.selected = next.clamp(0, self.audits.len() as i32 - 1) as usize;
     }
 
-    /// [url (max 38 chars), score, short id] per audit, newest first.
-    /// Matches the CLI `rgaa history` column layout.
-    pub fn rows(&self) -> Vec<[String; 3]> {
+    /// [url (max 38 chars), score, date, short id] per audit, newest first.
+    /// Same columns as the CLI `rgaa history` (URL, Score, Date) plus the
+    /// short id the CLI actually prints in its third column.
+    pub fn rows(&self) -> Vec<[String; 4]> {
         self.audits
             .iter()
             .map(|a| {
@@ -36,6 +46,7 @@ impl HistoryView {
                 [
                     a.url.chars().take(38).collect(),
                     format!("{:.1}%", a.taux_global),
+                    a.created_at.format("%Y-%m-%d").to_string(),
                     short_id,
                 ]
             })
@@ -43,15 +54,24 @@ impl HistoryView {
     }
 }
 
+/// Show past audits. Storage failures render as an error, never as an
+/// empty list, so a broken database can't masquerade as "no audits".
 pub async fn run_history_view() {
-    let audits = match crate::storage::storage().await {
-        Ok(store) => store.list_audits(50).unwrap_or_default(),
-        Err(e) => {
-            tracing::warn!("tui: failed to open storage: {e}");
-            Vec::new()
-        }
+    let (audits, load_error) = match crate::storage::storage().await {
+        Ok(store) => match store.list_audits(50) {
+            Ok(audits) => (audits, None),
+            Err(e) => (Vec::new(), Some(format!("failed to list audits: {e}"))),
+        },
+        Err(e) => (
+            Vec::new(),
+            Some(format!("failed to open database: {e}")),
+        ),
     };
-    let mut view = HistoryView::new(audits);
+    let mut view = HistoryView {
+        audits,
+        selected: 0,
+        load_error,
+    };
     let mut terminal = ratatui::init();
     terminal.clear().unwrap();
 
@@ -90,7 +110,17 @@ fn render_history(view: &HistoryView, frame: &mut Frame) {
         chunks[0],
     );
 
-    if view.audits.is_empty() {
+    if let Some(ref err) = view.load_error {
+        let lines = vec![
+            Line::from("History unavailable:").fg(Color::Red),
+            Line::from(""),
+            Line::from(err.as_str()),
+        ];
+        frame.render_widget(
+            Paragraph::new(Text::from(lines)).alignment(Alignment::Center),
+            chunks[1],
+        );
+    } else if view.audits.is_empty() {
         let lines = vec![
             Line::from("No audits found."),
             Line::from("Run `rgaa audit <URL>` first."),
@@ -104,8 +134,8 @@ fn render_history(view: &HistoryView, frame: &mut Frame) {
             .rows()
             .into_iter()
             .enumerate()
-            .map(|(i, [url, score, id])| {
-                let row = Row::new(vec![url, score, id]);
+            .map(|(i, [url, score, date, id])| {
+                let row = Row::new(vec![url, score, date, id]);
                 if i == view.selected {
                     row.style(
                         ratatui::style::Style::default()
@@ -120,11 +150,12 @@ fn render_history(view: &HistoryView, frame: &mut Frame) {
         let widths = [
             Constraint::Length(40),
             Constraint::Length(8),
+            Constraint::Length(12),
             Constraint::Fill(1),
         ];
         let table = Table::new(rows, widths)
             .header(
-                Row::new(vec!["URL", "Score", "ID"])
+                Row::new(vec!["URL", "Score", "Date", "ID"])
                     .style(ratatui::style::Style::default().fg(Color::White).bold()),
             )
             .block(Block::default().borders(Borders::ALL).title("Audits"));
@@ -164,7 +195,8 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0][0], "https://example.com/a-very-long-path-t");
         assert_eq!(rows[0][1], "83.3%");
-        assert_eq!(rows[0][2], "abc123");
+        assert_eq!(rows[0][2], "2026-09-17");
+        assert_eq!(rows[0][3], "abc123");
     }
 
     #[test]

@@ -6,7 +6,8 @@ use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Row, Table, TableState};
 use ratatui::Frame;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone)]
 pub enum AuditStep {
@@ -21,7 +22,14 @@ pub struct AuditWizard {
     pub step: AuditStep,
     pub url: String,
     pub table_state: TableState,
-    pending: Option<UnboundedReceiver<Result<rgaa_core::AuditResult, String>>>,
+    pending: Option<PendingAudit>,
+}
+
+/// In-flight audit: the spawned task plus the single-shot result channel.
+/// Aborted if the user quits while Running so no audit outlives the wizard.
+struct PendingAudit {
+    handle: JoinHandle<()>,
+    rx: oneshot::Receiver<Result<rgaa_core::AuditResult, String>>,
 }
 
 impl Default for AuditWizard {
@@ -44,7 +52,7 @@ impl AuditWizard {
         }
         self.url = input.to_string();
         self.step = AuditStep::Running {
-            phase: "Starting audit...".to_string(),
+            phase: "Audit running (deterministic + LLM passes)...".to_string(),
             progress: 0.0,
         };
         true
@@ -70,11 +78,18 @@ impl AuditWizard {
             *progress = (*progress + 0.05) % 1.0;
         }
     }
+
+    /// Abort the in-flight audit, if any. Called when the user quits Running.
+    fn abort_pending(&mut self) {
+        if let Some(pending) = self.pending.take() {
+            pending.handle.abort();
+        }
+    }
 }
 
-fn spawn_audit(url: String) -> UnboundedReceiver<Result<rgaa_core::AuditResult, String>> {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(async move {
+fn spawn_audit(url: String) -> PendingAudit {
+    let (tx, rx) = oneshot::channel();
+    let handle = tokio::spawn(async move {
         let config = rgaa_core::CrawlConfig {
             max_pages: 10,
             max_depth: 3,
@@ -86,7 +101,7 @@ fn spawn_audit(url: String) -> UnboundedReceiver<Result<rgaa_core::AuditResult, 
             .await;
         let _ = tx.send(result);
     });
-    rx
+    PendingAudit { handle, rx }
 }
 
 /// Best-effort persistence so finished audits show up in History.
@@ -138,6 +153,7 @@ pub async fn run_audit_wizard() {
                     }
                 AuditStep::Running { .. } => {
                     if key.code == KeyCode::Char('q') {
+                        wizard.abort_pending();
                         break;
                     }
                 }
@@ -200,8 +216,10 @@ pub async fn run_audit_wizard() {
         // on ResultsSummary (or Error) as soon as the spawned task delivers.
         if matches!(wizard.step, AuditStep::Running { .. }) {
             wizard.tick();
-            if let Some(rx) = wizard.pending.as_mut() {
-                if let Ok(result) = rx.try_recv() {
+            if let Some(pending) = wizard.pending.as_mut() {
+                // `try_recv` error means the task hasn't delivered yet; the
+                // sender is never dropped without sending, so keep polling.
+                if let Ok(result) = pending.rx.try_recv() {
                     wizard.pending = None;
                     match result {
                         Ok(audit) => {

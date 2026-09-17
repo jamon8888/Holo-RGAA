@@ -11,7 +11,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: ""
+
+defaults:
+  run:
+    working-directory: rgaa-rs
 
 jobs:
   fmt:
@@ -31,11 +34,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
+      - uses: taiki-e/install-action@nextest
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Build workspace
+        env:
+          RUSTC_WRAPPER: sccache
         run: cargo build --workspace --release
       - name: Upload binaries
         uses: actions/upload-artifact@v4
@@ -50,11 +58,12 @@ jobs:
       - name: Run tests
         env:
           RUST_MIN_STACK: 8388608
-        run: |
-          # Use all available cores for both compilation and test execution
-          CORES=$(nproc)
-          echo "Using $CORES cores"
-          cargo test --workspace --jobs $CORES --test-threads=$CORES
+          RUSTC_WRAPPER: sccache
+        run: cargo nextest run --workspace
+      - name: Run doc tests
+        env:
+          RUSTC_WRAPPER: sccache
+        run: cargo test --workspace --doc
 
   smoke:
     name: Smoke Test
@@ -87,11 +96,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - env:
+          RUSTC_WRAPPER: sccache
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   audit:
     name: Security audit
@@ -116,7 +129,10 @@ jobs:
     if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -145,4 +161,5 @@ jobs:
           HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
           HOLO3_BASE_URL: ${{ secrets.HOLO3_BASE_URL }}
           HOLO3_MODEL: ${{ secrets.HOLO3_MODEL }}
+          RUSTC_WRAPPER: sccache
         run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture

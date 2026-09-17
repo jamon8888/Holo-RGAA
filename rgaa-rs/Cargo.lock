@@ -6366,6 +6366,7 @@ name = "rgaa-orchestrator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "rgaa-agent",
  "rgaa-browser-tools",
  "rgaa-core",

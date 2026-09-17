@@ -1,9 +1,11 @@
 pub mod audit;
 pub mod export;
+pub mod history;
 pub mod install;
 pub mod setup;
 
 pub use audit::run_audit_wizard;
+pub use history::run_history_view;
 pub use install::run_install_wizard;
 pub use setup::run_setup_wizard;
 
@@ -21,38 +23,45 @@ enum MainMenuSelection {
     Exit,
 }
 
+/// Park the menu terminal while a subview takes over the screen, then bring
+/// the menu back. Returns the revived terminal.
+async fn suspend(
+    terminal: ratatui::DefaultTerminal,
+    task: impl core::future::Future<Output = ()>,
+) -> ratatui::DefaultTerminal {
+    drop(terminal);
+    task.await;
+    let mut terminal = ratatui::init();
+    terminal.clear().unwrap();
+    terminal
+}
+
 pub async fn run() {
     let mut terminal = ratatui::init();
     terminal.clear().unwrap();
     let mut selected = MainMenuSelection::Audit;
-    let mut show_menu = true;
 
     loop {
-        if show_menu {
-            terminal
-                .draw(|frame| render_main_menu(frame, &selected))
-                .unwrap();
-        }
+        terminal
+            .draw(|frame| render_main_menu(frame, &selected))
+            .unwrap();
 
         if let Event::Key(key) = event::read().unwrap() {
-            if show_menu {
-                match key.code {
+            match key.code {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
-                        show_menu = false;
-                        drop(terminal);
-                        crate::tui::run_audit_wizard();
-                        terminal = ratatui::init();
-                        terminal.clear().unwrap();
+                        terminal = suspend(terminal, crate::tui::run_audit_wizard()).await;
                     }
                     KeyCode::Char('h') | KeyCode::Char('H') => {
-                        // TODO: history view
+                        terminal = suspend(terminal, crate::tui::run_history_view()).await;
                     }
                     KeyCode::Char('s') | KeyCode::Char('S') => {
-                        show_menu = false;
-                        drop(terminal);
-                        crate::tui::run_setup_wizard();
-                        terminal = ratatui::init();
-                        terminal.clear().unwrap();
+                        terminal = suspend(
+                            terminal,
+                            async {
+                                let _ = crate::tui::run_setup_wizard();
+                            },
+                        )
+                        .await;
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
                         break;
@@ -76,19 +85,21 @@ pub async fn run() {
                     KeyCode::Enter => {
                         match selected {
                             MainMenuSelection::Audit => {
-                                show_menu = false;
-                                drop(terminal);
-                                crate::tui::run_audit_wizard();
-                                terminal = ratatui::init();
-                                terminal.clear().unwrap();
+                                terminal =
+                                    suspend(terminal, crate::tui::run_audit_wizard()).await;
                             }
-                            MainMenuSelection::History => {}
+                            MainMenuSelection::History => {
+                                terminal =
+                                    suspend(terminal, crate::tui::run_history_view()).await;
+                            }
                             MainMenuSelection::Settings => {
-                                show_menu = false;
-                                drop(terminal);
-                                crate::tui::run_setup_wizard();
-                                terminal = ratatui::init();
-                                terminal.clear().unwrap();
+                                terminal = suspend(
+                                    terminal,
+                                    async {
+                                        let _ = crate::tui::run_setup_wizard();
+                                    },
+                                )
+                                .await;
                             }
                             MainMenuSelection::Exit => {
                                 break;
@@ -100,7 +111,6 @@ pub async fn run() {
                     }
                     _ => {}
                 }
-            }
         }
     }
 

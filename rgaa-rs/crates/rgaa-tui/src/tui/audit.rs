@@ -5,6 +5,8 @@ use ratatui::style::Color;
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Row, Table, TableState};
 use ratatui::Frame;
+use std::time::Duration;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 #[derive(Debug, Clone)]
 pub enum AuditStep {
@@ -15,11 +17,11 @@ pub enum AuditStep {
     Error(String),
 }
 
-#[derive(Debug)]
 pub struct AuditWizard {
     pub step: AuditStep,
     pub url: String,
     pub table_state: TableState,
+    pending: Option<UnboundedReceiver<Result<rgaa_core::AuditResult, String>>>,
 }
 
 impl Default for AuditWizard {
@@ -28,11 +30,79 @@ impl Default for AuditWizard {
             step: AuditStep::UrlInput,
             url: String::new(),
             table_state: TableState::default(),
+            pending: None,
         }
     }
 }
 
-pub fn run_audit_wizard() {
+impl AuditWizard {
+    /// Transition UrlInput → Running for a non-empty URL. Returns false (no
+    /// transition) when the input is empty.
+    pub fn submit_url(&mut self, input: &str) -> bool {
+        if input.is_empty() {
+            return false;
+        }
+        self.url = input.to_string();
+        self.step = AuditStep::Running {
+            phase: "Starting audit...".to_string(),
+            progress: 0.0,
+        };
+        true
+    }
+
+    /// Land on ResultsSummary or Error once the spawned audit finishes.
+    pub fn apply_audit_result(&mut self, result: Result<rgaa_core::AuditResult, String>) {
+        match result {
+            Ok(audit) => {
+                self.step = AuditStep::ResultsSummary { audit };
+            }
+            Err(err) => {
+                self.step = AuditStep::Error(err);
+            }
+        }
+    }
+
+    /// Advance the indeterminate progress indicator; no-op unless Running.
+    /// The orchestrator exposes no progress callback, so this is a spinner,
+    /// not a measurement.
+    pub fn tick(&mut self) {
+        if let AuditStep::Running { progress, .. } = &mut self.step {
+            *progress = (*progress + 0.05) % 1.0;
+        }
+    }
+}
+
+fn spawn_audit(url: String) -> UnboundedReceiver<Result<rgaa_core::AuditResult, String>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let config = rgaa_core::CrawlConfig {
+            max_pages: 10,
+            max_depth: 3,
+            respect_robots: true,
+            sample_mode: false,
+        };
+        let result = rgaa_orchestrator::pipeline::Orchestrator::new()
+            .run(&url, &config)
+            .await;
+        let _ = tx.send(result);
+    });
+    rx
+}
+
+/// Best-effort persistence so finished audits show up in History.
+/// A storage failure must never hide real audit results.
+async fn persist_audit_best_effort(audit: &rgaa_core::AuditResult) {
+    match crate::storage::storage().await {
+        Ok(store) => {
+            if let Err(e) = store.save_audit(audit) {
+                tracing::warn!("tui: failed to persist audit: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("tui: failed to open storage: {e}"),
+    }
+}
+
+pub async fn run_audit_wizard() {
     let mut wizard = AuditWizard::default();
     let mut input_buffer = String::new();
     let mut terminal = ratatui::init();
@@ -43,32 +113,29 @@ pub fn run_audit_wizard() {
             .draw(|frame| render_audit(&wizard, frame, &input_buffer))
             .unwrap();
 
-        if let Event::Key(key) = event::read().unwrap() {
-            match &wizard.step {
-                AuditStep::UrlInput => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            if !input_buffer.is_empty() {
-                                wizard.url = input_buffer.clone();
-                                wizard.step = AuditStep::Running {
-                                    phase: "Starting audit...".to_string(),
-                                    progress: 0.0,
-                                };
-                                input_buffer.clear();
+        if event::poll(Duration::from_millis(120)).unwrap() {
+            if let Event::Key(key) = event::read().unwrap() {
+                match &wizard.step {
+                    AuditStep::UrlInput => {
+                        match key.code {
+                            KeyCode::Enter => {
+                                if wizard.submit_url(&input_buffer) {
+                                    wizard.pending = Some(spawn_audit(wizard.url.clone()));
+                                    input_buffer.clear();
+                                }
                             }
+                            KeyCode::Char(c) => {
+                                input_buffer.push(c);
+                            }
+                            KeyCode::Backspace => {
+                                input_buffer.pop();
+                            }
+                            KeyCode::Esc => {
+                                break;
+                            }
+                            _ => {}
                         }
-                        KeyCode::Char(c) => {
-                            input_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            input_buffer.pop();
-                        }
-                        KeyCode::Esc => {
-                            break;
-                        }
-                        _ => {}
                     }
-                }
                 AuditStep::Running { .. } => {
                     if key.code == KeyCode::Char('q') {
                         break;
@@ -98,7 +165,8 @@ pub fn run_audit_wizard() {
                                 let criteria = rgaa_core::RgaaCriteria::all();
                                 if idx < criteria.len() {
                                     let criterion = &criteria[idx];
-                                    if let AuditStep::ResultsSummary { audit, .. } = &wizard.step {
+                                    if let AuditStep::ResultsSummary { audit, .. } = &wizard.step
+                                    {
                                         wizard.step = AuditStep::DrillDown {
                                             audit: audit.clone(),
                                             criterion_id: criterion.id.to_string(),
@@ -122,6 +190,25 @@ pub fn run_audit_wizard() {
                 AuditStep::Error(_) => {
                     if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
                         break;
+                    }
+                }
+                }
+            }
+        }
+
+        // While an audit is in flight: spin the progress indicator and land
+        // on ResultsSummary (or Error) as soon as the spawned task delivers.
+        if matches!(wizard.step, AuditStep::Running { .. }) {
+            wizard.tick();
+            if let Some(rx) = wizard.pending.as_mut() {
+                if let Ok(result) = rx.try_recv() {
+                    wizard.pending = None;
+                    match result {
+                        Ok(audit) => {
+                            persist_audit_best_effort(&audit).await;
+                            wizard.apply_audit_result(Ok(audit));
+                        }
+                        Err(err) => wizard.apply_audit_result(Err(err)),
                     }
                 }
             }
@@ -351,5 +438,79 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
                 .split(chunks[1])[0];
             frame.render_widget(Paragraph::new(Text::from(lines)), inner);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_audit() -> rgaa_core::AuditResult {
+        rgaa_core::AuditResult {
+            audit_id: "test-id".into(),
+            url: "https://example.com".into(),
+            pages: vec![],
+            total_criteria: 106,
+            passed: 10,
+            failed: 2,
+            na: 0,
+            overall_compliance: 83.3,
+            taux_global: 83.3,
+            coverage_percent: 100.0,
+            etat_conformite: "Conforme".into(),
+            duration_ms: 100,
+        }
+    }
+
+    #[test]
+    fn submit_empty_url_stays_on_input() {
+        let mut wizard = AuditWizard::default();
+        assert!(!wizard.submit_url(""));
+        assert!(matches!(wizard.step, AuditStep::UrlInput));
+    }
+
+    #[test]
+    fn submit_url_enters_running() {
+        let mut wizard = AuditWizard::default();
+        assert!(wizard.submit_url("https://example.com"));
+        assert_eq!(wizard.url, "https://example.com");
+        assert!(matches!(wizard.step, AuditStep::Running { .. }));
+    }
+
+    #[test]
+    fn apply_ok_lands_on_results_summary() {
+        let mut wizard = AuditWizard::default();
+        wizard.submit_url("https://example.com");
+        wizard.apply_audit_result(Ok(sample_audit()));
+        match &wizard.step {
+            AuditStep::ResultsSummary { audit } => assert_eq!(audit.url, "https://example.com"),
+            other => panic!("expected ResultsSummary, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn apply_err_lands_on_error() {
+        let mut wizard = AuditWizard::default();
+        wizard.submit_url("https://example.com");
+        wizard.apply_audit_result(Err("boom".to_string()));
+        assert!(matches!(wizard.step, AuditStep::Error(_)));
+    }
+
+    #[test]
+    fn tick_advances_progress_only_while_running() {
+        let mut wizard = AuditWizard::default();
+        wizard.tick();
+        assert!(matches!(wizard.step, AuditStep::UrlInput));
+        wizard.submit_url("https://example.com");
+        let before = match wizard.step {
+            AuditStep::Running { progress, .. } => progress,
+            _ => unreachable!(),
+        };
+        wizard.tick();
+        let after = match wizard.step {
+            AuditStep::Running { progress, .. } => progress,
+            _ => unreachable!(),
+        };
+        assert!(after > before, "tick must advance progress while running");
     }
 }

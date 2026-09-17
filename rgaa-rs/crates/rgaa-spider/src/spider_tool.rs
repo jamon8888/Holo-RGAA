@@ -108,11 +108,15 @@ impl PortableTool for SpiderTool {
             loop {
                 match rx.recv().await {
                     Ok(page) => {
+                        // Count every page the crawler actually produced,
+                        // before the blacklist filters it out — a blacklist
+                        // match means "don't keep it", not "the crawler
+                        // never saw it".
+                        total_discovered += 1;
                         let url = page.get_url().to_string();
                         if is_blacklisted(&url, &url_blacklist) {
                             continue;
                         }
-                        total_discovered += 1;
                         if pages.len() < max_pages as usize {
                             let raw_html = page.get_html();
                             let truncated = raw_html.len() > HTML_TRUNCATE_LEN;
@@ -132,9 +136,14 @@ impl PortableTool for SpiderTool {
                     }
                     // Channel closes once the crawl finishes and drops its sender.
                     Err(RecvError::Closed) => break,
-                    // We fell behind the broadcast buffer — keep draining rather
-                    // than treating a slow consumer as a crawl failure.
-                    Err(RecvError::Lagged(_)) => continue,
+                    // We fell behind the broadcast buffer — keep draining
+                    // rather than treating a slow consumer as a crawl
+                    // failure, but still count the pages we missed so
+                    // total_discovered doesn't understate them.
+                    Err(RecvError::Lagged(skipped)) => {
+                        total_discovered += skipped as usize;
+                        continue;
+                    }
                 }
             }
         };

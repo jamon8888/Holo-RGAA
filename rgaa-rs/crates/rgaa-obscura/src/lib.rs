@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub mod config;
 pub mod evidence;
@@ -19,8 +19,8 @@ pub mod results;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
-    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy, Viewport,
-    WaitForState, MAX_WAITFOR_TIMEOUT_MS,
+    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy,
+    Viewport, WaitForState, MAX_WAITFOR_TIMEOUT_MS,
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
@@ -327,7 +327,9 @@ impl ObscuraBridge {
         };
 
         if request.config.needs_review_policy == NeedsReviewPolicy::Fail
-            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::Fail)
+            && findings
+                .iter()
+                .any(|f| f.status == rgaa_core::CriterionStatus::Fail)
         {
             return Ok(AnalyzePageResult::failed(
                 &request.url,
@@ -793,14 +795,6 @@ impl ObscuraBridge {
             .text()
             .await
             .map_err(|e| format!("Failed to read axe-core: {e}"))
-    }
-
-    /// Run axe-core via CDP (supports async evaluation)
-    ///
-    /// Fetches the axe-core source once and delegates to [`Self::run_axe_with_script`].
-    pub async fn run_axe(&self, url: &str) -> Result<String, String> {
-        let axe_source = self.fetch_axe_source().await?;
-        self.run_axe_with_script(url, &axe_source).await
     }
 
     /// Run axe-core against `url` using a pre-fetched axe-core source string.
@@ -1367,31 +1361,6 @@ impl ObscuraBridge {
         Ok(results)
     }
 
-    /// Run gap-fix snippets on a single URL using CLI (sync)
-    pub async fn run_gap_fix(
-        &self,
-        url: &str,
-        snippets: &HashMap<String, &str>,
-    ) -> Result<HashMap<String, serde_json::Value>, String> {
-        let mut results = HashMap::new();
-
-        for (criterion_id, snippet) in snippets {
-            let script = Self::build_gap_fix_script(snippet);
-            match self.run_obscura_fetch(url, &script).await {
-                Ok(output) => {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&output) {
-                        results.insert(criterion_id.clone(), value);
-                    }
-                }
-                Err(e) => {
-                    error!("Gap-fix failed for {}: {}", criterion_id, e);
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
     /// Run gap-fix snippets on multiple URLs concurrently via the CLI `scrape` command.
     ///
     /// All URLs are passed to a single `obscura scrape` invocation (scrape accepts
@@ -1481,13 +1450,6 @@ impl ObscuraBridge {
         Ok(all_results)
     }
 
-    /// Extract page context using CLI (sync)
-    pub async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, String> {
-        let script = Self::build_page_context_script();
-        let output = self.run_obscura_fetch(url, script).await?;
-        serde_json::from_str(&output).map_err(|e| e.to_string())
-    }
-
     /// Extract page context for multiple URLs concurrently using CLI scrape.
     ///
     /// All URLs are passed to a single `obscura scrape` invocation and the result
@@ -1567,21 +1529,6 @@ impl ObscuraBridge {
     }
 
     // --- Script builders (sync) ---
-
-    fn build_gap_fix_script(snippet: &str) -> String {
-        format!(
-            r#"
- (() => {{
-   try {{
-     const r = {snippet};
-     return JSON.stringify(r);
-   }} catch (e) {{
-     return JSON.stringify({{ pass: false, details: e.message, nodes: 0 }});
-   }}
- }})()
- "#
-        )
-    }
 
     fn build_page_context_script() -> &'static str {
         r#"
@@ -1738,41 +1685,6 @@ impl ObscuraBridge {
                 }
                 _ => {}
             }
-        }
-    }
-
-    /// Run a single obscura fetch command (sync operations)
-    async fn run_obscura_fetch(&self, url: &str, script: &str) -> Result<String, String> {
-        info!("Running Obscura fetch for {}", url);
-
-        let output = timeout(Duration::from_secs(120), async {
-            Command::new(&self.binary_path)
-                .arg("fetch")
-                .arg(url)
-                .arg("--eval")
-                .arg(script)
-                .arg("--quiet")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn obscura: {e}"))
-        })
-        .await
-        .map_err(|_| "Obscura fetch timed out after 120s".to_string())??;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(stderr = %stderr, "Obscura fetch failed");
-            return Err(format!("Obscura fetch failed: {stderr}"));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let lines: Vec<&str> = stdout.lines().collect();
-        if let Some(last) = lines.last() {
-            Ok(last.to_string())
-        } else {
-            Ok(stdout)
         }
     }
 
@@ -1953,9 +1865,20 @@ impl ObscuraBridge {
         let mut terminated_reason: Option<TerminationReason> = None;
 
         let interactive_roles = [
-            "button", "link", "textbox", "checkbox", "radio", "menuitem",
-            "tab", "menuitemcheckbox", "menuitemradio", "switch", "searchbox",
-            "spinbutton", "combobox", "slider",
+            "button",
+            "link",
+            "textbox",
+            "checkbox",
+            "radio",
+            "menuitem",
+            "tab",
+            "menuitemcheckbox",
+            "menuitemradio",
+            "switch",
+            "searchbox",
+            "spinbutton",
+            "combobox",
+            "slider",
         ];
 
         for _ in 0..max_tabs {
@@ -1998,13 +1921,22 @@ impl ObscuraBridge {
                 } else {
                     path.to_string()
                 };
-                (role.to_string(), name.to_string(), tag.to_string(), identity)
+                (
+                    role.to_string(),
+                    name.to_string(),
+                    tag.to_string(),
+                    identity,
+                )
             } else {
                 (String::new(), String::new(), String::new(), String::new())
             };
 
             if !tag.is_empty() {
-                if interactive_roles.contains(&role.as_str()) || tag == "a" || tag == "button" || tag == "input" {
+                if interactive_roles.contains(&role.as_str())
+                    || tag == "a"
+                    || tag == "button"
+                    || tag == "input"
+                {
                     igt_elements.push(IgtElement {
                         role: role.clone(),
                         name: name.clone(),
@@ -2025,7 +1957,10 @@ impl ObscuraBridge {
                     issues.push(IgtIssue {
                         rule: "keyboard-trap".to_string(),
                         element: format!("{}:{}", tag, name),
-                        description: format!("Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs", name, tag, role, trap_counter),
+                        description: format!(
+                            "Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs",
+                            name, tag, role, trap_counter
+                        ),
                     });
                     break;
                 }
@@ -2056,7 +1991,9 @@ impl ObscuraBridge {
 
         Some(IgtResults {
             keyboard: IgtResult {
-                status: if terminated_reason.is_some() || issues.iter().any(|i| i.rule == "keyboard-trap") {
+                status: if terminated_reason.is_some()
+                    || issues.iter().any(|i| i.rule == "keyboard-trap")
+                {
                     "incomplete".to_string()
                 } else {
                     "complete".to_string()

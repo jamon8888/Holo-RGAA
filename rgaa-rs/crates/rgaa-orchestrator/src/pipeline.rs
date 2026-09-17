@@ -194,7 +194,13 @@ async fn audit_one(
     // 2. Run gap-fix rules for 10 false negatives
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
-    let mut gap_by_url = bridge.run_gap_fix_batch(&urls, gap_snippets, 1).await?;
+    // clippy's `--all-targets` (dev-profile) check reports the `&` here as a
+    // needless borrow, but the actual `[profile.test]` build (cargo test /
+    // nextest, and thus CI) requires it — `gap_snippets` alone fails to
+    // type-check there with "expected `&HashMap<_, &_>`, found `HashMap<_,
+    // &_>`". Keeping the borrow so the real test build stays green.
+    #[allow(clippy::needless_borrow)]
+    let mut gap_by_url = bridge.run_gap_fix_batch(&urls, &gap_snippets, 1).await?;
     let gap_js_results = gap_by_url.remove(url).unwrap_or_default();
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
@@ -205,17 +211,13 @@ async fn audit_one(
         .remove(url)
         .ok_or_else(|| format!("page context extraction produced no result for {url}"))?;
     let na_map = na_detection::detect_na(&raw_context);
-    let page_context: PageContext = serde_json::from_value(raw_context).unwrap_or(PageContext {
-        title: None,
-        lang: None,
-        headings: vec![],
-        images: vec![],
-        iframes: vec![],
-        links: vec![],
-        forms: vec![],
-        media: vec![],
-        navigation: vec![],
-    });
+    // A malformed page context must fail the audit, not silently evaluate as
+    // an empty page — an all-empty PageContext would otherwise sail through
+    // every criterion and produce green-looking verdicts over no real data.
+    let page_context: PageContext = serde_json::from_value(raw_context).map_err(|e| {
+        tracing::warn!(url, error = %e, "malformed page context; failing audit instead of evaluating empty data");
+        format!("malformed page context for {url}: {e}")
+    })?;
 
     drop(session); // Release the browser lock before agent calls
 

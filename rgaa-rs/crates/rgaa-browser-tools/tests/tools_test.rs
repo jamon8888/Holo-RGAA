@@ -73,7 +73,7 @@ fn assert_state_tool_holds_predicate() {
 
 #[tokio::test]
 async fn navigate_tool_execute_without_cdp_returns_ok() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let mut session = BrowserSession::new(bridge);
     let tool = NavigateLegacy {
         url: "https://example.com".to_string(),
@@ -85,7 +85,7 @@ async fn navigate_tool_execute_without_cdp_returns_ok() {
 
 #[tokio::test]
 async fn screenshot_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = ScreenshotLegacy;
     let result = tool.execute(&session).await;
@@ -94,7 +94,7 @@ async fn screenshot_tool_execute_without_cdp_returns_err() {
 
 #[tokio::test]
 async fn a11y_tree_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let mut session = BrowserSession::new(bridge);
     let tool = AccessibilityTreeLegacy;
     let result = tool.execute(&mut session).await;
@@ -103,7 +103,7 @@ async fn a11y_tree_tool_execute_without_cdp_returns_err() {
 
 #[tokio::test]
 async fn eval_js_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = EvalJsToolLegacy {
         snippet: "1+1".to_string(),
@@ -114,7 +114,7 @@ async fn eval_js_tool_execute_without_cdp_returns_err() {
 
 #[tokio::test]
 async fn click_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = ClickToolLegacy {
         selector: "1".to_string(),
@@ -125,7 +125,7 @@ async fn click_tool_execute_without_cdp_returns_err() {
 
 #[tokio::test]
 async fn type_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = TypeToolLegacy {
         ref_id: "1".to_string(),
@@ -137,7 +137,7 @@ async fn type_tool_execute_without_cdp_returns_err() {
 
 #[tokio::test]
 async fn press_key_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = PressKeyToolLegacy {
         key: "Tab".to_string(),
@@ -148,7 +148,7 @@ async fn press_key_tool_execute_without_cdp_returns_err() {
 
 #[tokio::test]
 async fn tab_order_tool_execute_without_a11y_tree_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = TabOrderToolLegacy;
     let result = tool.execute(&session).await;
@@ -157,7 +157,7 @@ async fn tab_order_tool_execute_without_a11y_tree_returns_err() {
 
 #[tokio::test]
 async fn assert_state_tool_execute_without_cdp_returns_err() {
-    let bridge = ObscuraBridge::new();
+    let bridge = ObscuraBridge::new_disconnected();
     let session = BrowserSession::new(bridge);
     let tool = AssertStateToolLegacy {
         predicate: "true".to_string(),

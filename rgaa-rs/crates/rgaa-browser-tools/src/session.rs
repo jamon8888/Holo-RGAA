@@ -30,11 +30,12 @@ impl BrowserSession {
         }
     }
 
-    /// Creates a placeholder session for testing without a real browser connection.
+    /// Inert session for testing without a browser connection.
+    /// Every browser operation fails fast; tool-plumbing tests assert that.
     #[must_use]
     pub fn new_placeholder() -> Self {
         Self {
-            bridge: ObscuraBridge::from_env(),
+            bridge: ObscuraBridge::new_disconnected(),
             last_a11y: None,
             current_url: None,
         }

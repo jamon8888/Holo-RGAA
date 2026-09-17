@@ -24,3 +24,4 @@ async-trait = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
+rgaa-holo = { path = "../rgaa-holo" }

@@ -17,7 +17,6 @@ members = [
     "crates/rgaa-test-corpus",
     "crates/rgaa-spider",
     "crates/rgaa-tui",
-    "crates/rgaa-wasm",
 ]
 
 [workspace.package]

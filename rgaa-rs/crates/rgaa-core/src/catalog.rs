@@ -137,16 +137,25 @@ impl RgaaCatalog {
             .sum()
     }
 
+    /// `"theme.criterion"` id → `(theme, criterion)`, built once per process from
+    /// `Self::all()` so `by_id` is a single hash lookup instead of a linear scan of
+    /// themes and criteria on every call.
+    fn id_index() -> &'static HashMap<String, (u8, &'static CatalogCriterion)> {
+        static INDEX: OnceLock<HashMap<String, (u8, &'static CatalogCriterion)>> = OnceLock::new();
+        INDEX.get_or_init(|| {
+            let mut index = HashMap::new();
+            for theme in Self::all() {
+                for cw in &theme.criteria {
+                    let id = cw.criterium.id_for_theme(theme.number);
+                    index.insert(id, (theme.number, &cw.criterium));
+                }
+            }
+            index
+        })
+    }
+
     pub fn by_id(criterion_id: &str) -> Option<(u8, &'static CatalogCriterion)> {
-        let mut parts = criterion_id.splitn(2, '.');
-        let theme: u8 = parts.next()?.parse().ok()?;
-        let crit_num: u8 = parts.next()?.parse().ok()?;
-        let theme_data = Self::all().iter().find(|t| t.number == theme)?;
-        theme_data
-            .criteria
-            .iter()
-            .find(|cw| cw.criterium.number == crit_num)
-            .map(|cw| (theme, &cw.criterium))
+        Self::id_index().get(criterion_id).copied()
     }
 
     pub fn title(criterion_id: &str) -> Option<&'static str> {

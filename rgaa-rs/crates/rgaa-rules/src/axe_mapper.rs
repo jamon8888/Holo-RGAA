@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use rgaa_core::{Classification, CriterionResult, CriterionStatus, RgaaError, Violation};
+use std::sync::OnceLock;
 
 pub struct AxeMapper;
 
@@ -33,7 +34,7 @@ impl AxeMapper {
 
         // Map violations to criteria
         for violation in &violations {
-            for (rgaa_id, axe_rules) in &mapping {
+            for (rgaa_id, axe_rules) in mapping {
                 if axe_rules.iter().any(|rule| rule == &violation.id) {
                     if let Some(result) = results.get_mut(rgaa_id) {
                         result.status = CriterionStatus::Fail;
@@ -51,7 +52,14 @@ impl AxeMapper {
         Ok(results)
     }
 
-    fn rgaa_to_axe_map() -> IndexMap<String, Vec<String>> {
+    /// Built once per process and shared read-only — this ~77-entry table (with its
+    /// ~150 string allocations) no longer gets rebuilt on every `map()` call.
+    fn rgaa_to_axe_map() -> &'static IndexMap<String, Vec<String>> {
+        static MAPPING: OnceLock<IndexMap<String, Vec<String>>> = OnceLock::new();
+        MAPPING.get_or_init(Self::build_rgaa_to_axe_map)
+    }
+
+    fn build_rgaa_to_axe_map() -> IndexMap<String, Vec<String>> {
         let mut m: IndexMap<String, Vec<String>> = IndexMap::new();
         // From existing poc.js — 77 criteria mapped
         m.insert(

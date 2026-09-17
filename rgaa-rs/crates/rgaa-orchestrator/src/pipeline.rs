@@ -186,7 +186,7 @@ async fn audit_one(
     // 2. Run gap-fix rules for 10 false negatives
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
-    let gap_js_results = bridge.run_gap_fix(url, &gap_snippets).await?;
+    let gap_js_results = bridge.run_gap_fix(url, gap_snippets).await?;
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
@@ -251,7 +251,7 @@ async fn audit_one(
     // PartiallyAutomatable criteria need human review for un-covered portions
     // -> NeedsReview.
     let all_criteria = RgaaCriteria::all();
-    for criterion in &all_criteria {
+    for criterion in all_criteria {
         if criterion.classification == Classification::Manuel {
             all_results
                 .entry(criterion.id.to_string())

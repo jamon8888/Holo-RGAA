@@ -6403,6 +6403,7 @@ dependencies = [
 name = "rgaa-spider"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "rig-core",
  "schemars 1.2.2",
  "serde",

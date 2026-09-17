@@ -165,6 +165,21 @@ impl Default for ObscuraBridge {
     }
 }
 
+/// Resolves the `--workers` count for `obscura serve`: `env_val` parsed as a
+/// positive integer if present, else one worker per CPU.
+fn resolve_workers(env_val: Option<&str>, cpu_count: usize) -> usize {
+    env_val
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|w| *w > 0)
+        .unwrap_or(cpu_count)
+}
+
+/// True when `OBSCURA_VERBOSE=1` was requested — drops `--quiet` and stops
+/// nulling the child's stdio.
+fn is_verbose_requested(env_val: Option<&str>) -> bool {
+    env_val == Some("1")
+}
+
 impl ObscuraBridge {
     pub fn new() -> Self {
         Self {
@@ -736,15 +751,52 @@ impl ObscuraBridge {
 
     /// Start the obscura CDP server as a background process
     pub async fn start_server(&mut self) -> Result<(), String> {
-        info!(port = self.server_port, "Starting Obscura CDP server");
+        // One worker per CPU by default (docs.obscura.sh run-in-production-at-scale),
+        // overridable for deploys that want to under/over-subscribe.
+        let cpu_count = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let workers = resolve_workers(std::env::var("OBSCURA_WORKERS").ok().as_deref(), cpu_count);
 
-        let child = Command::new(&self.binary_path)
-            .arg("serve")
+        // Silenced by default (`--quiet` + null stdio) defeated RUST_LOG/verbose
+        // entirely — OBSCURA_VERBOSE=1 opts into both actually being visible.
+        let verbose = is_verbose_requested(std::env::var("OBSCURA_VERBOSE").ok().as_deref());
+
+        info!(
+            port = self.server_port,
+            workers, verbose, "Starting Obscura CDP server"
+        );
+
+        let mut cmd = Command::new(&self.binary_path);
+        cmd.arg("serve")
             .arg("--port")
             .arg(self.server_port.to_string())
-            .arg("--quiet")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .arg("--workers")
+            .arg(workers.to_string());
+
+        if !verbose {
+            cmd.arg("--quiet");
+        }
+
+        // Opt-in V8 heap sizing passthrough (e.g. "--max-old-space-size=4096"),
+        // left unset by default rather than guessing a heap size for every
+        // deploy's memory budget.
+        if let Ok(v8_flags) = std::env::var("OBSCURA_V8_FLAGS") {
+            if !v8_flags.trim().is_empty() {
+                cmd.arg("--v8-flags").arg(v8_flags);
+            }
+        }
+
+        cmd.stdout(if verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        })
+        .stderr(if verbose {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        });
+
+        let child = cmd
             .spawn()
             .map_err(|e| format!("Failed to start obscura serve: {e}"))?;
 
@@ -2086,6 +2138,40 @@ impl Drop for ObscuraBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_workers_defaults_to_cpu_count() {
+        assert_eq!(resolve_workers(None, 8), 8);
+    }
+
+    #[test]
+    fn resolve_workers_honors_explicit_override() {
+        assert_eq!(resolve_workers(Some("3"), 8), 3);
+    }
+
+    #[test]
+    fn resolve_workers_ignores_invalid_or_zero_override() {
+        assert_eq!(resolve_workers(Some("not-a-number"), 8), 8);
+        assert_eq!(resolve_workers(Some("0"), 8), 8);
+        assert_eq!(resolve_workers(Some("-1"), 8), 8);
+    }
+
+    #[test]
+    fn verbose_requires_exact_value_one() {
+        assert!(is_verbose_requested(Some("1")));
+        assert!(!is_verbose_requested(None));
+        assert!(!is_verbose_requested(Some("true")));
+        assert!(!is_verbose_requested(Some("0")));
+    }
+
+    #[test]
+    fn bridge_handle_shares_config_but_not_the_server_process() {
+        let bridge = ObscuraBridge::new().with_port(9999);
+        let handle = bridge.handle();
+        assert_eq!(handle.binary_path(), bridge.binary_path());
+        assert_eq!(handle.server_port, bridge.server_port);
+        assert!(handle.server_process.is_none());
+    }
 
     // Network-dependent: requires a reachable browser/CDP server and example.com.
     #[tokio::test]

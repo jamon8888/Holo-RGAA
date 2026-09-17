@@ -197,6 +197,22 @@ impl ObscuraBridge {
         &self.binary_path
     }
 
+    /// Returns a lightweight handle to the same running server: shares
+    /// `binary_path`/`server_port`, but owns no server process itself, so
+    /// dropping it never stops the server. Use this to give each
+    /// concurrently running audit its own `ObscuraBridge` (and thus its own
+    /// `BrowserSession`, not a mutex shared across every in-flight audit)
+    /// while the original bridge — which does own the process — stays alive
+    /// for as long as the batch needs the server up.
+    #[must_use]
+    pub fn handle(&self) -> Self {
+        Self {
+            binary_path: self.binary_path.clone(),
+            server_port: self.server_port,
+            server_process: None,
+        }
+    }
+
     /// Report the substrate binary's self-declared version (`<binary> --version`).
     ///
     /// # Errors

@@ -146,7 +146,10 @@ impl Storage for PostgresStorage {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<AuditSummary>, StorageError> {
-        let limit = limit.clamp(1, MAX_LIST_PAGE_SIZE);
+        // 0 is a legitimate "give me nothing" request (e.g. a pagination
+        // probe), not a lower bound to round up to 1 — only cap the upper
+        // end.
+        let limit = limit.min(MAX_LIST_PAGE_SIZE);
         let rows: Vec<AuditSummaryDbRow> = sqlx::query_as(
             r#"
             SELECT id, url, taux_global, etat_conformite, created_at

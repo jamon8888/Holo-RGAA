@@ -40,6 +40,7 @@ fn max_concurrent_audits() -> usize {
     std::env::var("RGAA_API_MAX_CONCURRENT_AUDITS")
         .ok()
         .and_then(|v| v.parse().ok())
+        .filter(|&v| v > 0)
         .unwrap_or(8)
 }
 

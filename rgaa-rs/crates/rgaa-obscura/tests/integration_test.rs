@@ -1,11 +1,17 @@
 use rgaa_obscura::ObscuraBridge;
-use rgaa_obscura::{AnalyzeConfig, AnalyzeRequest, PreScanAction, ScreenshotConfig, ScreenshotPolicy, ScreenshotFormat, Viewport};
+use rgaa_obscura::{
+    AnalyzeConfig, AnalyzeRequest, PreScanAction, ScreenshotConfig, ScreenshotFormat,
+    ScreenshotPolicy, Viewport,
+};
 use rgaa_obscura::{GuidedStep, GuidedTest, TerminationReason};
 
 #[tokio::test]
 async fn test_obscura_bridge_sync() {
+    // Single-audit callers route through the batch entry point (N=1) — this is
+    // the live production path, not a one-off; see pipeline::audit_one.
     let bridge = ObscuraBridge::new();
-    let result = bridge.extract_page_context("https://example.com").await;
+    let urls = vec!["https://example.com".to_string()];
+    let result = bridge.extract_page_context_batch(&urls, 1).await;
     println!("Page context result: {:?}", result);
     assert!(
         result.is_ok(),
@@ -13,7 +19,10 @@ async fn test_obscura_bridge_sync() {
         result.err()
     );
 
-    let context = result.unwrap();
+    let mut context_by_url = result.unwrap();
+    let context = context_by_url
+        .remove("https://example.com")
+        .expect("batch result must contain the requested URL");
     println!("Context: {:?}", context);
     assert!(
         context.get("title").is_some(),
@@ -23,6 +32,8 @@ async fn test_obscura_bridge_sync() {
 
 #[tokio::test]
 async fn test_obscura_bridge_axe_via_cdp() {
+    // Single-audit callers route through the batch entry point (N=1) — this is
+    // the live production path, not a one-off; see pipeline::audit_one.
     let mut bridge = ObscuraBridge::new().with_port(9223);
 
     // Start CDP server
@@ -35,7 +46,8 @@ async fn test_obscura_bridge_axe_via_cdp() {
     );
 
     // Run axe-core
-    let result = bridge.run_axe("https://example.com").await;
+    let urls = vec!["https://example.com".to_string()];
+    let result = bridge.run_axe_batch(&urls, 1).await;
     println!("Axe result: {:?}", result);
 
     // Stop server
@@ -44,7 +56,10 @@ async fn test_obscura_bridge_axe_via_cdp() {
     assert!(result.is_ok(), "Failed to run axe: {:?}", result.err());
 
     // The returned string must be valid JSON and a JSON array (violations).
-    let ax = result.unwrap();
+    let mut results_by_url = result.unwrap();
+    let ax = results_by_url
+        .remove("https://example.com")
+        .expect("batch result must contain the requested URL");
     let parsed: serde_json::Value =
         serde_json::from_str(&ax).expect("axe result must be parseable JSON");
     assert!(parsed.is_array(), "axe result must be a JSON array");
@@ -194,7 +209,10 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
         pre_scan_actions: vec![PreScanAction::Click {
             selector: "body".into(),
         }],
-        screenshot: ScreenshotConfig { policy: ScreenshotPolicy::Always, format: ScreenshotFormat::Png },
+        screenshot: ScreenshotConfig {
+            policy: ScreenshotPolicy::Always,
+            format: ScreenshotFormat::Png,
+        },
         timeout_ms: 30_000,
         retry_limit: 1,
         ..Default::default()

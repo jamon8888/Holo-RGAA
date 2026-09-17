@@ -178,20 +178,32 @@ async fn audit_one(
     let session = tool_ctx.session().lock().await;
     let bridge = session.bridge();
 
+    // Single-element slice so every browser call below routes through the same
+    // batch entry point multi-URL callers use — one live path, no per-page/
+    // snippet one-off browser process spawns on the audit path.
+    let urls = [url.to_string()];
+
     // 1. Run axe-core
     info!("Running axe-core");
-    let axe_violations = bridge.run_axe(url).await?;
+    let mut axe_by_url = bridge.run_axe_batch(&urls, 1).await?;
+    let axe_violations = axe_by_url
+        .remove(url)
+        .ok_or_else(|| format!("axe-core produced no result for {url}"))?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
     // 2. Run gap-fix rules for 10 false negatives
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
-    let gap_js_results = bridge.run_gap_fix(url, gap_snippets).await?;
+    let mut gap_by_url = bridge.run_gap_fix_batch(&urls, gap_snippets, 1).await?;
+    let gap_js_results = gap_by_url.remove(url).unwrap_or_default();
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
     info!("Extracting page context");
-    let raw_context = bridge.extract_page_context(url).await?;
+    let mut context_by_url = bridge.extract_page_context_batch(&urls, 1).await?;
+    let raw_context = context_by_url
+        .remove(url)
+        .ok_or_else(|| format!("page context extraction produced no result for {url}"))?;
     let na_map = na_detection::detect_na(&raw_context);
     let page_context: PageContext = serde_json::from_value(raw_context).unwrap_or(PageContext {
         title: None,

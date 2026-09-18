@@ -1,0 +1,13 @@
+# Checked-in workspace-level linker config: `mold` is much lower-memory and
+# faster than the default GNU `ld` for linking this workspace's binaries
+# (rgaa, rgaa-cli, rgaa-api, rgaa-mcp, rgaa-tui), which all statically link
+# the same heavy dependency graph (lancedb/datafusion/arrow via rgaa-agent's
+# vector-store feature). CI's `rui314/setup-mold@v1` step only puts the
+# `mold` binary on PATH — without this file nothing tells cargo/rustc to
+# actually use it, so CI was linking multiple such binaries with the default
+# linker and getting OOM-killed (exit 143) during the final link stage.
+#
+# `mold` must be on PATH when this applies — CLAUDE.md documents the local
+# machine-wide install; CI installs it via rui314/setup-mold@v1.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

@@ -44,7 +44,15 @@ jobs:
       - name: Build workspace
         env:
           RUSTC_WRAPPER: sccache
-        run: cargo build --workspace --release
+        run: |
+          # GitHub Actions cancels a step after ~10 minutes with no log
+          # output; a cold-cache release build of this workspace (lancedb/
+          # datafusion/arrow) can go silent for longer than that compiling a
+          # single heavy crate. Keep the step alive with a heartbeat.
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          cargo build --workspace --release
+          kill "$heartbeat" 2>/dev/null || true
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -59,7 +67,11 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
           RUSTC_WRAPPER: sccache
-        run: cargo nextest run --workspace
+        run: |
+          ( while true; do sleep 240; echo "::notice::still testing…"; done ) &
+          heartbeat=$!
+          cargo nextest run --workspace
+          kill "$heartbeat" 2>/dev/null || true
       - name: Run doc tests
         env:
           RUSTC_WRAPPER: sccache
@@ -104,7 +116,11 @@ jobs:
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - env:
           RUSTC_WRAPPER: sccache
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          ( while true; do sleep 240; echo "::notice::still linting…"; done ) &
+          heartbeat=$!
+          cargo clippy --workspace --all-targets -- -D warnings
+          kill "$heartbeat" 2>/dev/null || true
 
   audit:
     name: Security audit
@@ -121,7 +137,15 @@ jobs:
           # RUSTSEC-2023-0071: ReDoS in regex-lite via bstr dependency chain (fastembed).
           # Not introduced by our code; transitive dependency on regex 1.x through fastembed.
           # Tracking: https://github.com/oxalorg/regex/issues/702
-          ignore: "RUSTSEC-2023-0071"
+          #
+          # RUSTSEC-2026-0253, RUSTSEC-2026-0002: unsound `lru` 0.12.5 (panic-safety /
+          # Stacked-Borrows issues in LruCache::pop/IterMut), transitive via lancedb's
+          # dependency tree (rgaa-agent's vector-store feature). Not introduced by our
+          # code; upgrading past it means upgrading lancedb, out of scope here.
+          #
+          # RUSTSEC-2020-0097, RUSTSEC-2025-0051: unsound `xcb` 0.8.2, transitive via
+          # rgaa-tui's terminal/clipboard dependency chain. Not introduced by our code.
+          ignore: "RUSTSEC-2023-0071,RUSTSEC-2026-0253,RUSTSEC-2026-0002,RUSTSEC-2020-0097,RUSTSEC-2025-0051"
 
   e2e:
     name: E2E (browser + agent + orchestrator)

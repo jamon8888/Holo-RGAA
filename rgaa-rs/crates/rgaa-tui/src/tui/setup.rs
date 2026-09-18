@@ -53,29 +53,27 @@ pub fn run_setup_wizard() -> bool {
                         break;
                     }
                 }
-                SetupStep::ApiKeyInput => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            if !input_buffer.is_empty() {
-                                wizard.step = SetupStep::ApiKeyConfirm {
-                                    key: input_buffer.clone(),
-                                };
-                                input_buffer.clear();
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            input_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            input_buffer.pop();
-                        }
-                        KeyCode::Esc => {
+                SetupStep::ApiKeyInput => match key.code {
+                    KeyCode::Enter => {
+                        if !input_buffer.is_empty() {
+                            wizard.step = SetupStep::ApiKeyConfirm {
+                                key: input_buffer.clone(),
+                            };
                             input_buffer.clear();
-                            wizard.step = SetupStep::Welcome;
                         }
-                        _ => {}
                     }
-                }
+                    KeyCode::Char(c) => {
+                        input_buffer.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_buffer.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_buffer.clear();
+                        wizard.step = SetupStep::Welcome;
+                    }
+                    _ => {}
+                },
                 SetupStep::ApiKeyConfirm { key: api_key_str } => {
                     if key.code == KeyCode::Char('y') || key.code == KeyCode::Enter {
                         wizard.step = SetupStep::BaseUrlInput {
@@ -86,34 +84,34 @@ pub fn run_setup_wizard() -> bool {
                         input_buffer.clear();
                     }
                 }
-                SetupStep::BaseUrlInput { api_key: api_key_str } => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            let base_url = if input_buffer.is_empty() {
-                                HOLO3_BASE_URL_DEFAULT.to_string()
-                            } else {
-                                std::mem::take(&mut input_buffer)
-                            };
-                            wizard.step = SetupStep::Review {
-                                api_key: api_key_str.clone(),
-                                base_url,
-                            };
-                        }
-                        KeyCode::Char(c) => {
-                            input_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            input_buffer.pop();
-                        }
-                        KeyCode::Esc => {
-                            input_buffer.clear();
-                            wizard.step = SetupStep::ApiKeyConfirm {
-                                key: api_key_str.clone(),
-                            };
-                        }
-                        _ => {}
+                SetupStep::BaseUrlInput {
+                    api_key: api_key_str,
+                } => match key.code {
+                    KeyCode::Enter => {
+                        let base_url = if input_buffer.is_empty() {
+                            HOLO3_BASE_URL_DEFAULT.to_string()
+                        } else {
+                            std::mem::take(&mut input_buffer)
+                        };
+                        wizard.step = SetupStep::Review {
+                            api_key: api_key_str.clone(),
+                            base_url,
+                        };
                     }
-                }
+                    KeyCode::Char(c) => {
+                        input_buffer.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_buffer.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_buffer.clear();
+                        wizard.step = SetupStep::ApiKeyConfirm {
+                            key: api_key_str.clone(),
+                        };
+                    }
+                    _ => {}
+                },
                 SetupStep::Review { .. } => {
                     if key.code == KeyCode::Char('y') || key.code == KeyCode::Enter {
                         if let SetupStep::Review { api_key, .. } = &wizard.step {
@@ -162,7 +160,9 @@ fn render(wizard: &SetupWizard, frame: &mut Frame, input: &str) {
         .split(area);
 
     frame.render_widget(
-        Paragraph::new("rgaa setup").alignment(Alignment::Center).fg(Color::Cyan),
+        Paragraph::new("rgaa setup")
+            .alignment(Alignment::Center)
+            .fg(Color::Cyan),
         chunks[0],
     );
 

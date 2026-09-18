@@ -73,28 +73,26 @@ pub async fn run() {
                             MainMenuSelection::Exit => MainMenuSelection::Settings,
                         };
                     }
-                    KeyCode::Enter => {
-                        match selected {
-                            MainMenuSelection::Audit => {
-                                show_menu = false;
-                                drop(terminal);
-                                crate::tui::run_audit_wizard();
-                                terminal = ratatui::init();
-                                terminal.clear().unwrap();
-                            }
-                            MainMenuSelection::History => {}
-                            MainMenuSelection::Settings => {
-                                show_menu = false;
-                                drop(terminal);
-                                crate::tui::run_setup_wizard();
-                                terminal = ratatui::init();
-                                terminal.clear().unwrap();
-                            }
-                            MainMenuSelection::Exit => {
-                                break;
-                            }
+                    KeyCode::Enter => match selected {
+                        MainMenuSelection::Audit => {
+                            show_menu = false;
+                            drop(terminal);
+                            crate::tui::run_audit_wizard();
+                            terminal = ratatui::init();
+                            terminal.clear().unwrap();
                         }
-                    }
+                        MainMenuSelection::History => {}
+                        MainMenuSelection::Settings => {
+                            show_menu = false;
+                            drop(terminal);
+                            crate::tui::run_setup_wizard();
+                            terminal = ratatui::init();
+                            terminal.clear().unwrap();
+                        }
+                        MainMenuSelection::Exit => {
+                            break;
+                        }
+                    },
                     KeyCode::Esc => {
                         break;
                     }
@@ -131,7 +129,11 @@ fn render_main_menu(frame: &mut Frame, selected: &MainMenuSelection) {
     );
 
     let items = [
-        (MainMenuSelection::Audit, "[A]udit URL", "Run a new accessibility audit"),
+        (
+            MainMenuSelection::Audit,
+            "[A]udit URL",
+            "Run a new accessibility audit",
+        ),
         (
             MainMenuSelection::History,
             "[H]istory",
@@ -146,11 +148,10 @@ fn render_main_menu(frame: &mut Frame, selected: &MainMenuSelection) {
     ];
 
     for (i, (sel, label, desc)) in items.iter().enumerate() {
-        let is_selected = matches!(selected, s if std::mem::discriminant(s) == std::mem::discriminant(sel));
+        let is_selected =
+            matches!(selected, s if std::mem::discriminant(s) == std::mem::discriminant(sel));
         let style = if is_selected {
-            ratatui::style::Style::default()
-                .fg(Color::Yellow)
-                .bold()
+            ratatui::style::Style::default().fg(Color::Yellow).bold()
         } else {
             ratatui::style::Style::default().fg(Color::White)
         };

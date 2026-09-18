@@ -67,15 +67,16 @@ fn os_keyring_get_base_url() -> Result<String, KeyringError> {
 
 fn fallback_store_api_key_and_url(key: &str, base_url: &str) -> Result<(), KeyringError> {
     let home = dirs::home_dir().ok_or_else(|| {
-        KeyringError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))
+        KeyringError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no home dir",
+        ))
     })?;
     let env_path = home.join(".rgaa").join("env");
     std::fs::create_dir_all(env_path.parent().unwrap())?;
     let content = format!("HOLO3_API_KEY={}\nHOLO3_BASE_URL={}\n", key, base_url);
     std::fs::write(&env_path, content)?;
-    eprintln!(
-        "WARNING: OS keyring unavailable. Config stored in plain text at ~/.rgaa/env"
-    );
+    eprintln!("WARNING: OS keyring unavailable. Config stored in plain text at ~/.rgaa/env");
     Ok(())
 }
 

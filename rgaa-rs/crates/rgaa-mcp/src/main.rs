@@ -10,7 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    let bridge = Arc::new(LazyObscuraBridge::new(rgaa_obscura::ObscuraBridge::from_env()));
+    let bridge = Arc::new(LazyObscuraBridge::new(
+        rgaa_obscura::ObscuraBridge::from_env(),
+    ));
     let service = ToolServer::new(
         Arc::new(ObscuraAnalyzeService::new(Arc::clone(&bridge))),
         Arc::new(RemediationServiceImpl::default()),

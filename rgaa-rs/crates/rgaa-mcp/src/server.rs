@@ -69,10 +69,18 @@ impl AnalyzeRequest {
                     rgaa_obscura::PreScanAction::WaitFor {
                         selector: selector.clone(),
                         state: match *state {
-                            crate::tools::WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
-                            crate::tools::WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
-                            crate::tools::WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
-                            crate::tools::WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
+                            crate::tools::WaitForState::Visible => {
+                                rgaa_obscura::WaitForState::Visible
+                            }
+                            crate::tools::WaitForState::Attached => {
+                                rgaa_obscura::WaitForState::Attached
+                            }
+                            crate::tools::WaitForState::Hidden => {
+                                rgaa_obscura::WaitForState::Hidden
+                            }
+                            crate::tools::WaitForState::Detached => {
+                                rgaa_obscura::WaitForState::Detached
+                            }
                         },
                     }
                 }

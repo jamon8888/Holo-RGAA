@@ -15,7 +15,10 @@ pub async fn audit(url: Option<String>, output: Option<PathBuf>) -> anyhow::Resu
 
     let orchestrator = rgaa_orchestrator::pipeline::Orchestrator::new();
 
-    let result = orchestrator.run(&url, &config).await.map_err(|e| anyhow::anyhow!(e))?;
+    let result = orchestrator
+        .run(&url, &config)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     if let Some(path) = output {
         crate::tui::export::export(&result, &path)
@@ -100,7 +103,13 @@ fn print_result_summary(result: &rgaa_core::AuditResult) {
     } else {
         "Non conforme"
     };
-    let color = if taux >= 80.0 { "32" } else if taux >= 50.0 { "33" } else { "31" };
+    let color = if taux >= 80.0 {
+        "32"
+    } else if taux >= 50.0 {
+        "33"
+    } else {
+        "31"
+    };
 
     println!();
     println!("  ╔══════════════════════════════════════╗");
@@ -121,10 +130,7 @@ fn print_result_summary(result: &rgaa_core::AuditResult) {
         .len()
         .saturating_sub(ia_criteria.len() + partial.len());
     println!("  {} deterministic criteria", det_count);
-    println!(
-        "  {} IA-Assistee criteria (agentic)",
-        ia_criteria.len()
-    );
+    println!("  {} IA-Assistee criteria (agentic)", ia_criteria.len());
     println!("  {} partially automatable criteria", partial.len());
 
     if let Some(page) = result.pages.first() {

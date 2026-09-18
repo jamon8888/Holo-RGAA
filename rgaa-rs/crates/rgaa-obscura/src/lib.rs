@@ -19,8 +19,8 @@ pub mod results;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
-    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy, Viewport,
-    WaitForState, MAX_WAITFOR_TIMEOUT_MS,
+    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy,
+    Viewport, WaitForState, MAX_WAITFOR_TIMEOUT_MS,
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
@@ -327,7 +327,9 @@ impl ObscuraBridge {
         };
 
         if request.config.needs_review_policy == NeedsReviewPolicy::Fail
-            && findings.iter().any(|f| f.status == rgaa_core::CriterionStatus::Fail)
+            && findings
+                .iter()
+                .any(|f| f.status == rgaa_core::CriterionStatus::Fail)
         {
             return Ok(AnalyzePageResult::failed(
                 &request.url,
@@ -1953,9 +1955,20 @@ impl ObscuraBridge {
         let mut terminated_reason: Option<TerminationReason> = None;
 
         let interactive_roles = [
-            "button", "link", "textbox", "checkbox", "radio", "menuitem",
-            "tab", "menuitemcheckbox", "menuitemradio", "switch", "searchbox",
-            "spinbutton", "combobox", "slider",
+            "button",
+            "link",
+            "textbox",
+            "checkbox",
+            "radio",
+            "menuitem",
+            "tab",
+            "menuitemcheckbox",
+            "menuitemradio",
+            "switch",
+            "searchbox",
+            "spinbutton",
+            "combobox",
+            "slider",
         ];
 
         for _ in 0..max_tabs {
@@ -1998,13 +2011,22 @@ impl ObscuraBridge {
                 } else {
                     path.to_string()
                 };
-                (role.to_string(), name.to_string(), tag.to_string(), identity)
+                (
+                    role.to_string(),
+                    name.to_string(),
+                    tag.to_string(),
+                    identity,
+                )
             } else {
                 (String::new(), String::new(), String::new(), String::new())
             };
 
             if !tag.is_empty() {
-                if interactive_roles.contains(&role.as_str()) || tag == "a" || tag == "button" || tag == "input" {
+                if interactive_roles.contains(&role.as_str())
+                    || tag == "a"
+                    || tag == "button"
+                    || tag == "input"
+                {
                     igt_elements.push(IgtElement {
                         role: role.clone(),
                         name: name.clone(),
@@ -2025,7 +2047,10 @@ impl ObscuraBridge {
                     issues.push(IgtIssue {
                         rule: "keyboard-trap".to_string(),
                         element: format!("{}:{}", tag, name),
-                        description: format!("Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs", name, tag, role, trap_counter),
+                        description: format!(
+                            "Focus appeared trapped at '{}' ({}:{}) for {} consecutive tabs",
+                            name, tag, role, trap_counter
+                        ),
                     });
                     break;
                 }
@@ -2056,7 +2081,9 @@ impl ObscuraBridge {
 
         Some(IgtResults {
             keyboard: IgtResult {
-                status: if terminated_reason.is_some() || issues.iter().any(|i| i.rule == "keyboard-trap") {
+                status: if terminated_reason.is_some()
+                    || issues.iter().any(|i| i.rule == "keyboard-trap")
+                {
                     "incomplete".to_string()
                 } else {
                     "complete".to_string()

@@ -44,6 +44,16 @@ jobs:
       - name: Build workspace
         env:
           RUSTC_WRAPPER: sccache
+          # This workspace produces 5 binaries (rgaa, rgaa-cli, rgaa-api,
+          # rgaa-mcp, rgaa-tui) that all statically link the same heavy
+          # dependency graph (lancedb/datafusion/arrow/ort/tokenizers via
+          # rgaa-agent's vector-store feature). Unbounded parallelism lets
+          # cargo link several of them at once, and that peak — even with
+          # mold — was pushing the runner into memory pressure and getting
+          # the step SIGTERMed (exit 143) right at that stage. Capping jobs
+          # bounds how many simultaneous links can happen; slower, but
+          # doesn't get killed.
+          CARGO_BUILD_JOBS: "2"
         run: |
           # GitHub Actions cancels a step after ~10 minutes with no log
           # output; a cold-cache release build of this workspace (lancedb/
@@ -67,6 +77,9 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
           RUSTC_WRAPPER: sccache
+          # Same simultaneous-multi-binary-link memory pressure as the build
+          # step above, but for nextest's per-crate test binaries.
+          CARGO_BUILD_JOBS: "2"
         run: |
           ( while true; do sleep 240; echo "::notice::still testing…"; done ) &
           heartbeat=$!

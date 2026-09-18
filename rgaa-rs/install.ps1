@@ -51,6 +51,11 @@ $rgaaAsset = if ($Version -eq "latest") {
 $rgaaUrl = "https://github.com/${Repo}/releases/download/${Version}/${rgaaAsset}"
 $obscuraUrl = "https://github.com/${ObscuraRepo}/releases/download/v${ObscuraVersion}/obscura-x86_64-windows.zip"
 
+if ($env:RGAA_RELEASE_URL_BASE) {
+    Write-Host "  WARNING: RGAA_RELEASE_URL_BASE override active (test-only)" -ForegroundColor Yellow
+    $rgaaUrl = "$env:RGAA_RELEASE_URL_BASE/rgaa-rs-${Version}-x86_64-pc-windows-msvc.zip"
+}
+
 Write-Host ""
 Write-Host "  Platform: windows-x86_64"
 Write-Host "  rgaa:     $rgaaUrl"
@@ -86,9 +91,77 @@ try {
     Write-Host "  WARNING: obscura download failed; browser automation unavailable." -ForegroundColor Yellow
 }
 
+# Claude Code plugin
+Write-Step "Installing Claude Code plugin..."
+$PluginDir = "$env:USERPROFILE\.claude\plugins\rgaa-audit"
+try {
+    $pluginTmp = Join-Path $TmpDir "rgaa-plugin-fetch"
+    New-Item -ItemType Directory -Force -Path $pluginTmp | Out-Null
+    $pluginTarball = Join-Path $pluginTmp "repo.tar.gz"
+    Invoke-WebRequest -Uri "https://codeload.github.com/${Repo}/tar.gz/${Version}" -OutFile $pluginTarball -UserAgent "rgaa-install"
+    tar -xzf $pluginTarball -C $pluginTmp
+    $repoRoot = Get-ChildItem -Path $pluginTmp -Directory | Where-Object { $_.Name -like "Holo-RGAA-*" } | Select-Object -First 1
+    if ($repoRoot -and (Test-Path (Join-Path $repoRoot.FullName "claude-plugin"))) {
+        if (Test-Path $PluginDir) { Remove-Item $PluginDir -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path (Split-Path $PluginDir) | Out-Null
+        Copy-Item (Join-Path $repoRoot.FullName "claude-plugin") $PluginDir -Recurse -Force
+        Write-Host "  Plugin installed: $PluginDir" -ForegroundColor Green
+    } else {
+        Write-Host "  WARNING: plugin not in tarball; continuing without plugin." -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "  WARNING: plugin download failed; continuing without plugin." -ForegroundColor Yellow
+}
+
+# Default config
+$ConfigPath = ".rgaa\config.yaml"
+if (-not (Test-Path $ConfigPath)) {
+    Write-Step "Creating default config..."
+    New-Item -ItemType Directory -Force -Path ".rgaa" | Out-Null
+    $configYaml = @"
+url_profiles:
+  default:
+    url: https://example.test
+    viewport: desktop
+
+viewport_profiles:
+  desktop:
+    width: 1000
+    height: 1080
+  mobile:
+    width: 375
+    height: 812
+
+guided_tests: []
+
+standards:
+  - wcag
+  - rgai
+
+policy:
+  min_compliance: 80.0
+  required_criteria: []
+
+evidence_dir: .rgaa/evidence
+remote_endpoint: null
+upload_consent: false
+"@
+    Set-Content -Path $ConfigPath -Value $configYaml -Encoding UTF8
+    Write-Host "  Default config created: $ConfigPath" -ForegroundColor Green
+} else {
+    Write-Host "  Config exists: $ConfigPath" -ForegroundColor Green
+}
+
 # Verify versions
 Write-Step "Verifying..."
-& (Join-Path $InstallDir "rgaa.exe") --version
+foreach ($b in @("rgaa.exe","rgaa-cli.exe")) {
+    & (Join-Path $InstallDir $b) --version
+    if ($LASTEXITCODE -ne 0) { Write-Host "  ERROR: $b --version failed" -ForegroundColor Red; exit 1 }
+}
+foreach ($b in @("rgaa-api.exe","rgaa-mcp.exe")) {
+    & (Join-Path $InstallDir $b) --help 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host "  ERROR: $b --help failed" -ForegroundColor Red; exit 1 }
+}
 $obscuraBin = Join-Path $InstallDir "obscura.exe"
 if (Test-Path $obscuraBin) {
     $ov = & $obscuraBin --version 2>$null

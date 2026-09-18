@@ -43,7 +43,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Build workspace
-        run: cargo build --workspace --release
+        run: |
+          # GitHub Actions cancels a step after ~10 minutes with no log
+          # output; a cold-cache release build of this workspace (lancedb/
+          # datafusion/arrow) can go silent for longer than that compiling a
+          # single heavy crate. Keep the step alive with a heartbeat.
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          cargo build --workspace --release
+          kill "$heartbeat" 2>/dev/null || true
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -61,7 +69,10 @@ jobs:
           # Use all available cores for both compilation and test execution
           CORES=$(nproc)
           echo "Using $CORES cores"
+          ( while true; do sleep 240; echo "::notice::still testing…"; done ) &
+          heartbeat=$!
           cargo test --workspace --jobs $CORES --test-threads=$CORES
+          kill "$heartbeat" 2>/dev/null || true
 
   smoke:
     name: Smoke Test

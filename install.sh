@@ -263,7 +263,18 @@ build_from_source() {
     done
 
     install_obscura "$(detect_platform)"
-    verify_obscura_version
+    # install_obscura only warns on failure (download error, or no prebuilt
+    # asset for this platform), so verify_obscura_version's own missing-binary
+    # case would also just warn and let this report success. The obscura
+    # substrate is required for browser automation, and start_server now
+    # rejects a missing/drifted binary at runtime, so treat it as required
+    # here too instead of shipping a build that can't run.
+    if [[ -x "${INSTALL_DIR}/obscura" ]]; then
+        verify_obscura_version
+    else
+        die "obscura substrate could not be installed; browser automation would be unavailable.
+     Re-run 'install.sh --build' once the download succeeds, or install obscura manually to ${INSTALL_DIR}/obscura."
+    fi
 
     ok "Build complete. Binaries in ${INSTALL_DIR}"
 }

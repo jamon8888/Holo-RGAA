@@ -734,7 +734,12 @@ impl ObscuraBridge {
                 self.binary_path
             )
         })?;
-        if !version.contains(OBSCURA_PINNED_VERSION) {
+        // Compare the `name`/`version` tokens exactly (not a substring match):
+        // a binary reporting e.g. "obscura 0.2.20" must not pass as a match
+        // for the pinned "obscura 0.2.2" just because it shares the prefix.
+        let mut reported = version.split_whitespace();
+        let mut pinned = OBSCURA_PINNED_VERSION.split_whitespace();
+        if (reported.next(), reported.next()) != (pinned.next(), pinned.next()) {
             return Err(format!(
                 "obscura version mismatch: got '{version}', want '{OBSCURA_PINNED_VERSION}' (binary: {})",
                 self.binary_path
@@ -2273,6 +2278,31 @@ mod tests {
         let mut bridge = ObscuraBridge::with_binary_path("/bin/true".into());
         let result = bridge.start_server().await;
         assert!(result.is_err(), "wrong version must fail, got ok");
+        assert!(result.unwrap_err().contains("version mismatch"));
+    }
+
+    #[tokio::test]
+    async fn start_server_rejects_version_that_shares_pinned_prefix() {
+        // Regression test: the version gate must compare the reported
+        // "obscura X.Y.Z" tokens exactly, not with a substring check, so a
+        // binary reporting "obscura 0.2.20" doesn't pass as "obscura 0.2.2".
+        let script_path = std::env::temp_dir().join("rgaa-obscura-fake-drifted-version.sh");
+        std::fs::write(&script_path, "#!/bin/sh\necho 'obscura 0.2.20'\n")
+            .expect("write fake obscura binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod fake obscura binary");
+        }
+
+        let mut bridge =
+            ObscuraBridge::with_binary_path(script_path.to_string_lossy().into_owned());
+        let result = bridge.start_server().await;
+
+        let _ = std::fs::remove_file(&script_path);
+
+        assert!(result.is_err(), "prefix-sharing version must fail, got ok");
         assert!(result.unwrap_err().contains("version mismatch"));
     }
 

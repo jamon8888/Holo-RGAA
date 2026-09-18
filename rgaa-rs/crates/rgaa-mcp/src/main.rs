@@ -11,7 +11,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_writer(std::io::stderr)
         .init();
     let bridge = Arc::new(LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::from_env_async().await
+        rgaa_obscura::ObscuraBridge::from_env_async()
+            .await
             .map_err(|e| format!("failed to create browser bridge: {e}"))?,
     ));
     let service = ToolServer::new(

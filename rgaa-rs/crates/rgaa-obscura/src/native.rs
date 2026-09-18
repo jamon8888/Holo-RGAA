@@ -9,18 +9,14 @@ use std::thread;
 
 use crate::config::AnalyzeRequest;
 use crate::evidence::{EvidenceArtifact, EvidenceStore};
-use crate::guided::{
-    GuidedAction, GuidedExecutor, GuidedObservation,
-    GuidedRunResult, GuidedTest,
-};
+use crate::guided::{GuidedAction, GuidedExecutor, GuidedObservation, GuidedRunResult, GuidedTest};
 use crate::results::{AnalyzePageResult, ObscuraError};
 
 /// axe-core bundled at build time — no CDN fetch at startup, so page
 /// evaluation always runs a pinned, source-controlled script.
 const AXE_SOURCE: &str = include_str!("../vendor/axe.min.js");
 /// SHA-256 hex digest of the vendored axe-core bundle.
-const AXE_SOURCE_SHA256: &str =
-    "182a40dc5d8207e626c09861ad65027d45e85e3a56d01045d068e2e88ee432ea";
+const AXE_SOURCE_SHA256: &str = "182a40dc5d8207e626c09861ad65027d45e85e3a56d01045d068e2e88ee432ea";
 
 /// Fail startup if the vendored axe-core bundle does not match its pinned hash.
 fn verify_axe_bundle() -> Result<(), ObscuraError> {
@@ -64,10 +60,9 @@ fn findings_from_axe(value: &serde_json::Value) -> Result<Vec<rgaa_core::Finding
     let mapping = rgaa_rules::AxeMapper::map(&violations_json)
         .map_err(|e| ObscuraError::Evaluation(e.to_string()))?;
     for (index, item) in array.iter().enumerate() {
-        let _: AxeViolationPayload =
-            serde_json::from_value(item.clone()).map_err(|error| {
-                ObscuraError::Json(format!("invalid axe violation at index {index}: {error}"))
-            })?;
+        let _: AxeViolationPayload = serde_json::from_value(item.clone()).map_err(|error| {
+            ObscuraError::Json(format!("invalid axe violation at index {index}: {error}"))
+        })?;
     }
     let findings = mapping
         .values()
@@ -118,7 +113,10 @@ struct BrowserWorker {
     browser: Browser,
     page: Option<Page>,
     axe_source: String,
-    rx: std_mpsc::Receiver<(BrowserRequest, tokio::sync::oneshot::Sender<BrowserResponse>)>,
+    rx: std_mpsc::Receiver<(
+        BrowserRequest,
+        tokio::sync::oneshot::Sender<BrowserResponse>,
+    )>,
     runtime: tokio::runtime::Runtime,
 }
 
@@ -126,7 +124,10 @@ impl BrowserWorker {
     fn new(
         browser: Browser,
         axe_source: String,
-        rx: std_mpsc::Receiver<(BrowserRequest, tokio::sync::oneshot::Sender<BrowserResponse>)>,
+        rx: std_mpsc::Receiver<(
+            BrowserRequest,
+            tokio::sync::oneshot::Sender<BrowserResponse>,
+        )>,
     ) -> Result<Self, ObscuraError> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -151,50 +152,32 @@ impl BrowserWorker {
                     allow_private_network,
                     allow_file_access,
                 } => self.handle_navigate(&url, allow_private_network, allow_file_access),
-                BrowserRequest::EvalJs(expr) => {
-                    self.handle_eval_js(&expr)
-                }
-                BrowserRequest::Click(selector) => {
-                    self.handle_click(&selector)
-                }
-                BrowserRequest::Screenshot => {
-                    self.handle_screenshot()
-                }
-                BrowserRequest::A11yTree => {
-                    self.handle_a11y_tree()
-                }
-                BrowserRequest::PageContext => {
-                    self.handle_page_context()
-                }
+                BrowserRequest::EvalJs(expr) => self.handle_eval_js(&expr),
+                BrowserRequest::Click(selector) => self.handle_click(&selector),
+                BrowserRequest::Screenshot => self.handle_screenshot(),
+                BrowserRequest::A11yTree => self.handle_a11y_tree(),
+                BrowserRequest::PageContext => self.handle_page_context(),
                 BrowserRequest::TypeInput(selector, value) => {
                     self.handle_type_input(&selector, &value)
                 }
-                BrowserRequest::PressKey(key) => {
-                    self.handle_press_key(&key)
-                }
-                BrowserRequest::TabOrder => {
-                    self.handle_tab_order()
-                }
-                BrowserRequest::AssertState(script) => {
-                    self.handle_assert_state(&script)
-                }
-                BrowserRequest::Analyze(request) => {
-                    self.handle_analyze(&request)
-                }
+                BrowserRequest::PressKey(key) => self.handle_press_key(&key),
+                BrowserRequest::TabOrder => self.handle_tab_order(),
+                BrowserRequest::AssertState(script) => self.handle_assert_state(&script),
+                BrowserRequest::Analyze(request) => self.handle_analyze(&request),
                 BrowserRequest::Shutdown => {
                     break;
                 }
             };
-            if reply.send(response).is_err() {
-                break;
-            }
+            // A cancelled caller must not kill the shared worker: drop the
+            // undeliverable response and keep serving later requests.
+            let _ = reply.send(response);
         }
     }
 
     fn page_mut(&mut self) -> Result<&mut Page, ObscuraError> {
-        self.page.as_mut().ok_or_else(|| {
-            ObscuraError::Evaluation("no page open: navigate to a URL first".into())
-        })
+        self.page
+            .as_mut()
+            .ok_or_else(|| ObscuraError::Evaluation("no page open: navigate to a URL first".into()))
     }
 
     fn handle_navigate(
@@ -210,12 +193,19 @@ impl BrowserWorker {
         }
         // Destructure so the async block borrows disjoint fields, never `self`.
         let Self {
-            browser, page, runtime, ..
+            browser,
+            page,
+            runtime,
+            ..
         } = &mut *self;
         let result = runtime.block_on(async {
-            let mut new_page = browser.new_page().await
+            let mut new_page = browser
+                .new_page()
+                .await
                 .map_err(|e| ObscuraError::ProcessStartup(format!("failed to create page: {e}")))?;
-            new_page.goto(url).await
+            new_page
+                .goto(url)
+                .await
                 .map_err(|e| ObscuraError::Navigation(format!("navigation failed: {e}")))?;
             // Enforce the same policy on the post-navigation URL so redirects
             // to private/file targets cannot bypass the pre-navigation check.
@@ -351,10 +341,7 @@ impl BrowserWorker {
         // Serialize both values as JSON string literals and interpolate them
         // directly — never inside manually-escaped JS string delimiters — so
         // adversarial quotes/backslashes cannot break out (CWE-95).
-        let script = match (
-            serde_json::to_string(selector),
-            serde_json::to_string(text),
-        ) {
+        let script = match (serde_json::to_string(selector), serde_json::to_string(text)) {
             (Ok(selector_json), Ok(text_json)) => format!(
                 r#"(function() {{
                     var el = document.querySelector({selector});
@@ -434,9 +421,7 @@ impl BrowserWorker {
             Err(e) => Err(e),
         };
         match result {
-            Ok(v) => BrowserResponse::VecString(
-                v.into_iter().map(|v| v.to_string()).collect(),
-            ),
+            Ok(v) => BrowserResponse::VecString(v.into_iter().map(|v| v.to_string()).collect()),
             Err(e) => BrowserResponse::Error(e),
         }
     }
@@ -449,6 +434,17 @@ impl BrowserWorker {
     }
 
     fn handle_analyze(&mut self, request: &AnalyzeRequest) -> BrowserResponse {
+        // Pre-navigation policy check with this request's flags, so the
+        // initial fetch never runs against a denied target — even when the
+        // dependency honors the process-wide OBSCURA_ALLOW_PRIVATE_NETWORK
+        // opt-in. The post-navigation check below covers redirects.
+        if let Err(e) = crate::validate_url_for_navigation(
+            &request.url,
+            request.config.allow_private_network,
+            request.config.allow_file_access,
+        ) {
+            return BrowserResponse::Error(e);
+        }
         // Destructure so the async block borrows disjoint fields, never `self`.
         let Self {
             browser,
@@ -465,13 +461,15 @@ impl BrowserWorker {
             let page: &mut Page = match page.as_mut() {
                 Some(p) => p,
                 None => {
-                    let new_page = browser.new_page().await
-                        .map_err(|e| ObscuraError::ProcessStartup(format!("failed to create page: {e}")))?;
+                    let new_page = browser.new_page().await.map_err(|e| {
+                        ObscuraError::ProcessStartup(format!("failed to create page: {e}"))
+                    })?;
                     page.insert(new_page)
                 }
             };
 
-            page.goto(&request.url).await
+            page.goto(&request.url)
+                .await
                 .map_err(|e| ObscuraError::Navigation(format!("navigation failed: {e}")))?;
 
             // Same redirect policy as `handle_navigate`, with this request's flags.
@@ -498,13 +496,13 @@ impl BrowserWorker {
             // Let async IIFE resolve
             page.settle(5000).await;
 
-            let violations_json = page.evaluate(
-                r#"typeof __axeResult !== 'undefined' ? __axeResult : '[]'"#
-            );
+            let violations_json =
+                page.evaluate(r#"typeof __axeResult !== 'undefined' ? __axeResult : '[]'"#);
 
             let violations: serde_json::Value = match violations_json.as_str() {
-                Some(s) => serde_json::from_str(s)
-                    .map_err(|e| ObscuraError::Json(format!("failed to parse axe violations: {e}")))?,
+                Some(s) => serde_json::from_str(s).map_err(|e| {
+                    ObscuraError::Json(format!("failed to parse axe violations: {e}"))
+                })?,
                 None => serde_json::Value::Array(vec![]),
             };
 
@@ -530,45 +528,48 @@ impl BrowserWorker {
 
 /// Handle to the browser running on a dedicated thread.
 /// Send+Sync because it only holds a channel sender.
+/// The channel is unbounded so concurrent operations queue behind the worker
+/// instead of failing with "request queue full"; `send` on an unbounded
+/// std channel never blocks, so Tokio callers stay non-blocking.
 pub struct BrowserHandle {
-    tx: std_mpsc::SyncSender<(BrowserRequest, tokio::sync::oneshot::Sender<BrowserResponse>)>,
+    tx: std_mpsc::Sender<(
+        BrowserRequest,
+        tokio::sync::oneshot::Sender<BrowserResponse>,
+    )>,
 }
 
 impl BrowserHandle {
     fn new(
-        tx: std_mpsc::SyncSender<(BrowserRequest, tokio::sync::oneshot::Sender<BrowserResponse>)>,
+        tx: std_mpsc::Sender<(
+            BrowserRequest,
+            tokio::sync::oneshot::Sender<BrowserResponse>,
+        )>,
     ) -> Self {
         Self { tx }
     }
 
     /// Channel for tests/plumbing with no browser backend; every send fails.
     fn disconnected() -> Self {
-        let (tx, rx) = std_mpsc::sync_channel::<(
+        let (tx, rx) = std_mpsc::channel::<(
             BrowserRequest,
             tokio::sync::oneshot::Sender<BrowserResponse>,
-        )>(1);
+        )>();
         drop(rx);
         Self { tx }
     }
 
-    pub(crate) async fn send_async(&self, request: BrowserRequest) -> Result<BrowserResponse, ObscuraError> {
-        use std::sync::mpsc::TrySendError;
+    pub(crate) async fn send_async(
+        &self,
+        request: BrowserRequest,
+    ) -> Result<BrowserResponse, ObscuraError> {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        // `try_send` — never block a Tokio worker on a full queue.
-        match self.tx.try_send((request, reply_tx)) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) => {
-                return Err(ObscuraError::ProcessStartup(
-                    "browser worker busy: request queue full".into(),
-                ))
-            }
-            Err(TrySendError::Disconnected(_)) => {
-                return Err(ObscuraError::ProcessStartup(
-                    "browser worker channel closed".into(),
-                ))
-            }
-        }
-        reply_rx.await
+        // Unbounded channel: `send` never blocks a Tokio worker, and
+        // concurrent operations queue instead of failing when busy.
+        self.tx
+            .send((request, reply_tx))
+            .map_err(|_| ObscuraError::ProcessStartup("browser worker channel closed".into()))?;
+        reply_rx
+            .await
             .map_err(|_| ObscuraError::ProcessStartup("browser worker response dropped".into()))
     }
 
@@ -582,11 +583,14 @@ impl BrowserHandle {
         allow_private_network: bool,
         allow_file_access: bool,
     ) -> Result<(), ObscuraError> {
-        match self.send_async(BrowserRequest::Navigate {
-            url: url.to_string(),
-            allow_private_network,
-            allow_file_access,
-        }).await? {
+        match self
+            .send_async(BrowserRequest::Navigate {
+                url: url.to_string(),
+                allow_private_network,
+                allow_file_access,
+            })
+            .await?
+        {
             BrowserResponse::Unit(()) => Ok(()),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
@@ -594,7 +598,10 @@ impl BrowserHandle {
     }
 
     pub async fn eval_js(&self, expr: &str) -> Result<serde_json::Value, ObscuraError> {
-        match self.send_async(BrowserRequest::EvalJs(expr.to_string())).await? {
+        match self
+            .send_async(BrowserRequest::EvalJs(expr.to_string()))
+            .await?
+        {
             BrowserResponse::Value(v) => Ok(v),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
@@ -602,7 +609,10 @@ impl BrowserHandle {
     }
 
     pub async fn click(&self, selector: &str) -> Result<(), ObscuraError> {
-        match self.send_async(BrowserRequest::Click(selector.to_string())).await? {
+        match self
+            .send_async(BrowserRequest::Click(selector.to_string()))
+            .await?
+        {
             BrowserResponse::Unit(()) => Ok(()),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
@@ -634,7 +644,13 @@ impl BrowserHandle {
     }
 
     pub async fn type_input(&self, selector: &str, text: &str) -> Result<(), ObscuraError> {
-        match self.send_async(BrowserRequest::TypeInput(selector.to_string(), text.to_string())).await? {
+        match self
+            .send_async(BrowserRequest::TypeInput(
+                selector.to_string(),
+                text.to_string(),
+            ))
+            .await?
+        {
             BrowserResponse::Unit(()) => Ok(()),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
@@ -642,7 +658,10 @@ impl BrowserHandle {
     }
 
     pub async fn press_key(&self, key: &str) -> Result<(), ObscuraError> {
-        match self.send_async(BrowserRequest::PressKey(key.to_string())).await? {
+        match self
+            .send_async(BrowserRequest::PressKey(key.to_string()))
+            .await?
+        {
             BrowserResponse::Unit(()) => Ok(()),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
@@ -651,26 +670,34 @@ impl BrowserHandle {
 
     pub async fn tab_order(&self) -> Result<Vec<serde_json::Value>, ObscuraError> {
         match self.send_async(BrowserRequest::TabOrder).await? {
-            BrowserResponse::VecString(v) => {
-                v.into_iter()
-                    .map(|s| serde_json::from_str(&s).map_err(|e| ObscuraError::Json(e.to_string())))
-                    .collect()
-            }
+            BrowserResponse::VecString(v) => v
+                .into_iter()
+                .map(|s| serde_json::from_str(&s).map_err(|e| ObscuraError::Json(e.to_string())))
+                .collect(),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
         }
     }
 
     pub async fn assert_state(&self, script: &str) -> Result<serde_json::Value, ObscuraError> {
-        match self.send_async(BrowserRequest::AssertState(script.to_string())).await? {
+        match self
+            .send_async(BrowserRequest::AssertState(script.to_string()))
+            .await?
+        {
             BrowserResponse::Value(v) => Ok(v),
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
         }
     }
 
-    pub async fn analyze(&self, request: &AnalyzeRequest) -> Result<AnalyzePageResult, ObscuraError> {
-        match self.send_async(BrowserRequest::Analyze(request.clone())).await? {
+    pub async fn analyze(
+        &self,
+        request: &AnalyzeRequest,
+    ) -> Result<AnalyzePageResult, ObscuraError> {
+        match self
+            .send_async(BrowserRequest::Analyze(request.clone()))
+            .await?
+        {
             BrowserResponse::AnalyzeResult(r) => r,
             BrowserResponse::Error(e) => Err(e),
             _ => Err(ObscuraError::Evaluation("unexpected response type".into())),
@@ -680,7 +707,9 @@ impl BrowserHandle {
 
 impl Clone for BrowserHandle {
     fn clone(&self) -> Self {
-        Self { tx: self.tx.clone() }
+        Self {
+            tx: self.tx.clone(),
+        }
     }
 }
 
@@ -699,7 +728,7 @@ impl ObscuraNative {
 
         let axe_source = AXE_SOURCE.to_string();
 
-        let (tx, rx) = std_mpsc::sync_channel(1);
+        let (tx, rx) = std_mpsc::channel();
 
         thread::spawn(move || match BrowserWorker::new(browser, axe_source, rx) {
             Ok(worker) => worker.run(),
@@ -717,7 +746,10 @@ impl ObscuraNative {
         }
     }
 
-    pub async fn analyze(&self, request: &AnalyzeRequest) -> Result<AnalyzePageResult, ObscuraError> {
+    pub async fn analyze(
+        &self,
+        request: &AnalyzeRequest,
+    ) -> Result<AnalyzePageResult, ObscuraError> {
         self.handle
             .send_async(BrowserRequest::Analyze(request.clone()))
             .await
@@ -744,7 +776,9 @@ impl ObscuraNative {
         &self,
         test: &GuidedTest,
     ) -> Result<GuidedRunResult, ObscuraError> {
-        let mut executor = ObscuraBrowserExecutor { handle: self.handle.clone() };
+        let mut executor = ObscuraBrowserExecutor {
+            handle: self.handle.clone(),
+        };
         let root = std::env::temp_dir()
             .join("rgaa-guided-evidence")
             .join(&test.id);
@@ -774,12 +808,15 @@ impl GuidedExecutor for ObscuraBrowserExecutor {
         // We use send_async to avoid blocking the tokio runtime.
         match action {
             GuidedAction::Navigate { url } => {
-                let resp = self.handle.send_async(BrowserRequest::Navigate {
-                    url: url.clone(),
-                    // Guided tests carry no policy flags; enforce default-deny.
-                    allow_private_network: false,
-                    allow_file_access: false,
-                }).await?;
+                let resp = self
+                    .handle
+                    .send_async(BrowserRequest::Navigate {
+                        url: url.clone(),
+                        // Guided tests carry no policy flags; enforce default-deny.
+                        allow_private_network: false,
+                        allow_file_access: false,
+                    })
+                    .await?;
                 match resp {
                     BrowserResponse::Unit(()) => Ok(GuidedObservation::default()),
                     BrowserResponse::Error(e) => Err(e),
@@ -795,14 +832,20 @@ impl GuidedExecutor for ObscuraBrowserExecutor {
                             .as_array()
                             .map(|items| items.iter().map(|item| item.to_string()).collect())
                             .unwrap_or_default();
-                        Ok(GuidedObservation { tree_refs: refs, ..Default::default() })
+                        Ok(GuidedObservation {
+                            tree_refs: refs,
+                            ..Default::default()
+                        })
                     }
                     BrowserResponse::Error(e) => Err(e),
                     _ => Err(ObscuraError::Evaluation("unexpected response".into())),
                 }
             }
             GuidedAction::PressKey { key } => {
-                let resp = self.handle.send_async(BrowserRequest::PressKey(key.clone())).await?;
+                let resp = self
+                    .handle
+                    .send_async(BrowserRequest::PressKey(key.clone()))
+                    .await?;
                 match resp {
                     BrowserResponse::Unit(()) => Ok(GuidedObservation::default()),
                     BrowserResponse::Error(e) => Err(e),
@@ -810,7 +853,10 @@ impl GuidedExecutor for ObscuraBrowserExecutor {
                 }
             }
             GuidedAction::ClickRef { reference } => {
-                let resp = self.handle.send_async(BrowserRequest::Click(reference.clone())).await?;
+                let resp = self
+                    .handle
+                    .send_async(BrowserRequest::Click(reference.clone()))
+                    .await?;
                 match resp {
                     BrowserResponse::Unit(()) => Ok(GuidedObservation::default()),
                     BrowserResponse::Error(e) => Err(e),
@@ -818,9 +864,10 @@ impl GuidedExecutor for ObscuraBrowserExecutor {
                 }
             }
             GuidedAction::FillRef { reference, value } => {
-                let resp = self.handle.send_async(
-                    BrowserRequest::TypeInput(reference.clone(), value.clone())
-                ).await?;
+                let resp = self
+                    .handle
+                    .send_async(BrowserRequest::TypeInput(reference.clone(), value.clone()))
+                    .await?;
                 match resp {
                     BrowserResponse::Unit(()) => Ok(GuidedObservation::default()),
                     BrowserResponse::Error(e) => Err(e),
@@ -831,9 +878,9 @@ impl GuidedExecutor for ObscuraBrowserExecutor {
                 let resp = self.handle.send_async(BrowserRequest::Screenshot).await?;
                 match resp {
                     BrowserResponse::String(s) => {
-                        let data = base64::Engine::decode(
-                            &base64::engine::general_purpose::STANDARD, &s
-                        ).unwrap_or_default();
+                        let data =
+                            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &s)
+                                .unwrap_or_default();
                         Ok(GuidedObservation {
                             evidence: vec![EvidenceArtifact::new("screenshot", data)],
                             ..Default::default()
@@ -849,11 +896,17 @@ impl GuidedExecutor for ObscuraBrowserExecutor {
                 }
             }
             GuidedAction::AssertState { .. } => {
-                let resp = self.handle.send_async(
-                    BrowserRequest::AssertState(r#"JSON.stringify({url: location.href, title: document.title})"#.into())
-                ).await?;
+                let resp = self
+                    .handle
+                    .send_async(BrowserRequest::AssertState(
+                        r#"JSON.stringify({url: location.href, title: document.title})"#.into(),
+                    ))
+                    .await?;
                 match resp {
-                    BrowserResponse::Value(v) => Ok(GuidedObservation { state: Some(v), ..Default::default() }),
+                    BrowserResponse::Value(v) => Ok(GuidedObservation {
+                        state: Some(v),
+                        ..Default::default()
+                    }),
                     BrowserResponse::Error(e) => Err(e),
                     _ => Err(ObscuraError::Evaluation("unexpected response".into())),
                 }

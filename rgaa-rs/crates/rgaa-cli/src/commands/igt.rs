@@ -45,7 +45,8 @@ pub async fn run(args: IgtArgs) -> Result<i32, CliError> {
         evidence_requirements: Vec::new(),
     };
 
-    let bridge = ObscuraBridge::from_env_async().await
+    let bridge = ObscuraBridge::from_env_async()
+        .await
         .map_err(|error| CliError::execution(format!("browser unavailable: {error}")))?;
     let result = bridge
         .run_guided_test(&test)

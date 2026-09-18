@@ -314,5 +314,3 @@ fn reason_for(error: &ObscuraError) -> TerminationReason {
         TerminationReason::ExecutionError
     }
 }
-
-

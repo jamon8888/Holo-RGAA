@@ -243,7 +243,6 @@ async fn test_guided_stateful_fill_and_observed_state() {
                 reference: "input[name=name]".into(),
                 value: "Ada".into(),
             },
-            GuidedStep::AccessibilityTree,
         ],
         criterion_mapping: vec!["11.1".into()],
         evidence_requirements: vec!["tree".into()],
@@ -255,8 +254,17 @@ async fn test_guided_stateful_fill_and_observed_state() {
         .expect("stateful guided run returns an envelope");
 
     assert!(result.is_pass(), "state did not persist: {result:?}");
-    assert_eq!(result.completed_steps, 4);
+    assert_eq!(result.completed_steps, 3);
     assert_eq!(result.terminated_reason, TerminationReason::Completed);
+
+    // The accessibility tree does not observe the input value: assert the
+    // filled value directly on the live bridge after the guided run.
+    // `run_guided_test` clones the browser handle, so the bridge stays usable.
+    let value = bridge
+        .eval_js("document.querySelector('input[name=name]').value")
+        .await
+        .expect("input value is readable");
+    assert_eq!(value, serde_json::Value::String("Ada".into()));
 }
 
 // Live: analysis of a labeled third-party form completes and carries the
@@ -279,10 +287,7 @@ async fn test_form_analysis_completes_without_label_findings() {
     let result = bridge.analyze(&request).await;
 
     let result = result.expect("labeled-form analysis should be accepted");
-    assert!(
-        result.completed,
-        "analysis must complete: {result:?}"
-    );
+    assert!(result.completed, "analysis must complete: {result:?}");
     assert!(
         result.errors.is_empty(),
         "analysis returned errors: {:?}",

@@ -66,9 +66,7 @@ impl Storage {
     }
 
     pub fn get_audit(&self, id: &str) -> Result<Option<rgaa_core::AuditResult>, StorageError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT data FROM audits WHERE id = ?1")?;
+        let mut stmt = self.conn.prepare("SELECT data FROM audits WHERE id = ?1")?;
         let mut rows = stmt.query(params![id])?;
         if let Some(row) = rows.next()? {
             let data: String = row.get(0)?;

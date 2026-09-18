@@ -108,7 +108,13 @@ jobs:
           # RUSTSEC-2023-0071: ReDoS in regex-lite via bstr dependency chain (fastembed).
           # Not introduced by our code; transitive dependency on regex 1.x through fastembed.
           # Tracking: https://github.com/oxalorg/regex/issues/702
-          ignore: "RUSTSEC-2023-0071"
+          # RUSTSEC-2025-0141: bincode 1.x unmaintained (maintainers ceased development).
+          # Pinned transitive dependency of deno_core via the obscura browser substrate;
+          # no upgrade path until upstream migrates. Used for trusted IPC payloads only.
+          # RUSTSEC-2025-0057: fxhash unmaintained.
+          # Pinned transitive dependency via html5ever/markup5ever string_cache;
+          # upstream replacement is rustc-hash, pending upstream migration.
+          ignore: "RUSTSEC-2023-0071,RUSTSEC-2025-0141,RUSTSEC-2025-0057"
 
   e2e:
     name: E2E (browser + agent + orchestrator)

@@ -4,21 +4,21 @@
 pub mod config;
 pub mod evidence;
 pub mod guided;
-pub mod results;
 pub mod native;
+pub mod results;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
-    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy, Viewport,
-    WaitForState, MAX_WAITFOR_TIMEOUT_MS,
+    NeedsReviewPolicy, PreScanAction, ScreenshotConfig, ScreenshotFormat, ScreenshotPolicy,
+    Viewport, WaitForState, MAX_WAITFOR_TIMEOUT_MS,
 };
 pub use evidence::{EvidenceArtifact, EvidenceRef, EvidenceStore};
 pub use guided::{
     is_stable_accessibility_reference, GuidedAction, GuidedExecutor, GuidedObservation,
     GuidedRunResult, GuidedStep, GuidedTest, TerminationReason,
 };
+pub use native::{BrowserHandle, ObscuraNative};
 pub use results::{AnalyzePageResult, IgtElement, IgtIssue, IgtResult, IgtResults, ObscuraError};
-pub use native::{ObscuraNative, BrowserHandle};
 
 /// High-level async wrapper around the native Obscura library.
 /// Send+Sync because the browser runs on a dedicated thread.
@@ -37,11 +37,7 @@ impl ObscuraBridge {
     /// http(s) — the DNS-resolved destination addresses, so a public hostname
     /// resolving to a private address cannot bypass the default-deny policy.
     fn validate_url_security(url: &str, config: &AnalyzeConfig) -> Result<(), ObscuraError> {
-        validate_url_for_navigation(
-            url,
-            config.allow_private_network,
-            config.allow_file_access,
-        )
+        validate_url_for_navigation(url, config.allow_private_network, config.allow_file_access)
     }
 
     /// Create a bridge from environment variable `RGAA_OBSCURA_BIN`.
@@ -58,12 +54,18 @@ impl ObscuraBridge {
         }
     }
 
-    pub async fn analyze(&self, request: &AnalyzeRequest) -> Result<AnalyzePageResult, ObscuraError> {
+    pub async fn analyze(
+        &self,
+        request: &AnalyzeRequest,
+    ) -> Result<AnalyzePageResult, ObscuraError> {
         Self::validate_url_security(&request.url, &request.config)?;
         self.native.analyze(request).await
     }
 
-    pub async fn run_guided_test(&self, test: &GuidedTest) -> Result<GuidedRunResult, ObscuraError> {
+    pub async fn run_guided_test(
+        &self,
+        test: &GuidedTest,
+    ) -> Result<GuidedRunResult, ObscuraError> {
         self.native.run_guided_test(test).await
     }
 
@@ -73,7 +75,10 @@ impl ObscuraBridge {
     /// preserves page content for NA detection and AI-assisted evaluation.
     pub async fn extract_page_context(&self, url: &str) -> Result<serde_json::Value, ObscuraError> {
         let config = AnalyzeConfig {
-            viewport: Viewport { width: 1280, height: 720 },
+            viewport: Viewport {
+                width: 1280,
+                height: 720,
+            },
             ..Default::default()
         };
         Self::validate_url_security(url, &config)?;
@@ -94,7 +99,11 @@ impl ObscuraBridge {
     }
 
     /// Run axe-core analysis on multiple URLs
-    pub async fn run_axe_batch(&self, urls: &[String], _concurrency: usize) -> Result<Vec<(String, String)>, ObscuraError> {
+    pub async fn run_axe_batch(
+        &self,
+        urls: &[String],
+        _concurrency: usize,
+    ) -> Result<Vec<(String, String)>, ObscuraError> {
         let mut results = Vec::with_capacity(urls.len());
         for url in urls {
             let axe_json = self.run_axe(url).await?;
@@ -104,7 +113,11 @@ impl ObscuraBridge {
     }
 
     /// Extract page context for multiple URLs
-    pub async fn extract_page_context_batch(&self, urls: &[String], _concurrency: usize) -> Result<Vec<(String, serde_json::Value)>, ObscuraError> {
+    pub async fn extract_page_context_batch(
+        &self,
+        urls: &[String],
+        _concurrency: usize,
+    ) -> Result<Vec<(String, serde_json::Value)>, ObscuraError> {
         let mut results = Vec::with_capacity(urls.len());
         for url in urls {
             let ctx = self.extract_page_context(url).await?;
@@ -114,7 +127,11 @@ impl ObscuraBridge {
     }
 
     /// Run gap-fix JS snippets against a URL, returning per-criterion results
-    pub async fn run_gap_fix(&self, _url: &str, snippets: &std::collections::HashMap<String, &str>) -> Result<std::collections::HashMap<String, serde_json::Value>, ObscuraError> {
+    pub async fn run_gap_fix(
+        &self,
+        _url: &str,
+        snippets: &std::collections::HashMap<String, &str>,
+    ) -> Result<std::collections::HashMap<String, serde_json::Value>, ObscuraError> {
         let mut results = std::collections::HashMap::new();
         for (criterion_id, script) in snippets {
             // Execute each snippet via eval_js and parse the result
@@ -124,7 +141,10 @@ impl ObscuraBridge {
                 }
                 Err(e) => {
                     tracing::warn!(criterion_id, error = %e, "gap-fix snippet failed");
-                    results.insert(criterion_id.clone(), serde_json::json!({"pass": false, "details": e.to_string()}));
+                    results.insert(
+                        criterion_id.clone(),
+                        serde_json::json!({"pass": false, "details": e.to_string()}),
+                    );
                 }
             }
         }
@@ -154,12 +174,20 @@ impl ObscuraBridge {
     }
 
     /// Get the accessibility tree
-    pub async fn get_accessibility_tree(&self, _url: &str) -> Result<serde_json::Value, ObscuraError> {
+    pub async fn get_accessibility_tree(
+        &self,
+        _url: &str,
+    ) -> Result<serde_json::Value, ObscuraError> {
         self.native.handle.a11y_tree().await
     }
 
     /// Type text into an input element
-    pub async fn type_input(&self, _url: &str, selector: &str, text: &str) -> Result<(), ObscuraError> {
+    pub async fn type_input(
+        &self,
+        _url: &str,
+        selector: &str,
+        text: &str,
+    ) -> Result<(), ObscuraError> {
         self.native.handle.type_input(selector, text).await
     }
 
@@ -174,7 +202,11 @@ impl ObscuraBridge {
     }
 
     /// Assert page state by evaluating a JavaScript predicate
-    pub async fn assert_state(&self, _url: &str, script: &str) -> Result<serde_json::Value, ObscuraError> {
+    pub async fn assert_state(
+        &self,
+        _url: &str,
+        script: &str,
+    ) -> Result<serde_json::Value, ObscuraError> {
         self.native.handle.assert_state(script).await
     }
 
@@ -210,6 +242,11 @@ impl ObscuraBridge {
 /// resolving to a private address cannot bypass the default-deny policy.
 /// The same check must be applied to the post-navigation URL to cover
 /// redirects at the browser network boundary.
+///
+/// A request-level `allow_private_network = false` is a hard deny: this
+/// check deliberately ignores the process-wide `OBSCURA_ALLOW_PRIVATE_NETWORK`
+/// opt-in honored inside the dependency's HTTP client, so a denied target is
+/// rejected before `Page::goto` runs and again on the post-navigation URL.
 ///
 /// DNS resolution failure fails open (the literal-host check still applies)
 /// so offline or misconfigured DNS does not hard-fail static validation.
@@ -269,14 +306,14 @@ fn is_private_ip(ip: &std::net::IpAddr) -> bool {
                 || (v4.octets()[0] == 192 && v4.octets()[1] == 0 && v4.octets()[2] == 2)  // 192.0.2.0/24 (TEST-NET-1)
                 || (v4.octets()[0] == 198 && v4.octets()[1] == 51 && v4.octets()[2] == 100)  // 198.51.100.0/24 (TEST-NET-2)
                 || (v4.octets()[0] == 203 && v4.octets()[1] == 0 && v4.octets()[2] == 113)  // 203.0.113.0/24 (TEST-NET-3)
-                || v4.octets()[0] >= 224  // multicast + broadcast
+                || v4.octets()[0] >= 224 // multicast + broadcast
         }
         std::net::IpAddr::V6(v6) => {
             v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_unicast_link_local()
                 || v6.segments()[0] == 0xfe80  // link-local
-                || v6.segments()[0] & 0xFE00 == 0xFC00  // ULA (fc00::/7)
+                || v6.segments()[0] & 0xFE00 == 0xFC00 // ULA (fc00::/7)
         }
     }
 }
@@ -311,7 +348,8 @@ mod tests {
         let result = bridge.run_axe("https://example.com").await;
         assert!(result.is_ok(), "Failed to run axe: {:?}", result.err());
         let ax = result.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&ax).expect("axe result must be parseable JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&ax).expect("axe result must be parseable JSON");
         assert!(parsed.is_array(), "axe result must be a JSON array");
     }
 
@@ -320,9 +358,16 @@ mod tests {
     async fn test_obscura_bridge_extract_page_context() {
         let bridge = ObscuraBridge::new().await.unwrap();
         let result = bridge.extract_page_context("https://example.com").await;
-        assert!(result.is_ok(), "Failed to extract page context: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to extract page context: {:?}",
+            result.err()
+        );
         let context = result.unwrap();
-        assert!(context.get("title").is_some(), "Missing title in page context");
+        assert!(
+            context.get("title").is_some(),
+            "Missing title in page context"
+        );
     }
 
     #[tokio::test]
@@ -334,7 +379,11 @@ mod tests {
             "https://example.org".to_string(),
         ];
         let results = bridge.run_axe_batch(&urls, 2).await;
-        assert!(results.is_ok(), "Failed to run axe batch: {:?}", results.err());
+        assert!(
+            results.is_ok(),
+            "Failed to run axe batch: {:?}",
+            results.err()
+        );
         let results = results.unwrap();
         assert_eq!(results.len(), 2);
     }
@@ -371,7 +420,9 @@ mod tests {
         // File URLs should pass with flag
         let mut config_file = config.clone();
         config_file.allow_file_access = true;
-        assert!(ObscuraBridge::validate_url_security("file:///tmp/test.html", &config_file).is_ok());
+        assert!(
+            ObscuraBridge::validate_url_security("file:///tmp/test.html", &config_file).is_ok()
+        );
 
         // Private IPs should fail without flag
         assert!(ObscuraBridge::validate_url_security("http://192.168.1.1/", &config).is_err());

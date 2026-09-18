@@ -49,7 +49,7 @@ on:
         type: string
 ```
 
-Add a top-level `env: TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}`, replace every `${{ github.ref_name }}` in the file with `${{ env.TAG }}`, change every `checkout` `ref:` to `${{ github.ref_type == 'tag' && github.ref_name || github.sha }}`, and rename artifacts to `rgaa-rs-${{ env.TAG }}-${{ matrix.target }}` (updating all `download-artifact` names, including the new installer-e2e job) so stable and `latest` runs never collide.
+Add a top-level `env: TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}`, replace every `${{ github.ref_name }}` in the file with `${{ env.TAG }}`, change every `checkout` `ref:` to `${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || github.sha }}` (manual dispatches check out the requested tag instead of publishing the dispatch branch under an unrelated tag), and rename artifacts to `rgaa-rs-${{ env.TAG }}-${{ matrix.target }}` (updating all `download-artifact` names, including the new installer-e2e job) so stable and `latest` runs never collide.
 
 - [ ] **Step 1: Delete `release-latest.yml` and `cargo-dist.toml`**
 
@@ -129,9 +129,9 @@ Write `rgaa-rs/install.sh`:
 #!/bin/bash
 # DEPRECATED: this installer is stale (wrong asset names, binaries-only).
 # It forwards to the real one-command installer at the repo root.
-echo "WARNING: rgaa-rs/install.sh is deprecated; using ../../install.sh" >&2
+echo "WARNING: rgaa-rs/install.sh is deprecated; using ../install.sh" >&2
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "${SCRIPT_DIR}/../../install.sh" "$@"
+exec bash "${SCRIPT_DIR}/../install.sh" "$@"
 ```
 
 - [ ] **Step 2: Verify the stub resolves and commit**
@@ -196,22 +196,26 @@ Replace the repo-root obscura copy block with a call to `install_obscura "$(dete
 
 - [ ] **Step 4: Extend `verify_install` with version gates + MCP probe**
 
-After the binary-exists loop, add (only `rgaa` and `rgaa-cli` implement
-`--version` today — `rgaa-api`/`rgaa-mcp` are gated on `--help`, matching the
-existing smoke job):
+First give `rgaa-api` and `rgaa-mcp` `--version` support (neither parses CLI
+flags today — add an early `std::env::args` check printing
+`rgaa-api 0.1.0` / `rgaa-mcp 0.1.0` and exiting 0, matching the spec's
+`--version` contract for all four binaries), then gate all four on it:
 
 ```bash
-for bin in rgaa rgaa-cli; do
+for bin in rgaa rgaa-cli rgaa-api rgaa-mcp; do
     "${INSTALL_DIR}/${bin}" --version >/dev/null 2>&1 \
         || { err "  ${bin}: --version failed"; ((failures++)); }
 done
-for bin in rgaa-api rgaa-mcp; do
-    "${INSTALL_DIR}/${bin}" --help >/dev/null 2>&1 \
-        || { err "  ${bin}: --help failed"; ((failures++)); }
-done
-# MCP stdio probe: exit 124 means `timeout` killed an idle healthy server.
+# MCP stdio probe: exit 124 means the timeout killed an idle healthy server.
+# Portable on clean macOS (no GNU `timeout`): use `gtimeout` when present,
+# else a perl alarm (perl ships with macOS).
+run_with_timeout() {
+    if command -v timeout >/dev/null 2>&1; then timeout "$@";
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$@";
+    else perl -e 'alarm shift; exec @ARGV' "$@"; fi
+}
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' \
-    | timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
+    | run_with_timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
 if [ "$?" -ne 124 ]; then
     err "  rgaa-mcp: stdio start probe failed"
     ((failures++))
@@ -249,18 +253,20 @@ if ($env:RGAA_RELEASE_URL_BASE) {
 
 - [ ] **Step 2: Add plugin fetch + default config**
 
-Fetch `https://codeload.github.com/${Repo}/tar.gz/${Version}`, extract `claude-plugin/` to `$env:USERPROFILE\.claude\plugins\rgaa-audit` (copy, warn-and-continue on failure). Write the same default `.rgaa/config.yaml` content as `install.sh:create_default_config` into the current directory when absent.
+Fetch `https://codeload.github.com/${Repo}/tar.gz/${Version}`, extract with a
+tar-compatible tool (`tar -xzf` — ships with Windows 10+ as `tar.exe`; do NOT
+use `Expand-Archive`, which expects ZIP) and copy `claude-plugin/` to
+`$env:USERPROFILE\.claude\plugins\rgaa-audit` plus `rgaa-rs/plugins/rgaa-consultant`
+to its consultant destination (copy, warn-and-continue on failure). Write the same default `.rgaa/config.yaml` content as `install.sh:create_default_config` into the current directory when absent.
 
 - [ ] **Step 3: Add 4-bin version gates to the Verifying step**
 
+`rgaa-api`/`rgaa-mcp` gain `--version` in Task 3 Step 4 — gate all four on it:
+
 ```powershell
-foreach ($b in @("rgaa.exe","rgaa-cli.exe")) {
+foreach ($b in @("rgaa.exe","rgaa-cli.exe","rgaa-api.exe","rgaa-mcp.exe")) {
     & (Join-Path $InstallDir $b) --version
     if ($LASTEXITCODE -ne 0) { Write-Host "  ERROR: $b --version failed" -ForegroundColor Red; exit 1 }
-}
-foreach ($b in @("rgaa-api.exe","rgaa-mcp.exe")) {
-    & (Join-Path $InstallDir $b) --help 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Host "  ERROR: $b --help failed" -ForegroundColor Red; exit 1 }
 }
 ```
 
@@ -347,6 +353,12 @@ pub async fn from_env_async() -> Result<Self, ObscuraError> {
 
 No caller changes: `pipeline.rs:131`, `igt.rs:48`, `main.rs:14` already call `from_env_async`. The `tracing::info!` on bridge creation is the per-audit-run version log (a bridge is created per `run_batch`).
 
+Contract (explicit): `RGAA_OBSCURA_BIN` is compatibility validation only — the
+configured standalone binary is version-checked, never launched. The browser
+always comes from the embedded `Browser::builder()` substrate; a missing or
+drifted binary fails fast instead of silently running against the wrong
+backend. Acceptance: both `from_env_` tests pass; unset var skips validation.
+
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `cargo test -p rgaa-obscura from_env_`
@@ -403,6 +415,7 @@ Expected: commit created.
           echo "RGAA_VERSION=$TAG" >> $GITHUB_ENV
           mkdir -p /tmp/stage
           cp staged/*.tar.gz "/tmp/stage/rgaa-rs-${TAG}-${{ matrix.target }}.tar.gz"
+          cp rgaa-rs/crates/rgaa-test-corpus/criteria/8.5-page-title-pass.html /tmp/stage/fixture.html
           ls /tmp/stage
           echo "RGAA_RELEASE_URL_BASE=file:///tmp/stage" >> $GITHUB_ENV
           echo "RGAA_INSTALL_DIR=/tmp/rgaa-e2e-bin" >> $GITHUB_ENV
@@ -415,12 +428,22 @@ Expected: commit created.
         if: runner.os != 'Windows'
         run: |
           export PATH="/tmp/rgaa-e2e-bin:$PATH"
+          # Missing-key gate (no network): agent config must fail fast.
           unset HOLO3_API_KEY
-          out=$(rgaa-cli audit analyze --url https://example.com --format json 2>&1)
+          out=$(rgaa-cli audit analyze --url file:///tmp/stage/fixture.html --format json 2>&1)
           rc=$?
           echo "$out" | grep -q "invalid agent configuration" || { echo "E2E FAIL: expected agent-config gate, got: $out"; exit 1; }
           [ "$rc" -ne 0 ] || { echo "E2E FAIL: expected non-zero exit without HOLO3_API_KEY"; exit 1; }
           echo "wiring probe OK (installer -> binary -> orchestrator -> bridge -> agent gate)"
+      - name: Post-install assertions (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          test -x /tmp/rgaa-e2e-bin/rgaa-mcp || { echo "E2E FAIL: rgaa-mcp missing"; exit 1; }
+          grep -q "rgaa-mcp" ~/.claude/mcp.json || { echo "E2E FAIL: merged MCP entry missing"; exit 1; }
+          test -d "$HOME/.claude/plugins/rgaa-audit" || { echo "E2E FAIL: rgaa-audit plugin missing"; exit 1; }
+          test -d "$HOME/.claude/plugins/rgaa-consultant" || { echo "E2E FAIL: rgaa-consultant plugin missing"; exit 1; }
+          test -f .rgaa/config.yaml || { echo "E2E FAIL: default .rgaa/config.yaml missing"; exit 1; }
+          echo "post-install assertions OK"
       - name: Stage + install (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -428,6 +451,7 @@ Expected: commit created.
           if ([string]::IsNullOrEmpty($tag)) { $tag = "latest" }
           New-Item -ItemType Directory -Force -Path C:\stage | Out-Null
           Copy-Item "staged/*.zip" "C:\stage\rgaa-rs-${tag}-x86_64-pc-windows-msvc.zip" -Force
+          Copy-Item "rgaa-rs/crates/rgaa-test-corpus/criteria/8.5-page-title-pass.html" "C:\stage\fixture.html" -Force
           $env:RGAA_RELEASE_URL_BASE = "file:///C:/stage"
           .\rgaa-rs\install.ps1 -Version $tag
         shell: pwsh
@@ -436,9 +460,12 @@ Expected: commit created.
         run: |
           $env:Path = "$env:LOCALAPPDATA\rgaa\bin;$env:Path"
           $env:HOLO3_API_KEY = $null
-          $out = & rgaa-cli audit analyze --url https://example.com --format json 2>&1
+          $out = & rgaa-cli audit analyze --url file:///C:/stage/fixture.html --format json 2>&1
           if (($LASTEXITCODE -eq 0) -or !($out -match "invalid agent configuration")) { Write-Host "E2E FAIL: $($out)"; exit 1 }
           Write-Host "wiring probe OK"
+          if (!(Test-Path "$env:USERPROFILE\.claude\plugins\rgaa-audit")) { Write-Host "E2E FAIL: rgaa-audit plugin missing"; exit 1 }
+          if (!(Test-Path "$env:USERPROFILE\.claude\plugins\rgaa-consultant")) { Write-Host "E2E FAIL: rgaa-consultant plugin missing"; exit 1 }
+          if (!(Test-Path ".rgaa\config.yaml")) { Write-Host "E2E FAIL: default .rgaa/config.yaml missing"; exit 1 }
         shell: pwsh
 ```
 
@@ -448,6 +475,16 @@ Run: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.ym
 Expected: `YAML OK`.
 Run: `git add .github/workflows/release.yml && git commit -m "ci: installer-e2e job against staged artifacts"`
 Expected: commit created.
+
+- [ ] **Step 3: Run the same proof on every pull request**
+
+`release.yml` only triggers on tags and manual dispatches, so add an
+`installer-e2e-pr` job to `ci.yml` (runs on `pull_request`): build the 4 bins
+in debug, pack `rgaa-rs-<sha>-<target>.tar.gz` into `/tmp/stage`, copy
+`rgaa-rs/crates/rgaa-test-corpus/criteria/8.5-page-title-pass.html` to
+`/tmp/stage/fixture.html`, then run the Unix install + wiring probe +
+post-install assertions above with `RGAA_RELEASE_URL_BASE=file:///tmp/stage`
+and `--url file:///tmp/stage/fixture.html`. No external network in this path.
 
 ---
 

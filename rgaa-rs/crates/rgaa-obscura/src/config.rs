@@ -23,9 +23,17 @@ pub struct Viewport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PreScanAction {
-    Click { selector: String },
-    Fill { selector: String, value: String },
-    WaitFor { selector: String, state: WaitForState },
+    Click {
+        selector: String,
+    },
+    Fill {
+        selector: String,
+        value: String,
+    },
+    WaitFor {
+        selector: String,
+        state: WaitForState,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

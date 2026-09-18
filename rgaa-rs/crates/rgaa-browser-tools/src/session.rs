@@ -69,13 +69,19 @@ impl BrowserSession {
 
     /// Evaluate JavaScript in the current page
     pub async fn eval_js(&self, expression: &str) -> Result<serde_json::Value, String> {
-        self.bridge.eval_js(expression).await.map_err(|e| e.to_string())
+        self.bridge
+            .eval_js(expression)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Click an element by CSS selector
     pub async fn click_element(&self, selector: &str) -> Result<(), String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
-        self.bridge.click_element(url, selector).await.map_err(|e| e.to_string())
+        self.bridge
+            .click_element(url, selector)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Take a screenshot of the current page
@@ -87,31 +93,46 @@ impl BrowserSession {
     /// Get the accessibility tree for the current page
     pub async fn get_a11y_tree(&self) -> Result<serde_json::Value, String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
-        self.bridge.get_accessibility_tree(url).await.map_err(|e| e.to_string())
+        self.bridge
+            .get_accessibility_tree(url)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Type text into an input element by CSS selector
     pub async fn type_input(&self, selector: &str, text: &str) -> Result<(), String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
-        self.bridge.type_input(url, selector, text).await.map_err(|e| e.to_string())
+        self.bridge
+            .type_input(url, selector, text)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Press a keyboard key (e.g., "Tab", "Enter", "ArrowDown")
     pub async fn press_key(&self, key: &str) -> Result<(), String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
-        self.bridge.press_key(url, key).await.map_err(|e| e.to_string())
+        self.bridge
+            .press_key(url, key)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Get the tab order of focusable elements on the current page
     pub async fn get_tab_order(&self) -> Result<Vec<serde_json::Value>, String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
-        self.bridge.get_tab_order(url).await.map_err(|e| e.to_string())
+        self.bridge
+            .get_tab_order(url)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Assert page state by evaluating a JavaScript predicate
     pub async fn assert_state(&self, script: &str) -> Result<serde_json::Value, String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
-        self.bridge.assert_state(url, script).await.map_err(|e| e.to_string())
+        self.bridge
+            .assert_state(url, script)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Returns a reference to the last accessibility tree, if available.

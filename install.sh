@@ -140,7 +140,7 @@ download_and_install() {
     ensure_dep "curl" "brew install curl (macOS) or apt install curl (Linux)"
 
     tmpdir=$(mktemp -d)
-    trap "rm -rf '$tmpdir'" EXIT
+    trap 'rm -rf "$tmpdir"' EXIT
 
     local url
     url=$(get_release_url "$platform" "$RELEASE_TAG")
@@ -203,7 +203,7 @@ install_obscura() {
     local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d)
-    trap "rm -rf '$tmpdir'" EXIT
+    trap 'rm -rf "$tmpdir"' EXIT
 
     info "Downloading obscura ${OBSCURA_VERSION}..."
     if ! curl -fSL --progress-bar -o "${tmpdir}/obscura.tar.gz" "$url"; then
@@ -221,7 +221,6 @@ install_obscura() {
 
 build_from_source() {
     local repo_dir
-    local build_mode="${1:-release}"
 
     ensure_dep "git" "brew install git (macOS) or apt install git (Linux)"
 

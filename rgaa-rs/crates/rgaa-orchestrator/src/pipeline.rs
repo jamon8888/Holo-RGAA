@@ -55,7 +55,7 @@ impl AuditPhase {
     /// Fraction complete when this phase starts (6 phases, evenly weighted).
     #[must_use]
     pub fn progress(self) -> f32 {
-        (self.index() + 1) as f32 / 6.0
+        self.index() as f32 / 6.0
     }
 }
 
@@ -484,15 +484,15 @@ mod tests {
             AuditPhase::AgentPartial,
             AuditPhase::Merging,
         ];
-        let mut progress = 0.0;
+        let mut progress = -1.0;
         for (i, phase) in phases.iter().enumerate() {
             assert!(!phase.label().is_empty());
             let p = phase.progress();
             assert!(p > progress, "progress must increase at {phase:?}");
-            assert!((p - (i + 1) as f32 / 6.0).abs() < f32::EPSILON);
+            assert!((p - i as f32 / 6.0).abs() < f32::EPSILON);
             progress = p;
         }
-        assert!((progress - 1.0).abs() < f32::EPSILON);
+        assert!((progress - 5.0 / 6.0).abs() < f32::EPSILON);
     }
 
     #[test]

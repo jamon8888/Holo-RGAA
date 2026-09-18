@@ -212,6 +212,36 @@ impl McpFailure {
     }
 }
 
+impl From<rgaa_core::RgaaError> for McpFailure {
+    fn from(err: rgaa_core::RgaaError) -> Self {
+        match err {
+            rgaa_core::RgaaError::MissingId(_)
+            | rgaa_core::RgaaError::MissingField(_)
+            | rgaa_core::RgaaError::InvalidCriterion(_)
+            | rgaa_core::RgaaError::InvalidStatus(_)
+            | rgaa_core::RgaaError::DuplicateFindingId(_)
+            | rgaa_core::RgaaError::CriterionNotFound(_) => {
+                McpFailure::invalid(err.to_string())
+            }
+            rgaa_core::RgaaError::UnsupportedSchemaVersion(_) => {
+                McpFailure::unsupported(err.to_string())
+            }
+            rgaa_core::RgaaError::IncompleteEvidence(_) => {
+                McpFailure::incomplete(err.to_string())
+            }
+            rgaa_core::RgaaError::Llm { .. }
+            | rgaa_core::RgaaError::RateLimited { .. }
+            | rgaa_core::RgaaError::Timeout { .. }
+            | rgaa_core::RgaaError::Crawl(_)
+            | rgaa_core::RgaaError::Browser(_)
+            | rgaa_core::RgaaError::AxeCore(_)
+            | rgaa_core::RgaaError::Holo3(_)
+            | rgaa_core::RgaaError::Media(_)
+            | rgaa_core::RgaaError::Storage(_) => McpFailure::execution(err.to_string()),
+        }
+    }
+}
+
 const SECRET_KEYS: &[&str] = &[
     "password",
     "passwd",
@@ -744,7 +774,7 @@ impl ToolServer {
             .audit_service
             .run_audit(&input.url, &config)
             .await
-            .map_err(|e| McpFailure::execution(e.to_string()).into_error_data())?;
+            .map_err(|e| McpFailure::from(e).into_error_data())?;
         Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(
             result,
         )))

@@ -220,15 +220,11 @@ impl From<rgaa_core::RgaaError> for McpFailure {
             | rgaa_core::RgaaError::InvalidCriterion(_)
             | rgaa_core::RgaaError::InvalidStatus(_)
             | rgaa_core::RgaaError::DuplicateFindingId(_)
-            | rgaa_core::RgaaError::CriterionNotFound(_) => {
-                McpFailure::invalid(err.to_string())
-            }
+            | rgaa_core::RgaaError::CriterionNotFound(_) => McpFailure::invalid(err.to_string()),
             rgaa_core::RgaaError::UnsupportedSchemaVersion(_) => {
                 McpFailure::unsupported(err.to_string())
             }
-            rgaa_core::RgaaError::IncompleteEvidence(_) => {
-                McpFailure::incomplete(err.to_string())
-            }
+            rgaa_core::RgaaError::IncompleteEvidence(_) => McpFailure::incomplete(err.to_string()),
             rgaa_core::RgaaError::Llm { .. }
             | rgaa_core::RgaaError::RateLimited { .. }
             | rgaa_core::RgaaError::Timeout { .. }

@@ -200,6 +200,7 @@ impl McpFailure {
     }
     /// Map a domain error from the audit pipeline to its MCP failure class.
     /// `RgaaError` has no policy variant, so no case maps to `PolicyDenied`.
+    #[allow(dead_code)]
     fn from_rgaa_error(err: rgaa_core::RgaaError) -> Self {
         use rgaa_core::RgaaError;
         match err {

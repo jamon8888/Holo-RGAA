@@ -190,6 +190,30 @@ impl McpFailure {
     pub fn code(&self) -> &'static str {
         self.code.as_str()
     }
+    /// Map a domain error from the audit pipeline to its MCP failure class.
+    /// `RgaaError` has no policy variant, so no case maps to `PolicyDenied`.
+    fn from_rgaa_error(err: rgaa_core::RgaaError) -> Self {
+        use rgaa_core::RgaaError;
+        match err {
+            RgaaError::CriterionNotFound(_)
+            | RgaaError::InvalidCriterion(_)
+            | RgaaError::MissingId(_)
+            | RgaaError::MissingField(_)
+            | RgaaError::DuplicateFindingId(_)
+            | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
+            RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
+            RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
+            RgaaError::Llm { .. }
+            | RgaaError::RateLimited { .. }
+            | RgaaError::Timeout { .. }
+            | RgaaError::Crawl(_)
+            | RgaaError::Browser(_)
+            | RgaaError::AxeCore(_)
+            | RgaaError::Holo3(_)
+            | RgaaError::Media(_)
+            | RgaaError::Storage(_) => Self::execution(err.to_string()),
+        }
+    }
     pub fn into_error_data(self) -> ErrorData {
         let message = format!("{}: {}", self.code.as_str(), redact(&self.message));
         let data = Some(serde_json::json!({ "code": self.code.as_str() }));

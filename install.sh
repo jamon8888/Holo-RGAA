@@ -119,6 +119,12 @@ get_release_url() {
     local target
     target=$(platform_to_target "$platform")
 
+    if [[ -n "${RGAA_RELEASE_URL_BASE:-}" ]]; then
+        echo "WARNING: RGAA_RELEASE_URL_BASE override active (test-only)" >&2
+        echo "${RGAA_RELEASE_URL_BASE}/rgaa-rs-${tag}-${target}.tar.gz"
+        return
+    fi
+
     if [[ "$tag" == "latest" ]]; then
         # 'latest' is a prerelease tag, so address it explicitly (releases/latest skips prereleases)
         echo "https://github.com/${REPO}/releases/download/latest/rgaa-rs-latest-${target}.tar.gz"
@@ -134,7 +140,7 @@ download_and_install() {
     ensure_dep "curl" "brew install curl (macOS) or apt install curl (Linux)"
 
     tmpdir=$(mktemp -d)
-    trap "rm -rf '$tmpdir'" EXIT
+    trap 'rm -rf "$tmpdir"' EXIT
 
     local url
     url=$(get_release_url "$platform" "$RELEASE_TAG")
@@ -197,7 +203,7 @@ install_obscura() {
     local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d)
-    trap "rm -rf '$tmpdir'" EXIT
+    trap 'rm -rf "$tmpdir"' EXIT
 
     info "Downloading obscura ${OBSCURA_VERSION}..."
     if ! curl -fSL --progress-bar -o "${tmpdir}/obscura.tar.gz" "$url"; then
@@ -215,7 +221,6 @@ install_obscura() {
 
 build_from_source() {
     local repo_dir
-    local build_mode="${1:-release}"
 
     ensure_dep "git" "brew install git (macOS) or apt install git (Linux)"
 
@@ -238,9 +243,9 @@ build_from_source() {
         repo_dir="${repo_dir}/repo"
     fi
 
-    # Build
+    # Build only the 4 shipped bins (workspace also carries dev-only crates).
     info "Building rgaa-rs (this may take a few minutes)..."
-    (cd "${repo_dir}/rgaa-rs" && cargo build --release --workspace)
+    (cd "${repo_dir}/rgaa-rs" && cargo build --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp)
 
     # Install binaries
     mkdir -p "$INSTALL_DIR"
@@ -256,18 +261,19 @@ build_from_source() {
         fi
     done
 
-    # Look for obscura binary in the repo or system
-    if [[ -f "${repo_dir}/obscura" ]]; then
-        cp "${repo_dir}/obscura" "${INSTALL_DIR}/obscura"
-        chmod +x "${INSTALL_DIR}/obscura"
-        ok "Installed obscura"
-    elif check_dep "obscura"; then
-        ok "obscura already in PATH"
+    install_obscura "$(detect_platform)"
+    # install_obscura only warns on failure (download error, or no prebuilt
+    # asset for this platform), so verify_obscura_version's own missing-binary
+    # case would also just warn and let this report success. The obscura
+    # substrate is required for browser automation, and start_server now
+    # rejects a missing/drifted binary at runtime, so treat it as required
+    # here too instead of shipping a build that can't run.
+    if [[ -x "${INSTALL_DIR}/obscura" ]]; then
+        verify_obscura_version
     else
-        warn "obscura binary not found. Browser automation will not work."
-        warn "  Place obscura in ${INSTALL_DIR}/ or install separately."
+        die "obscura substrate could not be installed; browser automation would be unavailable.
+     Re-run 'install.sh --build' once the download succeeds, or install obscura manually to ${INSTALL_DIR}/obscura."
     fi
-    verify_obscura_version
 
     ok "Build complete. Binaries in ${INSTALL_DIR}"
 }
@@ -298,16 +304,40 @@ install_plugin() {
         plugin_source="${script_dir}"
     fi
 
+    local fetched_root=""
     if [[ -z "$plugin_source" ]]; then
-        warn "claude-plugin directory not found. Skipping plugin install."
-        warn "  Manually copy claude-plugin/ to ${PLUGIN_DIR}"
-        return
+        info "Fetching plugin from GitHub (${RELEASE_TAG})..."
+        local plugtmp
+        plugtmp=$(mktemp -d)
+        if ! curl -fSL -o "${plugtmp}/repo.tar.gz" \
+            "https://codeload.github.com/${REPO}/tar.gz/${RELEASE_TAG}"; then
+            warn "plugin download failed; continuing without plugin."
+            return
+        fi
+        tar -xzf "${plugtmp}/repo.tar.gz" -C "$plugtmp"
+        fetched_root="$(find "$plugtmp" -maxdepth 1 -mindepth 1 -type d -name "Holo-RGAA-*" | head -1)"
+        if [[ -z "$fetched_root" ]] || [[ ! -d "${fetched_root}/claude-plugin" ]]; then
+            warn "plugin not in tarball; continuing without plugin."
+            return
+        fi
+        plugin_source="${fetched_root}/claude-plugin"
     fi
 
-    # Symlink plugin
+    # Copy (not symlink): a fetched tree lives in a tmpdir that gets removed.
     mkdir -p "$(dirname "$PLUGIN_DIR")"
-    ln -sf "$plugin_source" "$PLUGIN_DIR"
-    ok "Plugin symlinked: ${PLUGIN_DIR} -> ${plugin_source}"
+    if [[ -n "$fetched_root" ]]; then
+        cp -R "$plugin_source" "$PLUGIN_DIR"
+        ok "Plugin installed: ${PLUGIN_DIR}"
+        if [[ -d "${fetched_root}/rgaa-rs/plugins/rgaa-consultant" ]]; then
+            local consultant_dir="${HOME}/.claude/plugins/rgaa-consultant"
+            rm -rf "$consultant_dir"
+            cp -R "${fetched_root}/rgaa-rs/plugins/rgaa-consultant" "$consultant_dir"
+            ok "Plugin installed: ${consultant_dir}"
+        fi
+    else
+        ln -sf "$plugin_source" "$PLUGIN_DIR"
+        ok "Plugin symlinked: ${PLUGIN_DIR} -> ${plugin_source}"
+    fi
 
     # Configure MCP server in Claude Code global config
     configure_mcp
@@ -407,9 +437,32 @@ verify_install() {
             ok "  ${bin}: found"
         else
             err "  ${bin}: NOT FOUND"
-            ((failures++))
+            failures=$((failures + 1))
         fi
     done
+
+    # Version/help gates: only rgaa and rgaa-cli implement --version today.
+    for bin in rgaa rgaa-cli; do
+        "${INSTALL_DIR}/${bin}" --version >/dev/null 2>&1 \
+            || { err "  ${bin}: --version failed"; failures=$((failures + 1)); }
+    done
+    for bin in rgaa-api rgaa-mcp; do
+        "${INSTALL_DIR}/${bin}" --help >/dev/null 2>&1 \
+            || { err "  ${bin}: --help failed"; failures=$((failures + 1)); }
+    done
+    # MCP stdio probe: exit 124 means `timeout` killed an idle healthy server.
+    # set +e around this: under `set -e` above, a non-zero (expected: 124)
+    # from the pipeline would abort the script before we get to check it.
+    local mcp_probe_status
+    set +e
+    echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' \
+        | timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
+    mcp_probe_status=$?
+    set -e
+    if [[ $mcp_probe_status -ne 124 ]]; then
+        err "  rgaa-mcp: stdio start probe failed"
+        failures=$((failures + 1))
+    fi
 
     # Check obscura
     if [[ -x "${INSTALL_DIR}/obscura" ]] || command -v obscura &>/dev/null; then

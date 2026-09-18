@@ -35,6 +35,10 @@ use sha2::{Digest, Sha256};
 
 const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
 
+/// Pinned substrate version. Keep in sync with `OBSCURA_VERSION` in
+/// `install.sh` / `install.ps1` and the e2e gate in `ci.yml`.
+const OBSCURA_PINNED_VERSION: &str = "obscura 0.2.2";
+
 fn escape_js_string(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('\'', "\\'")
@@ -749,12 +753,35 @@ impl ObscuraBridge {
         rgaa_core::EvidenceRef::new(kind, format!("sha256:{digest:x}"))
     }
 
-    /// Start the obscura CDP server as a background process
+    /// Start the obscura CDP server as a background process.
+    ///
+    /// Verifies the substrate binary is the pinned version before spawning:
+    /// a drifted or missing `RGAA_OBSCURA_BIN` should fail fast here with a
+    /// clear error, not silently run against the wrong (or no) backend.
     pub async fn start_server(&mut self) -> Result<(), String> {
         // One worker per CPU by default (docs.obscura.sh run-in-production-at-scale),
         // overridable for deploys that want to under/over-subscribe.
         let cpu_count = std::thread::available_parallelism().map_or(1, |n| n.get());
         let workers = resolve_workers(std::env::var("OBSCURA_WORKERS").ok().as_deref(), cpu_count);
+
+        let version = self.binary_version().await.map_err(|error| {
+            format!(
+                "obscura substrate unavailable at '{}': {error}",
+                self.binary_path
+            )
+        })?;
+        // Compare the `name`/`version` tokens exactly (not a substring match):
+        // a binary reporting e.g. "obscura 0.2.20" must not pass as a match
+        // for the pinned "obscura 0.2.2" just because it shares the prefix.
+        let mut reported = version.split_whitespace();
+        let mut pinned = OBSCURA_PINNED_VERSION.split_whitespace();
+        if (reported.next(), reported.next()) != (pinned.next(), pinned.next()) {
+            return Err(format!(
+                "obscura version mismatch: got '{version}', want '{OBSCURA_PINNED_VERSION}' (binary: {})",
+                self.binary_path
+            ));
+        }
+        info!(%version, "obscura substrate verified");
 
         // Silenced by default (`--quiet` + null stdio) defeated RUST_LOG/verbose
         // entirely — OBSCURA_VERBOSE=1 opts into both actually being visible.
@@ -811,13 +838,7 @@ impl ObscuraBridge {
             .await
             {
                 if resp.status().is_success() {
-                    // Best-effort substrate attribution for the audit trail.
-                    match self.binary_version().await {
-                        Ok(version) => info!(attempt = i, %version, "Obscura CDP server ready"),
-                        Err(error) => {
-                            warn!(attempt = i, %error, "Obscura CDP server ready, version unknown")
-                        }
-                    }
+                    info!(attempt = i, %version, "Obscura CDP server ready");
                     return Ok(());
                 }
             }
@@ -2279,6 +2300,49 @@ mod tests {
     async fn binary_version_fails_for_missing_binary() {
         let bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into());
         assert!(bridge.binary_version().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn start_server_rejects_missing_binary() {
+        let mut bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-test-binary".into());
+        let result = bridge.start_server().await;
+        assert!(result.is_err(), "missing binary must fail, got ok");
+        assert!(result.unwrap_err().contains("unavailable"));
+    }
+
+    #[tokio::test]
+    async fn start_server_rejects_version_drift() {
+        // /bin/true --version exits 0 with empty output, so it's a stand-in
+        // for a substrate binary that answers but isn't the pinned version.
+        let mut bridge = ObscuraBridge::with_binary_path("/bin/true".into());
+        let result = bridge.start_server().await;
+        assert!(result.is_err(), "wrong version must fail, got ok");
+        assert!(result.unwrap_err().contains("version mismatch"));
+    }
+
+    #[tokio::test]
+    async fn start_server_rejects_version_that_shares_pinned_prefix() {
+        // Regression test: the version gate must compare the reported
+        // "obscura X.Y.Z" tokens exactly, not with a substring check, so a
+        // binary reporting "obscura 0.2.20" doesn't pass as "obscura 0.2.2".
+        let script_path = std::env::temp_dir().join("rgaa-obscura-fake-drifted-version.sh");
+        std::fs::write(&script_path, "#!/bin/sh\necho 'obscura 0.2.20'\n")
+            .expect("write fake obscura binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod fake obscura binary");
+        }
+
+        let mut bridge =
+            ObscuraBridge::with_binary_path(script_path.to_string_lossy().into_owned());
+        let result = bridge.start_server().await;
+
+        let _ = std::fs::remove_file(&script_path);
+
+        assert!(result.is_err(), "prefix-sharing version must fail, got ok");
+        assert!(result.unwrap_err().contains("version mismatch"));
     }
 
     #[test]

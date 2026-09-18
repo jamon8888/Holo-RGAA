@@ -2183,6 +2183,8 @@ mod tests {
     use super::*;
 
     // Network-dependent: requires a reachable browser/CDP server and example.com.
+    // Requires obscura binary which is only available in e2e job.
+    #[ignore]
     #[tokio::test]
     async fn test_run_axe_with_broken_script_surfaces_error() {
         let mut bridge = ObscuraBridge::new().with_port(9244);

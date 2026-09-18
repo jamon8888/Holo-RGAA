@@ -47,6 +47,14 @@ fn escape_js_string(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
+/// Turn a criterion ID like `"11.4"` into a valid JS identifier fragment
+/// (`"11_4"`): anything that isn't `[A-Za-z0-9_]` becomes `_`.
+fn sanitize_js_identifier(id: &str) -> String {
+    id.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
 #[derive(Debug, Deserialize)]
 struct AxeViolationPayload {
     id: String,
@@ -1464,9 +1472,10 @@ impl ObscuraBridge {
         let snippet_decls: String = snippets
             .iter()
             .map(|(id, snippet)| {
+                let var = sanitize_js_identifier(id);
                 format!(
                     r#"
-    const snippet_{id} = (() => {{
+    const snippet_{var} = (() => {{
       try {{
         {snippet}
       }} catch (e) {{
@@ -1480,7 +1489,11 @@ impl ObscuraBridge {
 
         let object_entries: String = snippets
             .keys()
-            .map(|id| format!("'{id}': snippet_{id}"))
+            .map(|id| {
+                let var = sanitize_js_identifier(id);
+                let key = escape_js_string(id);
+                format!("'{key}': snippet_{var}")
+            })
             .collect::<Vec<_>>()
             .join(", ");
 

@@ -94,9 +94,9 @@ fn render_history(view: &HistoryView, frame: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1),
             Constraint::Fill(1),
-            Constraint::Length(3),
-            Constraint::Fill(1),
+            Constraint::Length(1),
         ])
         .split(area);
 

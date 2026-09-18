@@ -36,6 +36,16 @@ jobs:
         working-directory: rgaa-rs
     steps:
       - uses: actions/checkout@v4
+      # This workspace's release build (lancedb/datafusion/arrow, onnxruntime,
+      # tokenizers, spider's image codecs, plus this PR's obscura substrate)
+      # fills the ~14GB free on a standard runner; a starved build gets
+      # SIGTERM'd mid-compile with no compiler error (exit 143). Reclaim the
+      # unused preinstalled toolchains (~20-30GB) before checkout/build.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          docker-images: false
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies

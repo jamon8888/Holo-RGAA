@@ -234,11 +234,18 @@ pub async fn run_audit_wizard() {
             let mut phases = Vec::new();
             let mut done = None;
             if let Some(pending) = wizard.pending.as_mut() {
-                while let Ok(event) = pending.rx.try_recv() {
-                    match event {
-                        AuditEvent::Phase(phase) => phases.push(phase),
-                        AuditEvent::Done(result) => {
+                loop {
+                    match pending.rx.try_recv() {
+                        Ok(AuditEvent::Phase(phase)) => phases.push(phase),
+                        Ok(AuditEvent::Done(result)) => {
                             done = Some(result);
+                            break;
+                        }
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            done = Some(Err(rgaa_core::RgaaError::Crawl(
+                                "audit task ended without returning a result".to_string(),
+                            )));
                             break;
                         }
                     }

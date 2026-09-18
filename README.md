@@ -6,6 +6,28 @@ Holo-RGAA replaces Asqatasun (the legacy Java RGAA auditor) with a high-performa
 
 ---
 
+## Why This Is a Breakthrough
+
+Every existing accessibility scanner — axe-core, WAVE, Asqatasun — is **DOM-only**:
+it parses HTML attributes and never *looks* at the page. That caps them at roughly
+**50 criteria** they can actually verify, leaving more than half of RGAA 4.1.2's
+**106 criteria** as "manual testing required" — which, in practice, means never tested.
+
+Holo-RGAA is the first auditor built to cover the **full 106-criterion path**:
+
+- **~77 deterministic criteria** via axe-core + RGAA-specific gap-fix heuristics;
+- **~22+ judgment criteria** via the **Holo3 vision-language model**, which receives
+  the rendered screenshot alongside the DOM/AXTree and judges what DOM-only tools
+  cannot see — pertinent image alternatives, visible focus indicators, reading order,
+  link purpose from context, captions checked against rendered media;
+- **Guided manual tests (IGT)** with keyboard-trap detection for the remainder.
+
+No other product sees the page. Holo-RGAA does — and that single difference is what
+turns a 50-criterion scan into a complete RGAA audit pipeline, from detection to
+visually verified patch.
+
+---
+
 ## What is RGAA?
 
 The **Referentiel General d'Amelioration de l'Accessibilite (RGAA)** is France's accessibility standard, mandatory for:
@@ -73,10 +95,132 @@ Holo-RGAA routes each criterion to the right evaluation method:
 
 1. **axe-core** handles the WAI-ARIA and WCAG mappings it knows
 2. **gap-fix snippets** patch false negatives where axe-core misses RGAA-specific patterns
-3. **Holo3 LLM** evaluates judgment-required criteria using structured prompts with:
+3. **Holo3 vision LLM** evaluates judgment-required criteria using structured prompts with:
    - Criterion definition and WCAG references
-   - Page context (DOM snapshot, screenshots)
+   - Page context (DOM snapshot, AXTree, **screenshots seen by the model**)
    - Confidence-based escalation (low confidence → `NeedsReview`)
+
+---
+
+## Why Holo3 Vision Changes the Game
+
+Traditional scanners (axe-core, WAVE, Asqatasun) are **DOM-only**: they parse HTML
+attributes and never *look* at the page. That caps them at ~77 fully deterministic
+criteria and leaves the rest as "manual testing required" — which in practice means
+*never tested*.
+
+Holo3 is a **vision-language model**: it receives the rendered screenshot alongside
+the DOM/AXTree. That single difference unlocks the ~22+ `IaAssistee` criteria that
+decide real RGAA compliance:
+
+| What DOM-only tools cannot do | What Holo3 vision does |
+|---|---|
+| Tell if an image `alt` is *pertinent* (crit. 1.x) vs. placeholder text | Reads the image **and** its alt, judges relevance |
+| Detect a focus indicator that exists in CSS but is invisible (crit. 10.7) | **Sees** contrast, outline, and position on the screenshot |
+| Judge reading order, visual hierarchy, link purpose from context (crit. 10.x, 12.x) | Reasons over layout, proximity, and visual grouping |
+| Verify captions, audio description, media alternatives (crit. 4.x) | Cross-checks declared alternatives against rendered media |
+| Catch keyboard traps, hidden content, off-screen text | Correlates focus path (IGT) with what is actually visible |
+
+### The remediation payoff
+
+Detection without a fix is a PDF nobody reads. Holo3 closes the loop:
+
+1. **Evidence-grounded verdicts** — every finding ships with DOM node, AXTree path,
+   screenshot hash, and model justification, so a developer can reproduce it in seconds.
+2. **Framework-aware patches** — `rgaa-remediation` turns a vision verdict
+   ("contrast 2.1:1 on hero CTA") into a concrete diff for React/Vue/Angular/vanilla,
+   with approval states (required / auto-approved / rejected) and batching (1–25 issues).
+3. **No false confidence** — low-confidence vision judgments escalate to `NeedsReview`
+   instead of fake PASS, and the engine **never claims "Conformité totale" from
+   automation alone** (dégradation rule: non-validated tests need human review).
+4. **Agentic loop** — `rgaa-agent` (Rig-based, dual-model routing: fast tier for
+   text criteria, reasoning tier for visual criteria 11.x/12.8+) re-checks the fix
+   against a fresh screenshot, so remediation is verified visually, not assumed.
+
+Result: the audit goes from *"here are 40 violations, good luck"* to
+*"here is the failing criterion, what the model saw, the patch, and the re-test"* —
+the difference between a compliance chore and a fix pipeline.
+
+---
+
+## Performance & Scalability
+
+Holo-RGAA audits at production scale — many pages, many audits, bounded resources.
+Every layer below is enforced in code, not in documentation:
+
+| Layer | Mechanism |
+|-------|-----------|
+| Static data | Criteria catalog, axe map (`IndexMap`, deterministic order), gap-fix snippets built **once** (`OnceLock`) and shared as `&'static` — never rebuilt per audit |
+| Batch orchestration | Up to **8 audits concurrently** (`tokio::Semaphore` + `buffer_unordered(8)`), incremental persistence, one browser session per audit |
+| Single audits | Routed through the same batch entry points — one code path, no duplicate logic |
+| LLM lane | Tiered routing (fast tier for text criteria, reasoning tier for visual 11.x/12.8+), page context rendered **once per URL** and capped at **8 000 chars**, shared circuit breaker (fails loud on Holo3 outage) + RPM rate limiting |
+| HTTP API | Per-request timeouts, `GlobalConcurrencyLimitLayer` (one shared semaphore via `RGAA_API_MAX_CONCURRENT_AUDITS`), load shedding on audit endpoints |
+| Crawler | Streaming polite spider: configurable concurrency, delay, per-request/crawl timeouts, retry budget, URL blacklist |
+| Storage | `list_audits` reads metadata only (full blobs skipped), dead N+1 write path removed |
+| Browser substrate | Obscura `serve --workers N` (one per CPU by default, `OBSCURA_WORKERS` override), V8 heap tuning, `systemd` template, validated input bounds (selectors, viewports, timeouts, retries) |
+| Browser core | `BrowserWorker` on a dedicated thread (tokio-incompatible internals isolated) + `Send`-safe `BrowserHandle` over channels; browser auto-starts in background, deny-by-default network policy |
+| Build | `mold` linker (OOM-safe fat-LTO links), `sccache`, `cargo-nextest`, `Makefile`, pinned toolchain (1.98.1) |
+
+### Why this matters for RGAA
+
+A full RGAA audit is 106 criteria × N pages. The expensive multiplications are
+killed at the source: static data is allocated once per process, page context is
+rendered once per URL (not once per criterion), LLM calls are tiered + capped +
+circuit-broken, and concurrent audits are bounded so the 9th audit waits instead
+of OOM-killing the first 8.
+
+---
+
+## Project Status — What Is Done
+
+### Shipped (merged to `main`)
+
+- **Unified pipeline** (`rgaa-orchestrator`): axe-core + gap-fix + Holo3 + IGT merged
+  into one run, single `AuditBundle` model, official `taux_global = C / (C + NC)`
+  math (NA/NT excluded), sample-wide aggregation (NC on any page → NC).
+- **Obscura browser substrate** (`rgaa-obscura`): Rust-native CDP automation, pinned
+  v0.2.2 binary with version gates, vendored axe-core 4.13 (`elementRef`,
+  `incomplete`, `patch_attach_internals`), label-aware pre-scan fill, cookie
+  injection **before** navigation, `RGAA_OBSCURA_BIN` honored everywhere.
+- **axe-core parity + IGT** (`rgaa-mcp`, `rgaa-browser-tools`): `waitFor`, cookies,
+  screenshots, keyboard IGT with stable DOM-path focus identity and trap detection
+  (5× same element = trap), CDP failure → `incomplete` + `ExecutionError`.
+- **Interfaces**: unified `rgaa` TUI (Ratatui: audit wizard with live progress,
+  history viewer, install/setup wizards) + headless CLI + MCP server
+  (`analyze`, `audit_url`, `remediate`, `igt`, `get_audit_result`, `list_criteria`)
+  + Axum HTTP API + spider crawler + remediation plugin (Consultant v2.0.0).
+- **One-command delivery**: `install.sh` / `install.ps1` (per-platform obscura assets,
+  Claude Code plugin symlink, MCP config), `cargo-dist` releases, CI hardened
+  (protoc everywhere, OOM-guarded Linux link, rust-cache workspaces fix).
+
+### Channel-based browser core (PR #65, incl. #75 review fixes)
+
+Channel-based browser core: `BrowserWorker` on a dedicated thread (tokio-incompatible
+internals isolated) + `Send`-safe `BrowserHandle` over channels. All methods wired
+(navigate, eval_js, click, screenshot, a11y_tree, type_input, press_key, tab_order,
+assert_state). Security deny-by-default (private-network + `file://` blocked unless
+opted in). MCP server reports name/version on initialize. Orchestrator/MCP/CLI all
+migrated to `BrowserHandle`; browser auto-starts in background. Includes TUI real
+progress (pipeline phases + `RgaaError`), audit wizard running the real orchestrator,
+history via storage, and all CodeRabbit findings addressed — including typed
+`RgaaError → McpFailure` mapping (`invalid` / `unsupported` / `incomplete` /
+`execution`) instead of blanket execution errors.
+
+### Production-scale reliability — Scale #1–8 (PR #74, closes #43–#50)
+
+- **#43** build-once static data (criteria catalog, axe map, gap-fix snippets via `OnceLock`).
+- **#44** streaming polite crawler (configurable concurrency/delay/timeout/retry/blacklist).
+- **#45** single audits routed through batch entry points (no duplicate paths).
+- **#46** LLM lane: visual-tier routing wired, page context rendered once and capped at 8 000 chars,
+  shared circuit breaker.
+- **#47** API timeouts, shared concurrency limit (`GlobalConcurrencyLimitLayer`),
+  load shedding.
+- **#48** Obscura workers/V8 heap config, systemd template, fixed silenced logging.
+- **#49** bounded batch orchestration (max 8 in flight), incremental persistence,
+  per-audit browser session.
+- **#50** storage: `list_audits` skips blobs, dead N+1 write path removed.
+- Plus: pinned toolchain, Makefile, mold linking, sccache, nextest, expanded CI. Two real bugs
+  fixed (streaming-crawler deadlock, tower semaphore non-sharing).
 
 ---
 
@@ -342,6 +486,9 @@ print(f"Status: {result['etat_conformite']}")
 | `rgaa-api` | Axum HTTP API server |
 | `rgaa-storage` | PostgreSQL persistence layer |
 | `rgaa-remediation` | Fix proposal generation, approval workflow |
+| `rgaa-spider` | Polite streaming crawler (PR #74) |
+| `rgaa-data` | Shared static data (catalog, rule maps) |
+| `rgaa-test-corpus` | Fixtures for regression tests |
 
 ### How Evaluation Works
 
@@ -560,7 +707,7 @@ llm:
 
 ```
 rgaa-rs/
-  Cargo.toml              # Workspace root (11 crates)
+  Cargo.toml              # Workspace root (16 crates)
   crates/
     rgaa-core/           # Domain types, 106-criteria catalog
     rgaa-rules/           # axe-core integration, gap-fix snippets
@@ -575,6 +722,9 @@ rgaa-rs/
     rgaa-cli/             # CLI interface
     rgaa-storage/         # PostgreSQL storage
     rgaa-remediation/     # Fix proposal generation
+    rgaa-spider/          # Streaming crawler
+    rgaa-data/            # Shared static data
+    rgaa-test-corpus/     # Test fixtures
 ```
 
 ### rgaa-tui

@@ -41,6 +41,10 @@ permissions:
 jobs:
   Analysis:
     runs-on: ubuntu-latest
+    # projectKey/organization below are unset and no SONAR_TOKEN secret is
+    # configured, so this has never actually run. Skip cleanly instead of
+    # hard-failing every PR until SonarCloud is properly set up.
+    if: ${{ secrets.SONAR_TOKEN != '' }}
 
     steps:
       - name: Analyze with SonarCloud

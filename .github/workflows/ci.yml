@@ -36,7 +36,14 @@ jobs:
         working-directory: rgaa-rs
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          df -h /
       - uses: Swatinem/rust-cache@v2
+        with:
+          working-directory: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
       - uses: mozilla-actions/sccache-action@v0.0.7
       - uses: rui314/setup-mold@v1
@@ -44,6 +51,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      # OOM guard: fat-LTO release link of the lance/arrow tree can exceed
+      # runner memory with default parallelism (same OOM master's ci.yml
+      # guards against in 789d40f). Without this, the runner gets OOM-killed
+      # mid-build, which the Actions service reports as "runner has received
+      # a shutdown signal" rather than a real compile error — this is what
+      # was killing Build & Test on this branch every run.
+      - name: Limit build parallelism (OOM guard)
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
       - name: Build workspace
         env:
           RUSTC_WRAPPER: sccache
@@ -76,7 +91,7 @@ jobs:
           echo "Using $CORES cores"
           ( while true; do sleep 240; echo "::notice::still testing…"; done ) &
           heartbeat=$!
-          cargo test --workspace --jobs $CORES --test-threads=$CORES
+          cargo test --workspace --jobs $CORES -- --test-threads=$CORES
           kill "$heartbeat" 2>/dev/null || true
 
   smoke:

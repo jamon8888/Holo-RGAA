@@ -14,10 +14,6 @@ env:
   RUSTC_WRAPPER: ""
   CARGO_BUILD_JOBS: "2"
 
-defaults:
-  run:
-    working-directory: rgaa-rs
-
 jobs:
   installer-lint:
     name: Installer lint

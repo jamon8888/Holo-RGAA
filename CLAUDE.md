@@ -215,7 +215,7 @@ cargo build --workspace --release
 # Test (nextest: parallel, better output; doctests still need plain `cargo test`)
 cargo nextest run --workspace
 cargo test --workspace --doc
-cargo nextest run --workspace --nocapture
+cargo nextest run --workspace --no-capture
 
 # Lint
 cargo clippy --workspace --all-targets

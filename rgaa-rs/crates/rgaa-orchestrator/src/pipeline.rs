@@ -5,7 +5,7 @@ use rgaa_core::na_detection;
 use rgaa_core::types::ConformityStatus;
 use rgaa_core::{
     AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
-    RgaaCatalog, RgaaCriteria,
+    RgaaCatalog, RgaaCriteria, RgaaError,
 };
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
@@ -15,6 +15,49 @@ use std::sync::Arc;
 use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
+
+/// Pipeline stage reported to progress callbacks, in execution order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditPhase {
+    Axe,
+    GapFix,
+    PageContext,
+    AgentIaAssiste,
+    AgentPartial,
+    Merging,
+}
+
+impl AuditPhase {
+    fn index(self) -> usize {
+        match self {
+            AuditPhase::Axe => 0,
+            AuditPhase::GapFix => 1,
+            AuditPhase::PageContext => 2,
+            AuditPhase::AgentIaAssiste => 3,
+            AuditPhase::AgentPartial => 4,
+            AuditPhase::Merging => 5,
+        }
+    }
+
+    /// Short human-readable label for progress displays.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            AuditPhase::Axe => "Running axe-core checks...",
+            AuditPhase::GapFix => "Running gap-fix rules...",
+            AuditPhase::PageContext => "Extracting page context...",
+            AuditPhase::AgentIaAssiste => "Agentic IA_ASSISTE evaluation...",
+            AuditPhase::AgentPartial => "Partially-automatable evaluation...",
+            AuditPhase::Merging => "Merging results...",
+        }
+    }
+
+    /// Fraction complete when this phase starts (6 phases, evenly weighted).
+    #[must_use]
+    pub fn progress(self) -> f32 {
+        (self.index() + 1) as f32 / 6.0
+    }
+}
 
 fn partially_automatable_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
@@ -113,36 +156,57 @@ impl Orchestrator {
 
     /// Audit a single URL. Behavior is identical to the pre-batch implementation:
     /// it runs the per-URL pipeline and returns a single [`AuditResult`].
-    pub async fn run(&self, url: &str, config: &CrawlConfig) -> Result<AuditResult, String> {
+    pub async fn run(&self, url: &str, config: &CrawlConfig) -> Result<AuditResult, RgaaError> {
         let mut results = self.run_batch(&[url.to_string()], config).await?;
         results
             .remove(url)
-            .ok_or_else(|| format!("audit result missing for {url}"))
+            .ok_or_else(|| RgaaError::Crawl(format!("audit result missing for {url}")))
     }
 
-    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the URL.
-    /// The Obscura CDP server is started once before the loop and stopped via
-    /// [`ObscuraBridge`] `Drop` after the loop completes.
-    pub async fn run_batch(
+    /// Audit a single URL, reporting each [`AuditPhase`] to `on_phase`
+    /// as the pipeline advances. Used by progress displays (e.g. the TUI).
+    pub async fn run_with_progress(
         &self,
-        urls: &[String],
+        url: &str,
         config: &CrawlConfig,
-    ) -> Result<HashMap<String, AuditResult>, String> {
+        on_phase: impl Fn(AuditPhase) + Send + Sync,
+    ) -> Result<AuditResult, RgaaError> {
+        let (tool_ctx, agent) = self.prepare().await?;
+        audit_one(&agent, &tool_ctx, url, config, &on_phase).await
+    }
+
+    /// Shared setup for [`Orchestrator::run_batch`] and
+    /// [`Orchestrator::run_with_progress`]: browser bridge, tool context,
+    /// and agentic evaluator.
+    async fn prepare(&self) -> Result<(ToolContext, RgaaAgent), RgaaError> {
         let bridge = ObscuraBridge::from_env_async()
             .await
-            .map_err(|e| format!("failed to create browser bridge: {e}"))?;
+            .map_err(|e| RgaaError::Browser(format!("failed to create browser bridge: {e}")))?;
 
         let session = BrowserSession::new(bridge);
         let tool_ctx = ToolContext::new(session);
 
         let agent_config = rgaa_agent::config::AgentConfig::from_env()
-            .map_err(|e| format!("invalid agent configuration: {e}"))?;
+            .map_err(|e| RgaaError::Holo3(format!("invalid agent configuration: {e}")))?;
         let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
             .await
-            .map_err(|e| format!("failed to create agent: {e}"))?;
+            .map_err(|e| RgaaError::Holo3(format!("failed to create agent: {e}")))?;
+        Ok((tool_ctx, agent))
+    }
+
+    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the URL.
+    /// The browser backend is created once before the loop and dropped
+    /// with the bridge after the loop completes.
+    pub async fn run_batch(
+        &self,
+        urls: &[String],
+        config: &CrawlConfig,
+    ) -> Result<HashMap<String, AuditResult>, RgaaError> {
+        let (tool_ctx, agent) = self.prepare().await?;
+        let silent: fn(AuditPhase) = |_| {};
         let mut results = HashMap::new();
         for url in urls {
-            let audit = audit_one(&agent, &tool_ctx, url, config).await?;
+            let audit = audit_one(&agent, &tool_ctx, url, config, &silent).await?;
             results.insert(url.clone(), audit);
         }
 
@@ -168,7 +232,8 @@ async fn audit_one(
     tool_ctx: &ToolContext,
     url: &str,
     _config: &CrawlConfig,
-) -> Result<AuditResult, String> {
+    on_phase: &(dyn Fn(AuditPhase) + Send + Sync),
+) -> Result<AuditResult, RgaaError> {
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
 
@@ -178,18 +243,30 @@ async fn audit_one(
 
     // 1. Run axe-core
     info!("Running axe-core");
-    let axe_violations = bridge.run_axe(url).await.map_err(|e| e.to_string())?;
-    let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
+    on_phase(AuditPhase::Axe);
+    let axe_violations = bridge
+        .run_axe(url)
+        .await
+        .map_err(|e| RgaaError::AxeCore(e.to_string()))?;
+    let axe_results = AxeMapper::map(&axe_violations)?;
 
     // 2. Run gap-fix rules for 10 false negatives
     info!("Running gap-fix rules");
+    on_phase(AuditPhase::GapFix);
     let gap_snippets = GapFixRules::snippets();
-    let gap_js_results = bridge.run_gap_fix(url, &gap_snippets).await.map_err(|e| e.to_string())?;
+    let gap_js_results = bridge
+        .run_gap_fix(url, &gap_snippets)
+        .await
+        .map_err(|e| RgaaError::Browser(e.to_string()))?;
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
     info!("Extracting page context");
-    let raw_context = bridge.extract_page_context(url).await.map_err(|e| e.to_string())?;
+    on_phase(AuditPhase::PageContext);
+    let raw_context = bridge
+        .extract_page_context(url)
+        .await
+        .map_err(|e| RgaaError::Browser(e.to_string()))?;
     let na_map = na_detection::detect_na(&raw_context);
     let page_context: PageContext = serde_json::from_value(raw_context).unwrap_or(PageContext {
         title: None,
@@ -211,6 +288,7 @@ async fn audit_one(
         criteria = ia_criteria.len(),
         "Running agentic IA_ASSISTE evaluation"
     );
+    on_phase(AuditPhase::AgentIaAssiste);
 
     let agent_results = agent.run_ia_assiste(&ia_criteria, &page_context).await;
 
@@ -225,6 +303,7 @@ async fn audit_one(
         criteria = partial_criteria.len(),
         "Running agentic PartiallyAutomatable evaluation"
     );
+    on_phase(AuditPhase::AgentPartial);
 
     let partial_results = agent
         .run_partially_automatable(&partial_criteria, &page_context)
@@ -234,6 +313,7 @@ async fn audit_one(
     }
 
     // 5. Merge results
+    on_phase(AuditPhase::Merging);
     let mut all_results: HashMap<String, CriterionResult> = HashMap::new();
     all_results.extend(axe_results);
     all_results.extend(gap_results);
@@ -392,6 +472,27 @@ mod tests {
     #[test]
     fn manual_criteria_require_review() {
         assert_eq!(manual_status(), CriterionStatus::NeedsReview);
+    }
+
+    #[test]
+    fn audit_phases_cover_pipeline_in_order() {
+        let phases = [
+            AuditPhase::Axe,
+            AuditPhase::GapFix,
+            AuditPhase::PageContext,
+            AuditPhase::AgentIaAssiste,
+            AuditPhase::AgentPartial,
+            AuditPhase::Merging,
+        ];
+        let mut progress = 0.0;
+        for (i, phase) in phases.iter().enumerate() {
+            assert!(!phase.label().is_empty());
+            let p = phase.progress();
+            assert!(p > progress, "progress must increase at {phase:?}");
+            assert!((p - (i + 1) as f32 / 6.0).abs() < f32::EPSILON);
+            progress = p;
+        }
+        assert!((progress - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]

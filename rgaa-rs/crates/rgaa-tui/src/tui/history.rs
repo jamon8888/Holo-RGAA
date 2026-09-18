@@ -62,10 +62,7 @@ pub async fn run_history_view() {
             Ok(audits) => (audits, None),
             Err(e) => (Vec::new(), Some(format!("failed to list audits: {e}"))),
         },
-        Err(e) => (
-            Vec::new(),
-            Some(format!("failed to open database: {e}")),
-        ),
+        Err(e) => (Vec::new(), Some(format!("failed to open database: {e}"))),
     };
     let mut view = HistoryView {
         audits,
@@ -137,11 +134,7 @@ fn render_history(view: &HistoryView, frame: &mut Frame) {
             .map(|(i, [url, score, date, id])| {
                 let row = Row::new(vec![url, score, date, id]);
                 if i == view.selected {
-                    row.style(
-                        ratatui::style::Style::default()
-                            .fg(Color::Yellow)
-                            .bold(),
-                    )
+                    row.style(ratatui::style::Style::default().fg(Color::Yellow).bold())
                 } else {
                     row
                 }

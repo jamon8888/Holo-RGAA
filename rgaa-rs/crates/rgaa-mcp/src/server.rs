@@ -69,10 +69,18 @@ impl AnalyzeRequest {
                     rgaa_obscura::PreScanAction::WaitFor {
                         selector: selector.clone(),
                         state: match *state {
-                            crate::tools::WaitForState::Visible => rgaa_obscura::WaitForState::Visible,
-                            crate::tools::WaitForState::Attached => rgaa_obscura::WaitForState::Attached,
-                            crate::tools::WaitForState::Hidden => rgaa_obscura::WaitForState::Hidden,
-                            crate::tools::WaitForState::Detached => rgaa_obscura::WaitForState::Detached,
+                            crate::tools::WaitForState::Visible => {
+                                rgaa_obscura::WaitForState::Visible
+                            }
+                            crate::tools::WaitForState::Attached => {
+                                rgaa_obscura::WaitForState::Attached
+                            }
+                            crate::tools::WaitForState::Hidden => {
+                                rgaa_obscura::WaitForState::Hidden
+                            }
+                            crate::tools::WaitForState::Detached => {
+                                rgaa_obscura::WaitForState::Detached
+                            }
                         },
                     }
                 }
@@ -391,7 +399,11 @@ pub trait AuditOrchestrationService: Send + Sync {
         url: &str,
         config: &CrawlConfig,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
+        Box<
+            dyn std::future::Future<Output = Result<rgaa_core::AuditResult, rgaa_core::RgaaError>>
+                + Send
+                + '_,
+        >,
     >;
 }
 
@@ -557,7 +569,11 @@ impl AuditOrchestrationService for OrchestrationService {
         url: &str,
         config: &CrawlConfig,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
+        Box<
+            dyn std::future::Future<Output = Result<rgaa_core::AuditResult, rgaa_core::RgaaError>>
+                + Send
+                + '_,
+        >,
     > {
         let url = url.to_string();
         let config = config.clone();
@@ -728,7 +744,7 @@ impl ToolServer {
             .audit_service
             .run_audit(&input.url, &config)
             .await
-            .map_err(|e| McpFailure::execution(e).into_error_data())?;
+            .map_err(|e| McpFailure::execution(e.to_string()).into_error_data())?;
         Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(
             result,
         )))

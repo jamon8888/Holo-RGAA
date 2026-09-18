@@ -48,69 +48,59 @@ pub async fn run() {
 
         if let Event::Key(key) = event::read().unwrap() {
             match key.code {
-                    KeyCode::Char('a') | KeyCode::Char('A') => {
+                KeyCode::Char('a') | KeyCode::Char('A') => {
+                    terminal = suspend(terminal, crate::tui::run_audit_wizard()).await;
+                }
+                KeyCode::Char('h') | KeyCode::Char('H') => {
+                    terminal = suspend(terminal, crate::tui::run_history_view()).await;
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    terminal = suspend(terminal, async {
+                        let _ = crate::tui::run_setup_wizard();
+                    })
+                    .await;
+                }
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    break;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    selected = match selected {
+                        MainMenuSelection::Audit => MainMenuSelection::History,
+                        MainMenuSelection::History => MainMenuSelection::Settings,
+                        MainMenuSelection::Settings => MainMenuSelection::Exit,
+                        MainMenuSelection::Exit => MainMenuSelection::Audit,
+                    };
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    selected = match selected {
+                        MainMenuSelection::Audit => MainMenuSelection::Exit,
+                        MainMenuSelection::History => MainMenuSelection::Audit,
+                        MainMenuSelection::Settings => MainMenuSelection::History,
+                        MainMenuSelection::Exit => MainMenuSelection::Settings,
+                    };
+                }
+                KeyCode::Enter => match selected {
+                    MainMenuSelection::Audit => {
                         terminal = suspend(terminal, crate::tui::run_audit_wizard()).await;
                     }
-                    KeyCode::Char('h') | KeyCode::Char('H') => {
+                    MainMenuSelection::History => {
                         terminal = suspend(terminal, crate::tui::run_history_view()).await;
                     }
-                    KeyCode::Char('s') | KeyCode::Char('S') => {
-                        terminal = suspend(
-                            terminal,
-                            async {
-                                let _ = crate::tui::run_setup_wizard();
-                            },
-                        )
+                    MainMenuSelection::Settings => {
+                        terminal = suspend(terminal, async {
+                            let _ = crate::tui::run_setup_wizard();
+                        })
                         .await;
                     }
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    MainMenuSelection::Exit => {
                         break;
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        selected = match selected {
-                            MainMenuSelection::Audit => MainMenuSelection::History,
-                            MainMenuSelection::History => MainMenuSelection::Settings,
-                            MainMenuSelection::Settings => MainMenuSelection::Exit,
-                            MainMenuSelection::Exit => MainMenuSelection::Audit,
-                        };
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        selected = match selected {
-                            MainMenuSelection::Audit => MainMenuSelection::Exit,
-                            MainMenuSelection::History => MainMenuSelection::Audit,
-                            MainMenuSelection::Settings => MainMenuSelection::History,
-                            MainMenuSelection::Exit => MainMenuSelection::Settings,
-                        };
-                    }
-                    KeyCode::Enter => {
-                        match selected {
-                            MainMenuSelection::Audit => {
-                                terminal =
-                                    suspend(terminal, crate::tui::run_audit_wizard()).await;
-                            }
-                            MainMenuSelection::History => {
-                                terminal =
-                                    suspend(terminal, crate::tui::run_history_view()).await;
-                            }
-                            MainMenuSelection::Settings => {
-                                terminal = suspend(
-                                    terminal,
-                                    async {
-                                        let _ = crate::tui::run_setup_wizard();
-                                    },
-                                )
-                                .await;
-                            }
-                            MainMenuSelection::Exit => {
-                                break;
-                            }
-                        }
-                    }
-                    KeyCode::Esc => {
-                        break;
-                    }
-                    _ => {}
+                },
+                KeyCode::Esc => {
+                    break;
                 }
+                _ => {}
+            }
         }
     }
 
@@ -141,7 +131,11 @@ fn render_main_menu(frame: &mut Frame, selected: &MainMenuSelection) {
     );
 
     let items = [
-        (MainMenuSelection::Audit, "[A]udit URL", "Run a new accessibility audit"),
+        (
+            MainMenuSelection::Audit,
+            "[A]udit URL",
+            "Run a new accessibility audit",
+        ),
         (
             MainMenuSelection::History,
             "[H]istory",
@@ -156,11 +150,10 @@ fn render_main_menu(frame: &mut Frame, selected: &MainMenuSelection) {
     ];
 
     for (i, (sel, label, desc)) in items.iter().enumerate() {
-        let is_selected = matches!(selected, s if std::mem::discriminant(s) == std::mem::discriminant(sel));
+        let is_selected =
+            matches!(selected, s if std::mem::discriminant(s) == std::mem::discriminant(sel));
         let style = if is_selected {
-            ratatui::style::Style::default()
-                .fg(Color::Yellow)
-                .bold()
+            ratatui::style::Style::default().fg(Color::Yellow).bold()
         } else {
             ratatui::style::Style::default().fg(Color::White)
         };

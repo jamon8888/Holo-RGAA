@@ -237,7 +237,7 @@ fn remediate_handler_rejects_empty_batch_with_invalid_input() {
 #[tokio::test]
 async fn analyze_service_returns_typed_unavailable_error_without_browser() {
     let bridge = Arc::new(LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into()),
+        rgaa_obscura::ObscuraBridge::new_disconnected(),
     ));
     let service = ObscuraAnalyzeService::new(bridge);
     let request = rgaa_obscura::AnalyzeRequest {

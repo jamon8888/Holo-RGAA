@@ -50,6 +50,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      # OOM guard: fat-LTO release link of the lance/arrow tree can exceed
+      # runner memory with default parallelism (same as release.yml's build
+      # job). Without this, the runner gets OOM-killed mid-build, which the
+      # Actions service reports as "runner has received a shutdown signal"
+      # rather than a real compile error.
+      - name: Limit build parallelism (OOM guard)
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
       - name: Build workspace
         run: cargo build --workspace --release
       - name: Upload binaries

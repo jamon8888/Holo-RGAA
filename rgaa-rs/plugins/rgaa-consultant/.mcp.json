@@ -3,9 +3,6 @@
     "rgaa-mcp": {
       "type": "stdio",
       "command": "rgaa-mcp",
-      "env": {
-        "RGAA_OBSCURA_BIN": "${CLAUDE_PLUGIN_ROOT}/bin/obscura"
-      },
       "description": "RGAA MCP server — primary tool provider. Start with: rgaa-mcp"
     },
     "rgaa-api": {

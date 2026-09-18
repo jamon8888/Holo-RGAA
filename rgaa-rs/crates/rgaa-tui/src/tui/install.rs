@@ -87,13 +87,12 @@ pub fn run_install_wizard() -> bool {
                         message: format!("Installed to ~/{}/rgaa", INSTALL_DIR),
                     };
                 }
-                InstallStep::Done { .. } | InstallStep::Error(_) => {
+                InstallStep::Done { .. } | InstallStep::Error(_)
                     if key.code == KeyCode::Enter
                         || key.code == KeyCode::Esc
-                        || key.code == KeyCode::Char('q')
-                    {
-                        break;
-                    }
+                        || key.code == KeyCode::Char('q') =>
+                {
+                    break;
                 }
                 _ => {}
             }

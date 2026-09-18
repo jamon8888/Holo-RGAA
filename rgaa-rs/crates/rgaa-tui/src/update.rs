@@ -1,7 +1,6 @@
 use serde::Deserialize;
 
-const GITHUB_RELEASES_API: &str =
-    "https://api.github.com/repos/your-org/rgaa-cli/releases/latest";
+const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/your-org/rgaa-cli/releases/latest";
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {

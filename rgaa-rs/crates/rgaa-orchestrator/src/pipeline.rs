@@ -216,7 +216,9 @@ impl Orchestrator {
         config: &CrawlConfig,
         on_phase: impl Fn(AuditPhase) + Send + Sync,
     ) -> Result<AuditResult, String> {
-        let mut results = self.run_batch_with_progress(&[url.to_string()], config, on_phase).await?;
+        let mut results = self
+            .run_batch_with_progress(&[url.to_string()], config, on_phase)
+            .await?;
         results
             .remove(url)
             .ok_or_else(|| format!("audit result missing for {url}"))

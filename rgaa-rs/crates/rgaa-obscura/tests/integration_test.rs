@@ -1,5 +1,8 @@
 use rgaa_obscura::ObscuraBridge;
-use rgaa_obscura::{AnalyzeConfig, AnalyzeRequest, PreScanAction, ScreenshotConfig, ScreenshotPolicy, ScreenshotFormat, Viewport};
+use rgaa_obscura::{
+    AnalyzeConfig, AnalyzeRequest, PreScanAction, ScreenshotConfig, ScreenshotFormat,
+    ScreenshotPolicy, Viewport,
+};
 use rgaa_obscura::{GuidedStep, GuidedTest, TerminationReason};
 
 #[tokio::test]
@@ -194,7 +197,10 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
         pre_scan_actions: vec![PreScanAction::Click {
             selector: "body".into(),
         }],
-        screenshot: ScreenshotConfig { policy: ScreenshotPolicy::Always, format: ScreenshotFormat::Png },
+        screenshot: ScreenshotConfig {
+            policy: ScreenshotPolicy::Always,
+            format: ScreenshotFormat::Png,
+        },
         timeout_ms: 30_000,
         retry_limit: 1,
         ..Default::default()

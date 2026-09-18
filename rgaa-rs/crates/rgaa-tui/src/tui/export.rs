@@ -28,9 +28,8 @@ impl ExportFormat {
 }
 
 pub fn export_json(audit: &rgaa_core::AuditResult, path: &Path) -> std::io::Result<()> {
-    let json = serde_json::to_string_pretty(audit).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-    })?;
+    let json = serde_json::to_string_pretty(audit)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
     std::fs::write(path, json)?;
     Ok(())
 }
@@ -118,11 +117,15 @@ pub fn export_pdf(audit: &rgaa_core::AuditResult, path: &Path) -> Result<(), Str
     let html_path = path.with_extension("html");
     export_html(audit, &html_path).map_err(|e| e.to_string())?;
 
-    let wkhtmltopdf = std::env::var("RGAA_WKHTMLTOPDF")
-        .unwrap_or_else(|_| "wkhtmltopdf".to_string());
+    let wkhtmltopdf =
+        std::env::var("RGAA_WKHTMLTOPDF").unwrap_or_else(|_| "wkhtmltopdf".to_string());
 
     let output = Command::new(&wkhtmltopdf)
-        .args(["--enable-local-file-access", html_path.to_str().unwrap(), path.to_str().unwrap()])
+        .args([
+            "--enable-local-file-access",
+            html_path.to_str().unwrap(),
+            path.to_str().unwrap(),
+        ])
         .output()
         .map_err(|e| format!("failed to run {}: {e}", wkhtmltopdf))?;
 
@@ -138,10 +141,7 @@ pub fn export_pdf(audit: &rgaa_core::AuditResult, path: &Path) -> Result<(), Str
 }
 
 pub fn export(audit: &rgaa_core::AuditResult, path: &Path) -> Result<ExportFormat, String> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("json");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("json");
     let format = ExportFormat::from_extension(ext)
         .ok_or_else(|| format!("unsupported export format: {ext}"))?;
 

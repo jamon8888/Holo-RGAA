@@ -11,9 +11,16 @@ const INSTALL_DIR: &str = ".local/bin";
 #[derive(Debug, Clone)]
 pub enum InstallStep {
     Welcome,
-    Downloading { progress: f32, downloaded_mb: f32, total_mb: Option<f32> },
+    Downloading {
+        progress: f32,
+        downloaded_mb: f32,
+        total_mb: Option<f32>,
+    },
     Installing,
-    Done { success: bool, message: String },
+    Done {
+        success: bool,
+        message: String,
+    },
     Error(String),
 }
 
@@ -101,10 +108,7 @@ pub fn run_install_wizard() -> bool {
 
     ratatui::restore();
 
-    matches!(
-        wizard.step,
-        InstallStep::Done { success: true, .. }
-    )
+    matches!(wizard.step, InstallStep::Done { success: true, .. })
 }
 
 fn render(wizard: &InstallWizard, frame: &mut Frame) {
@@ -156,19 +160,16 @@ fn render(wizard: &InstallWizard, frame: &mut Frame) {
             let pct = (*progress * 100.0) as u16;
             let filled = ((*progress) * 50.0) as usize;
             let empty = 50 - filled;
-            let bar: String = format!(
-                "[{}{}] {}%",
-                "#".repeat(filled),
-                ".".repeat(empty),
-                pct
-            );
+            let bar: String = format!("[{}{}] {}%", "#".repeat(filled), ".".repeat(empty), pct);
             let lines: Vec<Line> = vec![
                 Line::from(format!("Downloading {}...", wizard.binary_name)),
                 Line::from(bar),
                 Line::from(format!(
                     "{:.1} MB / {} MB",
                     downloaded_mb,
-                    total_mb.map(|t| format!("{:.1}", t)).unwrap_or_else(|| "?".into())
+                    total_mb
+                        .map(|t| format!("{:.1}", t))
+                        .unwrap_or_else(|| "?".into())
                 )),
             ];
             frame.render_widget(
@@ -195,17 +196,12 @@ fn render(wizard: &InstallWizard, frame: &mut Frame) {
                 .constraints([Constraint::Fill(1)])
                 .split(chunks[2])[0];
             frame.render_widget(
-                Paragraph::new("Extracting and installing...")
-                    .alignment(Alignment::Center),
+                Paragraph::new("Extracting and installing...").alignment(Alignment::Center),
                 inner,
             );
         }
         InstallStep::Done { success, message } => {
-            let color = if *success {
-                Color::Green
-            } else {
-                Color::Red
-            };
+            let color = if *success { Color::Green } else { Color::Red };
             let title = if *success { "Success" } else { "Failed" };
             frame.render_widget(
                 Block::default()

@@ -188,9 +188,13 @@ impl Storage for PostgresStorage {
         } else {
             0.0
         };
-        let etat_conformite = if taux_global >= 100.0 { "totale" }
-            else if taux_global >= 50.0 { "partielle" }
-            else { "non conforme" };
+        let etat_conformite = if taux_global >= 100.0 {
+            "totale"
+        } else if taux_global >= 50.0 {
+            "partielle"
+        } else {
+            "non conforme"
+        };
 
         sqlx::query(
             r#"
@@ -300,7 +304,10 @@ impl Storage for PostgresStorage {
         Ok(())
     }
 
-    async fn get_bundle_by_audit_id(&self, audit_id: &str) -> Result<Option<AuditBundle>, StorageError> {
+    async fn get_bundle_by_audit_id(
+        &self,
+        audit_id: &str,
+    ) -> Result<Option<AuditBundle>, StorageError> {
         let row: Option<(Value,)> = sqlx::query_as(
             r#"
             SELECT data FROM audits WHERE audit_id = $1 ORDER BY updated_at DESC LIMIT 1

@@ -691,8 +691,8 @@ mod integration_test {
     // Site-wide aggregation tests
     mod site_aggregation {
         use super::*;
+        use rgaa_core::{CriterionResult, CriterionStatus, PageResult};
         use rgaa_orchestrator::pipeline::aggregate_site_compliance;
-        use rgaa_core::{PageResult, CriterionResult, Classification, CriterionStatus, RgaaCatalog, RgaaCriteria};
 
         fn build_page_result(url: &str, criteria: Vec<CriterionResult>) -> PageResult {
             PageResult {
@@ -724,9 +724,12 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, _etat) = aggregate_site_compliance(&pages);
-            
+
             // 1.1 is NC (fail on page2), 1.2 is C (pass on both) -> 1/2 = 50%
-            assert_eq!(taux_global, 50.0, "Site-wide taux_global should be 50% when 1.1 fails on any page");
+            assert_eq!(
+                taux_global, 50.0,
+                "Site-wide taux_global should be 50% when 1.1 fails on any page"
+            );
         }
 
         #[test]
@@ -746,8 +749,11 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
-            
-            assert_eq!(taux_global, 100.0, "Site-wide taux_global should be 100% when all pages pass");
+
+            assert_eq!(
+                taux_global, 100.0,
+                "Site-wide taux_global should be 100% when all pages pass"
+            );
             assert_eq!(etat, "totale", "etat should be 'totale'");
         }
 
@@ -768,7 +774,7 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
-            
+
             // 1.2 is NA on both pages (excluded), 1.1 is Pass on both -> 100%
             assert_eq!(taux_global, 100.0);
             assert_eq!(etat, "totale");
@@ -776,12 +782,8 @@ mod integration_test {
 
         #[test]
         fn site_aggregation_error_counts_as_fail() {
-            let page1_criteria = vec![
-                mock_criterion_result("1.1", CriterionStatus::Pass),
-            ];
-            let page2_criteria = vec![
-                mock_criterion_result("1.1", CriterionStatus::Error),
-            ];
+            let page1_criteria = vec![mock_criterion_result("1.1", CriterionStatus::Pass)];
+            let page2_criteria = vec![mock_criterion_result("1.1", CriterionStatus::Error)];
 
             let pages = vec![
                 build_page_result("https://example.com/page1", page1_criteria),
@@ -789,9 +791,12 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, _etat) = aggregate_site_compliance(&pages);
-            
+
             // Error counts as Fail -> NC
-            assert_eq!(taux_global, 0.0, "Error on any page should make criterion NC");
+            assert_eq!(
+                taux_global, 0.0,
+                "Error on any page should make criterion NC"
+            );
         }
 
         #[test]
@@ -811,7 +816,7 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
-            
+
             // 1.2 is NeedsReview on both (excluded from taux), 1.1 is Pass on both -> 100%
             assert_eq!(taux_global, 100.0);
             assert_eq!(etat, "totale");
@@ -834,7 +839,7 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
-            
+
             // 1.2 is NotTested on both (excluded from taux), 1.1 is Pass on both -> 100%
             assert_eq!(taux_global, 100.0);
             assert_eq!(etat, "totale");
@@ -858,7 +863,7 @@ mod integration_test {
             ];
 
             let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
-            
+
             // 13.1 is Manuel (excluded), 1.1 is Pass on both -> 100%
             assert_eq!(taux_global, 100.0);
             assert_eq!(etat, "totale");

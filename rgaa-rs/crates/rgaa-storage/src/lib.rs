@@ -37,7 +37,10 @@ pub trait Storage: Send + Sync {
         details: Option<Value>,
     ) -> Result<String, StorageError>;
     async fn put_bundle(&self, bundle: &AuditBundle) -> Result<(), StorageError>;
-    async fn get_bundle_by_audit_id(&self, audit_id: &str) -> Result<Option<AuditBundle>, StorageError>;
+    async fn get_bundle_by_audit_id(
+        &self,
+        audit_id: &str,
+    ) -> Result<Option<AuditBundle>, StorageError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

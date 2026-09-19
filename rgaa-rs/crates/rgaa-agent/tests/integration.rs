@@ -20,7 +20,9 @@ async fn test_agent_creation() {
 #[tokio::test]
 async fn test_evaluate_criterion() {
     if !has_api_key() {
-        eprintln!("Skipping test_evaluate_criterion: no API key set (HOL3_API_KEY or HOLO3_API_KEY)");
+        eprintln!(
+            "Skipping test_evaluate_criterion: no API key set (HOL3_API_KEY or HOLO3_API_KEY)"
+        );
         return;
     }
     let config = AgentConfig::from_env().unwrap();

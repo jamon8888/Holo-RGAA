@@ -31,10 +31,16 @@ pub fn build_app(state: AppState) -> Router {
         .route("/v1/audit-bundles", post(routes::create_audit_bundle))
         .route("/v1/audit-bundles/{id}", get(routes::get_audit_bundle))
         .route("/v1/audit-bundles", get(routes::list_audit_bundles))
-        .route("/v1/audit-bundles/{id}", axum::routing::delete(routes::delete_audit_bundle))
+        .route(
+            "/v1/audit-bundles/{id}",
+            axum::routing::delete(routes::delete_audit_bundle),
+        )
         .route("/v1/findings", get(routes::list_findings))
         .route("/v1/policy/evaluate", post(routes::evaluate_policy))
-        .route_layer(middleware::from_fn_with_state(state.storage.clone(), routes::auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            state.storage.clone(),
+            routes::auth_middleware,
+        ));
 
     let legacy_routes = Router::new()
         .route("/audit", post(routes::run_audit))

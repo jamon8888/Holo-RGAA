@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use rgaa_core::{AuditBundle, AuditResult, CrawlConfig, RgaaCriteria};
 use rgaa_remediation::RemediationPolicy;
-use rgaa_storage::{hash_api_key, Repository};
+use rgaa_storage::Repository;
 
 use crate::AppState;
 
@@ -201,7 +201,7 @@ pub struct PolicyEvaluateResponse {
 pub async fn auth_middleware(
     State(storage): State<Arc<dyn rgaa_storage::Storage>>,
     headers: HeaderMap,
-    mut request: axum::http::Request<axum::body::Body>,
+    request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, StatusCode> {
     let api_key = headers
@@ -210,7 +210,6 @@ pub async fn auth_middleware(
         .and_then(|h| h.strip_prefix("Bearer "));
 
     if let Some(key) = api_key {
-        let key_hash = hash_api_key(key);
         let repo = Repository::new(storage.pool());
         if let Ok(Some(_key_row)) = repo.validate_api_key(key, "audit:write").await {
             return Ok(next.run(request).await);
@@ -270,7 +269,14 @@ pub async fn list_audit_bundles(
             audit_id: row.id.to_string(),
             url: row.url,
             schema_version: "1.0".to_string(),
-            status: if row.taux_global >= 100.0 { "passed" } else if row.taux_global >= 50.0 { "needs_review" } else { "failed" }.to_string(),
+            status: if row.taux_global >= 100.0 {
+                "passed"
+            } else if row.taux_global >= 50.0 {
+                "needs_review"
+            } else {
+                "failed"
+            }
+            .to_string(),
             created_at: row.created_at,
         })
         .collect();

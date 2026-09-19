@@ -2,7 +2,9 @@ use ratatui::crossterm::event::{self, Event, KeyCode};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, ScrollbarState, Wrap};
+use ratatui::widgets::{
+    Block, Borders, List, ListItem, ListState, Paragraph, ScrollbarState, Wrap,
+};
 use ratatui::Frame;
 use rgaa_storage::{AuditSummary, PostgresStorage, Storage};
 use std::sync::Arc;
@@ -184,9 +186,10 @@ fn render_history_list(frame: &mut Frame, state: &mut HistoryState, area: Rect) 
             let status = format!("{:.1}%", entry.taux_global);
             let status_color = entry.status_color();
             let date = entry.created_at.format("%Y-%m-%d %H:%M").to_string();
+            let audit_id_short = &entry.audit_id[..8.min(entry.audit_id.len())];
             let content = format!(
                 "{} | {} | {} | {}",
-                entry.audit_id[..8.min(entry.audit_id.len())].to_string(),
+                audit_id_short,
                 entry.url.chars().take(40).collect::<String>(),
                 status,
                 date
@@ -196,7 +199,11 @@ fn render_history_list(frame: &mut Frame, state: &mut HistoryState, area: Rect) 
         .collect();
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Audit History"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Audit History"),
+        )
         .highlight_style(ratatui::style::Style::default().fg(Color::Yellow).bold())
         .highlight_symbol("▶ ");
 
@@ -204,7 +211,10 @@ fn render_history_list(frame: &mut Frame, state: &mut HistoryState, area: Rect) 
 }
 
 fn render_history_detail(frame: &mut Frame, state: &mut HistoryState, area: Rect) {
-    let selected = state.list_state.selected().and_then(|i| state.entries.get(i));
+    let selected = state
+        .list_state
+        .selected()
+        .and_then(|i| state.entries.get(i));
 
     let (content, _scroll_state) = if let Some(entry) = selected {
         let detail = format!(
@@ -220,15 +230,23 @@ fn render_history_detail(frame: &mut Frame, state: &mut HistoryState, area: Rect
             entry.errors
         );
         let paragraph = Paragraph::new(detail)
-            .block(Block::default().borders(Borders::ALL).title("Audit Details"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Audit Details"),
+            )
             .wrap(Wrap { trim: true })
             .scroll((state.detail_scroll as u16, 0));
-        (paragraph, state.detail_scroll_state.clone())
+        (paragraph, state.detail_scroll_state)
     } else {
         let paragraph = Paragraph::new("Select an audit to view details")
-            .block(Block::default().borders(Borders::ALL).title("Audit Details"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Audit Details"),
+            )
             .alignment(Alignment::Center);
-        (paragraph, state.detail_scroll_state.clone())
+        (paragraph, state.detail_scroll_state)
     };
 
     frame.render_widget(content, area);

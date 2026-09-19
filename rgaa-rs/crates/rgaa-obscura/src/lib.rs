@@ -1102,7 +1102,10 @@ impl ObscuraBridge {
     }
 
     /// Take a screenshot of the given URL with dimensions using CDP Page.captureScreenshot and Page.getLayoutMetrics.
-    pub async fn screenshot_with_dimensions(&self, url: &str) -> Result<(String, u32, u32), String> {
+    pub async fn screenshot_with_dimensions(
+        &self,
+        url: &str,
+    ) -> Result<(String, u32, u32), String> {
         let ws_url = self.get_browser_ws_url().await?;
         let (mut ws, _) = connect_async(&ws_url)
             .await

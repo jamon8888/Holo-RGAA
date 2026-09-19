@@ -180,7 +180,11 @@ impl Orchestrator {
     /// If config.sample_mode is true, uses RGAA mandatory 7-page sampling.
     /// Otherwise, crawls the site up to max_pages/max_depth.
     /// Returns a single AuditResult with all pages and site-wide aggregated metrics.
-    pub async fn run_crawl_and_audit(&self, url: &str, config: &CrawlConfig) -> Result<AuditResult, String> {
+    pub async fn run_crawl_and_audit(
+        &self,
+        url: &str,
+        config: &CrawlConfig,
+    ) -> Result<AuditResult, String> {
         run_crawl_and_audit(self, url, config).await
     }
 
@@ -324,7 +328,7 @@ pub async fn run_crawl_and_audit(
     config: &CrawlConfig,
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
-    
+
     let urls = if config.sample_mode {
         discover_rgaa_sample_pages(url, config).await?
     } else {
@@ -334,38 +338,54 @@ pub async fn run_crawl_and_audit(
             max_depth: Some(config.max_depth),
             respect_robots_txt: Some(config.respect_robots),
         };
-        let output = SpiderTool::new().call(spider_args).await.map_err(|e| e.to_string())?;
+        let output = SpiderTool::new()
+            .call(spider_args)
+            .await
+            .map_err(|e| e.to_string())?;
         output.pages.into_iter().map(|p| p.url).collect()
     };
-    
+
     // Cap at max_pages
     let urls: Vec<String> = urls.into_iter().take(config.max_pages).collect();
-    
+
     if urls.is_empty() {
         return Err("no pages to audit".to_string());
     }
-    
+
     let batch_results = orchestrator.run_batch(&urls, config).await?;
-    
+
     // Extract PageResults from each AuditResult
     let mut all_pages = Vec::new();
     for (_, audit) in batch_results {
         all_pages.extend(audit.pages);
     }
-    
+
     // Site-wide aggregation
     let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
-    
+
     // Flatten all criteria for totals
-    let all_criteria: Vec<CriterionResult> = all_pages.iter().flat_map(|p| p.criteria.clone()).collect();
-    
+    let all_criteria: Vec<CriterionResult> =
+        all_pages.iter().flat_map(|p| p.criteria.clone()).collect();
+
     let total = RgaaCriteria::count();
-    let pass_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::Pass).count();
-    let fail_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::Fail).count();
-    let na_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::NotApplicable).count();
-    let _error_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::Error).count();
+    let pass_count = all_criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::Pass)
+        .count();
+    let fail_count = all_criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::Fail)
+        .count();
+    let na_count = all_criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::NotApplicable)
+        .count();
+    let _error_count = all_criteria
+        .iter()
+        .filter(|c| c.status == CriterionStatus::Error)
+        .count();
     let compliance = calculate_compliance(&all_criteria);
-    
+
     Ok(AuditResult {
         audit_id: uuid::Uuid::new_v4().to_string(),
         url: url.to_string(),
@@ -384,23 +404,39 @@ pub async fn run_crawl_and_audit(
 
 /// Discover RGAA mandatory 7 sample pages.
 /// Returns URLs for: Accueil, Contact, Mentions légales, Accessibilité, Aide, Plan du site, Authentification (if exists).
-async fn discover_rgaa_sample_pages(base_url: &str, config: &CrawlConfig) -> Result<Vec<String>, String> {
+async fn discover_rgaa_sample_pages(
+    base_url: &str,
+    config: &CrawlConfig,
+) -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
-    
+
     let base = base_url.trim_end_matches('/');
     let mut pages = vec![base.to_string()]; // 1. Accueil
-    
+
     let patterns = [
-        ("contact", vec!["/contact", "/contactez-nous", "/nous-contacter"]),
-        ("mentions_legales", vec!["/mentions-legales", "/mentions-legales"]),
-        ("accessibilite", vec!["/accessibilite", "/declaration-accessibilite", "/accessibilite"]),
+        (
+            "contact",
+            vec!["/contact", "/contactez-nous", "/nous-contacter"],
+        ),
+        (
+            "mentions_legales",
+            vec!["/mentions-legales", "/mentions-legales"],
+        ),
+        (
+            "accessibilite",
+            vec![
+                "/accessibilite",
+                "/declaration-accessibilite",
+                "/accessibilite",
+            ],
+        ),
         ("aide", vec!["/aide", "/help", "/faq"]),
         ("plan_site", vec!["/plan-du-site", "/sitemap", "/plan-site"]),
     ];
-    
+
     for (_name, paths) in patterns {
         for path in paths {
             let test_url = format!("{}{}", base, path);
@@ -412,9 +448,14 @@ async fn discover_rgaa_sample_pages(base_url: &str, config: &CrawlConfig) -> Res
             }
         }
     }
-    
+
     // 7. Auth - only add if ANY auth path exists
-    let auth_paths = vec!["/connexion", "/login", "/authentification", "/identification"];
+    let auth_paths = vec![
+        "/connexion",
+        "/login",
+        "/authentification",
+        "/identification",
+    ];
     for path in auth_paths {
         let test_url = format!("{}{}", base, path);
         if let Ok(resp) = client.head(&test_url).send().await {
@@ -424,7 +465,7 @@ async fn discover_rgaa_sample_pages(base_url: &str, config: &CrawlConfig) -> Res
             }
         }
     }
-    
+
     // Fallback: if < 7 pages, shallow spider crawl
     if pages.len() < 7 {
         let spider_args = CrawlSiteArgs {
@@ -435,14 +476,16 @@ async fn discover_rgaa_sample_pages(base_url: &str, config: &CrawlConfig) -> Res
         };
         if let Ok(output) = SpiderTool::new().call(spider_args).await {
             for page in output.pages {
-                if pages.len() >= config.max_pages.min(7) { break; }
+                if pages.len() >= config.max_pages.min(7) {
+                    break;
+                }
                 if !pages.contains(&page.url) {
                     pages.push(page.url);
                 }
             }
         }
     }
-    
+
     pages.truncate(config.max_pages.min(7));
     Ok(pages)
 }
@@ -450,37 +493,41 @@ async fn discover_rgaa_sample_pages(base_url: &str, config: &CrawlConfig) -> Res
 /// Aggregate site-wide compliance per RGAA official rule:
 /// A criterion is NonConforme for the entire site if it fails on ANY page of the sample.
 /// Returns (taux_global, coverage_percent, etat_conformite).
-fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
+pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
     use std::collections::HashMap;
-    
+
     // Group criterion results by criterion_id across all pages
     let mut criterion_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
     let mut criterion_classifications: HashMap<String, Classification> = HashMap::new();
     let mut validated_total = 0;
     let mut validated_executed = 0;
-    
+
     for page in page_results {
         for criterion in &page.criteria {
             criterion_statuses
                 .entry(criterion.criterion_id.clone())
                 .or_default()
                 .push(criterion.status.clone());
-            criterion_classifications.insert(criterion.criterion_id.clone(), criterion.classification);
+            criterion_classifications
+                .insert(criterion.criterion_id.clone(), criterion.classification);
         }
     }
-    
+
     // Apply RGAA rule: NC if ANY page has Fail/Error
     let mut conforme = 0;
     let mut non_conforme = 0;
-    
+
     for (criterion_id, statuses) in criterion_statuses {
-        let classification = criterion_classifications.get(&criterion_id).copied().unwrap_or(Classification::Manuel);
-        
+        let classification = criterion_classifications
+            .get(&criterion_id)
+            .copied()
+            .unwrap_or(Classification::Manuel);
+
         // Skip Manuel criteria from taux calculation (they're NonTeste)
         if classification == Classification::Manuel {
             continue;
         }
-        
+
         // Count for coverage
         if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion_id) {
             if matches!(
@@ -488,22 +535,27 @@ fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) 
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if statuses.iter().any(|s| !matches!(s, CriterionStatus::NotTested)) {
+                if statuses
+                    .iter()
+                    .any(|s| !matches!(s, CriterionStatus::NotTested))
+                {
                     validated_executed += 1;
                 }
             }
         }
-        
-        let has_fail_or_error = statuses.iter().any(|s| 
-            matches!(s, CriterionStatus::Fail | CriterionStatus::Error)
-        );
+
+        let has_fail_or_error = statuses
+            .iter()
+            .any(|s| matches!(s, CriterionStatus::Fail | CriterionStatus::Error));
         let all_pass = statuses.iter().all(|s| matches!(s, CriterionStatus::Pass));
-        let all_na = statuses.iter().all(|s| matches!(s, CriterionStatus::NotApplicable));
-        
+        let all_na = statuses
+            .iter()
+            .all(|s| matches!(s, CriterionStatus::NotApplicable));
+
         if all_na {
             continue; // NA excluded from denominator
         }
-        
+
         if has_fail_or_error {
             non_conforme += 1;
         } else if all_pass {
@@ -513,19 +565,28 @@ fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) 
             continue;
         }
     }
-    
+
     let taux_global = if conforme + non_conforme > 0 {
         (conforme as f64 / (conforme + non_conforme) as f64) * 100.0
-    } else { 0.0 };
-    
+    } else {
+        0.0
+    };
+
     let coverage_percent = if validated_total > 0 {
         (validated_executed as f64 / validated_total as f64) * 100.0
-    } else { 0.0 };
-    
-    let etat_conformite = if taux_global >= 100.0 { "totale" }
-        else if taux_global >= 50.0 { "partielle" }
-        else { "non conforme" }.to_string();
-    
+    } else {
+        0.0
+    };
+
+    let etat_conformite = if taux_global >= 100.0 {
+        "totale"
+    } else if taux_global >= 50.0 {
+        "partielle"
+    } else {
+        "non conforme"
+    }
+    .to_string();
+
     (taux_global, coverage_percent, etat_conformite)
 }
 

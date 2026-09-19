@@ -23,6 +23,8 @@ pub enum RgaaError {
     Browser(String),
     #[error("Axe-core error: {0}")]
     AxeCore(String),
+    #[error("SEO rules error: {0}")]
+    Seo(String),
     #[error("Holo3 API error: {0}")]
     Holo3(String),
     #[error("Media analysis error: {0}")]

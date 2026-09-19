@@ -206,6 +206,7 @@ impl McpFailure {
             | RgaaError::Crawl(_)
             | RgaaError::Browser(_)
             | RgaaError::AxeCore(_)
+            | RgaaError::Seo(_)
             | RgaaError::Holo3(_)
             | RgaaError::Media(_)
             | RgaaError::Storage(_) => Self::execution(err.to_string()),

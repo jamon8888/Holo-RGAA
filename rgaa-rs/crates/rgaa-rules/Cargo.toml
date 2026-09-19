@@ -1,9 +1,13 @@
 [package]
-description = "axe-core violation mapping and gap-fix JavaScript snippets"
+description = "axe-core violation mapping, gap-fix JavaScript snippets, and SEO/GEO/AEO rules"
 license = "MIT"
 name = "rgaa-rules"
 version = "0.1.0"
 edition = "2021"
+
+[features]
+default = ["seo"]
+seo = []
 
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }

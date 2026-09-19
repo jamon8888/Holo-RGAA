@@ -1,0 +1,290 @@
+{
+  "schema_version": "1.0",
+  "provenance": {
+    "source": "Holo-RGAA seo-geo-aeo rules catalog",
+    "validated_by": "spec docs/specs/seo-geo-aeo-rgaa-merge.md",
+    "validated_at": "2026-09-19",
+    "notes": "Deterministic rules only. Criticality follows the P0-P3 ladder of claude-plugin/skills/seo-geo-aeo/SKILL.md. rgaa_overlap lists RGAA 4.1.2 criteria that observe the same underlying signal; the skill deduplicates those by fingerprint and keeps the highest tier."
+  },
+  "rules": [
+    {
+      "id": "SEO-META-01",
+      "family": "seo",
+      "group": "meta",
+      "title": "La page a un élément <title> non vide",
+      "description": "Le titre est le premier signal de pertinence pour les moteurs et le nom de l'onglet pour les utilisateurs.",
+      "criticality": "P1",
+      "rgaa_overlap": ["8.5"]
+    },
+    {
+      "id": "SEO-META-02",
+      "family": "seo",
+      "group": "meta",
+      "title": "Le <title> fait entre 10 et 60 caractères",
+      "description": "Au-delà de ~60 caractères le titre est tronqué dans les résultats ; en dessous de 10 il est rarement descriptif.",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-META-03",
+      "family": "seo",
+      "group": "meta",
+      "title": "La page a une meta description non vide",
+      "description": "La meta description alimente l'extrait affiché dans les résultats de recherche.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-META-04",
+      "family": "seo",
+      "group": "meta",
+      "title": "La meta description fait entre 50 et 160 caractères",
+      "description": "Plage recommandée pour éviter la troncature et rester informative.",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-META-05",
+      "family": "seo",
+      "group": "meta",
+      "title": "La page n'est pas marquée noindex",
+      "description": "Une directive robots noindex retire la page de l'index ; sur une page publique c'est bloquant.",
+      "criticality": "P0",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-LANG-01",
+      "family": "seo",
+      "group": "meta",
+      "title": "L'attribut lang est présent sur <html>",
+      "description": "Déclare la langue de la page pour les moteurs et les technologies d'assistance.",
+      "criticality": "P1",
+      "rgaa_overlap": ["8.3"]
+    },
+    {
+      "id": "SEO-CANON-01",
+      "family": "seo",
+      "group": "canonical",
+      "title": "Une balise link rel=canonical est présente",
+      "description": "Évite la dilution du signal entre variantes d'URL (paramètres, trailing slash, http/https).",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-CANON-02",
+      "family": "seo",
+      "group": "canonical",
+      "title": "Le canonical pointe vers la même origine que la page",
+      "description": "Un canonical vers une autre origine transfère l'indexation à un autre site ; presque toujours une erreur.",
+      "criticality": "P0",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-CANON-03",
+      "family": "seo",
+      "group": "canonical",
+      "title": "Un seul link rel=canonical",
+      "description": "Plusieurs canonicals contradictoires sont ignorés par les moteurs.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-HREF-01",
+      "family": "seo",
+      "group": "canonical",
+      "title": "Les hreflang incluent une auto-référence",
+      "description": "Quand des hreflang sont déclarés, la page doit se référencer elle-même, sinon le cluster est invalide.",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-HEAD-01",
+      "family": "seo",
+      "group": "headings",
+      "title": "La page a exactement un <h1>",
+      "description": "Un h1 unique identifie le sujet principal de la page.",
+      "criticality": "P1",
+      "rgaa_overlap": ["9.1"]
+    },
+    {
+      "id": "SEO-HEAD-02",
+      "family": "seo",
+      "group": "headings",
+      "title": "Aucun saut de niveau de titre",
+      "description": "Passer de h2 à h4 casse la hiérarchie exploitée par les moteurs et les lecteurs d'écran.",
+      "criticality": "P2",
+      "rgaa_overlap": ["9.1"]
+    },
+    {
+      "id": "SEO-IMG-01",
+      "family": "seo",
+      "group": "headings",
+      "title": "Toutes les images ont un attribut alt",
+      "description": "L'alt est le seul texte indexable d'une image et sa description pour les lecteurs d'écran.",
+      "criticality": "P2",
+      "rgaa_overlap": ["1.1"]
+    },
+    {
+      "id": "SEO-SCHEMA-01",
+      "family": "seo",
+      "group": "schema_org",
+      "title": "Chaque bloc JSON-LD est un JSON valide",
+      "description": "Un JSON-LD invalide désactive tous les résultats enrichis de la page.",
+      "criticality": "P0",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-SCHEMA-02",
+      "family": "seo",
+      "group": "schema_org",
+      "title": "Chaque bloc JSON-LD déclare @context et @type",
+      "description": "Sans @context schema.org et @type, le bloc n'est pas interprété.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-SCHEMA-03",
+      "family": "seo",
+      "group": "schema_org",
+      "title": "Les propriétés requises du @type sont présentes",
+      "description": "Organization: name,url · LocalBusiness: name,address,telephone · Article: headline,author,datePublished · Product: name,offers · WebSite: name,url · BreadcrumbList: itemListElement · FAQPage: mainEntity · HowTo: name,step.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-NAP-01",
+      "family": "seo",
+      "group": "nap",
+      "title": "Le nom de l'établissement apparaît sur la page",
+      "description": "Cohérence Name/Address/Phone avec la fiche Google Business Profile ; non applicable sans profil fourni.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-NAP-02",
+      "family": "seo",
+      "group": "nap",
+      "title": "Le téléphone de la fiche apparaît sur la page",
+      "description": "Comparaison sur les chiffres uniquement, indépendante du formatage.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-NAP-03",
+      "family": "seo",
+      "group": "nap",
+      "title": "L'adresse de la fiche apparaît sur la page",
+      "description": "Comparaison normalisée (casse, espaces, ponctuation).",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "SEO-NAP-04",
+      "family": "seo",
+      "group": "nap",
+      "title": "Un schéma LocalBusiness est présent quand un profil est fourni",
+      "description": "Le balisage LocalBusiness est le canal structuré vers le pack local.",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "GEO-01",
+      "family": "geo",
+      "group": "entity",
+      "title": "Une entité Organization ou WebSite est déclarée avec name et url",
+      "description": "Les moteurs génératifs ancrent leurs citations sur une entité identifiable.",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "GEO-02",
+      "family": "geo",
+      "group": "entity",
+      "title": "L'entité déclare des liens sameAs",
+      "description": "sameAs désambiguïse l'entité (Wikidata, réseaux, annuaires) pour les modèles génératifs.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "GEO-03",
+      "family": "geo",
+      "group": "eeat",
+      "title": "Un contenu Article déclare author et datePublished",
+      "description": "Signaux d'autorité et de fraîcheur repris par les moteurs génératifs (E-E-A-T).",
+      "criticality": "P2",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "GEO-04",
+      "family": "geo",
+      "group": "eeat",
+      "title": "Un contenu Article déclare dateModified",
+      "description": "La date de mise à jour pèse dans la sélection des sources citées.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "GEO-05",
+      "family": "geo",
+      "group": "content",
+      "title": "Un paragraphe d'accroche d'au moins 200 caractères suit le <h1>",
+      "description": "Les moteurs génératifs extraient de préférence un résumé dense placé en tête de contenu.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "AEO-01",
+      "family": "aeo",
+      "group": "faq",
+      "title": "Des titres sous forme de question sont accompagnés d'un schéma FAQPage",
+      "description": "Quand la page pose des questions, le balisage FAQPage les rend éligibles aux réponses directes.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "AEO-02",
+      "family": "aeo",
+      "group": "faq",
+      "title": "Chaque Question d'un FAQPage a un acceptedAnswer avec text",
+      "description": "Un FAQPage incomplet est ignoré ; non applicable sans FAQPage.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "AEO-03",
+      "family": "aeo",
+      "group": "howto",
+      "title": "Chaque step d'un HowTo a un text ou un name",
+      "description": "Un HowTo sans étapes textuelles n'est pas exploitable ; non applicable sans HowTo.",
+      "criticality": "P1",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "AEO-04",
+      "family": "aeo",
+      "group": "answer",
+      "title": "Chaque titre-question est suivi d'un paragraphe de réponse concis",
+      "description": "Une réponse de 40 à 300 caractères immédiatement après la question est le format extrait en réponse directe.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "AEO-05",
+      "family": "aeo",
+      "group": "answer",
+      "title": "Un balisage speakable est déclaré",
+      "description": "speakable désigne les passages lisibles par les assistants vocaux.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    },
+    {
+      "id": "AEO-06",
+      "family": "aeo",
+      "group": "navigation",
+      "title": "Un schéma BreadcrumbList est présent",
+      "description": "Le fil d'Ariane structuré contextualise la page dans les réponses générées.",
+      "criticality": "P3",
+      "rgaa_overlap": []
+    }
+  ]
+}

@@ -8,6 +8,8 @@ pub enum Framework {
     Next,
     Vue,
     Angular,
+    /// Plain HTML documents (`<head>`-level SEO fixes), handled by [`crate::HtmlAdapter`].
+    Html,
 }
 
 pub trait FrameworkAdapter: Send + Sync {
@@ -32,6 +34,7 @@ pub fn adapter_for(framework: Framework) -> &'static dyn FrameworkAdapter {
         Framework::Next => &NextAdapter,
         Framework::Vue => &VueAdapter,
         Framework::Angular => &AngularAdapter,
+        Framework::Html => &crate::HtmlAdapter,
     }
 }
 
@@ -290,6 +293,10 @@ pub fn detect_framework(source: &str) -> Option<Framework> {
         || source.contains("*ngIf")
     {
         return Some(Framework::Angular);
+    }
+    let lower = source.to_ascii_lowercase();
+    if lower.contains("<!doctype html") || lower.contains("<html") || lower.contains("<head") {
+        return Some(Framework::Html);
     }
     None
 }

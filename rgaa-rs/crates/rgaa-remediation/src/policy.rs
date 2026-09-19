@@ -21,6 +21,7 @@ impl Default for RemediationPolicy {
                 Framework::Next,
                 Framework::Vue,
                 Framework::Angular,
+                Framework::Html,
             ],
             max_batch_size: 25,
             require_approval: true,

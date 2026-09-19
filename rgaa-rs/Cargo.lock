@@ -6788,6 +6788,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
  "rgaa-core",
+ "rgaa-rules",
  "schemars 1.2.2",
  "serde",
  "serde_json",

@@ -15,8 +15,8 @@ it parses HTML attributes and never *looks* at the page. That caps them at rough
 
 Holo-RGAA is the first auditor built to cover the **full 106-criterion path**:
 
-- **~77 deterministic criteria** via axe-core + RGAA-specific gap-fix heuristics;
-- **~22+ judgment criteria** via the **Holo3 vision-language model**, which receives
+- **~72 deterministic criteria** via axe-core + RGAA-specific gap-fix heuristics;
+- **~27+ judgment criteria** via the **Holo3 vision-language model**, which receives
   the rendered screenshot alongside the DOM/AXTree and judges what DOM-only tools
   cannot see — pertinent image alternatives, visible focus indicators, reading order,
   link purpose from context, captions checked against rendered media;
@@ -57,8 +57,8 @@ Most accessibility criteria fall into three categories:
 
 | Category | Count | Can Automated Tools Detect? |
 |----------|-------|---------------------------|
-| **Deterministic** | ~77 | Yes — axe-core + gap-fix |
-| **LLM-Assisted** | ~22+ | Partially — requires AI judgment |
+| **Deterministic** | ~72 | Yes — axe-core + gap-fix |
+| **LLM-Assisted** | ~27+ | Partially — requires AI judgment |
 | **Manual Testing** | ~7 | No — human tester required |
 
 The "LLM-Assisted" criteria are where traditional scanners fail. Criteria like:
@@ -620,20 +620,22 @@ rgaa-cli policy --input audit-bundle.json --threshold 85
 
 ## RGAA Criteria Coverage
 
-### Topic Breakdown
+### Topic Breakdown (approximate)
 
 | Topic | Criteria | Deterministic | LLM-Assisted | Manual |
 |-------|----------|--------------|--------------|--------|
-| Images | 1.1–1.9 | 6 | 3 | 0 |
-| Tables | 5.1–5.8 | 5 | 2 | 1 |
+| Images | 1.1–1.9 | 5 | 4 | 0 |
+| Tables | 5.1–5.8 | 4 | 3 | 1 |
 | Links | 6.1–6.3 | 2 | 1 | 0 |
 | Scripts | 7.1–7.5 | 3 | 1 | 1 |
-| HTML | 8.1–8.10 | 8 | 1 | 1 |
+| HTML | 8.1–8.10 | 7 | 2 | 1 |
 | Colors | 10.1–10.14 | 10 | 3 | 1 |
 | Forms | 11.1–11.13 | 10 | 2 | 1 |
 | Navigation | 12.1–12.14 | 11 | 2 | 1 |
-| Content | 4.1–4.13 | 8 | 4 | 1 |
+| Content | 4.1–4.13 | 7 | 5 | 1 |
 | Media | 13.1–13.13 | 4 | 5 | 4 |
+
+**Total: 72 Deterministic, 28 LLM-Assisted, 6 Manual** (sums to 106)
 
 ### Classification Definitions
 

@@ -13,11 +13,14 @@ it parses HTML attributes and never *looks* at the page. That caps them at rough
 **50 criteria** they can actually verify, leaving more than half of RGAA 4.1.2's
 **106 criteria** as "manual testing required" — which, in practice, means never tested.
 
-Holo-RGAA is the first auditor built to cover the **full 106-criterion path** (official RGAA 4.1.2 automation levels):
+Holo-RGAA is the first auditor built to cover the **full 106-criterion path** with its internal pipeline:
 
-- **39 fully automated criteria** (FullyAutomatable) via axe-core + RGAA-specific gap-fix heuristics;
-- **45 partially automated criteria** (PartiallyAutomatable) — automated check + human verification for uncovered portions;
-- **22 non-automatable criteria** (NotAutomatable) — require human judgment (Holo3 vision LLM) or guided manual testing (IGT).
+- **73 deterministic criteria** via axe-core + RGAA-specific gap-fix heuristics;
+- **32 LLM-assisted criteria** via the **Holo3 vision-language model**, which receives
+  the rendered screenshot alongside the DOM/AXTree and judges what DOM-only tools
+  cannot see — pertinent image alternatives, visible focus indicators, reading order,
+  link purpose from context, captions checked against rendered media;
+- **1 guided manual test (IGT)** with keyboard-trap detection for the remainder (criterion 7.5).
 
 No other product sees the page. Holo-RGAA does — and that single difference is what
 turns a 50-criterion scan into a complete RGAA audit pipeline, from detection to
@@ -50,15 +53,15 @@ Taux Global = Conforme / (Conforme + Non Conforme) × 100
 
 ### The Automation Problem
 
-Most accessibility criteria fall into three categories (official RGAA 4.1.2):
+Most accessibility criteria fall into three categories in **Holo-RGAA's pipeline**:
 
-| Category | Count | Can Automated Tools Detect? |
-|----------|-------|---------------------------|
-| **Fully Automated** | 39 | Yes — axe-core + gap-fix |
-| **Partially Automated** | 45 | Partial — automated check + human review for uncovered portions |
-| **Non-Automatable** | 22 | No — requires AI judgment (Holo3) or human tester |
+| Category | Count | How Holo-RGAA Handles It |
+|----------|-------|-------------------------|
+| **Deterministic** | 73 | axe-core + gap-fix JS (fully automated) |
+| **LLM-Assisted** | 32 | Holo3 vision model evaluates; human reviews decision |
+| **Manual (IGT)** | 1 | Keyboard navigation test (criterion 7.5) |
 
-The "Partially Automated" criteria are where traditional scanners fail — they have some automated checks but need human verification for the rest. The "Non-Automatable" criteria require contextual understanding that only an LLM can provide at scale.
+Traditional scanners (axe-core, WAVE, Asqatasun) are **DOM-only** and cap at ~50 criteria. Holo3 vision unlocks the 32 `IaAssiste` criteria by evaluating visual context (screenshots + DOM). Only criterion 7.5 (status messages via AT) remains truly manual.
 
 ### How Holo-RGAA Solves This
 
@@ -612,38 +615,30 @@ rgaa-cli policy --input audit-bundle.json --threshold 85
 
 ## RGAA Criteria Coverage
 
-### Topic Breakdown (official RGAA 4.1.2 automation levels)
+### Topic Breakdown (Holo-RGAA pipeline classification)
 
-| Topic | Criteria | FullyAutomatable | PartiallyAutomatable | NotAutomatable |
-|-------|----------|------------------|----------------------|----------------|
-| Images | 1.1–1.9 | 2 | 7 | 0 |
-| Tables | 5.1–5.8 | 2 | 4 | 2 |
-| Links | 6.1–6.3 | 1 | 2 | 0 |
-| Scripts | 7.1–7.5 | 1 | 3 | 1 |
-| HTML | 8.1–8.10 | 4 | 4 | 2 |
-| Colors | 10.1–10.14 | 5 | 7 | 2 |
-| Forms | 11.1–11.13 | 4 | 8 | 1 |
-| Navigation | 12.1–12.14 | 7 | 5 | 2 |
-| Content | 4.1–4.13 | 5 | 5 | 3 |
-| Media | 13.1–13.13 | 8 | 3 | 2 |
+| Topic | Criteria | Deterministe | IaAssiste | Manuel |
+|-------|----------|--------------|-----------|--------|
+| Images | 1.1–1.9 | 5 | 4 | 0 |
+| Tables | 5.1–5.8 | 5 | 2 | 1 |
+| Links | 6.1–6.3 | 2 | 1 | 0 |
+| Scripts | 7.1–7.5 | 3 | 1 | 1 |
+| HTML | 8.1–8.10 | 7 | 2 | 1 |
+| Colors | 10.1–10.14 | 11 | 3 | 0 |
+| Forms | 11.1–11.13 | 10 | 3 | 0 |
+| Navigation | 12.1–12.14 | 11 | 3 | 0 |
+| Content | 4.1–4.13 | 8 | 5 | 0 |
+| Media | 13.1–13.13 | 11 | 2 | 0 |
 
-**Total: 39 FullyAutomatable, 45 PartiallyAutomatable, 22 NotAutomatable** (sums to 106)
+**Total: 73 Deterministe, 32 IaAssiste, 1 Manuel** (sums to 106)
 
-### Official RGAA 4.1.2 Automation Levels
+### Pipeline Classification
 
 | Classification | Description | Count |
 |---------------|-------------|-------|
-| `FullyAutomatable` | Fully automated via axe-core or gap-fix | 39 |
-| `PartiallyAutomatable` | Automated check + human verification for uncovered portions | 45 |
-| `NotAutomatable` | Requires AI judgment (Holo3) or human tester observation | 22 |
-
-### Internal Pipeline Classification (used by Holo-RGAA)
-
-| Classification | Description |
-|---------------|-------------|
-| `Deterministe` | Fully automated via axe-core or gap-fix |
-| `IaAssiste` | Requires Holo3 LLM evaluation |
-| `Manuel` | Human tester observation required (IGT) |
+| `Deterministe` | Fully automated via axe-core or gap-fix | 73 |
+| `IaAssiste` | Holo3 vision LLM evaluates; human reviews decision | 32 |
+| `Manuel` | Human tester observation required (IGT) | 1 (7.5) |
 
 ---
 

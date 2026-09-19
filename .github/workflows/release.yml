@@ -84,6 +84,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # rust-toolchain.toml pins an exact channel, so cargo runs under that
+      # rustup toolchain — not `stable`, where the step above installed the
+      # target. Add it to the toolchain actually in use (cross jobs such as
+      # x86_64-apple-darwin on an arm64 runner otherwise fail with E0463
+      # "can't find crate for `core`").
+      - name: Add target to pinned toolchain
+        run: rustup target add ${{ matrix.target }}
+        shell: bash
+
+      # .cargo/config.toml forces `-fuse-ld=mold` for x86_64-unknown-linux-gnu;
+      # without the binary on PATH the link fails with "cannot find 'ld'".
+      - uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rgaa-rs

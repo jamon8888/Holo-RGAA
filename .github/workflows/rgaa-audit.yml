@@ -94,7 +94,7 @@ jobs:
     name: Audit changed routes
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'changed' || github.event.inputs.mode == 'changed' }}
+    if: ${{ github.event.inputs.mode == 'changed' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -104,7 +104,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: rgaa-audit-binaries
-          path: bin
+          path: rgaa-rs/bin
       - name: Determine changed routes
         id: changed
         run: |
@@ -125,12 +125,15 @@ jobs:
           chmod +x bin/rgaa-cli
           # Extract routes from changed files (simplified heuristic)
           if [ -n "${{ steps.changed.outputs.files }}" ]; then
-            ./bin/rgaa-cli audit analyze --url "https://${{ github.repository }}.github.io" --format sarif --output changed-audit.sarif || true
+            ./bin/rgaa-cli audit analyze --url "https://${{ github.repository_owner }}.github.io" --format sarif --output changed-audit.sarif || true
           else
             echo "No relevant changed files detected"
           fi
       - name: Upload SARIF
-        if: always()
+        # The audit command tolerates failure (|| true) so a bad/unreachable target
+        # doesn't fail the job, but that means the SARIF file may not exist --
+        # only try to upload it if it was actually produced.
+        if: always() && hashFiles('rgaa-rs/changed-audit.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: rgaa-rs/changed-audit.sarif
@@ -140,7 +143,7 @@ jobs:
     name: Smoke audit (critical routes)
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'smoke' || github.event.inputs.mode == 'smoke' }}
+    if: ${{ github.event.inputs.mode == 'smoke' || github.event_name != 'workflow_dispatch' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -150,7 +153,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: rgaa-audit-binaries
-          path: bin
+          path: rgaa-rs/bin
       - name: Run smoke audit
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
@@ -159,12 +162,14 @@ jobs:
           chmod +x bin/rgaa-cli
           # Smoke test: audit configured critical routes
           ./bin/rgaa-cli audit analyze \
-            --url "https://${{ github.repository }}.github.io" \
+            --url "https://${{ github.repository_owner }}.github.io" \
             --format sarif --output smoke-audit.sarif \
             --format json --output smoke-audit.json \
             --format markdown --output smoke-audit.md || true
       - name: Upload SARIF
-        if: always()
+        # See audit-changed: only upload if the (best-effort) audit actually
+        # produced a SARIF file.
+        if: always() && hashFiles('rgaa-rs/smoke-audit.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: rgaa-rs/smoke-audit.sarif
@@ -180,7 +185,7 @@ jobs:
     name: Full site audit
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'full' || github.event.inputs.mode == 'full' }}
+    if: ${{ github.event.inputs.mode == 'full' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -191,7 +196,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: rgaa-audit-binaries
-          path: bin
+          path: rgaa-rs/bin
       - name: Run full audit (crawl + analyze)
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
@@ -199,13 +204,15 @@ jobs:
         run: |
           chmod +x bin/rgaa-cli
           ./bin/rgaa-cli audit analyze \
-            --url "https://${{ github.repository }}.github.io" \
+            --url "https://${{ github.repository_owner }}.github.io" \
             --crawl --max-pages 50 --max-depth 3 \
             --format sarif --output full-audit.sarif \
             --format json --output full-audit.json \
             --format markdown --output full-audit.md || true
       - name: Upload SARIF
-        if: always()
+        # See audit-changed: only upload if the (best-effort) audit actually
+        # produced a SARIF file.
+        if: always() && hashFiles('rgaa-rs/full-audit.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: rgaa-rs/full-audit.sarif
@@ -223,7 +230,7 @@ jobs:
     name: Audit diff vs baseline
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'diff' || github.event.inputs.mode == 'diff' }}
+    if: ${{ github.event.inputs.mode == 'diff' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -233,7 +240,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: rgaa-audit-binaries
-          path: bin
+          path: rgaa-rs/bin
       - name: Run current audit
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
@@ -241,7 +248,7 @@ jobs:
         run: |
           chmod +x bin/rgaa-cli
           ./bin/rgaa-cli audit analyze \
-            --url "https://${{ github.repository }}.github.io" \
+            --url "https://${{ github.repository_owner }}.github.io" \
             --format json --output current-audit.json || true
       - name: Fetch baseline audit
         if: ${{ env.RGA_BASELINE_AUDIT_ID != '' }}
@@ -257,7 +264,7 @@ jobs:
     name: Policy evaluation
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'policy' || github.event.inputs.mode == 'policy' }}
+    if: ${{ github.event.inputs.mode == 'policy' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -267,7 +274,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: rgaa-audit-binaries
-          path: bin
+          path: rgaa-rs/bin
       - name: Run audit for policy evaluation
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
@@ -275,7 +282,7 @@ jobs:
         run: |
           chmod +x bin/rgaa-cli
           ./bin/rgaa-cli audit analyze \
-            --url "https://${{ github.repository }}.github.io" \
+            --url "https://${{ github.repository_owner }}.github.io" \
             --format json --output policy-audit.json || true
       - name: Evaluate policy
         run: |

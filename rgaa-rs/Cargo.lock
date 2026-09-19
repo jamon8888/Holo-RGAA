@@ -6785,6 +6785,7 @@ dependencies = [
 name = "rgaa-remediation"
 version = "0.1.0"
 dependencies = [
+ "indexmap 2.14.2",
  "rgaa-core",
  "schemars 1.2.2",
  "serde",

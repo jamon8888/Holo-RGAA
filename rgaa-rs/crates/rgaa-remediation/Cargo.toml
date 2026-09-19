@@ -6,6 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+indexmap = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }
 schemars = { workspace = true }
 serde = { workspace = true }

@@ -7,3 +7,7 @@ target/
 obscura
 obscura-worker
 obscura-*.tar.gz
+
+# Personal agent rules (basemind init)
+CLAUDE.local.md
+AGENTS.local.md

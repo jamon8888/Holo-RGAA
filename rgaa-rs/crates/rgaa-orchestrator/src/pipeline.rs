@@ -20,6 +20,10 @@ use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
 
+/// At most this many audits run concurrently in a batch — the operating
+/// point #42 locks in (1000-audit batches, 8 concurrent).
+const MAX_CONCURRENT_AUDITS: usize = 8;
+
 /// Pipeline stage reported to progress callbacks, in execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditPhase {
@@ -137,8 +141,6 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
     (taux_global, coverage_percent, etat_conformite)
 }
 
-const MAX_CONCURRENT_AUDITS: usize = 3;
-
 pub struct Orchestrator {
     storage: Option<Arc<dyn Storage>>,
 }
@@ -188,56 +190,82 @@ impl Orchestrator {
         run_crawl_and_audit(self, url, config).await
     }
 
-    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the URL.
-    /// The Obscura CDP server is started once before the loop and stopped via
-    /// [`ObscuraBridge`] `Drop` after the loop completes.
-    /// Audits run concurrently with a maximum of 3 simultaneous audits.
+    /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the
+    /// URL (successful audits only — a failed URL is logged and skipped, not
+    /// allowed to abort the rest of the batch).
+    ///
+    /// Runs up to [`MAX_CONCURRENT_AUDITS`] audits concurrently under one
+    /// shared semaphore rather than one at a time: each audit gets its own
+    /// [`BrowserSession`] (via [`ObscuraBridge::handle`], a handle to the
+    /// same running server — not a `BrowserSession`/mutex shared across every
+    /// in-flight audit), and is persisted to storage as soon as it completes
+    /// instead of being held in an accumulator until the whole batch is
+    /// done — a crash or kill mid-batch loses only the audits still
+    /// in-flight, not every audit that had already finished. The Obscura CDP
+    /// server itself is started once before the fan-out and stopped via
+    /// [`ObscuraBridge`] `Drop` after every audit has finished.
     pub async fn run_batch(
         &self,
         urls: &[String],
         config: &CrawlConfig,
     ) -> Result<HashMap<String, AuditResult>, String> {
+        use futures::stream::{self, StreamExt};
+
         let bridge = {
             let mut b = ObscuraBridge::from_env();
             b.start_server().await?;
             b
         };
 
-        let session = BrowserSession::new(bridge);
-        let tool_ctx = ToolContext::new(session);
-
         let agent_config = rgaa_agent::config::AgentConfig::from_env()
             .map_err(|e| format!("invalid agent configuration: {e}"))?;
-        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
-            .await
-            .map_err(|e| format!("failed to create agent: {e}"))?;
+        let agent = Arc::new(
+            rgaa_agent::agent::RgaaAgent::new(&agent_config)
+                .await
+                .map_err(|e| format!("failed to create agent: {e}"))?,
+        );
 
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_AUDITS));
-        let mut handles = Vec::new();
+        let storage = self.storage.clone();
 
-        for url in urls {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
-            let agent = agent.clone();
-            let tool_ctx = tool_ctx.clone();
-            let config = config.clone();
-            let url = url.clone();
-            handles.push(tokio::spawn(async move {
-                let _permit = permit;
-                let audit = audit_one(&agent, &tool_ctx, &url, &config, &|_| {}).await?;
-                Ok::<(String, AuditResult), String>((url, audit))
-            }));
-        }
+        let outcomes = stream::iter(urls.iter().cloned())
+            .map(|url| {
+                let agent = Arc::clone(&agent);
+                let tool_ctx = ToolContext::new(BrowserSession::new(bridge.handle()));
+                let semaphore = Arc::clone(&semaphore);
+                let storage = storage.clone();
+                let config = config.clone();
+                async move {
+                    let _permit = semaphore
+                        .acquire()
+                        .await
+                        .expect("semaphore is never closed");
+
+                    let outcome = audit_one(&agent, &tool_ctx, &url, &config, &|_| {}).await;
+
+                    if let Ok(audit) = &outcome {
+                        if let Some(storage) = &storage {
+                            if let Err(e) = storage.save_audit(audit).await {
+                                tracing::warn!(url, error = %e, "failed to save audit to storage");
+                            }
+                        }
+                    }
+
+                    (url, outcome)
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT_AUDITS)
+            .collect::<Vec<_>>()
+            .await;
 
         let mut results = HashMap::new();
-        for handle in handles {
-            let (url, audit) = handle.await.map_err(|e| e.to_string())??;
-            results.insert(url, audit);
-        }
-
-        if let Some(storage) = &self.storage {
-            for (url, audit) in &results {
-                if let Err(e) = storage.save_audit(audit).await {
-                    tracing::warn!(url, error = %e, "failed to save audit to storage");
+        for (url, outcome) in outcomes {
+            match outcome {
+                Ok(audit) => {
+                    results.insert(url, audit);
+                }
+                Err(e) => {
+                    tracing::warn!(url, error = %e, "audit failed; excluded from batch results");
                 }
             }
         }
@@ -261,6 +289,10 @@ impl Orchestrator {
     }
 
     /// Audit multiple URLs with progress reporting.
+    ///
+    /// Unlike [`Orchestrator::run_batch`], this runs URLs sequentially — a
+    /// single `on_phase` callback can't meaningfully report progress for
+    /// several audits running concurrently at once.
     pub async fn run_batch_with_progress(
         &self,
         urls: &[String],
@@ -337,6 +369,12 @@ pub async fn run_crawl_and_audit(
             max_pages: Some(config.max_pages as u32),
             max_depth: Some(config.max_depth),
             respect_robots_txt: Some(config.respect_robots),
+            concurrency_limit: None,
+            request_delay_ms: None,
+            request_timeout_ms: None,
+            crawl_timeout_ms: None,
+            retry_budget: None,
+            url_blacklist: None,
         };
         let output = SpiderTool::new()
             .call(spider_args)
@@ -473,6 +511,12 @@ async fn discover_rgaa_sample_pages(
             max_pages: Some(20),
             max_depth: Some(1),
             respect_robots_txt: Some(config.respect_robots),
+            concurrency_limit: None,
+            request_delay_ms: None,
+            request_timeout_ms: None,
+            crawl_timeout_ms: None,
+            retry_budget: None,
+            url_blacklist: None,
         };
         if let Ok(output) = SpiderTool::new().call(spider_args).await {
             for page in output.pages {
@@ -609,35 +653,49 @@ async fn audit_one(
     let session = tool_ctx.session().lock().await;
     let bridge = session.bridge();
 
+    // Single-element slice so every browser call below routes through the same
+    // batch entry point multi-URL callers use — one live path, no per-page/
+    // snippet one-off browser process spawns on the audit path.
+    let urls = [url.to_string()];
+
     // 1. Run axe-core
     on_phase(AuditPhase::Axe);
     info!("Running axe-core");
-    let axe_violations = bridge.run_axe(url).await?;
+    let mut axe_by_url = bridge.run_axe_batch(&urls, 1).await?;
+    let axe_violations = axe_by_url
+        .remove(url)
+        .ok_or_else(|| format!("axe-core produced no result for {url}"))?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
     // 2. Run gap-fix rules for 10 false negatives
     on_phase(AuditPhase::GapFix);
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
-    let gap_js_results = bridge.run_gap_fix(url, &gap_snippets).await?;
+    // clippy's `--all-targets` (dev-profile) check reports the `&` here as a
+    // needless borrow, but the actual `[profile.test]` build (cargo test /
+    // nextest, and thus CI) requires it — `gap_snippets` alone fails to
+    // type-check there with "expected `&HashMap<_, &_>`, found `HashMap<_,
+    // &_>`". Keeping the borrow so the real test build stays green.
+    #[allow(clippy::needless_borrow)]
+    let mut gap_by_url = bridge.run_gap_fix_batch(&urls, &gap_snippets, 1).await?;
+    let gap_js_results = gap_by_url.remove(url).unwrap_or_default();
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
-    let raw_context = bridge.extract_page_context(url).await?;
+    let mut context_by_url = bridge.extract_page_context_batch(&urls, 1).await?;
+    let raw_context = context_by_url
+        .remove(url)
+        .ok_or_else(|| format!("page context extraction produced no result for {url}"))?;
     let na_map = na_detection::detect_na(&raw_context);
-    let page_context: PageContext = serde_json::from_value(raw_context).unwrap_or(PageContext {
-        title: None,
-        lang: None,
-        headings: vec![],
-        images: vec![],
-        iframes: vec![],
-        links: vec![],
-        forms: vec![],
-        media: vec![],
-        navigation: vec![],
-    });
+    // A malformed page context must fail the audit, not silently evaluate as
+    // an empty page — an all-empty PageContext would otherwise sail through
+    // every criterion and produce green-looking verdicts over no real data.
+    let page_context: PageContext = serde_json::from_value(raw_context).map_err(|e| {
+        tracing::warn!(url, error = %e, "malformed page context; failing audit instead of evaluating empty data");
+        format!("malformed page context for {url}: {e}")
+    })?;
 
     drop(session); // Release the browser lock before agent calls
 
@@ -688,7 +746,7 @@ async fn audit_one(
     // PartiallyAutomatable criteria need human review for un-covered portions
     // -> NeedsReview.
     let all_criteria = RgaaCriteria::all();
-    for criterion in &all_criteria {
+    for criterion in all_criteria {
         if criterion.classification == Classification::Manuel {
             all_results
                 .entry(criterion.id.to_string())
@@ -968,11 +1026,11 @@ mod tests {
 
     #[test]
     fn compliance_summary_coverage_percent() {
-        // 1.1 is FullyAutomatable, 1.2 is PartiallyAutomatable, 13.1 is NotAutomatable
+        // 1.1 and 1.2 are PartiallyAutomatable, 1.4 is NotAutomatable (excluded from coverage)
         let criteria = vec![
             test_result_id("1.1", CriterionStatus::Pass),
             test_result_id("1.2", CriterionStatus::NotTested),
-            test_result_id("13.1", CriterionStatus::Pass),
+            test_result_id("1.4", CriterionStatus::Pass),
         ];
         let (taux, coverage, _etat) = calculate_compliance_summary(&criteria);
         // validated_total = 2 (1.1,1.2), validated_executed =1 (1.1)

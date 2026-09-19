@@ -71,7 +71,25 @@ jobs:
       - name: Build workspace
         env:
           RUSTC_WRAPPER: sccache
-        run: cargo build --workspace --release
+          # This workspace produces 5 binaries (rgaa, rgaa-cli, rgaa-api,
+          # rgaa-mcp, rgaa-tui) that all statically link the same heavy
+          # dependency graph (lancedb/datafusion/arrow/ort/tokenizers via
+          # rgaa-agent's vector-store feature). Unbounded parallelism lets
+          # cargo link several of them at once, and that peak — even with
+          # mold — was pushing the runner into memory pressure and getting
+          # the step SIGTERMed (exit 143) right at that stage. Capping jobs
+          # bounds how many simultaneous links can happen; slower, but
+          # doesn't get killed.
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          # GitHub Actions cancels a step after ~10 minutes with no log
+          # output; a cold-cache release build of this workspace (lancedb/
+          # datafusion/arrow) can go silent for longer than that compiling a
+          # single heavy crate. Keep the step alive with a heartbeat.
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          cargo build --workspace --release
+          kill "$heartbeat" 2>/dev/null || true
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -86,7 +104,14 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
           RUSTC_WRAPPER: sccache
-        run: cargo nextest run --workspace
+          # Same simultaneous-multi-binary-link memory pressure as the build
+          # step above, but for nextest's per-crate test binaries.
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          ( while true; do sleep 240; echo "::notice::still testing…"; done ) &
+          heartbeat=$!
+          cargo nextest run --workspace
+          kill "$heartbeat" 2>/dev/null || true
       - name: Run doc tests
         env:
           RUSTC_WRAPPER: sccache
@@ -103,6 +128,10 @@ jobs:
         with:
           name: rgaa-rs-bin-linux-x86_64
           path: bin
+      - name: Restore executable bit
+        # upload-artifact/download-artifact round-trips files through a zip
+        # that doesn't preserve the executable bit on Linux.
+        run: chmod +x bin/*
       - name: rgaa --version (TUI)
         run: ./bin/rgaa --version
       - name: rgaa-cli --version
@@ -136,7 +165,11 @@ jobs:
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - env:
           RUSTC_WRAPPER: sccache
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          ( while true; do sleep 240; echo "::notice::still linting…"; done ) &
+          heartbeat=$!
+          cargo clippy --workspace --all-targets -- -D warnings
+          kill "$heartbeat" 2>/dev/null || true
 
   audit:
     name: Security audit
@@ -153,18 +186,27 @@ jobs:
           # RUSTSEC-2023-0071: ReDoS in regex-lite via bstr dependency chain (fastembed).
           # Not introduced by our code; transitive dependency on regex 1.x through fastembed.
           # Tracking: https://github.com/oxalorg/regex/issues/702
+          #
+          # RUSTSEC-2026-0253, RUSTSEC-2026-0002: unsound `lru` 0.12.5 (panic-safety /
+          # Stacked-Borrows issues in LruCache::pop/IterMut), transitive via lancedb's
+          # dependency tree (rgaa-agent's vector-store feature). Not introduced by our
+          # code; upgrading past it means upgrading lancedb, out of scope here.
+          #
           # RUSTSEC-2025-0141: bincode 1.x unmaintained (maintainers ceased development).
-          # Pinned transitive dependency of delo_core via the obscura browser substrate;
+          # Pinned transitive dependency of deno_core via the obscura browser substrate;
           # no upgrade path until upstream migrates. Used for trusted IPC payloads only.
           # RUSTSEC-2025-0057: fxhash unmaintained.
-          # Pinned transitive dependency via html5ever/markup5ever string_cache;
+          # Pinned transitive dependency via selectors/obscura-dom's CSS matching;
           # upstream replacement is rustc-hash, pending upstream migration.
-          # RUSTSEC-2021-0019: soundness issues in xcb 0.8.2 (requires a
-          # malicious X11 server or direct misuse of the flagged unsafe-adjacent
-          # APIs). Reached only via clipboard paste in the rgaa-tui input
-          # (ratatui_input 0.1.3, stale upstream, no upgrade path). Revisit if
-          # the input crate is replaced.
-          ignore: "RUSTSEC-2023-0071,RUSTSEC-2025-0141,RUSTSEC-2025-0057,RUSTSEC-2021-0019"
+          #
+          # RUSTSEC-2026-0285 (rustls TLS 1.3 handshake bug) and RUSTSEC-2021-0019
+          # (xcb soundness, reached only via clipboard paste in rgaa-tui's now-removed
+          # ratatui_input dependency) were real, failing vulnerabilities — fixed
+          # directly instead of ignored: `cargo update -p rustls` (>=0.23.45) and
+          # dropping the unused `ratatui_input` dependency in rgaa-tui, which was the
+          # sole path pulling in xcb and wasn't referenced anywhere in the crate.
+          # `cargo tree -i xcb` confirms xcb no longer appears in the tree.
+          ignore: "RUSTSEC-2023-0071,RUSTSEC-2026-0253,RUSTSEC-2026-0002,RUSTSEC-2025-0141,RUSTSEC-2025-0057"
 
   e2e:
     name: E2E (browser + agent + orchestrator)
@@ -175,7 +217,10 @@ jobs:
         working-directory: rgaa-rs
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -205,4 +250,5 @@ jobs:
           HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
           HOLO3_BASE_URL: ${{ secrets.HOLO3_BASE_URL }}
           HOLO3_MODEL: ${{ secrets.HOLO3_MODEL }}
+          RUSTC_WRAPPER: sccache
         run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture

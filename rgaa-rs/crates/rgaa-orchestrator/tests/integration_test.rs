@@ -553,19 +553,24 @@ mod integration_test {
 
     #[test]
     fn test_etat_conformite_thresholds() {
+        // pass_count is chosen per case so the resulting taux_global
+        // (pass / (pass + fail) * 100) lands unambiguously on the
+        // expected side of the totale/partielle/non-conforme thresholds.
+        let total = RgaaCriteria::all().len();
         let test_cases = vec![
-            (100.0, "totale"),
-            (99.0, "partielle"),
-            (50.0, "partielle"),
-            (49.9, "non conforme"),
-            (0.0, "non conforme"),
+            (total, "totale"),               // 100%
+            (total - 1, "partielle"),        // just under 100%
+            (total / 2, "partielle"),        // exactly 50%
+            (total / 2 - 1, "non conforme"), // just under 50%
+            (0, "non conforme"),             // 0%
         ];
 
-        for (taux, expected_etat) in test_cases {
+        for (pass_count, expected_etat) in test_cases {
             let criteria: Vec<CriterionResult> = RgaaCriteria::all()
                 .iter()
-                .map(|c| {
-                    let status = if taux >= 50.0 {
+                .enumerate()
+                .map(|(i, c)| {
+                    let status = if i < pass_count {
                         CriterionStatus::Pass
                     } else {
                         CriterionStatus::Fail
@@ -578,8 +583,8 @@ mod integration_test {
 
             assert_eq!(
                 audit.etat_conformite, expected_etat,
-                "etat_conformite should be '{}' when taux_global is {}",
-                expected_etat, taux
+                "etat_conformite should be '{}' when {}/{} criteria pass (taux_global={})",
+                expected_etat, pass_count, total, audit.taux_global
             );
         }
     }
@@ -850,11 +855,11 @@ mod integration_test {
             // Manuel criteria should be excluded from taux calculation
             let page1_criteria = vec![
                 mock_criterion_result("1.1", CriterionStatus::Pass), // Deterministe
-                mock_criterion_result("13.1", CriterionStatus::Fail), // Manuel
+                mock_criterion_result("7.5", CriterionStatus::Fail), // Manuel
             ];
             let page2_criteria = vec![
                 mock_criterion_result("1.1", CriterionStatus::Pass),
-                mock_criterion_result("13.1", CriterionStatus::Fail),
+                mock_criterion_result("7.5", CriterionStatus::Fail),
             ];
 
             let pages = vec![
@@ -864,7 +869,7 @@ mod integration_test {
 
             let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
 
-            // 13.1 is Manuel (excluded), 1.1 is Pass on both -> 100%
+            // 7.5 is Manuel (excluded), 1.1 is Pass on both -> 100%
             assert_eq!(taux_global, 100.0);
             assert_eq!(etat, "totale");
         }

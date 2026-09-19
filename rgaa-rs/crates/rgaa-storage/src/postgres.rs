@@ -3,9 +3,24 @@ use chrono::{DateTime, Utc};
 use rgaa_core::{AuditBundle, AuditResult};
 use serde_json::Value;
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::Executor;
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::{AuditSummary, Storage, StorageError};
+
+/// Max simultaneous connections in the pool. Sized for the batch operating
+/// point (#42: 8 concurrent audits) plus headroom for `save_audit_log` and
+/// admin/listing calls sharing the pool, without dedicating a whole
+/// connection to every one of the 8.
+const MAX_POOL_CONNECTIONS: u32 = 10;
+/// How long a caller waits for a free connection before giving up loudly
+/// instead of queueing indefinitely under a connection-pool burst.
+const POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Per-statement ceiling, set on every pooled connection via
+/// `SET statement_timeout`, so one pathological query can't hold a
+/// connection (and thus shrink the effective pool) indefinitely.
+const STATEMENT_TIMEOUT_MS: i64 = 30_000;
 
 pub struct PostgresStorage {
     pool: PgPool,
@@ -14,7 +29,17 @@ pub struct PostgresStorage {
 impl PostgresStorage {
     pub async fn new(database_url: &str) -> Result<Self, StorageError> {
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(MAX_POOL_CONNECTIONS)
+            .acquire_timeout(POOL_ACQUIRE_TIMEOUT)
+            .after_connect(|conn, _meta| {
+                Box::pin(async move {
+                    conn.execute(
+                        format!("SET statement_timeout = {STATEMENT_TIMEOUT_MS}").as_str(),
+                    )
+                    .await?;
+                    Ok(())
+                })
+            })
             .connect(database_url)
             .await?;
 
@@ -55,15 +80,23 @@ impl PostgresStorage {
     }
 }
 
+/// Listing-only projection: never selects the `data` JSONB column, which
+/// holds the whole `AuditResult` (every page, finding, and violation) —
+/// `list_audits` only ever needed the summary fields already in
+/// `AuditSummary`, so reading `data` on every row was pure waste that grows
+/// with the number of audits listed, not just the number of pages shown.
 #[derive(sqlx::FromRow)]
-struct AuditDbRow {
+struct AuditSummaryDbRow {
     id: String,
     url: String,
-    data: sqlx::types::Json<AuditResult>,
     taux_global: f64,
     etat_conformite: String,
     created_at: DateTime<Utc>,
 }
+
+/// Hard ceiling on `list_audits`' page size, regardless of what a caller
+/// requests, so listing stays fast even at thousands of audits.
+const MAX_LIST_PAGE_SIZE: usize = 200;
 
 #[async_trait]
 impl Storage for PostgresStorage {
@@ -99,17 +132,13 @@ impl Storage for PostgresStorage {
     }
 
     async fn get_audit(&self, id: &str) -> Result<Option<AuditResult>, StorageError> {
-        let row: Option<AuditDbRow> = sqlx::query_as(
-            r#"
-            SELECT id, url, data, taux_global, etat_conformite, created_at
-            FROM audits WHERE id = $1
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<(sqlx::types::Json<AuditResult>,)> =
+            sqlx::query_as(r#"SELECT data FROM audits WHERE id = $1"#)
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await?;
 
-        Ok(row.map(|r| r.data.0))
+        Ok(row.map(|(data,)| data.0))
     }
 
     async fn list_audits(
@@ -117,9 +146,13 @@ impl Storage for PostgresStorage {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<AuditSummary>, StorageError> {
-        let rows: Vec<AuditDbRow> = sqlx::query_as(
+        // 0 is a legitimate "give me nothing" request (e.g. a pagination
+        // probe), not a lower bound to round up to 1 — only cap the upper
+        // end.
+        let limit = limit.min(MAX_LIST_PAGE_SIZE);
+        let rows: Vec<AuditSummaryDbRow> = sqlx::query_as(
             r#"
-            SELECT id, url, data, taux_global, etat_conformite, created_at
+            SELECT id, url, taux_global, etat_conformite, created_at
             FROM audits
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2

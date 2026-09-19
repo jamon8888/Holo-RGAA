@@ -16,6 +16,7 @@ rgaa-storage = { path = "../rgaa-storage" }
 rgaa-spider = { path = "../rgaa-spider" }
 rig-core = { workspace = true }
 tokio = { workspace = true }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

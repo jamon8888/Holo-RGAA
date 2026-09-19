@@ -4,7 +4,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use rgaa_core::{AuditResult, CriterionResult};
+use rgaa_core::AuditResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AuditRow {
@@ -113,84 +113,6 @@ impl Repository {
         .bind(id)
         .execute(&self.pool)
         .await?;
-        Ok(())
-    }
-
-    pub async fn store_criterion_results(
-        &self,
-        audit_id: Uuid,
-        criteria: &[CriterionResult],
-    ) -> anyhow::Result<()> {
-        for criterion in criteria {
-            let violations_json = serde_json::to_value(&criterion.violations)?;
-            sqlx::query(
-                r#"
-                INSERT INTO criterion_results
-                    (id, audit_id, criterion_id, title, classification, status, violations, confidence, justification, source, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-                "#,
-            )
-            .bind(Uuid::new_v4())
-            .bind(audit_id)
-            .bind(&criterion.criterion_id)
-            .bind(&criterion.title)
-            .bind(format!("{:?}", criterion.classification))
-            .bind(format!("{:?}", criterion.status))
-            .bind(violations_json)
-            .bind(criterion.confidence)
-            .bind(&criterion.justification)
-            .bind(&criterion.source)
-            .execute(&self.pool)
-            .await?;
-        }
-        Ok(())
-    }
-
-    pub async fn complete_audit_with_results(
-        &self,
-        id: Uuid,
-        result: &AuditResult,
-    ) -> anyhow::Result<()> {
-        let mut tx = self.pool.begin().await?;
-
-        let result_json = serde_json::to_value(result)?;
-        sqlx::query(
-            r#"
-            UPDATE audits SET status = 'completed', result = $1, updated_at = NOW()
-            WHERE id = $2
-            "#,
-        )
-        .bind(result_json)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-
-        for page in &result.pages {
-            for criterion in &page.criteria {
-                let violations_json = serde_json::to_value(&criterion.violations)?;
-                sqlx::query(
-                    r#"
-                    INSERT INTO criterion_results
-                        (id, audit_id, criterion_id, title, classification, status, violations, confidence, justification, source, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-                    "#,
-                )
-                .bind(Uuid::new_v4())
-                .bind(id)
-                .bind(&criterion.criterion_id)
-                .bind(&criterion.title)
-                .bind(format!("{:?}", criterion.classification))
-                .bind(format!("{:?}", criterion.status))
-                .bind(violations_json)
-                .bind(criterion.confidence)
-                .bind(&criterion.justification)
-                .bind(&criterion.source)
-                .execute(&mut *tx)
-                .await?;
-            }
-        }
-
-        tx.commit().await?;
         Ok(())
     }
 

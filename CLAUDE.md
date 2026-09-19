@@ -205,14 +205,17 @@ pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, RgaaError> { 
 
 ## Quick Commands
 
+Run from `rgaa-rs/` (workspace root) — a `Makefile` wraps the common ones (`make build`, `make test`, `make check`, `make ci`).
+
 ```bash
 # Build
 cargo build --workspace
 cargo build --workspace --release
 
-# Test
-cargo test --workspace
-cargo test --workspace -- --nocapture
+# Test (nextest: parallel, better output; doctests still need plain `cargo test`)
+cargo nextest run --workspace
+cargo test --workspace --doc
+cargo nextest run --workspace --no-capture
 
 # Lint
 cargo clippy --workspace --all-targets
@@ -222,6 +225,15 @@ cargo fmt --check
 RUSTFLAGS="-C force-frame-pointers=yes" cargo build --profile profiling
 cargo flamegraph --release
 ```
+
+### Build acceleration
+
+- **Toolchain**: pinned via `rgaa-rs/rust-toolchain.toml` (stable + clippy/rustfmt/rust-analyzer) so `rustup` auto-installs the right one.
+- **sccache**: compilation cache, wired as `rustc-wrapper` in `~/.cargo/config.toml` (machine-global, not checked in) and via `mozilla-actions/sccache-action` in CI. Check hit rate with `sccache --show-stats`.
+- **mold**: much faster linker than GNU `ld` for iterative local builds, wired via `rustflags` in `~/.cargo/config.toml` and `rui314/setup-mold` in CI. Requires the `mold` binary on `PATH` (see below).
+- **cargo-nextest**: faster, parallel test runner (`cargo nextest run`) used locally and in CI in place of `cargo test` for non-doc tests.
+- Machine-wide install (already run on this box): `rustup`, `cargo-binstall`, then `cargo binstall sccache cargo-nextest cargo-watch cargo-hack cargo-audit cargo-outdated cargo-edit`, plus the `mold` prebuilt release binary.
+- System packages needed to build this workspace at all (matches CI): `sudo apt-get install -y protobuf-compiler cmake clang lld mold`.
 
 ## Agent skills
 

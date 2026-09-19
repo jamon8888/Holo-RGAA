@@ -1,8 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use rgaa_core::CrawlConfig;
 use crate::tools::igt::IgtResultsDto;
+use rgaa_core::CrawlConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditUrlInput {
@@ -60,14 +60,19 @@ pub struct AuditUrlResult {
     pub audit_id: String,
     pub taux_global: f64,
     pub etat_conformite: String,
+    /// URLs of pages that were crawled and can be analyzed in detail with the `analyze` tool.
+    /// Use these URLs with `analyze` to get per-criterion findings with evidence.
+    pub sampled_page_urls: Vec<String>,
 }
 
 impl From<rgaa_core::AuditResult> for AuditUrlResult {
     fn from(result: rgaa_core::AuditResult) -> Self {
+        let sampled_page_urls = result.pages.iter().map(|p| p.url.clone()).collect();
         Self {
             audit_id: result.audit_id,
             taux_global: result.taux_global,
             etat_conformite: result.etat_conformite,
+            sampled_page_urls,
         }
     }
 }
@@ -232,8 +237,13 @@ impl From<WaitForState> for rgaa_obscura::WaitForState {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum PreScanActionInput {
-    Click { selector: String },
-    Fill { selector: String, value: String },
+    Click {
+        selector: String,
+    },
+    Fill {
+        selector: String,
+        value: String,
+    },
     WaitFor {
         selector: String,
         #[serde(default)]

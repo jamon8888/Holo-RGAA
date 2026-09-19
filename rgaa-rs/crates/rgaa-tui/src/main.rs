@@ -48,12 +48,8 @@ enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 enum ConfigSetTarget {
-    ApiKey {
-        key: String,
-    },
-    BaseUrl {
-        url: String,
-    },
+    ApiKey { key: String },
+    BaseUrl { url: String },
 }
 
 #[tokio::main]

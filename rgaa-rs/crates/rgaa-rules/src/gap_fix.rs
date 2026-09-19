@@ -150,6 +150,101 @@ impl GapFixRules {
             })()
         "##);
 
+        // 10.2: visible content remains when CSS is disabled
+        m.insert("10.2".into(), r#"
+            (() => {
+                const styleSheets = document.styleSheets;
+                let disabledCount = 0;
+                for (let i = 0; i < styleSheets.length; i++) {
+                    try {
+                        if (!styleSheets[i].disabled) {
+                            styleSheets[i].disabled = true;
+                            disabledCount++;
+                        }
+                    } catch (e) {
+                        // cross-origin stylesheets throw, ignore
+                    }
+                }
+                const textBefore = document.body.innerText;
+                // Re-enable
+                for (let i = 0; i < styleSheets.length; i++) {
+                    try { styleSheets[i].disabled = false; } catch (e) {}
+                }
+                const textAfter = document.body.innerText;
+                const pass = textBefore === textAfter;
+                return JSON.stringify({ pass, details: pass ? 'text content unchanged' : 'text content changed after CSS disabled', nodes: pass ? 0 : 1 });
+            })()
+        "#);
+
+        // 10.11: reflow at 320x256 - no horizontal scroll at 320px width, no vertical scroll at 256px height
+        m.insert("10.11".into(), r#"
+            (() => {
+                const docEl = document.documentElement;
+                const body = document.body;
+                // Check horizontal overflow at 320px viewport width
+                const hasHorizontalScroll = docEl.scrollWidth > 320 || body.scrollWidth > 320;
+                // Check vertical overflow at 256px viewport height (simulate by checking if content fits)
+                const hasVerticalOverflowAt256 = docEl.scrollHeight > 256 || body.scrollHeight > 256;
+                const pass = !hasHorizontalScroll && !hasVerticalOverflowAt256;
+                return JSON.stringify({ 
+                    pass, 
+                    details: hasHorizontalScroll ? 'horizontal overflow at 320px' : (hasVerticalOverflowAt256 ? 'vertical overflow at 256px' : 'reflow OK'), 
+                    nodes: pass ? 0 : 1 
+                });
+            })()
+        "#);
+
+        // 10.14: CSS-only hover content accessible via keyboard
+        m.insert("10.14".into(), r#"
+            (() => {
+                const styleSheets = document.styleSheets;
+                let violations = 0;
+                const hoverSelectors = new Set();
+                const focusSelectors = new Set();
+                
+                for (let i = 0; i < styleSheets.length; i++) {
+                    try {
+                        const rules = styleSheets[i].cssRules || styleSheets[i].rules;
+                        if (!rules) continue;
+                        for (let j = 0; j < rules.length; j++) {
+                            const rule = rules[j];
+                            if (rule.selectorText) {
+                                if (rule.selectorText.includes(':hover')) {
+                                    hoverSelectors.add(rule.selectorText.replace(':hover', '').trim());
+                                }
+                                if (rule.selectorText.includes(':focus') || rule.selectorText.includes(':focus-within')) {
+                                    focusSelectors.add(rule.selectorText.replace(':focus', '').replace(':focus-within', '').trim());
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // cross-origin
+                    }
+                }
+                
+                // Check if every :hover selector has a corresponding :focus/:focus-within
+                for (const hoverSel of hoverSelectors) {
+                    const baseSel = hoverSel.trim();
+                    let hasFocusEquivalent = false;
+                    for (const focusSel of focusSelectors) {
+                        if (focusSel === baseSel || focusSel.includes(baseSel) || baseSel.includes(focusSel)) {
+                            hasFocusEquivalent = true;
+                            break;
+                        }
+                    }
+                    if (!hasFocusEquivalent) {
+                        // Verify element exists on page
+                        try {
+                            const el = document.querySelector(baseSel);
+                            if (el) violations++;
+                        } catch (e) {}
+                    }
+                }
+                
+                return JSON.stringify({ pass: violations === 0, details: `${violations} hover-only elements without focus equivalent`, nodes: violations });
+            })()
+        "#);
+
         m
     }
 

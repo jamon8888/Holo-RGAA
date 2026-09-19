@@ -16,6 +16,49 @@ use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
 
+/// Pipeline stage reported to progress callbacks, in execution order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditPhase {
+    Axe,
+    GapFix,
+    PageContext,
+    AgentIaAssiste,
+    AgentPartial,
+    Merging,
+}
+
+impl AuditPhase {
+    fn index(self) -> usize {
+        match self {
+            AuditPhase::Axe => 0,
+            AuditPhase::GapFix => 1,
+            AuditPhase::PageContext => 2,
+            AuditPhase::AgentIaAssiste => 3,
+            AuditPhase::AgentPartial => 4,
+            AuditPhase::Merging => 5,
+        }
+    }
+
+    /// Short human-readable label for progress displays.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            AuditPhase::Axe => "Running axe-core checks...",
+            AuditPhase::GapFix => "Running gap-fix rules...",
+            AuditPhase::PageContext => "Extracting page context...",
+            AuditPhase::AgentIaAssiste => "Agentic IA_ASSISTE evaluation...",
+            AuditPhase::AgentPartial => "Partially-automatable evaluation...",
+            AuditPhase::Merging => "Merging results...",
+        }
+    }
+
+    /// Fraction complete when this phase starts (6 phases, evenly weighted).
+    #[must_use]
+    pub fn progress(self) -> f32 {
+        self.index() as f32 / 6.0
+    }
+}
+
 fn partially_automatable_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
 }
@@ -94,6 +137,13 @@ pub struct Orchestrator {
     storage: Option<Arc<dyn Storage>>,
 }
 
+/// Events emitted by the audit pipeline for progress tracking.
+#[derive(Debug, Clone)]
+pub enum AuditEvent {
+    Phase(AuditPhase),
+    Done(Result<AuditResult, String>),
+}
+
 impl Default for Orchestrator {
     fn default() -> Self {
         Self::new()
@@ -144,7 +194,60 @@ impl Orchestrator {
             .map_err(|e| format!("failed to create agent: {e}"))?;
         let mut results = HashMap::new();
         for url in urls {
-            let audit = audit_one(&agent, &tool_ctx, url, config).await?;
+            let audit = audit_one(&agent, &tool_ctx, url, config, &|_| {}).await?;
+            results.insert(url.clone(), audit);
+        }
+
+        if let Some(storage) = &self.storage {
+            for (url, audit) in &results {
+                if let Err(e) = storage.save_audit(audit).await {
+                    tracing::warn!(url, error = %e, "failed to save audit to storage");
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Audit a single URL with progress reporting.
+    pub async fn run_with_progress(
+        &self,
+        url: &str,
+        config: &CrawlConfig,
+        on_phase: impl Fn(AuditPhase) + Send + Sync,
+    ) -> Result<AuditResult, String> {
+        let mut results = self
+            .run_batch_with_progress(&[url.to_string()], config, on_phase)
+            .await?;
+        results
+            .remove(url)
+            .ok_or_else(|| format!("audit result missing for {url}"))
+    }
+
+    /// Audit multiple URLs with progress reporting.
+    pub async fn run_batch_with_progress(
+        &self,
+        urls: &[String],
+        config: &CrawlConfig,
+        on_phase: impl Fn(AuditPhase) + Send + Sync,
+    ) -> Result<HashMap<String, AuditResult>, String> {
+        let bridge = {
+            let mut b = ObscuraBridge::from_env();
+            b.start_server().await?;
+            b
+        };
+
+        let session = BrowserSession::new(bridge);
+        let tool_ctx = ToolContext::new(session);
+
+        let agent_config = rgaa_agent::config::AgentConfig::from_env()
+            .map_err(|e| format!("invalid agent configuration: {e}"))?;
+        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
+            .await
+            .map_err(|e| format!("failed to create agent: {e}"))?;
+        let mut results = HashMap::new();
+        for url in urls {
+            let audit = audit_one(&agent, &tool_ctx, url, config, &on_phase).await?;
             results.insert(url.clone(), audit);
         }
 
@@ -170,6 +273,7 @@ async fn audit_one(
     tool_ctx: &ToolContext,
     url: &str,
     _config: &CrawlConfig,
+    on_phase: &(dyn Fn(AuditPhase) + Send + Sync),
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
@@ -179,17 +283,20 @@ async fn audit_one(
     let bridge = session.bridge();
 
     // 1. Run axe-core
+    on_phase(AuditPhase::Axe);
     info!("Running axe-core");
     let axe_violations = bridge.run_axe(url).await?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
     // 2. Run gap-fix rules for 10 false negatives
+    on_phase(AuditPhase::GapFix);
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
     let gap_js_results = bridge.run_gap_fix(url, &gap_snippets).await?;
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
+    on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
     let raw_context = bridge.extract_page_context(url).await?;
     let na_map = na_detection::detect_na(&raw_context);
@@ -208,6 +315,7 @@ async fn audit_one(
     drop(session); // Release the browser lock before agent calls
 
     // 4. Run agentic evaluation for all IA_ASSISTE criteria
+    on_phase(AuditPhase::AgentIaAssiste);
     let ia_criteria = RgaaCriteria::ia_assiste();
     info!(
         criteria = ia_criteria.len(),
@@ -222,6 +330,7 @@ async fn audit_one(
     }
 
     // 4b. Run agentic evaluation for PartiallyAutomatable criteria
+    on_phase(AuditPhase::AgentPartial);
     let partial_criteria = RgaaCriteria::partiellement_automatique();
     info!(
         criteria = partial_criteria.len(),
@@ -236,6 +345,7 @@ async fn audit_one(
     }
 
     // 5. Merge results
+    on_phase(AuditPhase::Merging);
     let mut all_results: HashMap<String, CriterionResult> = HashMap::new();
     all_results.extend(axe_results);
     all_results.extend(gap_results);

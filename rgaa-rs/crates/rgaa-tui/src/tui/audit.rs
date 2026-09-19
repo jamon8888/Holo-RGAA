@@ -5,13 +5,23 @@ use ratatui::style::Color;
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Row, Table, TableState};
 use ratatui::Frame;
+use std::sync::mpsc;
+use std::thread;
 
 #[derive(Debug, Clone)]
 pub enum AuditStep {
     UrlInput,
-    Running { phase: String, progress: f32 },
-    ResultsSummary { audit: rgaa_core::AuditResult },
-    DrillDown { audit: rgaa_core::AuditResult, criterion_id: String },
+    Running {
+        phase: String,
+        progress: f32,
+    },
+    ResultsSummary {
+        audit: rgaa_core::AuditResult,
+    },
+    DrillDown {
+        audit: rgaa_core::AuditResult,
+        criterion_id: String,
+    },
     Error(String),
 }
 
@@ -20,6 +30,14 @@ pub struct AuditWizard {
     pub step: AuditStep,
     pub url: String,
     pub table_state: TableState,
+    pub pending: Option<PendingAudit>,
+}
+
+#[derive(Debug)]
+pub struct PendingAudit {
+    pub rx: mpsc::Receiver<rgaa_orchestrator::AuditEvent>,
+    pub phases: Vec<rgaa_orchestrator::AuditPhase>,
+    pub done: Option<Result<rgaa_core::AuditResult, String>>,
 }
 
 impl Default for AuditWizard {
@@ -28,6 +46,7 @@ impl Default for AuditWizard {
             step: AuditStep::UrlInput,
             url: String::new(),
             table_state: TableState::default(),
+            pending: None,
         }
     }
 }
@@ -45,71 +64,88 @@ pub fn run_audit_wizard() {
 
         if let Event::Key(key) = event::read().unwrap() {
             match &wizard.step {
-                AuditStep::UrlInput => {
-                    match key.code {
-                        KeyCode::Enter => {
-                            if !input_buffer.is_empty() {
-                                wizard.url = input_buffer.clone();
-                                wizard.step = AuditStep::Running {
-                                    phase: "Starting audit...".to_string(),
-                                    progress: 0.0,
-                                };
-                                input_buffer.clear();
-                            }
+                AuditStep::UrlInput => match key.code {
+                    KeyCode::Enter => {
+                        if !input_buffer.is_empty() {
+                            wizard.url = input_buffer.clone();
+                            input_buffer.clear();
+
+                            let (tx, rx) = mpsc::channel();
+                            let url = wizard.url.clone();
+                            let tx_done = tx.clone();
+                            thread::spawn(move || {
+                                let orchestrator = rgaa_orchestrator::Orchestrator::new();
+                                let rt = tokio::runtime::Runtime::new().unwrap();
+                                rt.block_on(async {
+                                    let config = rgaa_core::CrawlConfig::default();
+                                    let result = orchestrator
+                                        .run_with_progress(&url, &config, move |phase| {
+                                            let _ = tx
+                                                .send(rgaa_orchestrator::AuditEvent::Phase(phase));
+                                        })
+                                        .await;
+                                    let _ =
+                                        tx_done.send(rgaa_orchestrator::AuditEvent::Done(result));
+                                });
+                            });
+
+                            wizard.pending = Some(PendingAudit {
+                                rx,
+                                phases: Vec::new(),
+                                done: None,
+                            });
+                            wizard.step = AuditStep::Running {
+                                phase: "Starting audit...".to_string(),
+                                progress: 0.0,
+                            };
                         }
-                        KeyCode::Char(c) => {
-                            input_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            input_buffer.pop();
-                        }
-                        KeyCode::Esc => {
-                            break;
-                        }
-                        _ => {}
                     }
-                }
+                    KeyCode::Char(c) => {
+                        input_buffer.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_buffer.pop();
+                    }
+                    KeyCode::Esc => {
+                        break;
+                    }
+                    _ => {}
+                },
                 AuditStep::Running { .. } => {
                     if key.code == KeyCode::Char('q') {
                         break;
                     }
                 }
-                AuditStep::ResultsSummary { .. } => {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            break;
-                        }
-                        KeyCode::Down => {
-                            let max = rgaa_core::RgaaCriteria::all().len();
-                            let new_idx = (wizard.table_state.selected().unwrap_or(0) + 1)
-                                .min(max.saturating_sub(1));
-                            wizard.table_state.select(Some(new_idx));
-                        }
-                        KeyCode::Up => {
-                            let new_idx = wizard
-                                .table_state
-                                .selected()
-                                .unwrap_or(0)
-                                .saturating_sub(1);
-                            wizard.table_state.select(Some(new_idx));
-                        }
-                        KeyCode::Enter => {
-                            if let Some(idx) = wizard.table_state.selected() {
-                                let criteria = rgaa_core::RgaaCriteria::all();
-                                if idx < criteria.len() {
-                                    let criterion = &criteria[idx];
-                                    if let AuditStep::ResultsSummary { audit, .. } = &wizard.step {
-                                        wizard.step = AuditStep::DrillDown {
-                                            audit: audit.clone(),
-                                            criterion_id: criterion.id.to_string(),
-                                        };
-                                    }
+                AuditStep::ResultsSummary { .. } => match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        break;
+                    }
+                    KeyCode::Down => {
+                        let max = rgaa_core::RgaaCriteria::all().len();
+                        let new_idx = (wizard.table_state.selected().unwrap_or(0) + 1)
+                            .min(max.saturating_sub(1));
+                        wizard.table_state.select(Some(new_idx));
+                    }
+                    KeyCode::Up => {
+                        let new_idx = wizard.table_state.selected().unwrap_or(0).saturating_sub(1);
+                        wizard.table_state.select(Some(new_idx));
+                    }
+                    KeyCode::Enter => {
+                        if let Some(idx) = wizard.table_state.selected() {
+                            let criteria = rgaa_core::RgaaCriteria::all();
+                            if idx < criteria.len() {
+                                let criterion = &criteria[idx];
+                                if let AuditStep::ResultsSummary { audit, .. } = &wizard.step {
+                                    wizard.step = AuditStep::DrillDown {
+                                        audit: audit.clone(),
+                                        criterion_id: criterion.id.to_string(),
+                                    };
                                 }
                             }
                         }
-                        _ => {}
                     }
-                }
+                    _ => {}
+                },
                 AuditStep::DrillDown { .. } => {
                     if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
                         if let AuditStep::DrillDown { audit, .. } = &wizard.step {
@@ -124,6 +160,44 @@ pub fn run_audit_wizard() {
                         break;
                     }
                 }
+            }
+        }
+
+        // Drain events from the audit task
+        if let Some(pending) = wizard.pending.as_mut() {
+            loop {
+                match pending.rx.try_recv() {
+                    Ok(rgaa_orchestrator::AuditEvent::Phase(phase)) => {
+                        pending.phases.push(phase);
+                        wizard.step = AuditStep::Running {
+                            phase: phase.label().to_string(),
+                            progress: phase.progress(),
+                        };
+                    }
+                    Ok(rgaa_orchestrator::AuditEvent::Done(result)) => {
+                        pending.done = Some(result);
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        pending.done = Some(Err(
+                            "audit task ended without returning a result".to_string()
+                        ));
+                        break;
+                    }
+                }
+            }
+
+            if let Some(done) = pending.done.take() {
+                match done {
+                    Ok(audit) => {
+                        wizard.step = AuditStep::ResultsSummary { audit };
+                    }
+                    Err(e) => {
+                        wizard.step = AuditStep::Error(e);
+                    }
+                }
+                wizard.pending = None;
             }
         }
     }
@@ -165,7 +239,9 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
         .split(area);
 
     frame.render_widget(
-        Paragraph::new("rgaa audit").alignment(Alignment::Center).fg(Color::Cyan),
+        Paragraph::new("rgaa audit")
+            .alignment(Alignment::Center)
+            .fg(Color::Cyan),
         chunks[0],
     );
 
@@ -176,8 +252,10 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
             } else {
                 input.to_string()
             };
-            let lines =
-                vec![Line::from("Enter target URL:"), Line::from(format!("> {}", display))];
+            let lines = vec![
+                Line::from("Enter target URL:"),
+                Line::from(format!("> {}", display)),
+            ];
             frame.render_widget(
                 Block::default()
                     .title("URL")
@@ -271,17 +349,19 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
                 frame.render_widget(table, chunks[1]);
             }
         }
-        AuditStep::DrillDown { audit, criterion_id } => {
+        AuditStep::DrillDown {
+            audit,
+            criterion_id,
+        } => {
             let criterion = rgaa_core::RgaaCriteria::all()
                 .iter()
                 .find(|c| c.id == *criterion_id)
                 .cloned();
 
-            let result = audit.pages.first().and_then(|p| {
-                p.criteria
-                    .iter()
-                    .find(|r| r.criterion_id == *criterion_id)
-            });
+            let result = audit
+                .pages
+                .first()
+                .and_then(|p| p.criteria.iter().find(|r| r.criterion_id == *criterion_id));
 
             let mut lines: Vec<Line> = vec![];
 
@@ -302,10 +382,7 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
                 }
                 if !r.violations.is_empty() {
                     lines.push(Line::from(""));
-                    lines.push(Line::from(format!(
-                        "{} violation(s):",
-                        r.violations.len()
-                    )));
+                    lines.push(Line::from(format!("{} violation(s):", r.violations.len())));
                     for v in &r.violations {
                         lines.push(Line::from(format!(
                             "  - [{}] {} ({} node(s))",

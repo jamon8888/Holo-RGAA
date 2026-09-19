@@ -36,14 +36,41 @@ jobs:
         working-directory: rgaa-rs
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          df -h /
       - uses: Swatinem/rust-cache@v2
+        with:
+          working-directory: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      # OOM guard: fat-LTO release link of the lance/arrow tree can exceed
+      # runner memory with default parallelism (same OOM master's ci.yml
+      # guards against in 789d40f). Without this, the runner gets OOM-killed
+      # mid-build, which the Actions service reports as "runner has received
+      # a shutdown signal" rather than a real compile error — this is what
+      # was killing Build & Test on this branch every run.
+      - name: Limit build parallelism (OOM guard)
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
       - name: Build workspace
-        run: cargo build --workspace --release
+        env:
+          RUSTC_WRAPPER: sccache
+        run: |
+          # GitHub Actions cancels a step after ~10 minutes with no log
+          # output; a cold-cache release build of this workspace (lancedb/
+          # datafusion/arrow) can go silent for longer than that compiling a
+          # single heavy crate. Keep the step alive with a heartbeat.
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          cargo build --workspace --release
+          kill "$heartbeat" 2>/dev/null || true
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -57,11 +84,15 @@ jobs:
       - name: Run tests
         env:
           RUST_MIN_STACK: 8388608
+          RUSTC_WRAPPER: sccache
         run: |
           # Use all available cores for both compilation and test execution
           CORES=$(nproc)
           echo "Using $CORES cores"
-          cargo test --workspace --jobs $CORES --test-threads=$CORES
+          ( while true; do sleep 240; echo "::notice::still testing…"; done ) &
+          heartbeat=$!
+          cargo test --workspace --jobs $CORES -- --test-threads=$CORES
+          kill "$heartbeat" 2>/dev/null || true
 
   smoke:
     name: Smoke Test
@@ -97,11 +128,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run clippy
+        env:
+          RUSTC_WRAPPER: sccache
+        run: |
+          ( while true; do sleep 240; echo "::notice::still linting…"; done ) &
+          heartbeat=$!
+          cargo clippy --workspace --all-targets -- -D warnings
+          kill "$heartbeat" 2>/dev/null || true
 
   audit:
     name: Security audit

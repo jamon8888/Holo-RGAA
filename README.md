@@ -26,7 +26,7 @@ No other product sees the page. Holo-RGAA does — and that single difference is
 turns a 50-criterion scan into a complete RGAA audit pipeline, from detection to
 visually verified patch.
 
-**Compared to manual audits (Koena references: 8 pages/5 days, 19 pages/9 days ≈ 3–5h/page), Holo-RGAA reduces active consultant time from ~45–75h to ~3–5h for a 15-page site — a 10–15× speedup.**
+**Compared to manual audits (Koena references: 8 pages/5 days, 19 pages/9 days ≈ 3–5h/page), Holo-RGAA reduces active consultant time from ~45–75h to ~1–2h for a 15-page site — a 20–40× speedup. Machine time is ~10–20 min (pages run sequentially; Holo3 evaluates 32 criteria at 4-parallel per page).**
 
 ---
 

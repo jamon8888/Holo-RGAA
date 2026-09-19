@@ -2208,7 +2208,12 @@ mod tests {
     }
 
     // Network-dependent: requires a reachable browser/CDP server and example.com.
+    // Ignored by default: the `obscura` substrate binary isn't installed on the
+    // standard Build & Test runner (only the `e2e` job fetches it, and it
+    // doesn't invoke this crate's unit tests) — run with `--ignored` on a
+    // machine that has `obscura` on PATH.
     #[tokio::test]
+    #[ignore = "requires the obscura substrate binary + network access"]
     async fn test_run_axe_with_broken_script_surfaces_error() {
         let mut bridge = ObscuraBridge::new().with_port(9244);
         bridge.start_server().await.expect("failed to start server");

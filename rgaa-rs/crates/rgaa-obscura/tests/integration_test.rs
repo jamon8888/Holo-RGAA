@@ -6,6 +6,7 @@ use rgaa_obscura::{
 use rgaa_obscura::{GuidedStep, GuidedTest, TerminationReason};
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_sync() {
     // Single-audit callers route through the batch entry point (N=1) — this is
     // the live production path, not a one-off; see pipeline::audit_one.
@@ -31,6 +32,7 @@ async fn test_obscura_bridge_sync() {
 }
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_axe_via_cdp() {
     // Single-audit callers route through the batch entry point (N=1) — this is
     // the live production path, not a one-off; see pipeline::audit_one.
@@ -66,6 +68,7 @@ async fn test_obscura_bridge_axe_via_cdp() {
 }
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_axe_batch_multiple_urls() {
     let mut bridge = ObscuraBridge::new().with_port(9224);
 
@@ -104,6 +107,7 @@ async fn test_obscura_bridge_axe_batch_multiple_urls() {
 }
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_extract_page_context_batch() {
     let mut bridge = ObscuraBridge::new().with_port(9225);
 
@@ -147,6 +151,7 @@ async fn test_obscura_bridge_extract_page_context_batch() {
 /// `run_axe_batch` must process every URL (not just the first) and must finish
 /// within a generous bound so a regression to sequential execution is caught.
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_axe_batch_performance() {
     // run_axe_batch drives per-URL CDP sessions, so the CDP server must be up.
     let mut bridge = ObscuraBridge::new().with_port(9226);
@@ -193,6 +198,7 @@ async fn test_obscura_bridge_axe_batch_performance() {
 }
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
     let mut bridge = ObscuraBridge::new().with_port(9227);
     assert!(
@@ -246,6 +252,7 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
 }
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
     let mut bridge = ObscuraBridge::new().with_port(9228);
     bridge
@@ -295,6 +302,7 @@ async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
 }
 
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
     let mut bridge = ObscuraBridge::new().with_port(9229);
     bridge
@@ -349,6 +357,7 @@ async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
 // substrate resolves the wrapping-label association; the multiline value
 // exercises newline/quote-safe insertion).
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_prescan_fill_on_labeled_form_completes_without_label_findings() {
     let mut bridge = ObscuraBridge::new().with_port(9230);
     bridge
@@ -400,6 +409,7 @@ async fn test_prescan_fill_on_labeled_form_completes_without_label_findings() {
 // Live: a pre-scan submit click must settle the navigation before axe runs,
 // so the audit observes the post-submit page instead of racing it.
 #[tokio::test]
+#[ignore = "requires the obscura substrate binary + network access"]
 async fn test_prescan_submit_click_audits_post_navigation_page() {
     let mut bridge = ObscuraBridge::new().with_port(9231);
     bridge

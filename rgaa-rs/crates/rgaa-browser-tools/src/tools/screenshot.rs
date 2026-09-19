@@ -40,7 +40,7 @@ impl PortableTool for ScreenshotTool {
     type Output = ScreenshotOutput;
 
     fn description(&self) -> String {
-        "Capture a screenshot of the current page. Returns base64-encoded PNG.".to_string()
+        "Capture a screenshot of the current page. Returns base64-encoded PNG with actual dimensions.".to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
@@ -49,17 +49,15 @@ impl PortableTool for ScreenshotTool {
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         let session = self.ctx.session().lock().await;
-        let data_base64 = session
-            .screenshot()
+        let (data_base64, width, height) = session
+            .screenshot_with_dimensions()
             .await
             .map_err(ScreenshotError::CaptureFailed)?;
 
-        // TODO: Get actual dimensions from CDP response
-        // For now, return placeholder dimensions
         Ok(ScreenshotOutput {
             data_base64,
-            width: 1920,
-            height: 1080,
+            width,
+            height,
         })
     }
 }

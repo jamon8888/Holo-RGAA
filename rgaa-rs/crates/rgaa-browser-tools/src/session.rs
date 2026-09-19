@@ -83,6 +83,12 @@ impl BrowserSession {
         self.bridge.screenshot(url).await
     }
 
+    /// Take a screenshot of the current page with dimensions
+    pub async fn screenshot_with_dimensions(&self) -> Result<(String, u32, u32), String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank");
+        self.bridge.screenshot_with_dimensions(url).await
+    }
+
     /// Get the accessibility tree for the current page
     pub async fn get_a11y_tree(&self) -> Result<serde_json::Value, String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");

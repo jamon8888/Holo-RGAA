@@ -191,7 +191,12 @@ impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
                 ScreenshotFormat::Jpeg => rgaa_obscura::ScreenshotFormat::Jpeg,
             })
             .unwrap_or(rgaa_obscura::ScreenshotFormat::Png);
-        Self { policy, format }
+        Self {
+            policy,
+            format,
+            save_to: input.save_to,
+            inline: input.inline,
+        }
     }
 }
 

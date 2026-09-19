@@ -41,18 +41,6 @@ impl AnalyzeRequest {
                 "viewportHeight requires viewportWidth to be set",
             ));
         }
-        if let Some(ref sc) = self.config.screenshot {
-            if sc.save_to.is_some() {
-                return Err(McpFailure::invalid(
-                    "screenshot.saveTo is not yet supported",
-                ));
-            }
-            if sc.inline.is_some() {
-                return Err(McpFailure::invalid(
-                    "screenshot.inline is not yet supported",
-                ));
-            }
-        }
         let config = &self.config;
         let actions = config
             .pre_scan_actions
@@ -110,7 +98,7 @@ impl AnalyzeRequest {
                     .advanced_rules
                     .as_ref()
                     .map(|v| match v.as_str() {
-                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Disabled, // TODO: implement Enabled variant
+                        "thorough" | "standard" => rgaa_obscura::AdvancedRulePolicy::Enabled,
                         _ => rgaa_obscura::AdvancedRulePolicy::Disabled,
                     })
                     .unwrap_or_default(),
@@ -659,13 +647,14 @@ pub struct ToolServer {
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 5] {
+    pub const fn tool_names() -> [&'static str; 6] {
         [
             "analyze",
             "remediate",
             "igt",
             "audit_url",
             "get_audit_result",
+            "list_criteria",
         ]
     }
 
@@ -739,7 +728,7 @@ impl ToolServer {
 
     #[tool(
         name = "igt",
-        description = "Run a bounded, reproducible intelligent guided accessibility test (keyboard navigation). Reports keyboard-trap after 5 consecutive tabs on the same element. Sets status: incomplete with terminated_reason: ExecutionError on CDP failures."
+        description = "[DEPRECATED] Use `analyze` with `config.igt_tools: [\"keyboard\"]` instead. Run a bounded, reproducible intelligent guided accessibility test (keyboard navigation). Reports keyboard-trap after 5 consecutive tabs on the same element. Sets status: incomplete with terminated_reason: ExecutionError on CDP failures."
     )]
     pub async fn igt(
         &self,

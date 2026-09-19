@@ -712,7 +712,16 @@ impl ObscuraBridge {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(data)
                 .map_err(|error| format!("invalid screenshot evidence: {error}"))?;
-            evidence.push(Self::evidence_ref("screenshot", &bytes));
+
+            if let Some(save_path) = &request.config.screenshot.save_to {
+                tokio::fs::write(save_path, &bytes)
+                    .await
+                    .map_err(|e| format!("failed to save screenshot to {}: {}", save_path, e))?;
+            }
+
+            if request.config.screenshot.inline.unwrap_or(true) {
+                evidence.push(Self::evidence_ref("screenshot", &bytes));
+            }
         }
         Ok(evidence)
     }
@@ -1087,6 +1096,86 @@ impl ObscuraBridge {
                 .and_then(|d| d.as_str())
                 .map(|s| s.to_string())
                 .ok_or_else(|| "No screenshot data in response".to_string()),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), _) => Err(error),
+        }
+    }
+
+    /// Take a screenshot of the given URL with dimensions using CDP Page.captureScreenshot and Page.getLayoutMetrics.
+    pub async fn screenshot_with_dimensions(&self, url: &str) -> Result<(String, u32, u32), String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        // Create a target with the specified URL
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+
+        // Attach to the target
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        // Get layout metrics for dimensions
+        let metrics = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Page.getLayoutMetrics",
+            serde_json::json!({}),
+        )
+        .await?;
+
+        let width = metrics
+            .get("layoutViewport")
+            .and_then(|v| v.get("pageWidth"))
+            .and_then(|v| v.as_f64())
+            .map(|v| v as u32)
+            .unwrap_or(1920);
+
+        let height = metrics
+            .get("layoutViewport")
+            .and_then(|v| v.get("pageHeight"))
+            .and_then(|v| v.as_f64())
+            .map(|v| v as u32)
+            .unwrap_or(1080);
+
+        // Capture screenshot, then always clean up
+        let outcome = Self::cdp_send_session(
+            &mut ws,
+            &session_id,
+            "Page.captureScreenshot",
+            serde_json::json!({"format": "png"}),
+        )
+        .await;
+
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome, cleanup) {
+            (Ok(result), Ok(())) => {
+                let data = result
+                    .get("data")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| "No screenshot data in response".to_string())?;
+                Ok((data, width, height))
+            }
             (Ok(_), Err(error)) => Err(error),
             (Err(error), _) => Err(error),
         }

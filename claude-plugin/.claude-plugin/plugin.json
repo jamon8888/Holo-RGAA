@@ -42,6 +42,10 @@
     "guided-test": {
       "description": "Run intelligent guided accessibility tests",
       "handler": "skills/guided-test/SKILL.md"
+    },
+    "seo-geo-aeo": {
+      "description": "Combined SEO/GEO/AEO + RGAA audit with criticality-ordered remediation",
+      "handler": "skills/seo-geo-aeo/SKILL.md"
     }
   }
 }

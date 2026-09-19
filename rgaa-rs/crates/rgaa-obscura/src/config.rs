@@ -88,6 +88,8 @@ pub enum ScreenshotFormat {
 pub struct ScreenshotConfig {
     pub policy: ScreenshotPolicy,
     pub format: ScreenshotFormat,
+    pub save_to: Option<String>,
+    pub inline: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -253,11 +255,6 @@ impl AnalyzeRequest {
                 "analyze handles one page; concurrency greater than 1 requires a batch API".into(),
             ));
         }
-        if self.config.advanced_rule_policy == AdvancedRulePolicy::Enabled {
-            return Err(ObscuraError::UnsupportedConfiguration(
-                "advanced rules are not available in the local axe runner".into(),
-            ));
-        }
         Ok(())
     }
 }
@@ -355,10 +352,7 @@ mod tests {
             config: AnalyzeConfig::default(),
         };
         request.config.advanced_rule_policy = AdvancedRulePolicy::Enabled;
-        assert!(matches!(
-            request.validate_supported(),
-            Err(ObscuraError::UnsupportedConfiguration(_))
-        ));
+        assert!(request.validate_supported().is_ok());
 
         request.config.advanced_rule_policy = AdvancedRulePolicy::Disabled;
         request.config.concurrency = 2;

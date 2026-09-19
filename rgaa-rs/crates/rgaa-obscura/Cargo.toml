@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
 rgaa-rules = { path = "../rgaa-rules" }
-obscura = { path = "/home/jamin/.cargo/git/checkouts/obscura-909fbeda7efc4e44/94bd2cc/crates/obscura" }
+obscura = { git = "https://github.com/h4ckf0r0day/obscura", rev = "94bd2cce42e7ffcb0aed32bb242a9a553541d45a" }
 tokio = { workspace = true, features = ["process", "time", "macros", "io-util", "net", "sync", "fs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

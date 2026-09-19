@@ -1,0 +1,63 @@
+# systemd unit template for running the pinned `obscura serve` CDP server as
+# a production service — resource caps and restart policy belong here, at the
+# deploy layer, not hardcoded into ObscuraBridge (Scale #8, part of #42).
+#
+# Copy to /etc/systemd/system/obscura.service, adjust the paths/User, then:
+#   systemctl daemon-reload && systemctl enable --now obscura
+#
+# Tune the Environment= lines for this host's CPU count and memory budget;
+# see docs/obscura-substrate.md#production-ops for what each one does and
+# its documented default.
+
+[Unit]
+Description=Obscura CDP server (pinned substrate for Holo-RGAA audits)
+After=network.target
+
+[Service]
+Type=simple
+User=obscura
+Group=obscura
+WorkingDirectory=/opt/holo-rgaa
+# Replace `4` below with this host's actual CPU count (ObscuraBridge itself
+# already defaults --workers to `nproc` via OBSCURA_WORKERS when it spawns
+# this process directly; this ExecStart form is for running obscura as its
+# own standalone service instead, e.g. behind a shared/pooled deployment).
+ExecStart=/opt/holo-rgaa/obscura serve --port 9222 --workers 4
+
+# --- Resource caps (deploy layer, not code) ---
+MemoryHigh=3G
+MemoryMax=4G
+LimitNOFILE=65536
+CPUWeight=100
+
+# --- Restart policy ---
+Restart=always
+RestartSec=2s
+
+# --- Observability ---
+# Set OBSCURA_VERBOSE=1 (consumed by ObscuraBridge, not this unit, when it
+# spawns obscura itself) or RUST_LOG=obscura=debug here to get server logs
+# instead of the default silenced/--quiet posture.
+Environment=RUST_LOG=obscura=info
+
+# --- Timeout ceilings (ops config, not bridge code — see
+# docs/obscura-substrate.md#production-ops for the full table and why the
+# bridge's own AnalyzeConfig::timeout_ms default (30s) must stay at or
+# below OBSCURA_NAV_TIMEOUT_MS) ---
+Environment=OBSCURA_NAV_TIMEOUT_MS=30000
+Environment=SCRIPT_DEADLINE_MS=30000
+Environment=MODULE_BUDGET_MS=3000
+Environment=CDP_COMMAND_TIMEOUT_MS=60000
+Environment=FETCH_TIMEOUT_MS=30000
+
+# --- Optional V8 heap sizing (opt-in; unset = obscura's own default) ---
+# Environment=OBSCURA_V8_FLAGS=--max-old-space-size=4096
+
+# --- Bind posture: loopback only, never 0.0.0.0 without a proxy that adds
+# authentication in front (no-auth posture is intentional for the CDP
+# server itself) ---
+# obscura serve's --port above already binds 127.0.0.1 by default; do not
+# add --host/--bind flags here without also adding auth in front.
+
+[Install]
+WantedBy=multi-user.target

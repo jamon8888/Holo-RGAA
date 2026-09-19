@@ -80,7 +80,7 @@ pub async fn history(limit: usize) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("{:<38} {:>8}  {}", "URL", "Score", "Date");
+    println!("{:<38} {:>8}  Date", "URL", "Score");
     println!("{}", "-".repeat(60));
     for audit in audits {
         println!(

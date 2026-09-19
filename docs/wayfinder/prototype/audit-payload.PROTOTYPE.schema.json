@@ -1,0 +1,136 @@
+{
+"$comment": "PROTOTYPE JETABLE (#103). Draft du schéma pivot, à valider avant implémentation. Noyau aligné modèle UE 2018/1523 + objet extensions clé par pays (décision #101 Q6). Exemple FR cohérent avec la spec (C=48, NC=12, NA=46, NT=0, taux 80.0).",
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"$id": "https://holo-rgaa.example/schemas/audit-payload.PROTOTYPE.json",
+"title": "AuditPayload (PROTOTYPE)",
+"type": "object",
+"required": ["referentiel", "date_audit", "perimetre", "etat", "calculs", "contact"],
+"properties": {
+  "referentiel": {
+    "type": "object",
+    "required": ["id", "version"],
+    "properties": {
+      "id": { "type": "string", "enum": ["rgaa", "bitv", "une", "agid", "en301549"] },
+      "version": { "type": "string" }
+    }
+  },
+  "date_audit": { "type": "string", "format": "date" },
+  "date_reexamen": { "type": "string", "format": "date" },
+  "perimetre": {
+    "type": "object",
+    "required": ["service", "url_cible", "pages"],
+    "properties": {
+      "service": { "type": "string" },
+      "url_cible": { "type": "string", "format": "uri" },
+      "pages": {
+        "type": "array", "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["id", "type", "url"],
+          "properties": {
+            "id": { "type": "string" },
+            "type": { "type": "string" },
+            "url": { "type": "string", "format": "uri" }
+          }
+        }
+      }
+    }
+  },
+  "etat": {
+    "type": "string",
+    "description": "Statut UE qualitatif; le taux chiffré vit dans calculs (FR-only).",
+    "enum": ["pleinement", "partiellement", "non"]
+  },
+  "calculs": {
+    "type": "object",
+    "required": ["criteres_totaux", "conformes", "non_conformes", "non_applicables", "non_testes"],
+    "properties": {
+      "criteres_totaux": { "type": "integer" },
+      "conformes": { "type": "integer" },
+      "non_conformes": { "type": "integer" },
+      "non_applicables": { "type": "integer" },
+      "non_testes": { "type": "integer" },
+      "taux_global": { "type": ["number", "null"] },
+      "taux_moyen_pages": { "type": ["number", "null"] },
+      "audit_incomplet": { "type": "boolean" }
+    }
+  },
+  "non_conformites": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["intitule_test", "url_page", "preuve", "recommandation"],
+      "properties": {
+        "intitule_test": { "type": "string" },
+        "url_page": { "type": "string", "format": "uri" },
+        "preuve": { "type": "object", "required": ["type"], "properties": {
+          "type": { "enum": ["dom", "capture"] }, "extrait": { "type": "string" } } },
+        "recommandation": { "type": "string" }
+      }
+    }
+  },
+  "derogations": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["contenu", "motif", "alternative", "date_reexamen"],
+      "properties": {
+        "contenu": { "type": "string" },
+        "motif": { "type": "string" },
+        "alternative": { "type": "string" },
+        "date_reexamen": { "type": "string", "format": "date" }
+      }
+    }
+  },
+  "non_soumis": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["categorie", "justification"],
+      "properties": {
+        "categorie": { "type": "string" },
+        "justification": { "type": "string" },
+        "alternative": { "type": "string" }
+      }
+    }
+  },
+  "contact": {
+    "type": "object",
+    "required": ["canal"],
+    "properties": {
+      "canal": { "type": "string" },
+      "email": { "type": "string", "format": "email" },
+      "telephone": { "type": "string" },
+      "formulaire": { "type": "string", "format": "uri" },
+      "delai_reponse": { "type": "string" }
+    }
+  },
+  "depot": {
+    "type": "object",
+    "properties": {
+      "url_canonique": { "type": "string", "format": "uri" },
+      "date": { "type": "string", "format": "date" }
+    }
+  },
+  "extensions": {
+    "type": "object",
+    "description": "Un objet par pays, jamais de duplication du noyau.",
+    "properties": {
+      "fr": {
+        "type": "object",
+        "properties": {
+          "mention_accueil": { "type": "string" },
+          "schema_pluriannuel_url": { "type": "string", "format": "uri" },
+          "plan_action_url": { "type": "string", "format": "uri" }
+        }
+      },
+      "de": {
+        "type": "object",
+        "properties": {
+          "dgs_leichtesprache": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
+}

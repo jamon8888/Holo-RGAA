@@ -46,7 +46,7 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
     }
 
     let result = orchestrator
-        .run(&url, &crawl_config)
+        .run_crawl_and_audit(&url, &crawl_config)
         .await
         .map_err(|error| CliError::execution(error.to_string()))?;
 

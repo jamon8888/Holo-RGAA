@@ -19,7 +19,7 @@ pub struct CrawlConfigInput {
     pub max_depth: u32,
     #[serde(default = "default_respect_robots")]
     pub respect_robots: bool,
-    #[serde(default)]
+    #[serde(default = "default_sample_mode")]
     pub sample_mode: bool,
 }
 
@@ -29,7 +29,7 @@ impl Default for CrawlConfigInput {
             max_pages: 50,
             max_depth: 5,
             respect_robots: true,
-            sample_mode: false,
+            sample_mode: true,
         }
     }
 }
@@ -52,6 +52,9 @@ fn default_max_depth() -> u32 {
     5
 }
 fn default_respect_robots() -> bool {
+    true
+}
+fn default_sample_mode() -> bool {
     true
 }
 
@@ -162,7 +165,7 @@ pub enum ScreenshotFormat {
     Jpeg,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ScreenshotInput {
     #[serde(default)]
     pub format: Option<ScreenshotFormat>,
@@ -172,17 +175,6 @@ pub struct ScreenshotInput {
     pub save: Option<bool>,
     #[serde(default)]
     pub inline: Option<bool>,
-}
-
-impl Default for ScreenshotInput {
-    fn default() -> Self {
-        Self {
-            format: None,
-            save_to: None,
-            save: None,
-            inline: None,
-        }
-    }
 }
 
 impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
@@ -199,7 +191,12 @@ impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
                 ScreenshotFormat::Jpeg => rgaa_obscura::ScreenshotFormat::Jpeg,
             })
             .unwrap_or(rgaa_obscura::ScreenshotFormat::Png);
-        Self { policy, format }
+        Self {
+            policy,
+            format,
+            save_to: input.save_to,
+            inline: input.inline,
+        }
     }
 }
 
@@ -213,19 +210,14 @@ fn default_height() -> u32 {
     1080
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitForState {
+    #[default]
     Visible,
     Attached,
     Hidden,
     Detached,
-}
-
-impl Default for WaitForState {
-    fn default() -> Self {
-        WaitForState::Visible
-    }
 }
 
 impl From<rgaa_obscura::WaitForState> for WaitForState {

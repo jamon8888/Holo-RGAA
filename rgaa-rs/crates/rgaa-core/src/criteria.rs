@@ -126,33 +126,35 @@ const CLASSIFICATION: &[(&str, Classification, &str)] = &[
 pub struct RgaaCriteria;
 
 impl RgaaCriteria {
-    pub fn all() -> Vec<Criterion> {
-        CRITERIA_CACHE
-            .get_or_init(|| {
-                CLASSIFICATION
-                    .iter()
-                    .map(|(id, classification, wcag_refs)| Criterion {
-                        id,
-                        title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
-                        classification: *classification,
-                        wcag_refs,
-                    })
-                    .collect()
-            })
-            .clone()
+    /// Built once per process and shared read-only — cloning happens only for the
+    /// filtered subsets below, never for the full 106-item catalog on every call.
+    pub fn all() -> &'static [Criterion] {
+        CRITERIA_CACHE.get_or_init(|| {
+            CLASSIFICATION
+                .iter()
+                .map(|(id, classification, wcag_refs)| Criterion {
+                    id,
+                    title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
+                    classification: *classification,
+                    wcag_refs,
+                })
+                .collect()
+        })
     }
 
     pub fn deterministe() -> Vec<Criterion> {
         Self::all()
-            .into_iter()
+            .iter()
             .filter(|c| c.classification == Classification::Deterministe)
+            .cloned()
             .collect()
     }
 
     pub fn ia_assiste() -> Vec<Criterion> {
         Self::all()
-            .into_iter()
+            .iter()
             .filter(|c| c.classification == Classification::IaAssiste)
+            .cloned()
             .collect()
     }
 

@@ -1,4 +1,10 @@
 [toolchain]
+# Pinned to an exact version for build reproducibility rather than "stable"
+# (which drifts with every new Rust release). Must stay >= 1.85: a
+# transitive dependency (aligned, pulled in via lancedb) requires the
+# edition2024 Cargo feature, which older toolchains (e.g. 1.80, the
+# workspace's own rust-version floor) reject outright with "the package
+# requires the Cargo feature called `edition2024`".
 channel = "1.98.1"
-components = ["rustfmt", "clippy"]
+components = ["clippy", "rustfmt", "rust-analyzer"]
 profile = "minimal"

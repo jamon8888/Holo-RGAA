@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+      - 'latest'
+    branches:
+      - master
+      - main
   workflow_dispatch:
     inputs:
       tag:
@@ -11,9 +15,13 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
+  TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}
 
 jobs:
   # ─── Build ─────────────────────────────────────────────────────────────────
@@ -34,24 +42,24 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             cross: false
-            tarball: rgaa-rs-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
+            tarball: rgaa-rs-${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}-x86_64-unknown-linux-gnu.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
             cross: false
-            tarball: rgaa-rs-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz
+            tarball: rgaa-rs-${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}-x86_64-apple-darwin.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
             cross: false
-            tarball: rgaa-rs-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
+            tarball: rgaa-rs-${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}-aarch64-apple-darwin.tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             cross: false
             ext: .exe
-            zip: rgaa-rs-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip
+            zip: rgaa-rs-${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'latest' }}-x86_64-pc-windows-msvc.zip
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
 
       - name: Install Windows build deps (Perl + NASM for aws-lc-sys)
         if: runner.os == 'Windows'
@@ -102,6 +110,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/rgaa-rs/dist"
           cd "$GITHUB_WORKSPACE/rgaa-rs/target/${{ matrix.target }}/release"
           tar czf "$GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.tarball }}" rgaa rgaa-cli rgaa-api rgaa-mcp
+          cd "$GITHUB_WORKSPACE/rgaa-rs/dist"
+          sha256sum "${{ matrix.tarball }}" > "${{ matrix.tarball }}.sha256"
+          base="$(basename "${{ matrix.tarball }}" .tar.gz)"
+          printf '{"tag": "%s", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp"]}\n' "${{ env.TAG }}" > "${base}.manifest.json"
         shell: bash
 
       - name: Package (Windows)
@@ -111,22 +123,35 @@ jobs:
           Push-Location target/${{ matrix.target }}/release
           Compress-Archive -Path rgaa.exe,rgaa-cli.exe,rgaa-api.exe,rgaa-mcp.exe -DestinationPath "$env:GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.zip }}" -Force
           Pop-Location
+          Push-Location dist
+          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.zip }}").Hash.ToLower()
+          "$hash  ${{ matrix.zip }}" | Set-Content -Encoding ascii "${{ matrix.zip }}.sha256"
+          $base = [System.IO.Path]::GetFileNameWithoutExtension("${{ matrix.zip }}")
+          $manifest = '{"tag": "' + "${{ env.TAG }}" + '", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp"]}'
+          Set-Content -Path "$base.manifest.json" -Value $manifest -Encoding ascii
+          Pop-Location
         shell: pwsh
 
       - name: Upload artifact (Unix)
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: rgaa-rs-${{ matrix.target }}
-          path: rgaa-rs/dist/${{ matrix.tarball }}
+          name: rgaa-rs-${{ env.TAG }}-${{ matrix.target }}
+          path: |
+            rgaa-rs/dist/${{ matrix.tarball }}
+            rgaa-rs/dist/${{ matrix.tarball }}.sha256
+            rgaa-rs/dist/*.manifest.json
           if-no-files-found: error
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: rgaa-rs-${{ matrix.target }}
-          path: rgaa-rs/dist/${{ matrix.zip }}
+          name: rgaa-rs-${{ env.TAG }}-${{ matrix.target }}
+          path: |
+            rgaa-rs/dist/${{ matrix.zip }}
+            rgaa-rs/dist/${{ matrix.zip }}.sha256
+            rgaa-rs/dist/*.manifest.json
           if-no-files-found: error
 
   # ─── Smoke test ───────────────────────────────────────────────────────────
@@ -143,6 +168,8 @@ jobs:
             os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
@@ -151,8 +178,32 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: rgaa-rs-${{ matrix.target }}
+          name: rgaa-rs-${{ env.TAG }}-${{ matrix.target }}
           path: artifact
+
+      - name: Verify checksum (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd artifact
+          sha256sum -c *.sha256
+
+      - name: Verify checksum (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Push-Location artifact
+          $sums = Get-Content *.sha256
+          foreach ($line in $sums) {
+            $parts = $line -split '\s+', 2
+            $expected = $parts[0].Trim()
+            $file = $parts[1].Trim()
+            $actual = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+            if ($actual -ne $expected) {
+              Write-Host "Checksum mismatch for $file" -ForegroundColor Red
+              exit 1
+            }
+          }
+          Pop-Location
+        shell: pwsh
 
       - name: Extract (Unix)
         if: runner.os != 'Windows'
@@ -163,6 +214,7 @@ jobs:
         run: powershell -Command "Expand-Archive -Path 'artifact/*.zip' -DestinationPath 'artifact/'"
 
       - name: Run rgaa --version (TUI)
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             ./artifact/rgaa.exe --version
@@ -171,6 +223,7 @@ jobs:
           fi
 
       - name: Run rgaa-cli --version
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
         id: version
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
@@ -180,6 +233,7 @@ jobs:
           fi
 
       - name: Run rgaa-cli --help
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             ./artifact/rgaa-cli.exe --help | head -5
@@ -188,6 +242,7 @@ jobs:
           fi
 
       - name: Run rgaa-api --help
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             ./artifact/rgaa-api.exe --help 2>&1 | head -3
@@ -196,6 +251,7 @@ jobs:
           fi
 
       - name: Run rgaa-mcp --help
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             ./artifact/rgaa-mcp.exe --help 2>&1 | head -3
@@ -203,18 +259,95 @@ jobs:
             ./artifact/rgaa-mcp --help 2>&1 | head -3
           fi
 
+  # ─── Installer E2E ────────────────────────────────────────────────────────
+
+  installer-e2e:
+    name: Installer E2E (${{ matrix.os }})
+    needs: [build, smoke]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-rs-${{ env.TAG }}-${{ matrix.target }}
+          path: staged
+
+      - name: Stage artifacts for installer (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p serve
+          cp staged/*.tar.gz staged/*.sha256 serve/ 2>/dev/null || true
+
+      - name: Serve staged artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          python3 -m http.server 8420 --directory serve &
+          echo $! > /tmp/http_server.pid
+          sleep 1
+
+      - name: Run installer (Unix)
+        if: runner.os != 'Windows'
+        env:
+          RGAA_RELEASE_URL_BASE: http://127.0.0.1:8420
+          RGAA_VERSION: ${{ env.TAG }}
+          RGAA_INSTALL_DIR: ${{ runner.temp }}/rgaa-install
+        run: |
+          bash install.sh
+          "${RGAA_INSTALL_DIR}/rgaa" --version
+          "${RGAA_INSTALL_DIR}/rgaa-cli" --version
+
+      - name: Stop server (Unix)
+        if: always() && runner.os != 'Windows'
+        run: kill "$(cat /tmp/http_server.pid)" 2>/dev/null || true
+
+      - name: Stage artifacts for installer (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path serve | Out-Null
+          Copy-Item staged\*.zip serve\ -ErrorAction SilentlyContinue
+          Copy-Item staged\*.sha256 serve\ -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Serve staged artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Start-Process -FilePath python -ArgumentList "-m","http.server","8420","--directory","serve" -WindowStyle Hidden
+          Start-Sleep -Seconds 1
+        shell: pwsh
+
+      - name: Run installer (Windows)
+        if: runner.os == 'Windows'
+        env:
+          RGAA_RELEASE_URL_BASE: http://127.0.0.1:8420
+        run: |
+          ./rgaa-rs/install.ps1 -Version "${{ env.TAG }}"
+          & "$env:LOCALAPPDATA\rgaa\bin\rgaa.exe" --version
+        shell: pwsh
+
   # ─── Publish GitHub Release ────────────────────────────────────────────────
 
   release:
     name: Publish GitHub Release
-    needs: [build, smoke]
+    needs: [build, smoke, installer-e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -222,47 +355,18 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Delete existing "latest" release
+        if: env.TAG == 'latest'
+        run: gh release delete latest --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           generate_release_notes: true
-          tag_name: ${{ github.ref_name }}
-
-  # ─── Publish to crates.io ─────────────────────────────────────────────────
-
-  publish:
-    name: Publish to crates.io
-    needs: [build, smoke]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        crate:
-          - rgaa-core
-          - rgaa-rules
-          - rgaa-holo
-          - rgaa-obscura
-          - rgaa-storage
-          - rgaa-orchestrator
-          - rgaa-remediation
-          - rgaa-agent
-          - rgaa-api
-          - rgaa-mcp
-          - rgaa-cli
-          - rgaa-tui
-          - rgaa-browser-tools
-          - rgaa-data
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Publish ${{ matrix.crate }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p ${{ matrix.crate }}
-        working-directory: rgaa-rs
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG == 'latest' && format('Latest Build ({0})', github.sha) || env.TAG }}
+          prerelease: ${{ env.TAG == 'latest' }}
+          target_commitish: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}

@@ -1,18 +1,56 @@
 use crate::criteria_defs::get_criterion_definition;
 use rgaa_holo::{format_page_context, PageContext};
 
+/// Hard cap, in bytes, on the rendered page-context section of a prompt.
+/// Keeps prompts bounded even for pages with huge amounts of extracted
+/// content (many headings/images/forms) — a `ponytail:` ceiling, not a
+/// content-quality decision.
+pub const MAX_CONTEXT_CHARS: usize = 8_000;
+
+const TRUNCATION_MARKER: &str = "\n\n[…page context truncated…]";
+
 /// Builds structured evaluation prompts for Holo3.
 ///
 /// The prompt includes the criterion definition, WCAG references,
-/// and the full page context (headings, images, forms, etc.).
+/// and the page context (headings, images, forms, etc.).
 pub struct PromptBuilder;
 
 impl PromptBuilder {
-    /// Builds a text-only evaluation prompt for `criterion_id`.
+    /// Renders `context` to text and caps it at [`MAX_CONTEXT_CHARS`].
+    ///
+    /// Call this once per URL and reuse the result across every criterion's
+    /// prompt via [`Self::build_from_rendered`] — rendering is not free for
+    /// pages with many elements, and the audit pipeline evaluates up to
+    /// ~20+ criteria against the same page context.
+    pub fn render_context(context: &PageContext) -> String {
+        let rendered = format_page_context(context);
+        if rendered.len() <= MAX_CONTEXT_CHARS {
+            return rendered;
+        }
+        let mut end = MAX_CONTEXT_CHARS;
+        while end > 0 && !rendered.is_char_boundary(end) {
+            end -= 1;
+        }
+        let mut truncated = rendered[..end].to_string();
+        truncated.push_str(TRUNCATION_MARKER);
+        truncated
+    }
+
+    /// Builds a text-only evaluation prompt for `criterion_id`, rendering
+    /// `context` fresh. Prefer [`Self::build_from_rendered`] with a context
+    /// already rendered via [`Self::render_context`] when evaluating several
+    /// criteria against the same page.
     ///
     /// # Returns
     /// A formatted prompt string ready to send to the Holo3 API.
     pub fn build(criterion_id: &str, context: &PageContext) -> String {
+        Self::build_from_rendered(criterion_id, &Self::render_context(context))
+    }
+
+    /// Builds a text-only evaluation prompt for `criterion_id` from an
+    /// already-rendered (and capped) page context — see
+    /// [`Self::render_context`].
+    pub fn build_from_rendered(criterion_id: &str, rendered_context: &str) -> String {
         let def = get_criterion_definition(criterion_id);
 
         let mut prompt = format!(
@@ -28,7 +66,7 @@ impl PromptBuilder {
             prompt.push_str(&format!("- **Définition:** {}\n\n", def.definition));
         }
 
-        prompt.push_str(&format_page_context(context));
+        prompt.push_str(rendered_context);
 
         prompt.push_str("\n## Instructions\n\n");
         prompt.push_str(
@@ -95,4 +133,68 @@ You have access to the `crawl_site` tool to discover pages on the target website
 
 **After crawling:** Use the discovered pages to determine which ones to audit for RGAA criteria. Prioritize pages with forms, authentication, navigation, and interactive content.
 "#.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_context_leaves_short_context_untouched() {
+        let context = PageContext {
+            title: Some("Home".to_string()),
+            lang: Some("fr".to_string()),
+            headings: vec![],
+            images: vec![],
+            iframes: vec![],
+            links: vec![],
+            forms: vec![],
+            media: vec![],
+            navigation: vec![],
+        };
+        let rendered = PromptBuilder::render_context(&context);
+        assert!(rendered.len() <= MAX_CONTEXT_CHARS);
+        assert!(!rendered.contains("truncated"));
+    }
+
+    #[test]
+    fn render_context_caps_huge_context() {
+        let context = PageContext {
+            title: Some("A".repeat(50_000)),
+            lang: None,
+            headings: vec![],
+            images: vec![],
+            iframes: vec![],
+            links: vec![],
+            forms: vec![],
+            media: vec![],
+            navigation: vec![],
+        };
+        let rendered = PromptBuilder::render_context(&context);
+        assert!(
+            rendered.len() <= MAX_CONTEXT_CHARS + TRUNCATION_MARKER.len(),
+            "rendered context must stay bounded, got {} chars",
+            rendered.len()
+        );
+        assert!(rendered.contains("truncated"));
+    }
+
+    #[test]
+    fn build_from_rendered_matches_build() {
+        let context = PageContext {
+            title: Some("Home".to_string()),
+            lang: Some("fr".to_string()),
+            headings: vec![],
+            images: vec![],
+            iframes: vec![],
+            links: vec![],
+            forms: vec![],
+            media: vec![],
+            navigation: vec![],
+        };
+        let via_build = PromptBuilder::build("1.1", &context);
+        let via_rendered =
+            PromptBuilder::build_from_rendered("1.1", &PromptBuilder::render_context(&context));
+        assert_eq!(via_build, via_rendered);
+    }
 }

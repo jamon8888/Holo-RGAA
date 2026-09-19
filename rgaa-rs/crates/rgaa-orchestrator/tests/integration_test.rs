@@ -553,19 +553,24 @@ mod integration_test {
 
     #[test]
     fn test_etat_conformite_thresholds() {
+        // pass_count is chosen per case so the resulting taux_global
+        // (pass / (pass + fail) * 100) lands unambiguously on the
+        // expected side of the totale/partielle/non-conforme thresholds.
+        let total = RgaaCriteria::all().len();
         let test_cases = vec![
-            (100.0, "totale"),
-            (99.0, "partielle"),
-            (50.0, "partielle"),
-            (49.9, "non conforme"),
-            (0.0, "non conforme"),
+            (total, "totale"),               // 100%
+            (total - 1, "partielle"),        // just under 100%
+            (total / 2, "partielle"),        // exactly 50%
+            (total / 2 - 1, "non conforme"), // just under 50%
+            (0, "non conforme"),             // 0%
         ];
 
-        for (taux, expected_etat) in test_cases {
+        for (pass_count, expected_etat) in test_cases {
             let criteria: Vec<CriterionResult> = RgaaCriteria::all()
                 .iter()
-                .map(|c| {
-                    let status = if taux >= 50.0 {
+                .enumerate()
+                .map(|(i, c)| {
+                    let status = if i < pass_count {
                         CriterionStatus::Pass
                     } else {
                         CriterionStatus::Fail
@@ -578,8 +583,8 @@ mod integration_test {
 
             assert_eq!(
                 audit.etat_conformite, expected_etat,
-                "etat_conformite should be '{}' when taux_global is {}",
-                expected_etat, taux
+                "etat_conformite should be '{}' when {}/{} criteria pass (taux_global={})",
+                expected_etat, pass_count, total, audit.taux_global
             );
         }
     }

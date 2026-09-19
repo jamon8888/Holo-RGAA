@@ -137,16 +137,33 @@ impl RgaaCatalog {
             .sum()
     }
 
+    /// `"theme.criterion"` id → `(theme, criterion)`, built once per process from
+    /// `Self::all()` so `by_id` is a single hash lookup instead of a linear scan of
+    /// themes and criteria on every call.
+    fn id_index() -> &'static HashMap<String, (u8, &'static CatalogCriterion)> {
+        static INDEX: OnceLock<HashMap<String, (u8, &'static CatalogCriterion)>> = OnceLock::new();
+        INDEX.get_or_init(|| {
+            let mut index = HashMap::new();
+            for theme in Self::all() {
+                for cw in &theme.criteria {
+                    let id = cw.criterium.id_for_theme(theme.number);
+                    index.insert(id, (theme.number, &cw.criterium));
+                }
+            }
+            index
+        })
+    }
+
+    /// Looks up by theme/criterion *numbers*, not the literal string: `"1.01"` and
+    /// `"01.1"` both resolve to the same criterion as `"1.1"`, matching the
+    /// pre-index behavior (`u8::from_str` on each half discards leading zeros).
     pub fn by_id(criterion_id: &str) -> Option<(u8, &'static CatalogCriterion)> {
         let mut parts = criterion_id.splitn(2, '.');
         let theme: u8 = parts.next()?.parse().ok()?;
         let crit_num: u8 = parts.next()?.parse().ok()?;
-        let theme_data = Self::all().iter().find(|t| t.number == theme)?;
-        theme_data
-            .criteria
-            .iter()
-            .find(|cw| cw.criterium.number == crit_num)
-            .map(|cw| (theme, &cw.criterium))
+        Self::id_index()
+            .get(&format!("{theme}.{crit_num}"))
+            .copied()
     }
 
     pub fn title(criterion_id: &str) -> Option<&'static str> {
@@ -177,6 +194,14 @@ mod tests {
         let (_, c) = RgaaCatalog::by_id("1.1").expect("1.1 must exist");
         assert_eq!(c.number, 1);
         assert!(!c.tests.is_empty());
+    }
+
+    #[test]
+    fn by_id_normalizes_leading_zeroes() {
+        let (_, canonical) = RgaaCatalog::by_id("1.1").expect("1.1 must exist");
+        let (_, leading_zero) = RgaaCatalog::by_id("01.01").expect("01.01 must resolve to 1.1");
+        assert_eq!(canonical.number, leading_zero.number);
+        assert_eq!(canonical.title, leading_zero.title);
     }
 
     #[test]

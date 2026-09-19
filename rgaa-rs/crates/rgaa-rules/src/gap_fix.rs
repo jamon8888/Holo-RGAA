@@ -1,5 +1,6 @@
 use rgaa_core::{Classification, CriterionResult, CriterionStatus, Violation};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Gap-fix rules targeting the 10 real false negatives from comparison data.
 /// Each rule is a JS snippet executed via Playwright.
@@ -8,8 +9,15 @@ pub struct GapFixRules;
 impl GapFixRules {
     /// Returns JS snippets for each gap-fix criterion.
     /// Each snippet returns JSON: { "pass": bool, "details": string, "nodes": number }
+    ///
+    /// Built once per process and shared read-only — no longer rebuilt on every call.
     #[must_use]
-    pub fn snippets() -> HashMap<String, &'static str> {
+    pub fn snippets() -> &'static HashMap<String, &'static str> {
+        static SNIPPETS: OnceLock<HashMap<String, &'static str>> = OnceLock::new();
+        SNIPPETS.get_or_init(Self::build_snippets)
+    }
+
+    fn build_snippets() -> HashMap<String, &'static str> {
         let mut m: HashMap<String, &str> = HashMap::new();
 
         // 1.1: img/picture without alt (axe misses <picture> elements)

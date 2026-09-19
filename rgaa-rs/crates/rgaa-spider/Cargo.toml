@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 spider = { version = "2.53", default-features = false, features = ["sync", "reqwest_native_tls_native_roots"] }
 tokio = { workspace = true }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }

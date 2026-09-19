@@ -13,9 +13,12 @@ rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-agent = { path = "../rgaa-agent" }
 rgaa-browser-tools = { path = "../rgaa-browser-tools" }
 rgaa-storage = { path = "../rgaa-storage" }
+rgaa-spider = { path = "../rgaa-spider" }
+rig-core = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 uuid = { version = "1.0", features = ["v4"] }
+reqwest = { workspace = true }

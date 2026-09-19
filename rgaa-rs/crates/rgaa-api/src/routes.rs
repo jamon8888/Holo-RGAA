@@ -55,7 +55,7 @@ pub async fn run_audit(
     let config = CrawlConfig::default();
     let result = state
         .orchestrator
-        .run(&payload.url, &config)
+        .run_crawl_and_audit(&payload.url, &config)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

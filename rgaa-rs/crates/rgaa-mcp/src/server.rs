@@ -603,7 +603,7 @@ impl AuditOrchestrationService for OrchestrationService {
     > {
         let url = url.to_string();
         let config = config.clone();
-        Box::pin(async move { self.orchestrator.run(&url, &config).await })
+        Box::pin(async move { self.orchestrator.run_crawl_and_audit(&url, &config).await })
     }
 }
 

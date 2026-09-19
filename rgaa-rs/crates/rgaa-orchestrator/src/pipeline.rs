@@ -9,9 +9,13 @@ use rgaa_core::{
 };
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
+use rgaa_spider::{CrawlSiteArgs, SpiderTool};
 use rgaa_storage::Storage;
+use rig_core::tool::PortableTool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
 use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
@@ -133,6 +137,8 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
     (taux_global, coverage_percent, etat_conformite)
 }
 
+const MAX_CONCURRENT_AUDITS: usize = 3;
+
 pub struct Orchestrator {
     storage: Option<Arc<dyn Storage>>,
 }
@@ -170,9 +176,18 @@ impl Orchestrator {
             .ok_or_else(|| format!("audit result missing for {url}"))
     }
 
+    /// Audit a URL with full crawl support.
+    /// If config.sample_mode is true, uses RGAA mandatory 7-page sampling.
+    /// Otherwise, crawls the site up to max_pages/max_depth.
+    /// Returns a single AuditResult with all pages and site-wide aggregated metrics.
+    pub async fn run_crawl_and_audit(&self, url: &str, config: &CrawlConfig) -> Result<AuditResult, String> {
+        run_crawl_and_audit(self, url, config).await
+    }
+
     /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the URL.
     /// The Obscura CDP server is started once before the loop and stopped via
     /// [`ObscuraBridge`] `Drop` after the loop completes.
+    /// Audits run concurrently with a maximum of 3 simultaneous audits.
     pub async fn run_batch(
         &self,
         urls: &[String],
@@ -192,10 +207,27 @@ impl Orchestrator {
         let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
             .await
             .map_err(|e| format!("failed to create agent: {e}"))?;
-        let mut results = HashMap::new();
+
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_AUDITS));
+        let mut handles = Vec::new();
+
         for url in urls {
-            let audit = audit_one(&agent, &tool_ctx, url, config, &|_| {}).await?;
-            results.insert(url.clone(), audit);
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let agent = agent.clone();
+            let tool_ctx = tool_ctx.clone();
+            let config = config.clone();
+            let url = url.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = permit;
+                let audit = audit_one(&agent, &tool_ctx, &url, &config, &|_| {}).await?;
+                Ok::<(String, AuditResult), String>((url, audit))
+            }));
+        }
+
+        let mut results = HashMap::new();
+        for handle in handles {
+            let (url, audit) = handle.await.map_err(|e| e.to_string())??;
+            results.insert(url, audit);
         }
 
         if let Some(storage) = &self.storage {
@@ -214,7 +246,7 @@ impl Orchestrator {
         &self,
         url: &str,
         config: &CrawlConfig,
-        on_phase: impl Fn(AuditPhase) + Send + Sync,
+        on_phase: impl Fn(AuditPhase) + Send + Sync + 'static,
     ) -> Result<AuditResult, String> {
         let mut results = self
             .run_batch_with_progress(&[url.to_string()], config, on_phase)
@@ -229,7 +261,7 @@ impl Orchestrator {
         &self,
         urls: &[String],
         config: &CrawlConfig,
-        on_phase: impl Fn(AuditPhase) + Send + Sync,
+        on_phase: impl Fn(AuditPhase) + Send + Sync + 'static,
     ) -> Result<HashMap<String, AuditResult>, String> {
         let bridge = {
             let mut b = ObscuraBridge::from_env();
@@ -245,10 +277,29 @@ impl Orchestrator {
         let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
             .await
             .map_err(|e| format!("failed to create agent: {e}"))?;
-        let mut results = HashMap::new();
+
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_AUDITS));
+        let on_phase = Arc::new(on_phase);
+        let mut handles = Vec::new();
+
         for url in urls {
-            let audit = audit_one(&agent, &tool_ctx, url, config, &on_phase).await?;
-            results.insert(url.clone(), audit);
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let agent = agent.clone();
+            let tool_ctx = tool_ctx.clone();
+            let config = config.clone();
+            let url = url.clone();
+            let on_phase = on_phase.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = permit;
+                let audit = audit_one(&agent, &tool_ctx, &url, &config, on_phase.as_ref()).await?;
+                Ok::<(String, AuditResult), String>((url, audit))
+            }));
+        }
+
+        let mut results = HashMap::new();
+        for handle in handles {
+            let (url, audit) = handle.await.map_err(|e| e.to_string())??;
+            results.insert(url, audit);
         }
 
         if let Some(storage) = &self.storage {
@@ -261,6 +312,221 @@ impl Orchestrator {
 
         Ok(results)
     }
+}
+
+/// Audit a URL with full crawl support.
+/// If config.sample_mode is true, uses RGAA mandatory 7-page sampling.
+/// Otherwise, crawls the site up to max_pages/max_depth.
+/// Returns a single AuditResult with all pages and site-wide aggregated metrics.
+pub async fn run_crawl_and_audit(
+    orchestrator: &Orchestrator,
+    url: &str,
+    config: &CrawlConfig,
+) -> Result<AuditResult, String> {
+    let start = std::time::Instant::now();
+    
+    let urls = if config.sample_mode {
+        discover_rgaa_sample_pages(url, config).await?
+    } else {
+        let spider_args = CrawlSiteArgs {
+            url: url.to_string(),
+            max_pages: Some(config.max_pages as u32),
+            max_depth: Some(config.max_depth),
+            respect_robots_txt: Some(config.respect_robots),
+        };
+        let output = SpiderTool::new().call(spider_args).await.map_err(|e| e.to_string())?;
+        output.pages.into_iter().map(|p| p.url).collect()
+    };
+    
+    // Cap at max_pages
+    let urls: Vec<String> = urls.into_iter().take(config.max_pages).collect();
+    
+    if urls.is_empty() {
+        return Err("no pages to audit".to_string());
+    }
+    
+    let batch_results = orchestrator.run_batch(&urls, config).await?;
+    
+    // Extract PageResults from each AuditResult
+    let mut all_pages = Vec::new();
+    for (_, audit) in batch_results {
+        all_pages.extend(audit.pages);
+    }
+    
+    // Site-wide aggregation
+    let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    
+    // Flatten all criteria for totals
+    let all_criteria: Vec<CriterionResult> = all_pages.iter().flat_map(|p| p.criteria.clone()).collect();
+    
+    let total = RgaaCriteria::count();
+    let pass_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::Pass).count();
+    let fail_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::Fail).count();
+    let na_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::NotApplicable).count();
+    let _error_count = all_criteria.iter().filter(|c| c.status == CriterionStatus::Error).count();
+    let compliance = calculate_compliance(&all_criteria);
+    
+    Ok(AuditResult {
+        audit_id: uuid::Uuid::new_v4().to_string(),
+        url: url.to_string(),
+        pages: all_pages,
+        total_criteria: total,
+        passed: pass_count,
+        failed: fail_count,
+        na: na_count,
+        overall_compliance: compliance,
+        taux_global,
+        coverage_percent,
+        etat_conformite,
+        duration_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+/// Discover RGAA mandatory 7 sample pages.
+/// Returns URLs for: Accueil, Contact, Mentions légales, Accessibilité, Aide, Plan du site, Authentification (if exists).
+async fn discover_rgaa_sample_pages(base_url: &str, config: &CrawlConfig) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    let base = base_url.trim_end_matches('/');
+    let mut pages = vec![base.to_string()]; // 1. Accueil
+    
+    let patterns = [
+        ("contact", vec!["/contact", "/contactez-nous", "/nous-contacter"]),
+        ("mentions_legales", vec!["/mentions-legales", "/mentions-legales"]),
+        ("accessibilite", vec!["/accessibilite", "/declaration-accessibilite", "/accessibilite"]),
+        ("aide", vec!["/aide", "/help", "/faq"]),
+        ("plan_site", vec!["/plan-du-site", "/sitemap", "/plan-site"]),
+    ];
+    
+    for (_name, paths) in patterns {
+        for path in paths {
+            let test_url = format!("{}{}", base, path);
+            if let Ok(resp) = client.head(&test_url).send().await {
+                if resp.status().is_success() || resp.status().is_redirection() {
+                    pages.push(test_url);
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 7. Auth - only add if ANY auth path exists
+    let auth_paths = vec!["/connexion", "/login", "/authentification", "/identification"];
+    for path in auth_paths {
+        let test_url = format!("{}{}", base, path);
+        if let Ok(resp) = client.head(&test_url).send().await {
+            if resp.status().is_success() || resp.status().is_redirection() {
+                pages.push(test_url);
+                break;
+            }
+        }
+    }
+    
+    // Fallback: if < 7 pages, shallow spider crawl
+    if pages.len() < 7 {
+        let spider_args = CrawlSiteArgs {
+            url: base.to_string(),
+            max_pages: Some(20),
+            max_depth: Some(1),
+            respect_robots_txt: Some(config.respect_robots),
+        };
+        if let Ok(output) = SpiderTool::new().call(spider_args).await {
+            for page in output.pages {
+                if pages.len() >= config.max_pages.min(7) { break; }
+                if !pages.contains(&page.url) {
+                    pages.push(page.url);
+                }
+            }
+        }
+    }
+    
+    pages.truncate(config.max_pages.min(7));
+    Ok(pages)
+}
+
+/// Aggregate site-wide compliance per RGAA official rule:
+/// A criterion is NonConforme for the entire site if it fails on ANY page of the sample.
+/// Returns (taux_global, coverage_percent, etat_conformite).
+fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
+    use std::collections::HashMap;
+    
+    // Group criterion results by criterion_id across all pages
+    let mut criterion_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
+    let mut criterion_classifications: HashMap<String, Classification> = HashMap::new();
+    let mut validated_total = 0;
+    let mut validated_executed = 0;
+    
+    for page in page_results {
+        for criterion in &page.criteria {
+            criterion_statuses
+                .entry(criterion.criterion_id.clone())
+                .or_default()
+                .push(criterion.status.clone());
+            criterion_classifications.insert(criterion.criterion_id.clone(), criterion.classification);
+        }
+    }
+    
+    // Apply RGAA rule: NC if ANY page has Fail/Error
+    let mut conforme = 0;
+    let mut non_conforme = 0;
+    
+    for (criterion_id, statuses) in criterion_statuses {
+        let classification = criterion_classifications.get(&criterion_id).copied().unwrap_or(Classification::Manuel);
+        
+        // Skip Manuel criteria from taux calculation (they're NonTeste)
+        if classification == Classification::Manuel {
+            continue;
+        }
+        
+        // Count for coverage
+        if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion_id) {
+            if matches!(
+                cat.automatable,
+                Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
+            ) {
+                validated_total += 1;
+                if statuses.iter().any(|s| !matches!(s, CriterionStatus::NotTested)) {
+                    validated_executed += 1;
+                }
+            }
+        }
+        
+        let has_fail_or_error = statuses.iter().any(|s| 
+            matches!(s, CriterionStatus::Fail | CriterionStatus::Error)
+        );
+        let all_pass = statuses.iter().all(|s| matches!(s, CriterionStatus::Pass));
+        let all_na = statuses.iter().all(|s| matches!(s, CriterionStatus::NotApplicable));
+        
+        if all_na {
+            continue; // NA excluded from denominator
+        }
+        
+        if has_fail_or_error {
+            non_conforme += 1;
+        } else if all_pass {
+            conforme += 1;
+        } else {
+            // Mixed Pass/NeedsReview/NotTested → NonTeste (excluded from taux)
+            continue;
+        }
+    }
+    
+    let taux_global = if conforme + non_conforme > 0 {
+        (conforme as f64 / (conforme + non_conforme) as f64) * 100.0
+    } else { 0.0 };
+    
+    let coverage_percent = if validated_total > 0 {
+        (validated_executed as f64 / validated_total as f64) * 100.0
+    } else { 0.0 };
+    
+    let etat_conformite = if taux_global >= 100.0 { "totale" }
+        else if taux_global >= 50.0 { "partielle" }
+        else { "non conforme" }.to_string();
+    
+    (taux_global, coverage_percent, etat_conformite)
 }
 
 /// Run the full per-URL audit pipeline against a browser bridge.

@@ -1561,40 +1561,7 @@ impl ObscuraBridge {
         snippets: &HashMap<String, &str>,
         concurrency: usize,
     ) -> Result<HashMap<String, HashMap<String, serde_json::Value>>, String> {
-        let snippet_decls: String = snippets
-            .iter()
-            .map(|(id, snippet)| {
-                let var = sanitize_js_identifier(id);
-                format!(
-                    r#"
-    const snippet_{var} = (() => {{
-      try {{
-        {snippet}
-      }} catch (e) {{
-        {{ success: false, error: e.message }};
-      }}
-    }})();
- "#
-                )
-            })
-            .collect();
-
-        let object_entries: String = snippets
-            .keys()
-            .map(|id| {
-                let var = sanitize_js_identifier(id);
-                let key = escape_js_string(id);
-                format!("'{key}': snippet_{var}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let script = format!(
-            r#"
-  {snippet_decls}
-  JSON.stringify({{{object_entries}}});
- "#
-        );
+        let script = Self::build_gap_fix_script(snippets);
 
         info!(
             urls = urls.len(),
@@ -1723,6 +1690,57 @@ impl ObscuraBridge {
     }
 
     // --- Script builders (sync) ---
+
+    /// One `--eval` script running every snippet and returning a JSON object
+    /// keyed by snippet id.
+    ///
+    /// Each snippet is an expression (typically an IIFE) whose value is
+    /// captured with `return`; a snippet that returns a JSON *string* — the
+    /// gap-fix and SEO snapshot snippets all end in `JSON.stringify(...)` —
+    /// is parsed back into an object so callers see `{pass, details, ...}`
+    /// rather than a string. Without the `return`, every snippet evaluated
+    /// to `undefined` and `JSON.stringify` dropped its key, so the batch
+    /// silently came back empty.
+    fn build_gap_fix_script(snippets: &HashMap<String, &str>) -> String {
+        let snippet_decls: String = snippets
+            .iter()
+            .map(|(id, snippet)| {
+                let var = sanitize_js_identifier(id);
+                format!(
+                    r#"
+    const snippet_{var} = (() => {{
+      try {{
+        const value = {snippet};
+        if (typeof value === 'string') {{
+          try {{ return JSON.parse(value); }} catch (_) {{ return value; }}
+        }}
+        return value;
+      }} catch (e) {{
+        return {{ success: false, error: e.message }};
+      }}
+    }})();
+ "#
+                )
+            })
+            .collect();
+
+        let object_entries: String = snippets
+            .keys()
+            .map(|id| {
+                let var = sanitize_js_identifier(id);
+                let key = escape_js_string(id);
+                format!("'{key}': snippet_{var}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!(
+            r#"
+  {snippet_decls}
+  JSON.stringify({{{object_entries}}});
+ "#
+        )
+    }
 
     fn build_page_context_script() -> &'static str {
         r#"
@@ -2478,5 +2496,65 @@ mod tests {
         let snippet = ObscuraBridge::fill_expression("#notes", value);
         // Interpolated as a JSON string literal: safe to embed, intact on read.
         assert!(snippet.contains(&serde_json::to_string(value).expect("value serializes")));
+    }
+
+    /// Evaluates the generated `--eval` script the way the browser would and
+    /// returns the JSON object it produces. Requires `node` on PATH.
+    fn eval_with_node(script: &str) -> Option<serde_json::Value> {
+        use std::io::Write;
+        // `--eval` yields the completion value of the last expression statement,
+        // i.e. `eval` semantics — not a function return.
+        let program = "process.stdout.write(String(eval(require('fs').readFileSync(0, 'utf8'))));";
+        let mut child = std::process::Command::new("node")
+            .arg("-e")
+            .arg(program)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .ok()?;
+        child
+            .stdin
+            .take()
+            .expect("piped stdin")
+            .write_all(script.as_bytes())
+            .expect("write script");
+        let output = child.wait_with_output().ok()?;
+        assert!(
+            output.status.success(),
+            "node failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Some(serde_json::from_slice(&output.stdout).expect("script output is JSON"))
+    }
+
+    #[test]
+    fn gap_fix_script_returns_each_snippet_value_as_an_object() {
+        let mut snippets: HashMap<String, &str> = HashMap::new();
+        // Real gap-fix shape: an IIFE that returns a JSON *string*.
+        snippets.insert(
+            "1.1".into(),
+            "(() => { return JSON.stringify({ pass: false, details: '2 images without alt', nodes: 2 }); })()",
+        );
+        // A snippet returning a plain value is passed through untouched.
+        snippets.insert("plain".into(), "(() => ({ pass: true }))()");
+        // A throwing snippet must not take the others down.
+        snippets.insert("boom".into(), "(() => { throw new Error('nope'); })()");
+
+        let script = ObscuraBridge::build_gap_fix_script(&snippets);
+        assert!(
+            script.contains("return value;"),
+            "snippet value must be returned"
+        );
+
+        let Some(result) = eval_with_node(&script) else {
+            eprintln!("node not available; skipping execution check");
+            return;
+        };
+        assert_eq!(result["1.1"]["pass"], serde_json::json!(false));
+        assert_eq!(result["1.1"]["nodes"], serde_json::json!(2));
+        assert_eq!(result["plain"]["pass"], serde_json::json!(true));
+        assert_eq!(result["boom"]["success"], serde_json::json!(false));
+        assert_eq!(result["boom"]["error"], serde_json::json!("nope"));
     }
 }

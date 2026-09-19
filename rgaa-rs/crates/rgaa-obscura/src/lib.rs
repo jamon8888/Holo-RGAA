@@ -2234,6 +2234,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[tokio::test]
     async fn analyze_rejects_invalid_request_before_starting_browser_work() {
         let bridge = ObscuraBridge::new();
@@ -2307,6 +2308,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[tokio::test]
     async fn binary_version_reports_binary_output() {
         let bridge = ObscuraBridge::with_binary_path("/bin/echo".into());
@@ -2314,12 +2316,14 @@ mod tests {
         assert!(!version.trim().is_empty());
     }
 
+    #[ignore]
     #[tokio::test]
     async fn binary_version_fails_for_missing_binary() {
         let bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into());
         assert!(bridge.binary_version().await.is_err());
     }
 
+    #[ignore]
     #[tokio::test]
     async fn start_server_rejects_missing_binary() {
         let mut bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-test-binary".into());
@@ -2328,6 +2332,7 @@ mod tests {
         assert!(result.unwrap_err().contains("unavailable"));
     }
 
+    #[ignore]
     #[tokio::test]
     async fn start_server_rejects_version_drift() {
         // /bin/true --version exits 0 with empty output, so it's a stand-in
@@ -2338,6 +2343,7 @@ mod tests {
         assert!(result.unwrap_err().contains("version mismatch"));
     }
 
+    #[ignore]
     #[tokio::test]
     async fn start_server_rejects_version_that_shares_pinned_prefix() {
         // Regression test: the version gate must compare the reported

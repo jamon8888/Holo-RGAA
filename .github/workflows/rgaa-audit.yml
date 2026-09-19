@@ -94,7 +94,7 @@ jobs:
     name: Audit changed routes
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'changed' || github.event.inputs.mode == 'changed' }}
+    if: ${{ github.event.inputs.mode == 'changed' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -140,7 +140,7 @@ jobs:
     name: Smoke audit (critical routes)
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'smoke' || github.event.inputs.mode == 'smoke' }}
+    if: ${{ github.event.inputs.mode == 'smoke' || github.event_name != 'workflow_dispatch' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -180,7 +180,7 @@ jobs:
     name: Full site audit
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'full' || github.event.inputs.mode == 'full' }}
+    if: ${{ github.event.inputs.mode == 'full' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -223,7 +223,7 @@ jobs:
     name: Audit diff vs baseline
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'diff' || github.event.inputs.mode == 'diff' }}
+    if: ${{ github.event.inputs.mode == 'diff' }}
     defaults:
       run:
         working-directory: rgaa-rs
@@ -257,7 +257,7 @@ jobs:
     name: Policy evaluation
     runs-on: ubuntu-latest
     needs: [build, prepare]
-    if: ${{ env.RGA_AUDIT_MODE == 'policy' || github.event.inputs.mode == 'policy' }}
+    if: ${{ github.event.inputs.mode == 'policy' }}
     defaults:
       run:
         working-directory: rgaa-rs

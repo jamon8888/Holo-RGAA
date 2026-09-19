@@ -1,0 +1,73 @@
+# Cadre légal UE + 12 transpositions nationales — findings (ticket #98, part of #97)
+
+> Socle commun UE : **directive 2016/2102** (exigences + déclaration + monitoring) ;
+> **décision d'exécution 2018/1523** (modèle de déclaration, sections obligatoires) ;
+> **décision d'exécution 2018/1524** (méthodologie de suivi : simplified vs in-depth) ;
+> norme harmonisée **EN 301 549** (v3.2.1, ≈ WCAG 2.1 AA) ; **EAA 2019/882** (secteur privé, applicable 28/06/2025).
+> Conclusion transverse : **le modèle RGAA français (taux C/(C+NC), seuils 100/50, 7 sections DINUM,
+> rétrogradation si NT>0) ne s'applique tel quel dans AUCUN des 11 autres pays.**
+> Tous utilisent le triptyque qualitatif UE (pleinement / partiellement / non conforme) sans score %.
+
+## 1. Socle UE (s'applique à tous)
+
+- **Modèle 2018/1523, section 1 obligatoire** : engagement + référence loi nationale ; périmètre ;
+  état de conformité (a) pleinement / (b) partiellement / (c) non conforme ;
+  contenus non accessibles ventilés en (a) non-conformité / (b) charge disproportionnée art. 5 /
+  (c) hors champ, + alternatives accessibles le cas échéant ;
+  préparation (date + méthode : auto-évaluation ou tiers, art. 3) + date de dernier réexamen (≥ 1/an recommandé) ;
+  mécanisme de retour + contact ; procédure d'exécution (enforcement) + contact.
+  Source : https://eur-lex.europa.eu/eli/dec_impl/2018/1523/oj/eng
+- **Monitoring 2018/1524** : échantillon basé sur la population ; contrôles simplifiés (sous-ensemble
+  de critères, automatisés) et approfondis (tous critères EN 301 549, experts manuels).
+
+## 2. Table par pays
+
+| Pays | Référentiel national + version | Base légale | Taux / seuils | Mentions + langue | Sections déclaration | Recours (organisme) | Échantillon / preuve |
+|---|---|---|---|---|---|---|---|
+| FR | RGAA 4.1.2 (106 critères, WCAG 2.1) | art. 47 loi 2005-102, décret 2019-768, arrêté 20/09/2019 | **C/(C+NC)** ; totale=100 %, partielle ≥50 %, non <50 % ou sans audit ; NT>0 → rétrogradation | « Accessibilité : totalement/partiellement/non conforme » sur accueil (RGAA 1.8.1) ; FR | **7 sections modèle DINUM** (état, résultats tests %, contenus, technologies, pages auditées, environnement test, contact+Défenseur) | Défenseur des droits (formulaire.defenseurdesdroits.fr, délégués, Libre réponse 71120 Paris) ; dépôt téléservice Ara | Échantillon min imposé (accueil, contact, mentions légales, accessibilité, plan, aide, auth…) ; audit interne ou tiers ; validité 3 ans / 18 mois si nouveau référentiel |
+| DE | **Pas de référentiel national** : renvoi aux normes harmonisées (BITV 2.0 §3) + EN 301 549 | BGG §§12a/12b/12c/13/16 (2018), BITV 2.0 (25/05/2019) ; Länder : L-BGG propres | **Aucun %** : vollumfänglich/teilweise/nicht barrierefrei (modèle UE) | DE ; contenus essentiels aussi en **DGS + Leichte Sprache** (BITV 2.0 §4) | Modèle UE 2018/1523 (§7 BITV 2.0) + qui a évalué (soi-même/tiers) ; lien rapport optionnel | **Schlichtungsstelle BGG §16** (gratuit, schlichtungsstelle-bgg.de) ; monitoring **BFIT-Bund/Überwachungsstelle** (bfit-bund.de) | Bewertung effective obligatoire (§7.5) ; actualisation annuelle + à chaque changement majeur |
+| ES | **UNE-EN 301549:2022** (adoption ES de EN 301 549 ; web = WCAG 2.1 AA) | **RD 1112/2018** (BOE-A-2018-12699) ; EAA privé : **Ley 11/2023**, OADIS, amendes jusqu'à 1 M€ | **Aucun %** : plenamente/parcialmente/no conforme (modèle UE, disp. transit. RD art. 15) | Lien « Accesibilidad » depuis **toutes les pages** ; ES (+ langues co-officielles selon entité) | Modèle UE + **Unidad responsable de accesibilidad** + lien réclamation art. 13 ; révision ≥ 1/an | **Unidad responsable de accesibilidad** (réclamation, réponse 2 mois, silence = rejet) ; monitoring **OAW** (Observatorio de Accesibilidad Web) | Metodologías OAW simplifiée/profonde UNE-EN 301549:2022 |
+| IT | **Linee guida AGID** (L. 4/2004 mod. D.Lgs 106/2018 ; vérif. technique = EN 301 549, vérif. subjective Allegato 2) | L. 4/2004 (Stanca) art. 3-quater/9/11 ; EAA : D.Lgs 82/2022, AGID autorité de surveillance | **Aucun %** : Conforme / Parzialmente / Non conforme (Modello di Autovalutazione All. 2) | Dicitura « Dichiarazione di accessibilità » en **footer** ; IT | Modèle UE All. 1 (2 macro-sections) ; **EXCLUSIVEMENT via form.agid.gov.it** | **Difensore Civico Digitale** ; sanctions art. 9 L. 4/2004 si non-publication | Autovalutazione / tiers / Modello AGID ; échantillon possible + relazione di valutazione ; **validité annuelle 24 sept → 23 sept** ; **obiettivi annuali avant 31/03** (DL 179/2012) |
+| BE | **Pas de référentiel propre** : EN 301 549 direct + modèle UE (AR 05/09/2019 art. 3) | Fédéral : **loi 19/07/2018** + AR 05/09/2019 (FOD BOSA = monitoring) ; entités fédérées : décrets/ordonnances propres (ex. décret 02/05/2019 art. 138) | **Aucun % légal** ; seuils *opérationnels* rapport BWAO : 0 erreur = pleinement ; <50 % erreurs + déclaration valide = partiellement (max en simplifié) ; sinon non conforme | FR/NL/DE selon entité ; assistant de remplissage BOSA (champs obligatoires UE) | Modèle UE 2018/1523 (publié par BOSA) | Décentralisé : FOD BOSA coordonne (**BWAO** interfédéral : BOSA, Flandre, ETNIC, Equal Brussels, ADN, DG) ; procédure de plainte fixée par chaque Gouvernement (ex. art. 9 §2 décret 02/05/2019) | Simplifié (auto + 2 tests manuels) vs approfondi (experts) ; échantillon ≥ f(population, 11,5 M) ; 50 % déclarations présentes en simplifié (rapport 2024) |
+| NL | **EN 301 549** (via Besluit, intégré à la **Wet digitale overheid** depuis 07/2023) ; 50 exigences WCAG 2.1 A+AA (55 si 2.2) | (Tijdelijk) **Besluit digitale toegankelijkheid overheid** art. 3-4 (+ Wdo art. 17 toezicht/handhaving) ; modèle fixé par **Besluit Staatscourant 2026-515** | **Système A–E (unique UE)** : A volledig / B gedeeltelijk (+plan daté) / C eerste maatregelen (onderzoek ≤6 mois ou suppression ≤12 mois) / D voldoet niet / E geen verklaring ; **pas de %** | Libellés NL imposés par le modèle (« …streeft ernaar… overeenkomstig het Besluit… ») ; NL | Modèle NL A–E (≠ UE) : scope (domeinen/subdomeinen), **liens directs vers chaque rapport**, méthode WCAG-EM, planning B/C | Meldpunt DigiToegankelijk ; toezicht/handhaving Wdo art. 17 (structures existantes + centralisation annoncée) ; **College voor de Rechten van de Mens** (avis discrimination, non contraignant) | Preuve obligatoire : **rapport(s) couvrant les 50/55 exigences**, scope = scope déclaration, méthode **WCAG-EM** ; contrôle forme par DigiToegankelijk (« onderbouwing toereikend ») ; registre + dashboard publics |
+| LU | **EN 301 549 V3.2.1** (référence explicite, accessibilite.public.lu) | **Loi 28/05/2019** (art. 5 déclaration, art. 7 SIP monitoring) ; EAA : **loi 08/03/2023** (OSAPS) | **Aucun %** : modèle UE (pleinement/partiellement/non) | FR (générateur SIP **multilingue**, déclaration recommandée dans chaque langue du site) ; mentions : mécanisme retour + **liens SIP et médiateur** (art. 5(3)) | Modèle UE + réponse sous **30 jours** ; **notification au SIP sous 30 jours** (accessibilite@sip.etat.lu) | **SIP** (Service information et presse, monitoring) **ou le médiateur (Ombudsman)** au choix de l'usager | Évaluation effective préalable ; mise à jour à chaque changement substantiel (pas de durée de validité fixe) |
+| PT | **RNID** (requisitos = EN 301 549 / WCAG 2.1 AA, DL 83/2018) ; grille « **10 aspetos críticos** » + **AccessMonitor** | **DL 83/2018** (art. 8 déclaration, art. 12-13 notification/plainte) ; monitoring **AMA** | **Seuils chiffrés propres (uniques UE)** : pleinement = AccessMonitor ≥9/partout + ≥75 % checklist manuelle ; partiellement = 8–9 + 50–75 % ; non = <8 ou <50 % | PT ; URI imposée **/acessibilidade** liée depuis l'accueil (et footer si possible) | Modèle **AMA** (≠ UE brut) : explication non-accessible + liens mécanisme notification art. 12 et plainte art. 13 | **AMA** (acessibilidade@ama.pt, Observatório) → escalade **Provedor de Justiça** ; discrimination : INR + Lei 46/2006 | Échantillon min : accueil + toutes pages liées du domaine ; auto + manuelle obligatoires ; **validité 12 mois** ; **Selo de Usabilidade e Acessibilidade** (candidature AMA, niveau au-dessus) |
+| AT | **EN 301 549** (WZG §3 renvoi harmonisé) ; pas de checklist nationale | Fédéral : **WZG BGBl. I 59/2019** (§4 déclaration, §5 monitoring/plaintes) ; **+ 9 Landesgesetze** | **Aucun %** : modèle UE (vollständig/teilweise/nicht) | DE ; Barrierefreiheitserklärung | §4 WZG = contenu UE (état, non-accessible, feedback, enforcement) ; exigences publiées par la Stelle §5(1).5 | **Beschwerdestelle des Bundes (FFG)** — plaintes électroniques, Handlungsempfehlungen ; coordination Länder ; discrimination : **Bundesbehindertenanwaltschaft** (BGStG) | Mitwirkungspflicht des Rechtsträgers au monitoring ; méthode publiée par la Stelle (modèle 2018/1524) |
+| IE | **EN 301 549 v3.2.1** (≈ WCAG 2.1 AA, NDA guidance) | **S.I. 358/2020** (reg. 7 déclaration, reg. 8 NDA monitoring) | **Aucun %** : fully/partially/non-compliant (modèle UE) | EN (IR) ; statement sur zone proéminente du site / lien depuis l'app | Modèle UE + contacts assistance et plainte formelle (reg. 7(4)(c)) | **Ombudsman** + **Workplace Relations Commission** via **Equal Status Act 2000 / Disability Act 2005** ; monitoring **NDA** (pas de pouvoir de sanction ; rapport 2024 : 232 simplified axe-core / 23 in-depth / 8 apps) | Simplified (axe-core, hebdo) + In-depth (experts, toutes pages cibles) ; plateforme MRP ; NDA 2024 : 0 plainte formelle reçue mais mécanisme jugé insuffisant |
+| SE | **EN 301 549** (via DIGG föreskrifter **MDFFS 2019:2** ; WCAG 2.1) ; tillsynsmanual DIGG | **Lag 2018:1937 (DOS-lagen)** (§13 redogörelse, §§16-19 tillsyn) + Förordning 2018:1938 (DIGG = tillsynsmyndighet) | **Aucun %** : helt / delvis / inte förenlig (modèle UE) | SV (pas d'obligation d'autres langues) ; lien redogörelse en page d'accueil ou footer ; apps : sans login préalable | Contenu UE + **datum bedömning + datum uppdatering + utvärderingsmetod** + **lien anmälan DIGG (digg.se/tdosanmalan)** + motivation oskäligt betungande (§12-13) | **DIGG** : dialogue → **föreläggande (+ vite)** , appel devant förvaltningsdomstol ; anmälan par tout usager (§18) | Granskning DIGG (stickprov limité) ≠ underlag redogörelse (évaluation complète exigée) ; simplifié (outil) + manuel (tillsynsmanual) |
+| DK | **EN 301 549 v3.2.1 (2021-03)** (bekendtgørelse ministérielle) | **Lov nr. 692 08/06/2018** (§4 erklæring, §§5-6 monitoring/tilsyn) + **bek. 904 22/08/2019** ; EAA : tilgængelighedsloven (Erhvervsmin., dès 28/06/2025) | **Aucun %** : modèle UE dans **WAS-Tool** | DA ; lien nommé « **Tilgængelighedserklæring** » en footer ; URL standardisée **was.digst.dk/domaine** (+ nemURL domaine.dk/was) | **WAS-Tool obligatoire** (déclarations privées interdites) ; 1 erklæring par site/app (iOS+Android confondus) ; contact **téléphonique + écrit** (sans MitID/CAPTCHA inaccessible) ; màj ≥ 1/an | **Digitaliseringsstyrelsen** : tilsyn + **påbud contraignants** (rendre accessible / corriger erklæring / alternative) — pas d'appel administratif (§6.6) ; réponse aux usagers sous **10 jours ouvrables** | Échantillons WAS-Tool (simplifié = erklæring seule ; approfondi = pages + erklæring) ; accès login fourni sur demande (§6.3) |
+
+## 3. Divergences FR vs reste (règles pour rgaa-report)
+
+1. **Score %** : seul FR impose C/(C+NC) + seuils 100/50 + mention accueil + rétrogradation NT>0.
+   Ailleurs : statut qualitatif UE, sans calcul. → moteur de calcul FR-only ; autres pays = mapping findings→statut.
+2. **Sections** : 7 sections DINUM = FR-only. Autres : modèle 2018/1523 de base, avec extensions
+   nationales (NL modèle A–E, PT modèle AMA, IT All.1 2 macro-sections, DK WAS-Tool, SE lien DIGG obligatoire).
+3. **Dépôt/preuve** : FR Ara ; IT form.agid.gov.it exclusif ; NL registre+dashboard ; DK WAS-Tool exclusif ;
+   LU notification SIP 30 j ; PT URI /acessibilidade + validité 12 mois ; SE/IE/DK : pas de dépôt, publication suffit.
+4. **Recours à modéliser par pays** : FR Défenseur des droits ; DE Schlichtung §16 ; ES Unidad responsable (2 mois) ;
+   IT Difensore Civico ; BE décentralisé ; NL meldpunt+College ; LU SIP/médiateur ; PT AMA/Provedor ;
+   AT FFG/BAnw ; IE Ombudsman/WRC ; SE DIGG (föreläggande+vite) ; DK Digitaliseringsstyrelsen (påbud).
+5. **Sanctions exécutoires** : DK (påbud) et SE (föreläggande+vite) ont les enforcement les plus forts ;
+   FR/IT = responsabilité administrative (art. 9 L.4/2004 IT) ; IE = pas de sanction directe (constat NDA 2024).
+6. **Langue** : DE exige DGS+Leichte Sprache ; NL/DK imposent libellés et outils nationaux ;
+   mentions FR intraduisibles (Défenseur des droits, « Accessibilité : … conforme ») → pack i18n par pays,
+   pas de traduction littérale.
+7. **Échantillon** : FR liste de pages imposée ; PT accueil+liées ; NL WCAG-EM + 50/55 exigences ;
+   IT campione+relazione ; autres = méthode 2018/1524 sans liste fermée.
+
+## 4. Sources primaires (par pays)
+
+- UE : eur-lex.europa.eu/eli/dec_impl/2018/1523, /2018/1524, directive 2016/2102, EAA 2019/882, EN 301 549 v3.2.1.
+- FR : accessibilite.numerique.gouv.fr (RGAA 4.1 PDF §1.5.5/1.6/1.8, modèle de déclaration, évaluation-conformité) ; legifrance (décret 2019-768).
+- DE : gesetze-im-internet.de/bitv_2_0 (§7) ; bundesfachstelle-barrierefreiheit.de (FAQ, BITV 2.0) ; schlichtungsstelle-bgg.de ; handreichungen.bfit-bund.de.
+- ES : boe.es (RD 1112/2018 BOE-A-2018-12699, Decisión 2018/1523 DOUE) ; administracionelectronica.gob.es (PAe, OAW).
+- IT : agid.gov.it (dichiarazione, obiettivi 31/03, Linee guida PDF cap. 4-5, form.agid.gov.it) ; L. 4/2004, D.Lgs 106/2018, D.Lgs 82/2022.
+- BE : ejustice.just.fgov.be (loi 19/07/2018, AR 05/09/2019) ; etaamb.openjustice.be (décrets 02/05/2019) ; accessibility.belgium.be (rapport 2024, BWAO).
+- NL : wetten.overheid.nl (Tijdelijk besluit BWBR0040936, Wdo BWBR0048156 art. 17) ; digitoegankelijk.nl (checklist, statuts A–E) ; Staatscourant 2026-515 (modèle) ; mensenrechten.nl (College).
+- LU : legilux.public.lu (loi 28/05/2019) ; accessibilite.public.lu (obligations, générateur SIP) ; accessibilite-produits-services.public.lu (loi 08/03/2023 EAA/OSAPS).
+- PT : dre/diariodarepublica (DL 83/2018) ; acessibilidade.gov.pt (FAQ AMA : seuils AccessMonitor+checklist, validité 12 mois, Selo).
+- AT : ris.bka.gv.at (WZG §§2/5, BGBl. I 59/2019) ; sozialministeriumservice.gv.at (FFG Beschwerdestelle, 9 Landesgesetze).
+- IE : irishstatutebook.ie (S.I. 358/2020) ; nda.ie (monitoring, rapport 2024, EN 301 549 v3.2.1).
+- SE : riksdagen.se (Lag 2018:1937) ; digg.se (DOS-lagen, redogörelse, föreskrifter MDFFS 2019:2, tdosanmalan).
+- DK : retsinformation.dk (Lov 692/2018) ; digst.dk (WAS-Tool, erklæring, tilsyn/påbud, 10 jours).

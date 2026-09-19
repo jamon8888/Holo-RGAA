@@ -60,14 +60,19 @@ pub struct AuditUrlResult {
     pub audit_id: String,
     pub taux_global: f64,
     pub etat_conformite: String,
+    /// URLs of pages that were crawled and can be analyzed in detail with the `analyze` tool.
+    /// Use these URLs with `analyze` to get per-criterion findings with evidence.
+    pub sampled_page_urls: Vec<String>,
 }
 
 impl From<rgaa_core::AuditResult> for AuditUrlResult {
     fn from(result: rgaa_core::AuditResult) -> Self {
+        let sampled_page_urls = result.pages.iter().map(|p| p.url.clone()).collect();
         Self {
             audit_id: result.audit_id,
             taux_global: result.taux_global,
             etat_conformite: result.etat_conformite,
+            sampled_page_urls,
         }
     }
 }

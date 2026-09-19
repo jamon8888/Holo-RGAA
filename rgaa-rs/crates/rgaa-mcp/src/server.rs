@@ -690,7 +690,7 @@ impl ToolServer {
 impl ToolServer {
     #[tool(
         name = "analyze",
-        description = "Analyze a URL for RGAA accessibility findings."
+        description = "Analyze a URL for RGAA accessibility findings. Returns detailed per-criterion findings with criterion_id, status (Pass/Fail/NeedsReview/NotTested/NotApplicable/Error), source (axe-core/gap-fix/holo3/manual), evidence, and justification. Note: Both Manuel and PartiellementAutomatable criteria map to NeedsReview status — watch this single status for human-review items."
     )]
     pub async fn analyze(
         &self,
@@ -739,7 +739,7 @@ impl ToolServer {
 
     #[tool(
         name = "igt",
-        description = "Run a bounded, reproducible intelligent guided accessibility test."
+        description = "Run a bounded, reproducible intelligent guided accessibility test (keyboard navigation). Reports keyboard-trap after 5 consecutive tabs on the same element. Sets status: incomplete with terminated_reason: ExecutionError on CDP failures."
     )]
     pub async fn igt(
         &self,
@@ -758,7 +758,7 @@ impl ToolServer {
 
     #[tool(
         name = "audit_url",
-        description = "Run a full RGAA audit on a URL using the orchestrator pipeline."
+        description = "Run a full RGAA audit on a URL using the orchestrator pipeline. Returns a summary (taux_global, etat_conformite) and sampled_page_urls. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
     )]
     pub async fn audit_url(
         &self,

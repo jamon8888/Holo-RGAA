@@ -8,6 +8,7 @@ use rgaa_core::{
     RgaaCatalog, RgaaCriteria,
 };
 use rgaa_holo::PageContext;
+use rgaa_rules::seo::{BusinessProfile, PageSnapshot, SeoCatalog, SeoMapper};
 use rgaa_rules::{AxeMapper, GapFixRules};
 use rgaa_spider::{CrawlSiteArgs, SpiderTool};
 use rgaa_storage::Storage;
@@ -24,11 +25,16 @@ use rgaa_obscura::ObscuraBridge;
 /// point #42 locks in (1000-audit batches, 8 concurrent).
 const MAX_CONCURRENT_AUDITS: usize = 8;
 
+/// Key under which the SEO page snapshot snippet is registered in the
+/// gap-fix batch runner.
+const SEO_SNAPSHOT_KEY: &str = "seo-snapshot";
+
 /// Pipeline stage reported to progress callbacks, in execution order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditPhase {
     Axe,
     GapFix,
+    Seo,
     PageContext,
     AgentIaAssiste,
     AgentPartial,
@@ -36,14 +42,17 @@ pub enum AuditPhase {
 }
 
 impl AuditPhase {
+    const COUNT: usize = 7;
+
     fn index(self) -> usize {
         match self {
             AuditPhase::Axe => 0,
             AuditPhase::GapFix => 1,
-            AuditPhase::PageContext => 2,
-            AuditPhase::AgentIaAssiste => 3,
-            AuditPhase::AgentPartial => 4,
-            AuditPhase::Merging => 5,
+            AuditPhase::Seo => 2,
+            AuditPhase::PageContext => 3,
+            AuditPhase::AgentIaAssiste => 4,
+            AuditPhase::AgentPartial => 5,
+            AuditPhase::Merging => 6,
         }
     }
 
@@ -53,6 +62,7 @@ impl AuditPhase {
         match self {
             AuditPhase::Axe => "Running axe-core checks...",
             AuditPhase::GapFix => "Running gap-fix rules...",
+            AuditPhase::Seo => "Running SEO/GEO/AEO rules...",
             AuditPhase::PageContext => "Extracting page context...",
             AuditPhase::AgentIaAssiste => "Agentic IA_ASSISTE evaluation...",
             AuditPhase::AgentPartial => "Partially-automatable evaluation...",
@@ -60,10 +70,86 @@ impl AuditPhase {
         }
     }
 
-    /// Fraction complete when this phase starts (6 phases, evenly weighted).
+    /// Fraction complete when this phase starts (phases evenly weighted).
     #[must_use]
     pub fn progress(self) -> f32 {
-        self.index() as f32 / 6.0
+        self.index() as f32 / Self::COUNT as f32
+    }
+}
+
+/// Configuration of the SEO/GEO/AEO stage. It runs on the crawl the RGAA
+/// pass already captured and can be switched off for RGAA-only deployments.
+#[derive(Debug, Clone)]
+pub struct SeoStage {
+    pub enabled: bool,
+    /// Google Business Profile facts for NAP consistency rules; `None` makes
+    /// those rules `NotApplicable`.
+    pub business_profile: Option<BusinessProfile>,
+}
+
+impl Default for SeoStage {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            business_profile: None,
+        }
+    }
+}
+
+impl SeoStage {
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            business_profile: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_business_profile(mut self, profile: BusinessProfile) -> Self {
+        self.business_profile = Some(profile);
+        self
+    }
+}
+
+/// Turns the raw snapshot value returned by the browser into SEO rule results.
+///
+/// A missing or malformed snapshot must not read as a clean SEO pass, so it
+/// yields every catalog rule as `Error` with the cause in `justification` —
+/// visible in the report, and without aborting the RGAA audit it rides on.
+fn seo_stage_results(
+    raw: Option<serde_json::Value>,
+    url: &str,
+    profile: Option<&BusinessProfile>,
+) -> Vec<CriterionResult> {
+    let snapshot = match raw {
+        Some(serde_json::Value::String(json)) => {
+            PageSnapshot::from_json(&json).map_err(|e| e.to_string())
+        }
+        Some(value) => serde_json::from_value::<PageSnapshot>(value).map_err(|e| e.to_string()),
+        None => Err(format!("browser returned no SEO snapshot for {url}")),
+    };
+    match snapshot {
+        Ok(snapshot) => SeoMapper::evaluate(&snapshot, profile)
+            .into_values()
+            .collect(),
+        Err(error) => {
+            tracing::warn!(url, error = %error, "SEO snapshot unusable; reporting rules as Error");
+            SeoCatalog::get()
+                .rules()
+                .values()
+                .map(|rule| CriterionResult {
+                    criterion_id: rule.id.clone(),
+                    title: rule.title.clone(),
+                    classification: Classification::Deterministe,
+                    status: CriterionStatus::Error,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(format!("SEO snapshot unusable: {error}")),
+                    source: rgaa_rules::seo::SOURCE.to_string(),
+                })
+                .collect()
+        }
     }
 }
 
@@ -143,6 +229,7 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
 
 pub struct Orchestrator {
     storage: Option<Arc<dyn Storage>>,
+    seo: SeoStage,
 }
 
 /// Events emitted by the audit pipeline for progress tracking.
@@ -160,13 +247,24 @@ impl Default for Orchestrator {
 
 impl Orchestrator {
     pub fn new() -> Self {
-        Self { storage: None }
+        Self {
+            storage: None,
+            seo: SeoStage::default(),
+        }
     }
 
     pub fn with_storage(storage: Arc<dyn Storage>) -> Self {
         Self {
             storage: Some(storage),
+            seo: SeoStage::default(),
         }
+    }
+
+    /// Configure (or disable) the SEO/GEO/AEO stage.
+    #[must_use]
+    pub fn with_seo(mut self, seo: SeoStage) -> Self {
+        self.seo = seo;
+        self
     }
 
     /// Audit a single URL. Behavior is identical to the pre-batch implementation:
@@ -227,6 +325,7 @@ impl Orchestrator {
 
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_AUDITS));
         let storage = self.storage.clone();
+        let seo = Arc::new(self.seo.clone());
 
         let outcomes = stream::iter(urls.iter().cloned())
             .map(|url| {
@@ -235,13 +334,14 @@ impl Orchestrator {
                 let semaphore = Arc::clone(&semaphore);
                 let storage = storage.clone();
                 let config = config.clone();
+                let seo = Arc::clone(&seo);
                 async move {
                     let _permit = semaphore
                         .acquire()
                         .await
                         .expect("semaphore is never closed");
 
-                    let outcome = audit_one(&agent, &tool_ctx, &url, &config, &|_| {}).await;
+                    let outcome = audit_one(&agent, &tool_ctx, &url, &config, &seo, &|_| {}).await;
 
                     if let Ok(audit) = &outcome {
                         if let Some(storage) = &storage {
@@ -316,6 +416,7 @@ impl Orchestrator {
 
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_AUDITS));
         let on_phase = Arc::new(on_phase);
+        let seo = Arc::new(self.seo.clone());
         let mut handles = Vec::new();
 
         for url in urls {
@@ -325,9 +426,11 @@ impl Orchestrator {
             let config = config.clone();
             let url = url.clone();
             let on_phase = on_phase.clone();
+            let seo = Arc::clone(&seo);
             handles.push(tokio::spawn(async move {
                 let _permit = permit;
-                let audit = audit_one(&agent, &tool_ctx, &url, &config, on_phase.as_ref()).await?;
+                let audit =
+                    audit_one(&agent, &tool_ctx, &url, &config, &seo, on_phase.as_ref()).await?;
                 Ok::<(String, AuditResult), String>((url, audit))
             }));
         }
@@ -644,6 +747,7 @@ async fn audit_one(
     tool_ctx: &ToolContext,
     url: &str,
     _config: &CrawlConfig,
+    seo: &SeoStage,
     on_phase: &(dyn Fn(AuditPhase) + Send + Sync),
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
@@ -680,6 +784,30 @@ async fn audit_one(
     let mut gap_by_url = bridge.run_gap_fix_batch(&urls, &gap_snippets, 1).await?;
     let gap_js_results = gap_by_url.remove(url).unwrap_or_default();
     let gap_results = GapFixRules::parse_results(&gap_js_results);
+
+    // 2b. SEO/GEO/AEO rules on the same crawl — the snapshot snippet rides the
+    // gap-fix runner so no second browser process or fetch is spawned for it.
+    // Runs while the browser lock is still held, like the RGAA stages above.
+    let seo_results = if seo.enabled {
+        on_phase(AuditPhase::Seo);
+        info!("Running SEO/GEO/AEO rules");
+        let snippets: HashMap<String, &str> = HashMap::from([(
+            SEO_SNAPSHOT_KEY.to_string(),
+            PageSnapshot::extraction_snippet(),
+        )]);
+        let raw = match bridge.run_gap_fix_batch(&urls, &snippets, 1).await {
+            Ok(mut by_url) => by_url
+                .remove(url)
+                .and_then(|mut values| values.remove(SEO_SNAPSHOT_KEY)),
+            Err(e) => {
+                tracing::warn!(url, error = %e, "SEO snapshot extraction failed");
+                None
+            }
+        };
+        seo_stage_results(raw, url, seo.business_profile.as_ref())
+    } else {
+        Vec::new()
+    };
 
     // 3. Extract page context for Holo3 prompts
     on_phase(AuditPhase::PageContext);
@@ -843,6 +971,7 @@ async fn audit_one(
             criteria,
             compliance_rate: compliance,
             crawl_depth: 0,
+            seo: seo_results,
         }],
         total_criteria: total,
         passed: pass_count,
@@ -1037,5 +1166,95 @@ mod tests {
         assert!((coverage - 50.0).abs() < 0.01);
         // taux based on ConformityStatus: Pass and NotTested → NonTeste not counted, so taux =100
         assert_eq!(taux, 100.0);
+    }
+
+    #[test]
+    fn phases_progress_monotonically_and_seo_sits_after_gap_fix() {
+        let phases = [
+            AuditPhase::Axe,
+            AuditPhase::GapFix,
+            AuditPhase::Seo,
+            AuditPhase::PageContext,
+            AuditPhase::AgentIaAssiste,
+            AuditPhase::AgentPartial,
+            AuditPhase::Merging,
+        ];
+        assert_eq!(phases.len(), AuditPhase::COUNT);
+        for pair in phases.windows(2) {
+            assert!(pair[0].progress() < pair[1].progress());
+        }
+        assert!(AuditPhase::Merging.progress() < 1.0);
+        assert_eq!(AuditPhase::Seo.index(), AuditPhase::GapFix.index() + 1);
+    }
+
+    #[test]
+    fn seo_stage_accepts_string_or_object_snapshot() {
+        let json = r#"{"url":"https://a.test/","meta_robots":["noindex"]}"#;
+        let from_string = seo_stage_results(
+            Some(serde_json::Value::String(json.into())),
+            "https://a.test/",
+            None,
+        );
+        let from_object = seo_stage_results(
+            Some(serde_json::from_str(json).unwrap()),
+            "https://a.test/",
+            None,
+        );
+        assert_eq!(from_string, from_object);
+        let noindex = from_string
+            .iter()
+            .find(|r| r.criterion_id == "SEO-META-05")
+            .unwrap();
+        assert_eq!(noindex.status, CriterionStatus::Fail);
+        assert_eq!(from_string.len(), SeoCatalog::get().rules().len());
+    }
+
+    #[test]
+    fn missing_or_malformed_snapshot_reports_every_rule_as_error_not_pass() {
+        for raw in [None, Some(serde_json::Value::String("{".into()))] {
+            let results = seo_stage_results(raw, "https://a.test/", None);
+            assert_eq!(results.len(), SeoCatalog::get().rules().len());
+            assert!(results.iter().all(|r| r.status == CriterionStatus::Error));
+            assert!(results.iter().all(|r| r
+                .justification
+                .as_deref()
+                .unwrap()
+                .contains("unusable")));
+        }
+    }
+
+    #[test]
+    fn business_profile_enables_nap_rules() {
+        let json = r#"{"url":"https://a.test/","body_text":"rien"}"#;
+        let profile = BusinessProfile {
+            name: "Dupont".into(),
+            phone: "0412345678".into(),
+            address: "12 rue X".into(),
+        };
+        let raw = || Some(serde_json::Value::String(json.into()));
+        let without = seo_stage_results(raw(), "https://a.test/", None);
+        let with = seo_stage_results(raw(), "https://a.test/", Some(&profile));
+        let nap = |v: &[CriterionResult]| {
+            v.iter()
+                .find(|r| r.criterion_id == "SEO-NAP-01")
+                .unwrap()
+                .status
+                .clone()
+        };
+        assert_eq!(nap(&without), CriterionStatus::NotApplicable);
+        assert_eq!(nap(&with), CriterionStatus::Fail);
+    }
+
+    #[test]
+    fn seo_stage_defaults_on_and_can_be_disabled() {
+        assert!(SeoStage::default().enabled);
+        assert!(!SeoStage::disabled().enabled);
+        assert!(Orchestrator::new().seo.enabled);
+        assert!(
+            !Orchestrator::new()
+                .with_seo(SeoStage::disabled())
+                .seo
+                .enabled
+        );
     }
 }

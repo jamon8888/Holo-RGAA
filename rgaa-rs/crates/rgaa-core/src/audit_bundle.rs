@@ -409,6 +409,7 @@ mod tests {
                 }],
                 compliance_rate: 0.0,
                 crawl_depth: 0,
+                seo: vec![],
             }],
             total_criteria: 106,
             passed: 100,

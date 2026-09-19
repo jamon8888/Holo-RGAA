@@ -21,6 +21,49 @@ use rgaa_obscura::ObscuraBridge;
 /// point #42 locks in (1000-audit batches, 8 concurrent).
 const MAX_CONCURRENT_AUDITS: usize = 8;
 
+/// Pipeline stage reported to progress callbacks, in execution order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditPhase {
+    Axe,
+    GapFix,
+    PageContext,
+    AgentIaAssiste,
+    AgentPartial,
+    Merging,
+}
+
+impl AuditPhase {
+    fn index(self) -> usize {
+        match self {
+            AuditPhase::Axe => 0,
+            AuditPhase::GapFix => 1,
+            AuditPhase::PageContext => 2,
+            AuditPhase::AgentIaAssiste => 3,
+            AuditPhase::AgentPartial => 4,
+            AuditPhase::Merging => 5,
+        }
+    }
+
+    /// Short human-readable label for progress displays.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            AuditPhase::Axe => "Running axe-core checks...",
+            AuditPhase::GapFix => "Running gap-fix rules...",
+            AuditPhase::PageContext => "Extracting page context...",
+            AuditPhase::AgentIaAssiste => "Agentic IA_ASSISTE evaluation...",
+            AuditPhase::AgentPartial => "Partially-automatable evaluation...",
+            AuditPhase::Merging => "Merging results...",
+        }
+    }
+
+    /// Fraction complete when this phase starts (6 phases, evenly weighted).
+    #[must_use]
+    pub fn progress(self) -> f32 {
+        self.index() as f32 / 6.0
+    }
+}
+
 fn partially_automatable_status() -> CriterionStatus {
     CriterionStatus::NeedsReview
 }
@@ -97,6 +140,13 @@ fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, Stri
 
 pub struct Orchestrator {
     storage: Option<Arc<dyn Storage>>,
+}
+
+/// Events emitted by the audit pipeline for progress tracking.
+#[derive(Debug, Clone)]
+pub enum AuditEvent {
+    Phase(AuditPhase),
+    Done(Result<AuditResult, String>),
 }
 
 impl Default for Orchestrator {
@@ -176,7 +226,7 @@ impl Orchestrator {
                         .await
                         .expect("semaphore is never closed");
 
-                    let outcome = audit_one(&agent, &tool_ctx, &url, &config).await;
+                    let outcome = audit_one(&agent, &tool_ctx, &url, &config, &|_| {}).await;
 
                     if let Ok(audit) = &outcome {
                         if let Some(storage) = &storage {
@@ -207,6 +257,63 @@ impl Orchestrator {
 
         Ok(results)
     }
+
+    /// Audit a single URL with progress reporting.
+    pub async fn run_with_progress(
+        &self,
+        url: &str,
+        config: &CrawlConfig,
+        on_phase: impl Fn(AuditPhase) + Send + Sync,
+    ) -> Result<AuditResult, String> {
+        let mut results = self
+            .run_batch_with_progress(&[url.to_string()], config, on_phase)
+            .await?;
+        results
+            .remove(url)
+            .ok_or_else(|| format!("audit result missing for {url}"))
+    }
+
+    /// Audit multiple URLs with progress reporting.
+    ///
+    /// Unlike [`Orchestrator::run_batch`], this runs URLs sequentially — a
+    /// single `on_phase` callback can't meaningfully report progress for
+    /// several audits running concurrently at once.
+    pub async fn run_batch_with_progress(
+        &self,
+        urls: &[String],
+        config: &CrawlConfig,
+        on_phase: impl Fn(AuditPhase) + Send + Sync,
+    ) -> Result<HashMap<String, AuditResult>, String> {
+        let bridge = {
+            let mut b = ObscuraBridge::from_env();
+            b.start_server().await?;
+            b
+        };
+
+        let session = BrowserSession::new(bridge);
+        let tool_ctx = ToolContext::new(session);
+
+        let agent_config = rgaa_agent::config::AgentConfig::from_env()
+            .map_err(|e| format!("invalid agent configuration: {e}"))?;
+        let agent = rgaa_agent::agent::RgaaAgent::new(&agent_config)
+            .await
+            .map_err(|e| format!("failed to create agent: {e}"))?;
+        let mut results = HashMap::new();
+        for url in urls {
+            let audit = audit_one(&agent, &tool_ctx, url, config, &on_phase).await?;
+            results.insert(url.clone(), audit);
+        }
+
+        if let Some(storage) = &self.storage {
+            for (url, audit) in &results {
+                if let Err(e) = storage.save_audit(audit).await {
+                    tracing::warn!(url, error = %e, "failed to save audit to storage");
+                }
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 /// Run the full per-URL audit pipeline against a browser bridge.
@@ -219,6 +326,7 @@ async fn audit_one(
     tool_ctx: &ToolContext,
     url: &str,
     _config: &CrawlConfig,
+    on_phase: &(dyn Fn(AuditPhase) + Send + Sync),
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
@@ -233,6 +341,7 @@ async fn audit_one(
     let urls = [url.to_string()];
 
     // 1. Run axe-core
+    on_phase(AuditPhase::Axe);
     info!("Running axe-core");
     let mut axe_by_url = bridge.run_axe_batch(&urls, 1).await?;
     let axe_violations = axe_by_url
@@ -241,6 +350,7 @@ async fn audit_one(
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
     // 2. Run gap-fix rules for 10 false negatives
+    on_phase(AuditPhase::GapFix);
     info!("Running gap-fix rules");
     let gap_snippets = GapFixRules::snippets();
     // clippy's `--all-targets` (dev-profile) check reports the `&` here as a
@@ -254,6 +364,7 @@ async fn audit_one(
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
+    on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
     let mut context_by_url = bridge.extract_page_context_batch(&urls, 1).await?;
     let raw_context = context_by_url
@@ -271,6 +382,7 @@ async fn audit_one(
     drop(session); // Release the browser lock before agent calls
 
     // 4. Run agentic evaluation for all IA_ASSISTE criteria
+    on_phase(AuditPhase::AgentIaAssiste);
     let ia_criteria = RgaaCriteria::ia_assiste();
     info!(
         criteria = ia_criteria.len(),
@@ -285,6 +397,7 @@ async fn audit_one(
     }
 
     // 4b. Run agentic evaluation for PartiallyAutomatable criteria
+    on_phase(AuditPhase::AgentPartial);
     let partial_criteria = RgaaCriteria::partiellement_automatique();
     info!(
         criteria = partial_criteria.len(),
@@ -299,6 +412,7 @@ async fn audit_one(
     }
 
     // 5. Merge results
+    on_phase(AuditPhase::Merging);
     let mut all_results: HashMap<String, CriterionResult> = HashMap::new();
     all_results.extend(axe_results);
     all_results.extend(gap_results);

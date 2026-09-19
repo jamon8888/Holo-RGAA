@@ -3,6 +3,10 @@ use rgaa_agent::config::AgentConfig;
 use rgaa_core::{Classification, Criterion};
 use rgaa_holo::PageContext;
 
+fn has_api_key() -> bool {
+    std::env::var("HOL3_API_KEY").is_ok() || std::env::var("HOLO3_API_KEY").is_ok()
+}
+
 #[tokio::test]
 async fn test_agent_creation() {
     let config = AgentConfig::default();
@@ -15,7 +19,13 @@ async fn test_agent_creation() {
 
 #[tokio::test]
 async fn test_evaluate_criterion() {
-    let config = AgentConfig::default();
+    if !has_api_key() {
+        eprintln!(
+            "Skipping test_evaluate_criterion: no API key set (HOL3_API_KEY or HOLO3_API_KEY)"
+        );
+        return;
+    }
+    let config = AgentConfig::from_env().unwrap();
     let agent = RgaaAgent::new(&config).await.unwrap();
 
     let criterion = Criterion {
@@ -51,7 +61,11 @@ async fn test_evaluate_criterion() {
 
 #[tokio::test]
 async fn test_run_ia_assiste() {
-    let config = AgentConfig::default();
+    if !has_api_key() {
+        eprintln!("Skipping test_run_ia_assiste: no API key set (HOL3_API_KEY or HOLO3_API_KEY)");
+        return;
+    }
+    let config = AgentConfig::from_env().unwrap();
     let agent = RgaaAgent::new(&config).await.unwrap();
 
     let criteria = vec![

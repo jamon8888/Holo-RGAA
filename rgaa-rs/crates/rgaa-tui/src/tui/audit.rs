@@ -5,6 +5,8 @@ use ratatui::style::Color;
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Row, Table, TableState};
 use ratatui::Frame;
+use std::sync::mpsc;
+use std::thread;
 
 #[derive(Debug, Clone)]
 pub enum AuditStep {
@@ -28,6 +30,14 @@ pub struct AuditWizard {
     pub step: AuditStep,
     pub url: String,
     pub table_state: TableState,
+    pub pending: Option<PendingAudit>,
+}
+
+#[derive(Debug)]
+pub struct PendingAudit {
+    pub rx: mpsc::Receiver<rgaa_orchestrator::AuditEvent>,
+    pub phases: Vec<rgaa_orchestrator::AuditPhase>,
+    pub done: Option<Result<rgaa_core::AuditResult, String>>,
 }
 
 impl Default for AuditWizard {
@@ -36,6 +46,7 @@ impl Default for AuditWizard {
             step: AuditStep::UrlInput,
             url: String::new(),
             table_state: TableState::default(),
+            pending: None,
         }
     }
 }
@@ -57,11 +68,36 @@ pub fn run_audit_wizard() {
                     KeyCode::Enter => {
                         if !input_buffer.is_empty() {
                             wizard.url = input_buffer.clone();
+                            input_buffer.clear();
+
+                            let (tx, rx) = mpsc::channel();
+                            let url = wizard.url.clone();
+                            let tx_done = tx.clone();
+                            thread::spawn(move || {
+                                let orchestrator = rgaa_orchestrator::Orchestrator::new();
+                                let rt = tokio::runtime::Runtime::new().unwrap();
+                                rt.block_on(async {
+                                    let config = rgaa_core::CrawlConfig::default();
+                                    let result = orchestrator
+                                        .run_with_progress(&url, &config, move |phase| {
+                                            let _ = tx
+                                                .send(rgaa_orchestrator::AuditEvent::Phase(phase));
+                                        })
+                                        .await;
+                                    let _ =
+                                        tx_done.send(rgaa_orchestrator::AuditEvent::Done(result));
+                                });
+                            });
+
+                            wizard.pending = Some(PendingAudit {
+                                rx,
+                                phases: Vec::new(),
+                                done: None,
+                            });
                             wizard.step = AuditStep::Running {
                                 phase: "Starting audit...".to_string(),
                                 progress: 0.0,
                             };
-                            input_buffer.clear();
                         }
                     }
                     KeyCode::Char(c) => {
@@ -124,6 +160,44 @@ pub fn run_audit_wizard() {
                         break;
                     }
                 }
+            }
+        }
+
+        // Drain events from the audit task
+        if let Some(pending) = wizard.pending.as_mut() {
+            loop {
+                match pending.rx.try_recv() {
+                    Ok(rgaa_orchestrator::AuditEvent::Phase(phase)) => {
+                        pending.phases.push(phase);
+                        wizard.step = AuditStep::Running {
+                            phase: phase.label().to_string(),
+                            progress: phase.progress(),
+                        };
+                    }
+                    Ok(rgaa_orchestrator::AuditEvent::Done(result)) => {
+                        pending.done = Some(result);
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        pending.done = Some(Err(
+                            "audit task ended without returning a result".to_string()
+                        ));
+                        break;
+                    }
+                }
+            }
+
+            if let Some(done) = pending.done.take() {
+                match done {
+                    Ok(audit) => {
+                        wizard.step = AuditStep::ResultsSummary { audit };
+                    }
+                    Err(e) => {
+                        wizard.step = AuditStep::Error(e);
+                    }
+                }
+                wizard.pending = None;
             }
         }
     }

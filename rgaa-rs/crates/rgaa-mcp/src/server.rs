@@ -198,6 +198,31 @@ impl McpFailure {
     pub fn code(&self) -> &'static str {
         self.code.as_str()
     }
+    /// Map a domain error from the audit pipeline to its MCP failure class.
+    /// `RgaaError` has no policy variant, so no case maps to `PolicyDenied`.
+    #[allow(dead_code)]
+    fn from_rgaa_error(err: rgaa_core::RgaaError) -> Self {
+        use rgaa_core::RgaaError;
+        match err {
+            RgaaError::CriterionNotFound(_)
+            | RgaaError::InvalidCriterion(_)
+            | RgaaError::MissingId(_)
+            | RgaaError::MissingField(_)
+            | RgaaError::DuplicateFindingId(_)
+            | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
+            RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
+            RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
+            RgaaError::Llm { .. }
+            | RgaaError::RateLimited { .. }
+            | RgaaError::Timeout { .. }
+            | RgaaError::Crawl(_)
+            | RgaaError::Browser(_)
+            | RgaaError::AxeCore(_)
+            | RgaaError::Holo3(_)
+            | RgaaError::Media(_)
+            | RgaaError::Storage(_) => Self::execution(err.to_string()),
+        }
+    }
     pub fn into_error_data(self) -> ErrorData {
         let message = format!("{}: {}", self.code.as_str(), redact(&self.message));
         let data = Some(serde_json::json!({ "code": self.code.as_str() }));
@@ -665,7 +690,7 @@ impl ToolServer {
 impl ToolServer {
     #[tool(
         name = "analyze",
-        description = "Analyze a URL for RGAA accessibility findings."
+        description = "Analyze a URL for RGAA accessibility findings. Returns detailed per-criterion findings with criterion_id, status (Pass/Fail/NeedsReview/NotTested/NotApplicable/Error), source (axe-core/gap-fix/holo3/manual), evidence, and justification. Note: Both Manuel and PartiellementAutomatable criteria map to NeedsReview status — watch this single status for human-review items."
     )]
     pub async fn analyze(
         &self,
@@ -714,7 +739,7 @@ impl ToolServer {
 
     #[tool(
         name = "igt",
-        description = "Run a bounded, reproducible intelligent guided accessibility test."
+        description = "Run a bounded, reproducible intelligent guided accessibility test (keyboard navigation). Reports keyboard-trap after 5 consecutive tabs on the same element. Sets status: incomplete with terminated_reason: ExecutionError on CDP failures."
     )]
     pub async fn igt(
         &self,
@@ -733,7 +758,7 @@ impl ToolServer {
 
     #[tool(
         name = "audit_url",
-        description = "Run a full RGAA audit on a URL using the orchestrator pipeline."
+        description = "Run a full RGAA audit on a URL using the orchestrator pipeline. Returns a summary (taux_global, etat_conformite) and sampled_page_urls. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
     )]
     pub async fn audit_url(
         &self,

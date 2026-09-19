@@ -1,10 +1,10 @@
+use indexmap::IndexMap;
 use rgaa_core::{EvidenceRef, Finding};
-use std::collections::HashMap;
 
 /// Groups repeated rule/target/component findings without merging distinct evidence.
 #[derive(Debug, Clone, Default)]
 pub struct Deduplicator {
-    groups: HashMap<String, FindingGroup>,
+    groups: IndexMap<String, FindingGroup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,7 +22,7 @@ impl Deduplicator {
     /// Normalize findings into groups by (rule, target, component_path).
     /// Distinct evidence is preserved in the group's evidence list.
     pub fn normalize(&mut self, findings: &[Finding]) -> Vec<FindingGroup> {
-        let mut groups: HashMap<String, FindingGroup> = HashMap::new();
+        let mut groups: IndexMap<String, FindingGroup> = IndexMap::new();
 
         for finding in findings {
             let key = Self::group_key(finding);

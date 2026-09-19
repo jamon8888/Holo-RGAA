@@ -708,11 +708,11 @@ mod tests {
 
     #[test]
     fn compliance_summary_coverage_percent() {
-        // 1.1 is FullyAutomatable, 1.2 is PartiallyAutomatable, 13.1 is NotAutomatable
+        // 1.1 and 1.2 are PartiallyAutomatable, 1.4 is NotAutomatable (excluded from coverage)
         let criteria = vec![
             test_result_id("1.1", CriterionStatus::Pass),
             test_result_id("1.2", CriterionStatus::NotTested),
-            test_result_id("13.1", CriterionStatus::Pass),
+            test_result_id("1.4", CriterionStatus::Pass),
         ];
         let (taux, coverage, _etat) = calculate_compliance_summary(&criteria);
         // validated_total = 2 (1.1,1.2), validated_executed =1 (1.1)

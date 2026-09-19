@@ -128,6 +128,10 @@ jobs:
         with:
           name: rgaa-rs-bin-linux-x86_64
           path: bin
+      - name: Restore executable bit
+        # upload-artifact/download-artifact round-trips files through a zip
+        # that doesn't preserve the executable bit on Linux.
+        run: chmod +x bin/*
       - name: rgaa --version (TUI)
         run: ./bin/rgaa --version
       - name: rgaa-cli --version

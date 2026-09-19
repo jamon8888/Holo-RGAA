@@ -1,5 +1,5 @@
 [package]
-description = "Holo3 LLM client for AI-assisted RGAA evaluation"
+description = "LLM backends (Holo3 remote, Ollama local) for AI-assisted RGAA evaluation"
 license = "MIT"
 name = "rgaa-holo"
 version = "0.1.0"
@@ -14,3 +14,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tracing = { workspace = true }
 regex-lite = "0.1"
 base64 = "0.22"
+async-trait = "0.1"

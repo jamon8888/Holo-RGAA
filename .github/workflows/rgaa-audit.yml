@@ -1,0 +1,325 @@
+name: RGAA Audit
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        description: Audit mode
+        required: true
+        default: 'smoke'
+        options:
+          - changed
+          - smoke
+          - full
+          - diff
+          - policy
+      baseline_audit_id:
+        type: string
+        description: Baseline audit ID for diff/policy modes
+        required: false
+
+permissions:
+  contents: read
+  checks: write
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: "2"
+  RGA_AUDIT_MODE: ${{ github.event.inputs.mode || 'smoke' }}
+  RGA_BASELINE_AUDIT_ID: ${{ github.event.inputs.baseline_audit_id }}
+
+jobs:
+  prepare:
+    name: Prepare audit environment
+    runs-on: ubuntu-latest
+    outputs:
+      obscura_version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      - name: Prepare Obscura backend
+        id: version
+        run: |
+          curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.2/obscura-x86_64-linux.tar.gz"
+          tar -xzf obscura.tar.gz
+          chmod +x obscura obscura-worker
+          VERSION=$(./obscura --version | sed -n 's/.*obscura \([0-9.]*\).*/\1/p')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ./obscura --version | grep -q "obscura 0.2.2" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
+          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+
+  build:
+    name: Build audit binaries
+    runs-on: ubuntu-latest
+    needs: prepare
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          working-directory: rgaa-rs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      - name: Build audit binaries
+        env:
+          RUSTC_WRAPPER: sccache
+          RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
+        run: cargo build --release -p rgaa-cli -p rgaa-mcp -p rgaa-obscura
+      - name: Upload audit binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-audit-binaries
+          path: |
+            rgaa-rs/target/release/rgaa-cli
+            rgaa-rs/target/release/rgaa-mcp
+          if-no-files-found: error
+
+  audit-changed:
+    name: Audit changed routes
+    runs-on: ubuntu-latest
+    needs: [build, prepare]
+    if: ${{ env.RGA_AUDIT_MODE == 'changed' || github.event.inputs.mode == 'changed' }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-audit-binaries
+          path: bin
+      - name: Determine changed routes
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+            git fetch origin "$BASE" "$HEAD" --depth=1
+            CHANGED_FILES=$(git diff --name-only "$BASE" "$HEAD" | grep -E '\.(tsx?|vue|jsx?)$' | head -20)
+            echo "files=$CHANGED_FILES" >> "$GITHUB_OUTPUT"
+          else
+            echo "files=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run audit on changed routes
+        env:
+          RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+        run: |
+          chmod +x bin/rgaa-cli
+          # Extract routes from changed files (simplified heuristic)
+          if [ -n "${{ steps.changed.outputs.files }}" ]; then
+            ./bin/rgaa-cli audit analyze --url "https://${{ github.repository }}.github.io" --format sarif --output changed-audit.sarif || true
+          else
+            echo "No relevant changed files detected"
+          fi
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rgaa-rs/changed-audit.sarif
+          category: rgaa-changed
+
+  audit-smoke:
+    name: Smoke audit (critical routes)
+    runs-on: ubuntu-latest
+    needs: [build, prepare]
+    if: ${{ env.RGA_AUDIT_MODE == 'smoke' || github.event.inputs.mode == 'smoke' }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-audit-binaries
+          path: bin
+      - name: Run smoke audit
+        env:
+          RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+        run: |
+          chmod +x bin/rgaa-cli
+          # Smoke test: audit configured critical routes
+          ./bin/rgaa-cli audit analyze \
+            --url "https://${{ github.repository }}.github.io" \
+            --format sarif --output smoke-audit.sarif \
+            --format json --output smoke-audit.json \
+            --format markdown --output smoke-audit.md || true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rgaa-rs/smoke-audit.sarif
+          category: rgaa-smoke
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-audit-report
+          path: rgaa-rs/smoke-audit.json
+
+  audit-full:
+    name: Full site audit
+    runs-on: ubuntu-latest
+    needs: [build, prepare]
+    if: ${{ env.RGA_AUDIT_MODE == 'full' || github.event.inputs.mode == 'full' }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-audit-binaries
+          path: bin
+      - name: Run full audit (crawl + analyze)
+        env:
+          RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+        run: |
+          chmod +x bin/rgaa-cli
+          ./bin/rgaa-cli audit analyze \
+            --url "https://${{ github.repository }}.github.io" \
+            --crawl --max-pages 50 --max-depth 3 \
+            --format sarif --output full-audit.sarif \
+            --format json --output full-audit.json \
+            --format markdown --output full-audit.md || true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rgaa-rs/full-audit.sarif
+          category: rgaa-full
+      - name: Upload full audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-audit-reports
+          path: |
+            rgaa-rs/full-audit.json
+            rgaa-rs/full-audit.md
+
+  audit-diff:
+    name: Audit diff vs baseline
+    runs-on: ubuntu-latest
+    needs: [build, prepare]
+    if: ${{ env.RGA_AUDIT_MODE == 'diff' || github.event.inputs.mode == 'diff' }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-audit-binaries
+          path: bin
+      - name: Run current audit
+        env:
+          RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+        run: |
+          chmod +x bin/rgaa-cli
+          ./bin/rgaa-cli audit analyze \
+            --url "https://${{ github.repository }}.github.io" \
+            --format json --output current-audit.json || true
+      - name: Fetch baseline audit
+        if: ${{ env.RGA_BASELINE_AUDIT_ID != '' }}
+        run: |
+          # TODO: Fetch baseline from rgaa-api or artifact storage
+          echo "Baseline audit ID: ${{ env.RGA_BASELINE_AUDIT_ID }}"
+          echo "::warning::Baseline fetch not yet implemented"
+      - name: Compare and report diff
+        run: |
+          echo "Diff comparison not yet implemented - requires rgaa-api baseline storage"
+
+  audit-policy:
+    name: Policy evaluation
+    runs-on: ubuntu-latest
+    needs: [build, prepare]
+    if: ${{ env.RGA_AUDIT_MODE == 'policy' || github.event.inputs.mode == 'policy' }}
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: rgaa-audit-binaries
+          path: bin
+      - name: Run audit for policy evaluation
+        env:
+          RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
+          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+        run: |
+          chmod +x bin/rgaa-cli
+          ./bin/rgaa-cli audit analyze \
+            --url "https://${{ github.repository }}.github.io" \
+            --format json --output policy-audit.json || true
+      - name: Evaluate policy
+        run: |
+          chmod +x bin/rgaa-cli
+          if [ -f .rgaa/policy.yaml ]; then
+            ./bin/rgaa-cli audit policy --input policy-audit.json --policy .rgaa/policy.yaml
+            exit_code=$?
+            echo "Policy evaluation exit code: $exit_code"
+            exit $exit_code
+          else
+            echo "No policy file found at .rgaa/policy.yaml - skipping policy evaluation"
+            exit 0
+          fi
+      - name: Upload policy evaluation result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-audit-result
+          path: rgaa-rs/policy-audit.json
+
+  upload-artifacts:
+    name: Upload all audit artifacts
+    runs-on: ubuntu-latest
+    needs: [audit-changed, audit-smoke, audit-full, audit-diff, audit-policy]
+    if: always()
+    steps:
+      - name: Upload SARIF artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-sarif-artifacts
+          path: |
+            rgaa-rs/*-audit.sarif
+          if-no-files-found: ignore
+      - name: Upload JSON reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-json-reports
+          path: |
+            rgaa-rs/*-audit.json
+          if-no-files-found: ignore
+      - name: Upload Markdown reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgaa-markdown-reports
+          path: |
+            rgaa-rs/*-audit.md
+          if-no-files-found: ignore

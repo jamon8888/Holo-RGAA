@@ -1,0 +1,29 @@
+[package]
+description = "MCP (Model Context Protocol) HTTP/WS transport for RGAA auditing"
+license = "MIT"
+name = "rgaa-mcp-http"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+rgaa-mcp = { path = "../rgaa-mcp" }
+rgaa-obscura = { path = "../rgaa-obscura" }
+rgaa-orchestrator = { path = "../rgaa-orchestrator" }
+rgaa-remediation = { path = "../rgaa-remediation" }
+axum = { workspace = true }
+axum-extra = { workspace = true }
+futures = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = thiserror = "2"
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+[dev-dependencies]
+reqwest = { workspace = true }
+tokio-tungstenite = { workspace = true }

@@ -19,7 +19,7 @@ pub struct CrawlConfigInput {
     pub max_depth: u32,
     #[serde(default = "default_respect_robots")]
     pub respect_robots: bool,
-    #[serde(default)]
+    #[serde(default = "default_sample_mode")]
     pub sample_mode: bool,
 }
 
@@ -29,7 +29,7 @@ impl Default for CrawlConfigInput {
             max_pages: 50,
             max_depth: 5,
             respect_robots: true,
-            sample_mode: false,
+            sample_mode: true,
         }
     }
 }
@@ -52,6 +52,9 @@ fn default_max_depth() -> u32 {
     5
 }
 fn default_respect_robots() -> bool {
+    true
+}
+fn default_sample_mode() -> bool {
     true
 }
 
@@ -188,7 +191,12 @@ impl From<ScreenshotInput> for rgaa_obscura::ScreenshotConfig {
                 ScreenshotFormat::Jpeg => rgaa_obscura::ScreenshotFormat::Jpeg,
             })
             .unwrap_or(rgaa_obscura::ScreenshotFormat::Png);
-        Self { policy, format }
+        Self {
+            policy,
+            format,
+            save_to: input.save_to,
+            inline: input.inline,
+        }
     }
 }
 

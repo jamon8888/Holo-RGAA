@@ -692,4 +692,186 @@ mod integration_test {
             "Some criteria should be NotApplicable in realistic scenario"
         );
     }
+
+    // Site-wide aggregation tests
+    mod site_aggregation {
+        use super::*;
+        use rgaa_core::{CriterionResult, CriterionStatus, PageResult};
+        use rgaa_orchestrator::pipeline::aggregate_site_compliance;
+
+        fn build_page_result(url: &str, criteria: Vec<CriterionResult>) -> PageResult {
+            PageResult {
+                url: url.to_string(),
+                title: Some("Test Page".to_string()),
+                criteria,
+                compliance_rate: 0.0,
+                crawl_depth: 0,
+            }
+        }
+
+        #[test]
+        fn site_aggregation_nc_if_any_page_fail() {
+            // Page 1: criterion 1.1 Pass
+            // Page 2: criterion 1.1 Fail
+            // Site-wide: 1.1 = NonConforme → taux_global < 100
+            let page1_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::Pass),
+            ];
+            let page2_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Fail),
+                mock_criterion_result("1.2", CriterionStatus::Pass),
+            ];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, _etat) = aggregate_site_compliance(&pages);
+
+            // 1.1 is NC (fail on page2), 1.2 is C (pass on both) -> 1/2 = 50%
+            assert_eq!(
+                taux_global, 50.0,
+                "Site-wide taux_global should be 50% when 1.1 fails on any page"
+            );
+        }
+
+        #[test]
+        fn site_aggregation_conforme_if_all_pages_pass() {
+            let page1_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::Pass),
+            ];
+            let page2_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::Pass),
+            ];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
+
+            assert_eq!(
+                taux_global, 100.0,
+                "Site-wide taux_global should be 100% when all pages pass"
+            );
+            assert_eq!(etat, "totale", "etat should be 'totale'");
+        }
+
+        #[test]
+        fn site_aggregation_mixed_na_and_pass() {
+            let page1_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::NotApplicable),
+            ];
+            let page2_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::NotApplicable),
+            ];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
+
+            // 1.2 is NA on both pages (excluded), 1.1 is Pass on both -> 100%
+            assert_eq!(taux_global, 100.0);
+            assert_eq!(etat, "totale");
+        }
+
+        #[test]
+        fn site_aggregation_error_counts_as_fail() {
+            let page1_criteria = vec![mock_criterion_result("1.1", CriterionStatus::Pass)];
+            let page2_criteria = vec![mock_criterion_result("1.1", CriterionStatus::Error)];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, _etat) = aggregate_site_compliance(&pages);
+
+            // Error counts as Fail -> NC
+            assert_eq!(
+                taux_global, 0.0,
+                "Error on any page should make criterion NC"
+            );
+        }
+
+        #[test]
+        fn site_aggregation_needs_review_excluded_from_taux() {
+            let page1_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::NeedsReview),
+            ];
+            let page2_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::NeedsReview),
+            ];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
+
+            // 1.2 is NeedsReview on both (excluded from taux), 1.1 is Pass on both -> 100%
+            assert_eq!(taux_global, 100.0);
+            assert_eq!(etat, "totale");
+        }
+
+        #[test]
+        fn site_aggregation_not_tested_excluded_from_taux() {
+            let page1_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::NotTested),
+            ];
+            let page2_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("1.2", CriterionStatus::NotTested),
+            ];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
+
+            // 1.2 is NotTested on both (excluded from taux), 1.1 is Pass on both -> 100%
+            assert_eq!(taux_global, 100.0);
+            assert_eq!(etat, "totale");
+        }
+
+        #[test]
+        fn site_aggregation_manuel_criteria_excluded() {
+            // Manuel criteria should be excluded from taux calculation
+            let page1_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass), // Deterministe
+                mock_criterion_result("7.5", CriterionStatus::Fail), // Manuel
+            ];
+            let page2_criteria = vec![
+                mock_criterion_result("1.1", CriterionStatus::Pass),
+                mock_criterion_result("7.5", CriterionStatus::Fail),
+            ];
+
+            let pages = vec![
+                build_page_result("https://example.com/page1", page1_criteria),
+                build_page_result("https://example.com/page2", page2_criteria),
+            ];
+
+            let (taux_global, _coverage, etat) = aggregate_site_compliance(&pages);
+
+            // 7.5 is Manuel (excluded), 1.1 is Pass on both -> 100%
+            assert_eq!(taux_global, 100.0);
+            assert_eq!(etat, "totale");
+        }
+    }
 }

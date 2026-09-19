@@ -97,7 +97,7 @@ impl Default for CrawlConfig {
             max_pages: 50,
             max_depth: 5,
             respect_robots: true,
-            sample_mode: false,
+            sample_mode: true,
         }
     }
 }

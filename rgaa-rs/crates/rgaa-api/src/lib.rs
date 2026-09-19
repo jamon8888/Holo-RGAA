@@ -3,6 +3,7 @@ pub mod routes;
 use axum::{
     error_handling::HandleErrorLayer,
     http::StatusCode,
+    middleware,
     routing::{get, post},
     BoxError, Router,
 };
@@ -99,20 +100,38 @@ pub fn build_app(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Timeout/concurrency-limit/load-shed apply to the audit endpoints only —
-    // `/health` must keep answering (liveness stays meaningful even while
-    // audits are shed) and `/criteria` is a cheap static lookup.
-    let audit_routes = Router::new()
+    let public_routes = Router::new()
+        .route("/health", get(routes::health))
+        .route("/criteria", get(routes::list_criteria));
+
+    let protected_routes = Router::new()
+        .route("/v1/audit-bundles", post(routes::create_audit_bundle))
+        .route("/v1/audit-bundles/{id}", get(routes::get_audit_bundle))
+        .route("/v1/audit-bundles", get(routes::list_audit_bundles))
+        .route(
+            "/v1/audit-bundles/{id}",
+            axum::routing::delete(routes::delete_audit_bundle),
+        )
+        .route("/v1/findings", get(routes::list_findings))
+        .route("/v1/policy/evaluate", post(routes::evaluate_policy))
+        .route_layer(middleware::from_fn_with_state(
+            state.storage.clone(),
+            routes::auth_middleware,
+        ));
+
+    // Timeout/concurrency-limit/load-shed apply to the legacy audit
+    // endpoints only — `/health` must keep answering (liveness stays
+    // meaningful even while audits are shed) and `/criteria` is a cheap
+    // static lookup.
+    let legacy_routes = Router::new()
         .route("/audit", post(routes::run_audit))
         .route("/audit/{id}", get(routes::get_audit));
-    let audit_routes = apply_resilience(audit_routes, max_concurrent_audits(), request_timeout());
+    let legacy_routes = apply_resilience(legacy_routes, max_concurrent_audits(), request_timeout());
 
-    let unbounded_routes = Router::new()
-        .route("/criteria", get(routes::list_criteria))
-        .route("/health", get(routes::health));
-
-    audit_routes
-        .merge(unbounded_routes)
+    Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .merge(legacy_routes)
         .layer(cors)
         .with_state(state)
 }

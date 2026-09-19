@@ -1,9 +1,11 @@
 pub mod audit;
 pub mod export;
+pub mod history;
 pub mod install;
 pub mod setup;
 
 pub use audit::run_audit_wizard;
+pub use history::run_history_view;
 pub use install::run_install_wizard;
 pub use setup::run_setup_wizard;
 
@@ -45,7 +47,11 @@ pub async fn run() {
                         terminal.clear().unwrap();
                     }
                     KeyCode::Char('h') | KeyCode::Char('H') => {
-                        // TODO: history view
+                        show_menu = false;
+                        drop(terminal);
+                        let _ = crate::tui::run_history_view().await;
+                        terminal = ratatui::init();
+                        terminal.clear().unwrap();
                     }
                     KeyCode::Char('s') | KeyCode::Char('S') => {
                         show_menu = false;
@@ -81,7 +87,13 @@ pub async fn run() {
                             terminal = ratatui::init();
                             terminal.clear().unwrap();
                         }
-                        MainMenuSelection::History => {}
+                        MainMenuSelection::History => {
+                            show_menu = false;
+                            drop(terminal);
+                            let _ = crate::tui::run_history_view().await;
+                            terminal = ratatui::init();
+                            terminal.clear().unwrap();
+                        }
                         MainMenuSelection::Settings => {
                             show_menu = false;
                             drop(terminal);

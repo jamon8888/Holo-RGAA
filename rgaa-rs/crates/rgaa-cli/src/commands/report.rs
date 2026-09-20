@@ -44,7 +44,8 @@ pub struct ReportArgs {
 pub fn run(args: ReportArgs) -> Result<i32, CliError> {
     let bundle = load_bundle(&args)?;
     let format = parse_format(args.common.format)?;
-    let rendered = crate::report::render(&bundle, format)?;
+    let rendered = rgaa_report::render(&bundle, format)
+        .map_err(|error| CliError::execution(error.to_string()))?;
     write_output(&args.common.output, &rendered)?;
     Ok(0)
 }

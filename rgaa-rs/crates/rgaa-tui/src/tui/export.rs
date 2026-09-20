@@ -35,24 +35,20 @@ pub fn export_json(audit: &rgaa_core::AuditResult, path: &Path) -> std::io::Resu
 }
 
 pub fn export_html(audit: &rgaa_core::AuditResult, path: &Path) -> std::io::Result<()> {
+    // Labels follow the unified engine status, never local thresholds.
+    let (label, color) = match audit.etat_conformite.as_str() {
+        "totale" => ("Conforme", "#22c55e"),
+        "partielle" => ("Partiellement conforme", "#eab308"),
+        _ => ("Non conforme", "#ef4444"),
+    };
     let taux = audit.taux_global;
-    let label = if taux >= 80.0 {
-        "Conforme"
-    } else if taux >= 50.0 {
-        "Partiellement conforme"
-    } else {
-        "Non conforme"
-    };
-    let color = if taux >= 80.0 {
-        "#22c55e"
-    } else if taux >= 50.0 {
-        "#eab308"
-    } else {
-        "#ef4444"
-    };
 
     let mut rows = String::new();
-    if let Some(page) = audit.pages.first() {
+    for page in &audit.pages {
+        rows.push_str(&format!(
+            r#"<tr><td colspan="3"><strong>{}</strong></td></tr>"#,
+            page.url
+        ));
         for result in &page.criteria {
             let status_str = match result.status {
                 rgaa_core::CriterionStatus::Pass => "PASS",

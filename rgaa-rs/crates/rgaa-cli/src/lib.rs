@@ -2,11 +2,9 @@
 
 pub mod commands;
 pub mod config;
-pub mod format;
-pub mod report;
 
 pub use config::{Config, ConfigError};
-pub use format::ReportFormat;
+pub use rgaa_report::ReportFormat;
 
 /// Errors that can occur during CLI operations.
 #[derive(Debug, thiserror::Error)]

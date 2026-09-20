@@ -2,7 +2,6 @@ use rgaa_agent::agent::RgaaAgent;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::catalog::Automatable;
 use rgaa_core::na_detection;
-use rgaa_core::types::ConformityStatus;
 use rgaa_core::{
     AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
     RgaaCatalog, RgaaCriteria,
@@ -76,69 +75,12 @@ fn manual_status() -> CriterionStatus {
 }
 
 fn calculate_compliance(criteria: &[CriterionResult]) -> f64 {
-    let pass = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Pass)
-        .count();
-    let fail = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Fail || c.status == CriterionStatus::Error)
-        .count();
-    let denominator = pass + fail;
-    if denominator > 0 {
-        (pass as f64 / denominator as f64) * 100.0
-    } else {
-        0.0
-    }
+    rgaa_report::compliance_rate(criteria)
 }
 
 fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, String) {
-    let mut c = 0;
-    let mut nc = 0;
-    let mut validated_total = 0;
-    let mut validated_executed = 0;
-
-    for criterion in criteria {
-        let conformity = ConformityStatus::from(criterion.status.clone());
-        if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion.criterion_id) {
-            if matches!(
-                cat.automatable,
-                Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
-            ) {
-                validated_total += 1;
-                if criterion.status != CriterionStatus::NotTested {
-                    validated_executed += 1;
-                }
-            }
-        }
-        match conformity {
-            ConformityStatus::Conforme => c += 1,
-            ConformityStatus::NonConforme => nc += 1,
-            _ => {}
-        }
-    }
-
-    let taux_global = if c + nc > 0 {
-        (c as f64 / (c + nc) as f64) * 100.0
-    } else {
-        0.0
-    };
-
-    let coverage_percent = if validated_total > 0 {
-        (validated_executed as f64 / validated_total as f64) * 100.0
-    } else {
-        0.0
-    };
-
-    let etat_conformite = if taux_global >= 100.0 {
-        "totale".to_string()
-    } else if taux_global >= 50.0 {
-        "partielle".to_string()
-    } else {
-        "non conforme".to_string()
-    };
-
-    (taux_global, coverage_percent, etat_conformite)
+    let m = rgaa_report::compute_metrics(criteria, &rgaa_report::RGAA_41);
+    (m.taux_global, m.coverage_percent, m.etat_conformite)
 }
 
 pub struct Orchestrator {

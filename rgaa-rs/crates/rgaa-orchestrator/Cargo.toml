@@ -15,6 +15,7 @@ rgaa-browser-tools = { path = "../rgaa-browser-tools" }
 rgaa-storage = { path = "../rgaa-storage" }
 rgaa-spider = { path = "../rgaa-spider" }
 rig-core = { workspace = true }
+rgaa-report = { path = "../rgaa-report" }
 tokio = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }

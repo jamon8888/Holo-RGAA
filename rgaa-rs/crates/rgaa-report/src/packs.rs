@@ -173,7 +173,7 @@ pub const PACKS: [PackPays; 12] = [
 /// Returns the pack of `pays`.
 #[must_use]
 pub fn pack(pays: Pays) -> &'static PackPays {
-    &PACKS
+    PACKS
         .iter()
         .find(|pack| pack.pays == pays)
         .expect("douze packs pour douze pays")

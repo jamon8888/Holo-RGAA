@@ -38,9 +38,10 @@ impl NcEntry {
             .evidence
             .iter()
             .map(|e| {
-                e.location.clone().unwrap_or_else(|| {
-                    format!("{}:{}", e.kind, e.hash.chars().take(8).collect::<String>())
-                })
+                let court: String = e.hash.chars().take(8).collect();
+                e.location
+                    .clone()
+                    .unwrap_or_else(|| format!("{}:{court}", e.kind))
             })
             .collect::<Vec<_>>()
             .join("; ");
@@ -199,9 +200,9 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
     let contact_affiche = input
         .contact
         .email
-        .clone()
-        .unwrap_or_else(|| input.contact.canal.clone());
-    let _ = writeln!(out, "<p>Contact : {}.</p>", echappe(&contact_affiche));
+        .as_deref()
+        .unwrap_or(input.contact.canal.as_str());
+    let _ = writeln!(out, "<p>Contact : {}.</p>", echappe(contact_affiche));
 
     let _ = writeln!(out, "<h2>6. Voies de recours</h2>");
     let _ = writeln!(out, "<p>{}</p>", RECOURS_FR);

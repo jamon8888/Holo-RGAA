@@ -120,7 +120,6 @@ fn build_audit_result(criteria: Vec<CriterionResult>) -> AuditResult {
             criteria,
             compliance_rate: compliance,
             crawl_depth: 0,
-            seo: vec![],
         }],
         total_criteria: total,
         passed: pass_count,
@@ -707,7 +706,6 @@ mod integration_test {
                 criteria,
                 compliance_rate: 0.0,
                 crawl_depth: 0,
-                seo: vec![],
             }
         }
 

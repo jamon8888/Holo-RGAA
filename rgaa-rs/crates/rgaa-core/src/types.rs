@@ -65,10 +65,6 @@ pub struct PageResult {
     pub criteria: Vec<CriterionResult>,
     pub compliance_rate: f64,
     pub crawl_depth: u32,
-    /// SEO/GEO/AEO rule results from the same crawl. Kept apart from
-    /// `criteria` so RGAA compliance rates only count RGAA criteria.
-    #[serde(default)]
-    pub seo: Vec<CriterionResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

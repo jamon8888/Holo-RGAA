@@ -114,7 +114,7 @@ fn render_table(result: &rgaa_core::AuditResult) -> String {
 
 fn render_html(result: &rgaa_core::AuditResult) -> String {
     let bundle = rgaa_core::AuditBundle::from(result.clone());
-    crate::report::html::generate_html_report(&bundle)
+    rgaa_report::report::html::generate_html_report(&bundle)
 }
 
 fn resolve_url(

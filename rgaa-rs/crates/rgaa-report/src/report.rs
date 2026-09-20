@@ -5,12 +5,12 @@ use rgaa_core::{AuditBundle, CriterionStatus, Finding};
 pub mod html;
 
 use crate::format::ReportFormat;
-use crate::CliError;
+use crate::ReportError;
 
-pub fn render(bundle: &AuditBundle, format: ReportFormat) -> Result<String, CliError> {
+pub fn render(bundle: &AuditBundle, format: ReportFormat) -> Result<String, ReportError> {
     match format {
         ReportFormat::Json => serde_json::to_string_pretty(bundle)
-            .map_err(|error| CliError::execution(error.to_string())),
+            .map_err(|error| ReportError::execution(error.to_string())),
         ReportFormat::Markdown => Ok(render_markdown(bundle)),
         ReportFormat::Sarif => Ok(render_sarif(bundle)),
         ReportFormat::Junit => Ok(render_junit(bundle)),

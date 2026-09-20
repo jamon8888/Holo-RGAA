@@ -23,6 +23,8 @@ pub mod embeddings;
 #[cfg(feature = "vector-store")]
 pub mod memory;
 #[cfg(feature = "vector-store")]
+pub mod rag;
+#[cfg(feature = "vector-store")]
 pub mod vector;
 
 pub use agent::RgaaAgent;

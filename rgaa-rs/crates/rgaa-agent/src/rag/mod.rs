@@ -11,6 +11,7 @@ pub mod seed;
 pub mod store;
 pub mod tools;
 mod util;
+pub mod verifier;
 
 pub use crawl_writer::{CrawlWriter, DEFAULT_TTL};
 pub use embed::EmbedQuery;
@@ -24,6 +25,8 @@ pub use store::{
 pub use tools::{
     CrawlSearchArgs, CrawlSearchTool, RagToolError, ReferentielSearchArgs, ReferentielSearchTool,
 };
+pub use verifier::{Verifier, VerifierError, VerifierOutcome, VerifierResponse};
+pub use verifier::{Verifier, VerifierError, VerifierOutcome, VerifierResponse};
 
 #[cfg(test)]
 mod tests {

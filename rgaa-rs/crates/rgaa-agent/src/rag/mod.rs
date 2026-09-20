@@ -5,6 +5,7 @@
 pub mod crawl_writer;
 pub mod embed;
 pub mod patterns;
+pub mod router;
 pub mod schema;
 pub mod seed;
 pub mod store;
@@ -15,6 +16,7 @@ pub use crawl_writer::{CrawlWriter, DEFAULT_TTL};
 pub use embed::EmbedQuery;
 pub use seed::{ReferentielSeeder, REFERENTIEL_VERSION};
 pub use patterns::{PatternQueryOutput, PatternReader, RemediationPattern};
+pub use router::{EvaluationRole, RouteDecision, Router, RouterThresholds};
 pub use store::{
     CrawlDocument, CrawlQueryOutput, CrawlRecord, RagReader, RagStats, RagStore,
     ReferentielDocument, ReferentielQueryOutput, ReferentielRecord,

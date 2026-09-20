@@ -802,19 +802,6 @@ async fn audit_one(
 mod tests {
     use super::*;
 
-    fn test_result(status: CriterionStatus) -> CriterionResult {
-        CriterionResult {
-            criterion_id: "1.1".into(),
-            title: "test".into(),
-            classification: Classification::IaAssiste,
-            status,
-            violations: Vec::new(),
-            confidence: None,
-            justification: None,
-            source: "test".into(),
-        }
-    }
-
     fn test_result_id(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {
             criterion_id: id.into(),
@@ -833,6 +820,8 @@ mod tests {
         assert_eq!(manual_status(), CriterionStatus::NeedsReview);
     }
 
+    // Distinct ids: the rate reduces by `criterion_id` first (site rule in
+    // `rgaa_report::compliance_rate`), so same-id entries collapse into one.
     #[test]
     fn compliance_empty_input() {
         assert_eq!(calculate_compliance(&[]), 0.0);
@@ -841,8 +830,8 @@ mod tests {
     #[test]
     fn compliance_all_pass() {
         let criteria = vec![
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::Pass),
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("2.1", CriterionStatus::Pass),
         ];
         assert_eq!(calculate_compliance(&criteria), 100.0);
     }
@@ -850,8 +839,8 @@ mod tests {
     #[test]
     fn compliance_all_fail() {
         let criteria = vec![
-            test_result(CriterionStatus::Fail),
-            test_result(CriterionStatus::Fail),
+            test_result_id("1.1", CriterionStatus::Fail),
+            test_result_id("2.1", CriterionStatus::Fail),
         ];
         assert_eq!(calculate_compliance(&criteria), 0.0);
     }
@@ -859,9 +848,9 @@ mod tests {
     #[test]
     fn compliance_mixed_pass_fail() {
         let criteria = vec![
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::Fail),
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("2.1", CriterionStatus::Pass),
+            test_result_id("3.1", CriterionStatus::Fail),
         ];
         // 2 pass, 1 fail → 2/3 ≈ 66.67%
         let c = calculate_compliance(&criteria);
@@ -871,9 +860,9 @@ mod tests {
     #[test]
     fn compliance_na_excluded() {
         let criteria = vec![
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::NotApplicable),
-            test_result(CriterionStatus::Fail),
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("2.1", CriterionStatus::NotApplicable),
+            test_result_id("3.1", CriterionStatus::Fail),
         ];
         // NA excluded: 1 pass, 1 fail → 50%
         assert_eq!(calculate_compliance(&criteria), 50.0);
@@ -882,9 +871,9 @@ mod tests {
     #[test]
     fn compliance_nt_excluded() {
         let criteria = vec![
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::NotTested),
-            test_result(CriterionStatus::Fail),
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("2.1", CriterionStatus::NotTested),
+            test_result_id("3.1", CriterionStatus::Fail),
         ];
         // NT excluded: 1 pass, 1 fail → 50%
         assert_eq!(calculate_compliance(&criteria), 50.0);
@@ -893,8 +882,8 @@ mod tests {
     #[test]
     fn compliance_error_counted_as_fail() {
         let criteria = vec![
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::Error),
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("2.1", CriterionStatus::Error),
         ];
         // 1 pass, 1 error → 50%
         assert_eq!(calculate_compliance(&criteria), 50.0);
@@ -903,8 +892,8 @@ mod tests {
     #[test]
     fn compliance_needs_review_excluded() {
         let criteria = vec![
-            test_result(CriterionStatus::Pass),
-            test_result(CriterionStatus::NeedsReview),
+            test_result_id("1.1", CriterionStatus::Pass),
+            test_result_id("2.1", CriterionStatus::NeedsReview),
         ];
         // NeedsReview excluded: 1 pass, 0 fail → 100%
         assert_eq!(calculate_compliance(&criteria), 100.0);
@@ -913,8 +902,8 @@ mod tests {
     #[test]
     fn compliance_all_na() {
         let criteria = vec![
-            test_result(CriterionStatus::NotApplicable),
-            test_result(CriterionStatus::NotApplicable),
+            test_result_id("1.1", CriterionStatus::NotApplicable),
+            test_result_id("2.1", CriterionStatus::NotApplicable),
         ];
         // All NA → denominator 0 → 0%
         assert_eq!(calculate_compliance(&criteria), 0.0);

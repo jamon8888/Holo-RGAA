@@ -1696,7 +1696,7 @@ impl ObscuraBridge {
     ///
     /// Each snippet is an expression (typically an IIFE) whose value is
     /// captured with `return`; a snippet that returns a JSON *string* — the
-    /// gap-fix and SEO snapshot snippets all end in `JSON.stringify(...)` —
+    /// gap-fix snippets all end in `JSON.stringify(...)` —
     /// is parsed back into an object so callers see `{pass, details, ...}`
     /// rather than a string. Without the `return`, every snippet evaluated
     /// to `undefined` and `JSON.stringify` dropped its key, so the batch

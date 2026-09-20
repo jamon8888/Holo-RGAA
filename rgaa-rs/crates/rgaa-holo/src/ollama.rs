@@ -7,8 +7,7 @@ use std::time::Duration;
 /// Local Ollama backend through its OpenAI-compatible endpoint. No API key,
 /// no outbound traffic: the privacy boundary the remote Holo3 path can't offer.
 ///
-/// The model is deliberately not defaulted (see
-/// `docs/specs/seo-geo-aeo-rgaa-merge.md`): pick a quantized ~7B instruct
+/// The model is deliberately not defaulted: pick a quantized ~7B instruct
 /// model for interactive use and ~14B for scheduled batch on a CPU-only host.
 #[derive(Debug, Clone)]
 pub struct OllamaClient {

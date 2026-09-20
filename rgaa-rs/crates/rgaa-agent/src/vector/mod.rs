@@ -28,6 +28,13 @@ impl LanceDbVectorStore {
         Ok(store)
     }
 
+    /// The underlying LanceDB connection — used by
+    /// [`crate::rag::patterns::PatternReader::open`] to open the
+    /// remediation-pattern table read-only for an audit.
+    pub fn connection(&self) -> &Connection {
+        &self.db
+    }
+
     /// Creates the criteria, findings, and remediation-pattern tables if absent.
     ///
     /// # Errors
@@ -38,7 +45,7 @@ impl LanceDbVectorStore {
         create_table(&self.db, "rgaa_findings", schema::rgaa_findings_schema()).await?;
         create_table(
             &self.db,
-            "rgaa_remediation_patterns",
+            schema::REMEDIATION_PATTERNS_TABLE,
             schema::rgaa_remediation_patterns_schema(),
         )
         .await?;

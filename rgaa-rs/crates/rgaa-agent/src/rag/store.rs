@@ -11,13 +11,14 @@
 //! regardless of what a model asks it to do.
 
 use super::schema::{self, RAG_CRAWL_TABLE, RAG_REFERENTIEL_TABLE};
+use super::util::{collect_batches, escape_literal, f32_column, lancedb_err, utf8_column};
 use crate::error::AgentError;
-use arrow::array::{Float32Array, Int64Array, RecordBatch, StringArray};
+use arrow::array::{Int64Array, RecordBatch, StringArray};
 use lancedb::arrow::arrow_schema::SchemaRef;
 use lancedb::database::CreateTableMode;
 use lancedb::index::vector::IvfFlatIndexBuilder;
 use lancedb::index::Index;
-use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::query::QueryBase;
 use lancedb::{Connection, DistanceType, Table};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -309,6 +310,31 @@ impl RagStore {
         Ok(())
     }
 
+    /// Deletes every [`schema::RAG_CRAWL_TABLE`] row whose `expires_at` is
+    /// set and has passed `now` (Unix seconds). Run at the start of each
+    /// audit run, before writing fresh evidence — #129's purge step, so a
+    /// stale audit's crawl evidence never lingers into the next one.
+    ///
+    /// Rows with `expires_at = NULL` never expire via this path.
+    ///
+    /// # Errors
+    /// Returns [`AgentError::LanceDb`] on any LanceDB failure.
+    pub async fn purge_expired_crawl(&self, now_unix_secs: i64) -> Result<(), AgentError> {
+        let table = self
+            .db
+            .open_table(RAG_CRAWL_TABLE)
+            .execute()
+            .await
+            .map_err(lancedb_err)?;
+        table
+            .delete(&format!(
+                "expires_at IS NOT NULL AND expires_at <= {now_unix_secs}"
+            ))
+            .await
+            .map_err(lancedb_err)?;
+        Ok(())
+    }
+
     /// Builds an ANN index over `table`'s `embedding` column once it holds
     /// enough rows (LanceDB requires a minimum row count for IVF training;
     /// below that, vector search still works as an exact brute-force scan).
@@ -422,40 +448,4 @@ async fn create_empty_table(
         .await
         .map_err(lancedb_err)?;
     Ok(())
-}
-
-async fn collect_batches(
-    query: lancedb::query::VectorQuery,
-) -> Result<Vec<RecordBatch>, AgentError> {
-    use futures::TryStreamExt;
-    query
-        .execute()
-        .await
-        .map_err(lancedb_err)?
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(lancedb_err)
-}
-
-fn utf8_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a StringArray, AgentError> {
-    batch
-        .column_by_name(name)
-        .and_then(|c| c.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| AgentError::LanceDb(format!("missing/invalid column `{name}`")))
-}
-
-fn f32_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float32Array, AgentError> {
-    batch
-        .column_by_name(name)
-        .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
-        .ok_or_else(|| AgentError::LanceDb(format!("missing/invalid column `{name}`")))
-}
-
-/// Escapes a single-quote-delimited SQL literal for use in `only_if`.
-fn escape_literal(s: &str) -> String {
-    s.replace('\'', "''")
-}
-
-fn lancedb_err(e: impl std::fmt::Display) -> AgentError {
-    AgentError::LanceDb(e.to_string())
 }

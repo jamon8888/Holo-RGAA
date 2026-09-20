@@ -8,20 +8,24 @@ use rgaa_core::catalog::Automatable;
 use rgaa_core::{ConformityStatus, CriterionResult, CriterionStatus, RgaaCatalog};
 
 pub mod declaration;
+pub mod depot;
 pub mod format;
 pub mod guard;
 pub mod packs;
 pub mod pdf;
 pub mod report;
+pub mod ue;
 
 pub use declaration::{render_declaration_fr, DeclarationFrInput, NcEntry};
+pub use depot::url_canonique;
 pub use format::ReportFormat;
 pub use guard::{
     schema_export_pack, validate_export, Contact, ContenuNonSoumis, Derogation, ExportPack,
     PageEchantillon, ECHANTILLON_MIN,
 };
-pub use packs::{mention_fr, Pays};
+pub use packs::{mention_fr, pack, PackPays, Pays};
 pub use report::render;
+pub use ue::{render_declaration_ue, DeclarationUeInput};
 
 /// Errors from report generation.
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +66,9 @@ pub struct Referentiel {
     pub seuil_partiel: f64,
     /// French-only downgrade on untested criteria.
     pub retrograde_si_non_teste: bool,
+    /// False outside France: the rate stays informative and the legal
+    /// status is set by the reviewer, never computed.
+    pub taux_juridique: bool,
 }
 
 /// RGAA 4.1.2: official rate `C / (C + NC)`, thresholds 100 / 50.
@@ -70,6 +77,16 @@ pub const RGAA_41: Referentiel = Referentiel {
     seuil_total: 100.0,
     seuil_partiel: 50.0,
     retrograde_si_non_teste: true,
+    taux_juridique: true,
+};
+
+/// UE 2018/1523 qualitative model: no computed status, reviewer sets it.
+pub const UE_QUALITATIF: Referentiel = Referentiel {
+    id: "ue-2018-1523",
+    seuil_total: 100.0,
+    seuil_partiel: 50.0,
+    retrograde_si_non_teste: false,
+    taux_juridique: false,
 };
 
 /// Site-wide metrics for one [`Referentiel`].
@@ -148,7 +165,9 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
     } else {
         0.0
     };
-    let etat_conformite = if referentiel.retrograde_si_non_teste && audit_incomplet {
+    let etat_conformite = if !referentiel.taux_juridique {
+        String::new()
+    } else if referentiel.retrograde_si_non_teste && audit_incomplet {
         "non conforme".to_string()
     } else if taux_global >= referentiel.seuil_total {
         "totale".to_string()
@@ -191,6 +210,7 @@ mod tests {
         seuil_total: 100.0,
         seuil_partiel: 50.0,
         retrograde_si_non_teste: false,
+        taux_juridique: false,
     };
 
     #[test]
@@ -240,7 +260,7 @@ mod tests {
 
         let ue = compute_metrics(&criteria, &UE);
         assert!(ue.audit_incomplet);
-        assert_eq!(ue.etat_conformite, "totale");
+        assert!(ue.etat_conformite.is_empty());
     }
 
     #[test]

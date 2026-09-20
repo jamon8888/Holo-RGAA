@@ -196,17 +196,12 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
     );
 
     let _ = writeln!(out, "<h2>5. Retour d'information et contact</h2>");
-    let _ = writeln!(
-        out,
-        "<p>Contact : {}.</p>",
-        echappe(
-            input
-                .contact
-                .email
-                .clone()
-                .unwrap_or_else(|| input.contact.canal.clone())
-        )
-    );
+    let contact_affiche = input
+        .contact
+        .email
+        .clone()
+        .unwrap_or_else(|| input.contact.canal.clone());
+    let _ = writeln!(out, "<p>Contact : {}.</p>", echappe(&contact_affiche));
 
     let _ = writeln!(out, "<h2>6. Voies de recours</h2>");
     let _ = writeln!(out, "<p>{}</p>", RECOURS_FR);

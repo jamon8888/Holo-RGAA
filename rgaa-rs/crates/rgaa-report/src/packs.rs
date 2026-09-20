@@ -67,6 +67,118 @@ pub fn etat_fr(etat_conformite: &str) -> &'static str {
 /// Fixed enforcement block: Défenseur des droits.
 pub const RECOURS_FR: &str = "Défenseur des droits (formulaire.defenseurdesdroits.fr, Libre réponse 71120, 75342 Paris CEDEX 07)";
 
+/// Legal identity of one country: status regime, language, enforcement.
+/// Sources: UE 2018/1523 model plus national research; contacts are the
+/// monitoring or enforcement bodies, never invented.
+pub struct PackPays {
+    pub pays: Pays,
+    /// BCP-47 language of the declaration.
+    pub langue: &'static str,
+    /// How the legal status is set (computed rate vs reviewer mapping).
+    pub regime_statut: &'static str,
+    /// Enforcement or monitoring body name.
+    pub recours_nom: &'static str,
+    /// Enforcement contact: URL or email as published.
+    pub recours_contact: &'static str,
+}
+
+/// The twelve packs, indexed by [`Pays`] order below in [`pack`].
+pub const PACKS: [PackPays; 12] = [
+    PackPays {
+        pays: Pays::Fr,
+        langue: "fr",
+        regime_statut: "taux C/(C+NC), seuils 100/50",
+        recours_nom: "Défenseur des droits",
+        recours_contact: "https://formulaire.defenseurdesdroits.fr/",
+    },
+    PackPays {
+        pays: Pays::De,
+        langue: "de",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Schlichtungsstelle nach § 16 BGG",
+        recours_contact: "https://www.schlichtungsstelle-bgg.de",
+    },
+    PackPays {
+        pays: Pays::Es,
+        langue: "es",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Unidad responsable de accesibilidad",
+        recours_contact: "https://administracionelectronica.gob.es/",
+    },
+    PackPays {
+        pays: Pays::It,
+        langue: "it",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Difensore civico digitale",
+        recours_contact: "https://www.agid.gov.it/",
+    },
+    PackPays {
+        pays: Pays::Be,
+        langue: "fr",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Médiateur fédéral",
+        recours_contact: "contact@mediateurfederal.be",
+    },
+    PackPays {
+        pays: Pays::Nl,
+        langue: "nl",
+        regime_statut: "système national A–E mappé par le relecteur",
+        recours_nom: "College voor de Rechten van de Mens",
+        recours_contact: "https://www.logius.nl/",
+    },
+    PackPays {
+        pays: Pays::Lu,
+        langue: "fr",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Service information et presse (SIP)",
+        recours_contact: "accessibilite@sip.etat.lu",
+    },
+    PackPays {
+        pays: Pays::Pt,
+        langue: "pt",
+        regime_statut: "seuils nationaux AccessMonitor mappés par le relecteur",
+        recours_nom: "AMA (Agência para a Modernização Administrativa)",
+        recours_contact: "https://www.acessibilidade.gov.pt",
+    },
+    PackPays {
+        pays: Pays::At,
+        langue: "de",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "FFG Beschwerdestelle",
+        recours_contact: "https://www.sozialministeriumservice.gv.at/",
+    },
+    PackPays {
+        pays: Pays::Ie,
+        langue: "en",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Ombudsman",
+        recours_contact: "https://nda.ie",
+    },
+    PackPays {
+        pays: Pays::Se,
+        langue: "sv",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "DIGG",
+        recours_contact: "https://www.digg.se",
+    },
+    PackPays {
+        pays: Pays::Dk,
+        langue: "da",
+        regime_statut: "triptyque UE qualitatif, sans %",
+        recours_nom: "Digitaliseringsstyrelsen",
+        recours_contact: "https://was.digst.dk",
+    },
+];
+
+/// Returns the pack of `pays`.
+#[must_use]
+pub fn pack(pays: Pays) -> &'static PackPays {
+    &PACKS
+        .iter()
+        .find(|pack| pack.pays == pays)
+        .expect("douze packs pour douze pays")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,5 +202,21 @@ mod tests {
         assert_eq!(Pays::Fr.code(), "fr");
         assert_eq!(Pays::De.code(), "de");
         assert_eq!(Pays::Dk.code(), "dk");
+    }
+
+    #[test]
+    fn douze_packs_contacts_recherches() {
+        assert_eq!(PACKS.len(), 12);
+        assert_eq!(
+            pack(Pays::De).recours_contact,
+            "https://www.schlichtungsstelle-bgg.de"
+        );
+        assert_eq!(
+            pack(Pays::Fr).recours_contact,
+            "https://formulaire.defenseurdesdroits.fr/"
+        );
+        assert_eq!(pack(Pays::Dk).recours_contact, "https://was.digst.dk");
+        assert!(pack(Pays::Nl).regime_statut.contains("A–E"));
+        assert!(pack(Pays::Pt).regime_statut.contains("AccessMonitor"));
     }
 }

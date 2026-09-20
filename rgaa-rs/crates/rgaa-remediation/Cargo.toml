@@ -8,8 +8,9 @@ edition = "2021"
 [dependencies]
 indexmap = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }
-rgaa-rules = { path = "../rgaa-rules", features = ["seo"] }
 schemars = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = "2"
+
+[dev-dependencies]
+serde_json = { workspace = true }

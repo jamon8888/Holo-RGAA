@@ -4,7 +4,6 @@ mod dedup;
 mod lifecycle;
 mod policy;
 mod proposals;
-mod seo;
 
 pub use adapters::*;
 pub use baseline::*;
@@ -12,7 +11,6 @@ pub use dedup::*;
 pub use lifecycle::*;
 pub use policy::*;
 pub use proposals::*;
-pub use seo::*;
 
 #[cfg(test)]
 mod contract_tests {

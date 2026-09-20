@@ -194,7 +194,7 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if !statuts.iter().any(|s| *s == CriterionStatus::NotTested) {
+                if !statuts.contains(&CriterionStatus::NotTested) {
                     validated_executed += 1;
                 }
             }
@@ -235,6 +235,8 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
         etat_conformite,
         conformes,
         non_conformes,
+        non_applicables,
+        non_testes,
         audit_incomplet,
     }
 }

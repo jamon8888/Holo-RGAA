@@ -7,9 +7,7 @@
 
 use chrono::NaiveDate;
 
-use crate::guard::Contact;
-use crate::packs::{pack, Pays, PACKS};
-use crate::ue::{render_declaration_ue, DeclarationUeInput};
+use crate::packs::Pays;
 use crate::ReportError;
 
 /// A pack's governance record.
@@ -75,6 +73,9 @@ pub fn autoriser_generation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::guard::Contact;
+    use crate::packs::{pack, PACKS};
+    use crate::ue::{render_declaration_ue, DeclarationUeInput};
 
     fn version(pays: Pays, date_revue: &'static str, owner: Option<&'static str>) -> PackVersion {
         PackVersion {
@@ -144,11 +145,17 @@ mod tests {
             };
             let html = render_declaration_ue(&input).expect("rendu");
             let attendu = pack(pack_courant.pays);
-            let langue_attendue = format!("lang=\"{}\"", attendu.langue);
+            // Only DE has a validated translation; every other pack renders
+            // the English template and is labeled `lang="en"` (see `ue.rs`).
+            let langue_attendue = match pack_courant.pays {
+                Pays::De => "lang=\"de\"",
+                _ => "lang=\"en\"",
+            };
             assert!(
-                html.contains(langue_attendue.as_str()),
-                "langue {}",
-                attendu.langue
+                html.contains(langue_attendue),
+                "langue {} pour {:?}",
+                langue_attendue,
+                pack_courant.pays
             );
             assert!(
                 html.contains(attendu.recours_nom),

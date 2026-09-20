@@ -10,6 +10,7 @@ use rgaa_core::{ConformityStatus, CriterionResult, CriterionStatus, RgaaCatalog}
 pub mod declaration;
 pub mod depot;
 pub mod format;
+pub mod gouvernance;
 pub mod guard;
 pub mod packs;
 pub mod pdf;
@@ -19,6 +20,7 @@ pub mod ue;
 pub use declaration::{render_declaration_fr, DeclarationFrInput, NcEntry};
 pub use depot::url_canonique;
 pub use format::ReportFormat;
+pub use gouvernance::{autoriser_generation, OverrideGouvernance, PackVersion, PEREMPTION_JOURS};
 pub use guard::{
     schema_export_pack, validate_export, Contact, ContenuNonSoumis, Derogation, ExportPack,
     PageEchantillon, ECHANTILLON_MIN,

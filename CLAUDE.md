@@ -5,7 +5,7 @@ RGAA 4.1.2 accessibility audit platform — Rust workspace with 7 crates.
 ## Project Overview
 
 - **rgaa-core**: Domain types + 106 RGAA criteria catalog
-- **rgaa-rules**: axe-core violation mapping + gap-fix JS snippets + `seo` module (SEO/GEO/AEO rules catalog in `data/seo-geo-aeo/rules.json`, feature `seo` on by default)
+- **rgaa-rules**: axe-core violation mapping + gap-fix JS snippets
 - **rgaa-holo**: Holo3 LLM client for AI-assisted evaluation
 - **rgaa-browser**, **rgaa-orchestrator**, **rgaa-storage**, **rgaa-api**: Empty stubs
 
@@ -155,7 +155,7 @@ impl PromptBuilder {
 | Crate | Has Tests | Needs |
 |-------|-----------|-------|
 | rgaa-core | No | `RgaaCriteria::all()`, `find()`, `deterministic()` |
-| rgaa-rules | Yes (axe_mapper, seo) | `GapFixRules::snippets()` |
+| rgaa-rules | No | `AxeMapper::map()`, `GapFixRules::snippets()` |
 | rgaa-holo | Yes (client, prompts) | `PromptBuilder::build()` e2e, async `evaluate()` |
 
 ```rust

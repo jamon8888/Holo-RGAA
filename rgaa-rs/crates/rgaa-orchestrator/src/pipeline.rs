@@ -701,6 +701,7 @@ async fn audit_one(
                     confidence: None,
                     justification: Some("Manual verification required".into()),
                     source: "manual".into(),
+                    citations: vec![],
                 });
         } else if !all_results.contains_key(criterion.id) {
             let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
@@ -731,6 +732,7 @@ async fn audit_one(
                     confidence: None,
                     justification: Some(justification),
                     source,
+                    citations: vec![],
                 });
         }
     }
@@ -802,6 +804,20 @@ async fn audit_one(
 mod tests {
     use super::*;
 
+    fn test_result(status: CriterionStatus) -> CriterionResult {
+        CriterionResult {
+            criterion_id: "1.1".into(),
+            title: "test".into(),
+            classification: Classification::IaAssiste,
+            status,
+            violations: Vec::new(),
+            confidence: None,
+            justification: None,
+            source: "test".into(),
+            citations: vec![],
+        }
+    }
+
     fn test_result_id(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {
             criterion_id: id.into(),
@@ -812,6 +828,7 @@ mod tests {
             confidence: None,
             justification: None,
             source: "test".into(),
+            citations: vec![],
         }
     }
 

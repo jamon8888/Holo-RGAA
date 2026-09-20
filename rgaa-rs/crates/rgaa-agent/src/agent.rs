@@ -145,6 +145,7 @@ impl RgaaAgent {
                     "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
+                citations: vec![],
             };
         }
 
@@ -170,6 +171,7 @@ impl RgaaAgent {
                     confidence: Some(parsed.confidence),
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
+                    citations: vec![],
                 }
             }
             Err(e) => {
@@ -190,6 +192,7 @@ impl RgaaAgent {
                     confidence: None,
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
+                    citations: vec![],
                 }
             }
         }
@@ -283,6 +286,7 @@ impl RgaaAgent {
                     "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
+                citations: vec![],
             };
         }
 
@@ -308,6 +312,7 @@ impl RgaaAgent {
                     confidence: Some(parsed.confidence),
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
+                    citations: vec![],
                 }
             }
             Err(e) => {
@@ -328,6 +333,7 @@ impl RgaaAgent {
                     confidence: None,
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
+                    citations: vec![],
                 }
             }
         }

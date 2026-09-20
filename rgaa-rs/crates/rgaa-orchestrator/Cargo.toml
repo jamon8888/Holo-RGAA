@@ -14,11 +14,7 @@ rgaa-agent = { path = "../rgaa-agent" }
 rgaa-browser-tools = { path = "../rgaa-browser-tools" }
 rgaa-storage = { path = "../rgaa-storage" }
 rgaa-spider = { path = "../rgaa-spider" }
-rgaa-remediation = { path = "../rgaa-remediation" }
 rig-core = { workspace = true }
-chrono = { workspace = true }
-async-trait = "0.1"
-indexmap = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }

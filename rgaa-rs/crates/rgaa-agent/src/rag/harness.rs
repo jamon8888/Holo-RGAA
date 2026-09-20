@@ -200,6 +200,86 @@ fn record_confusion(
     }
 }
 
+/// Default safety margin [`BudgetEnvelope::from_baseline`] adds on top of
+/// the measured baseline average before locking it in.
+pub const DEFAULT_BUDGET_MARGIN: f64 = 0.2;
+
+/// A locked cost envelope: average duration/tokens per call a run must not
+/// exceed. The only way to build one is [`Self::from_baseline`] — there is
+/// no `new`/`Default` that lets a value be hand-picked — so an envelope is
+/// always "chiffrée depuis la baseline", never estimated by hand.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct BudgetEnvelope {
+    pub max_avg_duration_ms: u64,
+    pub max_avg_tokens: u64,
+}
+
+impl BudgetEnvelope {
+    /// Derives a locked envelope from `report`'s measured average cost per
+    /// call, plus `margin` (e.g. [`DEFAULT_BUDGET_MARGIN`] for 20%)
+    /// headroom over that measured average.
+    ///
+    /// Returns `None` when `report` made no calls at all — there is
+    /// nothing to derive an envelope from.
+    pub fn from_baseline(report: &BaselineReport, margin: f64) -> Option<Self> {
+        if report.cost.call_count == 0 {
+            return None;
+        }
+        let calls = report.cost.call_count as f64;
+        let avg_duration_ms = report.cost.total_duration_ms as f64 / calls;
+        let avg_tokens = report.cost.total_tokens as f64 / calls;
+        Some(Self {
+            max_avg_duration_ms: (avg_duration_ms * (1.0 + margin)).ceil() as u64,
+            max_avg_tokens: (avg_tokens * (1.0 + margin)).ceil() as u64,
+        })
+    }
+}
+
+/// A run's average cost exceeded its locked [`BudgetEnvelope`]. Wiring
+/// `check_budget(...)?` (or `.unwrap()`) into a CI test turns this into a
+/// failing test — the ticket's "un dépassement d'enveloppe fait échouer la
+/// CI".
+#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+#[error(
+    "budget envelope exceeded: avg duration {actual_avg_duration_ms}ms (max {max_avg_duration_ms}ms), \
+     avg tokens {actual_avg_tokens} (max {max_avg_tokens})"
+)]
+pub struct BudgetExceeded {
+    pub actual_avg_duration_ms: u64,
+    pub max_avg_duration_ms: u64,
+    pub actual_avg_tokens: u64,
+    pub max_avg_tokens: u64,
+}
+
+/// Checks `report`'s average cost per call against `envelope`. A report
+/// with zero calls trivially passes (nothing to measure yet).
+///
+/// # Errors
+/// Returns [`BudgetExceeded`] if either the average duration or the
+/// average token count exceeds `envelope`.
+pub fn check_budget(
+    report: &BaselineReport,
+    envelope: &BudgetEnvelope,
+) -> Result<(), BudgetExceeded> {
+    if report.cost.call_count == 0 {
+        return Ok(());
+    }
+    let calls = report.cost.call_count as u64;
+    let actual_avg_duration_ms = report.cost.total_duration_ms / calls;
+    let actual_avg_tokens = report.cost.total_tokens / calls;
+    if actual_avg_duration_ms > envelope.max_avg_duration_ms
+        || actual_avg_tokens > envelope.max_avg_tokens
+    {
+        return Err(BudgetExceeded {
+            actual_avg_duration_ms,
+            max_avg_duration_ms: envelope.max_avg_duration_ms,
+            actual_avg_tokens,
+            max_avg_tokens: envelope.max_avg_tokens,
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,5 +564,72 @@ mod tests {
         let json = serde_json::to_string(&report).unwrap();
         let reloaded: BaselineReport = serde_json::from_str(&json).unwrap();
         assert_eq!(reloaded, report);
+    }
+
+    // --- #131: budgets locked from the baseline ---
+
+    fn report_with_avg_cost(duration_ms: u64, tokens: u64, calls: usize) -> BaselineReport {
+        BaselineReport {
+            distinct_page_urls: 1,
+            confusion: vec![],
+            hallucinations: HallucinationCounters::default(),
+            cost: CostSummary {
+                call_count: calls,
+                total_duration_ms: duration_ms * calls as u64,
+                total_tokens: tokens * calls as u64,
+            },
+        }
+    }
+
+    #[test]
+    fn envelope_is_derived_from_measured_baseline_not_hand_picked() {
+        let baseline = report_with_avg_cost(100, 200, 10);
+        let envelope = BudgetEnvelope::from_baseline(&baseline, DEFAULT_BUDGET_MARGIN).unwrap();
+        // 100ms avg * 1.2 margin = 120ms; 200 tokens avg * 1.2 = 240.
+        assert_eq!(envelope.max_avg_duration_ms, 120);
+        assert_eq!(envelope.max_avg_tokens, 240);
+    }
+
+    #[test]
+    fn envelope_from_a_report_with_no_calls_is_none() {
+        let baseline = BaselineReport::default();
+        assert!(BudgetEnvelope::from_baseline(&baseline, DEFAULT_BUDGET_MARGIN).is_none());
+    }
+
+    #[test]
+    fn within_budget_report_passes() {
+        let baseline = report_with_avg_cost(100, 200, 10);
+        let envelope = BudgetEnvelope::from_baseline(&baseline, DEFAULT_BUDGET_MARGIN).unwrap();
+
+        let later_run = report_with_avg_cost(110, 210, 5); // within the 20% margin
+        assert!(check_budget(&later_run, &envelope).is_ok());
+    }
+
+    #[test]
+    fn ci_fails_when_a_run_exceeds_the_locked_envelope() {
+        let baseline = report_with_avg_cost(100, 200, 10);
+        let envelope = BudgetEnvelope::from_baseline(&baseline, DEFAULT_BUDGET_MARGIN).unwrap();
+
+        // A later run regresses well past the locked envelope.
+        let regressed_run = report_with_avg_cost(500, 900, 5);
+
+        // This is exactly the idiom a CI job wires up: `?`/`.unwrap()` on
+        // `check_budget` turns a budget regression into a failing test.
+        let outcome: Result<(), BudgetExceeded> = check_budget(&regressed_run, &envelope);
+        assert!(
+            outcome.is_err(),
+            "a regressed run must fail the budget check"
+        );
+
+        let err = outcome.unwrap_err();
+        assert_eq!(err.actual_avg_duration_ms, 500);
+        assert_eq!(err.max_avg_duration_ms, 120);
+    }
+
+    #[test]
+    fn budget_check_on_an_empty_report_trivially_passes() {
+        let envelope =
+            BudgetEnvelope::from_baseline(&report_with_avg_cost(100, 200, 10), 0.2).unwrap();
+        assert!(check_budget(&BaselineReport::default(), &envelope).is_ok());
     }
 }

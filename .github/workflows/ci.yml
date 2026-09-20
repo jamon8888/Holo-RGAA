@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main, master, develop, feat/**]
+  # No branch filter: stacked PRs (base = another feature branch) must get
+  # the same build/test/lint gate as PRs targeting master.
   pull_request:
-    branches: [main, master]
 
 permissions:
   contents: read

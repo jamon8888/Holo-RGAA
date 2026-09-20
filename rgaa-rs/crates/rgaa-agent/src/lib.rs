@@ -14,6 +14,7 @@ pub mod criteria_defs;
 pub mod error;
 pub mod prompts;
 pub mod ratelimit;
+pub mod references;
 pub mod remediate;
 pub mod verify;
 

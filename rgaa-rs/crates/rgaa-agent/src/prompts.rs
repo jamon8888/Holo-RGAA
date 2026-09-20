@@ -1,4 +1,5 @@
 use crate::criteria_defs::get_criterion_definition;
+use crate::references::{self, References};
 use rgaa_holo::{format_page_context, PageContext};
 
 /// Hard cap, in bytes, on the rendered page-context section of a prompt.
@@ -49,8 +50,29 @@ impl PromptBuilder {
 
     /// Builds a text-only evaluation prompt for `criterion_id` from an
     /// already-rendered (and capped) page context — see
-    /// [`Self::render_context`].
+    /// [`Self::render_context`]. No retrieved-document references section.
     pub fn build_from_rendered(criterion_id: &str, rendered_context: &str) -> String {
+        Self::build_from_rendered_with_references(
+            criterion_id,
+            rendered_context,
+            &References::default(),
+        )
+    }
+
+    /// As [`Self::build_from_rendered`], plus a "## Références" section
+    /// grounding the evaluation in retrieved documents (regulatory corpus
+    /// first, then crawl evidence — see [`crate::references::render`]).
+    ///
+    /// Passing an empty [`References`] (as [`Self::build_from_rendered`]
+    /// does) produces byte-identical output to not calling this at all —
+    /// [`references::render`] returns an empty string for an empty
+    /// [`References`], so no criterion without retrieval gets an empty
+    /// "## Références" header.
+    pub fn build_from_rendered_with_references(
+        criterion_id: &str,
+        rendered_context: &str,
+        references: &References,
+    ) -> String {
         let def = get_criterion_definition(criterion_id);
 
         let mut prompt = format!(
@@ -67,6 +89,7 @@ impl PromptBuilder {
         }
 
         prompt.push_str(rendered_context);
+        prompt.push_str(&references::render(references));
 
         prompt.push_str("\n## Instructions\n\n");
         prompt.push_str(
@@ -196,5 +219,92 @@ mod tests {
         let via_rendered =
             PromptBuilder::build_from_rendered("1.1", &PromptBuilder::render_context(&context));
         assert_eq!(via_build, via_rendered);
+    }
+
+    #[test]
+    fn build_with_empty_references_matches_build_without_references() {
+        // AC: "Le rendu reste identique sans documents récupérés" — no
+        // criterion without retrieval gets an empty "## Références" header.
+        let without = PromptBuilder::build_from_rendered("1.1", "page context");
+        let with_empty = PromptBuilder::build_from_rendered_with_references(
+            "1.1",
+            "page context",
+            &References::default(),
+        );
+        assert_eq!(without, with_empty);
+    }
+
+    #[test]
+    fn build_with_references_matches_snapshot() {
+        use crate::references::{CrawlReference, ReferentielReference};
+
+        let references = References {
+            referentiel: vec![ReferentielReference {
+                test_id: "1.1.1".into(),
+                referentiel_version: "2024.1".into(),
+                content: "Chaque image porteuse d'information a une alternative textuelle.".into(),
+            }],
+            crawl: vec![CrawlReference {
+                url: "https://example.test/".into(),
+                content: "Image sans attribut alt détectée sur la page d'accueil.".into(),
+            }],
+        };
+        let prompt = PromptBuilder::build_from_rendered_with_references(
+            "1.1",
+            "## Contexte de la page\n\nTitre: Accueil",
+            &references,
+        );
+        insta::assert_snapshot!(prompt, @r###"
+        Évalue le critère RGAA 1.1 sur cette page web.
+
+        ## Critère à évaluer
+
+        - **ID:** 1.1
+        - **Titre:** Alternative textuelle image porteuse d'information
+        - **Références WCAG:** 1.1.1
+        - **Définition:** Chaque image porteuse d'information a-t-elle une alternative textuelle ?
+
+        ## Contexte de la page
+
+        Titre: Accueil
+
+        ## Références
+
+        ### Référentiel
+
+        - [1.1.1 v2024.1] Chaque image porteuse d'information a une alternative textuelle.
+
+        ### Crawl
+
+        - [https://example.test/] Image sans attribut alt détectée sur la page d'accueil.
+
+        ## Instructions
+
+        1. Analyse le critère en fonction de la définition et des éléments ci-dessus
+        2. Si une capture d'écran est fournie, utilise-la pour juger
+        3. Retourne un JSON avec les champs:
+           - verdict: "pass", "fail", ou "na"
+           - confidence: nombre entre 0.0 et 1.0
+           - justification: explication détaillée en français
+        "###);
+    }
+
+    #[test]
+    fn references_section_is_ordered_before_instructions() {
+        use crate::references::ReferentielReference;
+
+        let references = References {
+            referentiel: vec![ReferentielReference {
+                test_id: "1.1.1".into(),
+                referentiel_version: "2024.1".into(),
+                content: "content".into(),
+            }],
+            crawl: vec![],
+        };
+        let prompt =
+            PromptBuilder::build_from_rendered_with_references("1.1", "page context", &references);
+        let refs_pos = prompt.find("## Références").unwrap();
+        let instructions_pos = prompt.find("## Instructions").unwrap();
+        assert!(refs_pos < instructions_pos);
     }
 }

@@ -2,6 +2,7 @@ pub mod analyze;
 pub mod igt;
 pub mod policy;
 pub mod report;
+pub mod schedule;
 pub mod verify;
 
 use clap::Subcommand;

@@ -176,3 +176,83 @@ fn config_loads_valid_yaml_and_rejects_invalid() {
     std::fs::write(&config_path, "not: [valid").unwrap();
     assert!(rgaa_cli::Config::load(Some(&config_path)).is_err());
 }
+
+#[tokio::test]
+async fn schedule_list_reads_jobs_from_config_and_needs_no_browser() {
+    use rgaa_cli::commands::schedule::{self, ScheduleArgs};
+
+    let dir = temp_path("schedule");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let config_path = dir.join("config.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+url_profiles:
+  home: { url: "https://example.test" }
+schedule:
+  business_profile: { name: "Dupont", phone: "0412345678", address: "12 rue X" }
+  jobs:
+    - name: nightly
+      profiles: [home]
+      at: "02:00"
+      head_template: src/layout.html
+"#,
+    )
+    .unwrap();
+    let output = dir.join("list.json");
+
+    let args = ScheduleArgs {
+        common: CommonArgs {
+            config: Some(config_path.clone()),
+            output: Some(output.clone()),
+            ..common()
+        },
+        jobs: vec![],
+        list: true,
+        once: false,
+        format: "json".into(),
+    };
+    assert_eq!(schedule::run(args).await.unwrap(), 0);
+    let listed: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&output).unwrap()).unwrap();
+    assert_eq!(listed[0]["name"], "nightly");
+    assert_eq!(listed[0]["schedule"], "daily at 02:00");
+    assert_eq!(listed[0]["urls"][0], "https://example.test");
+
+    let unknown = ScheduleArgs {
+        common: CommonArgs {
+            config: Some(config_path.clone()),
+            ..common()
+        },
+        jobs: vec!["missing".into()],
+        list: true,
+        once: false,
+        format: "table".into(),
+    };
+    assert_eq!(schedule::run(unknown).await.unwrap_err().exit_code(), 2);
+
+    let bad_format = ScheduleArgs {
+        common: CommonArgs {
+            config: Some(config_path),
+            ..common()
+        },
+        jobs: vec![],
+        list: true,
+        once: false,
+        format: "xml".into(),
+    };
+    assert_eq!(schedule::run(bad_format).await.unwrap_err().exit_code(), 2);
+
+    let no_jobs = ScheduleArgs {
+        common: CommonArgs {
+            config: Some(PathBuf::from("/nonexistent/config.yaml")),
+            ..common()
+        },
+        jobs: vec![],
+        list: true,
+        once: false,
+        format: "table".into(),
+    };
+    assert_eq!(schedule::run(no_jobs).await.unwrap_err().exit_code(), 2);
+}

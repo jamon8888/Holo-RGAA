@@ -46,6 +46,44 @@ fn default_min_compliance() -> f64 {
     80.0
 }
 
+/// One recurring job for `rgaa schedule`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct JobConfig {
+    pub name: String,
+    /// Explicit URLs to audit.
+    #[serde(default)]
+    pub urls: Vec<String>,
+    /// Names of `url_profiles` entries to audit (merged with `urls`).
+    #[serde(default)]
+    pub profiles: Vec<String>,
+    /// Daily local time, `HH:MM`. Exclusive with `every`.
+    #[serde(default)]
+    pub at: Option<String>,
+    /// Fixed interval such as `6h`, `90m`, `3600s`. Exclusive with `at`.
+    #[serde(default)]
+    pub every: Option<String>,
+    /// Source file that renders the document `<head>`; enables patch proposals.
+    #[serde(default)]
+    pub head_template: Option<PathBuf>,
+}
+
+/// Google Business Profile facts for NAP consistency rules.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct BusinessProfileConfig {
+    pub name: String,
+    pub phone: String,
+    pub address: String,
+}
+
+/// `schedule:` section of the config.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ScheduleConfig {
+    #[serde(default)]
+    pub jobs: Vec<JobConfig>,
+    #[serde(default)]
+    pub business_profile: Option<BusinessProfileConfig>,
+}
+
 /// CLI configuration loaded from `.rgaa/config.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Config {
@@ -73,6 +111,9 @@ pub struct Config {
     /// Whether the user has consented to upload results.
     #[serde(default)]
     pub upload_consent: bool,
+    /// Recurring jobs for `rgaa schedule`.
+    #[serde(default)]
+    pub schedule: ScheduleConfig,
 }
 
 /// Errors that can occur when loading or validating configuration.
@@ -160,8 +201,104 @@ impl Config {
                 )));
             }
         }
+        let mut seen = std::collections::HashSet::new();
+        for job in &self.schedule.jobs {
+            let name = job.name.trim();
+            if name.is_empty() {
+                return Err(ConfigError::Validation(
+                    "schedule job must have a name".into(),
+                ));
+            }
+            if !seen.insert(name) {
+                return Err(ConfigError::Validation(format!(
+                    "schedule job '{name}' is defined twice"
+                )));
+            }
+            if job.urls.is_empty() && job.profiles.is_empty() {
+                return Err(ConfigError::Validation(format!(
+                    "schedule job '{name}' needs urls or profiles"
+                )));
+            }
+            for profile in &job.profiles {
+                if !self.url_profiles.contains_key(profile) {
+                    return Err(ConfigError::Validation(format!(
+                        "schedule job '{name}' references unknown url profile '{profile}'"
+                    )));
+                }
+            }
+            match (&job.at, &job.every) {
+                (Some(_), Some(_)) => {
+                    return Err(ConfigError::Validation(format!(
+                        "schedule job '{name}': set either at or every, not both"
+                    )))
+                }
+                (Some(at), None) => {
+                    parse_daily_time(at).map_err(|e| {
+                        ConfigError::Validation(format!("schedule job '{name}': {e}"))
+                    })?;
+                }
+                (None, Some(every)) => {
+                    parse_interval(every).map_err(|e| {
+                        ConfigError::Validation(format!("schedule job '{name}': {e}"))
+                    })?;
+                }
+                (None, None) => {}
+            }
+        }
+        if let Some(profile) = &self.schedule.business_profile {
+            if profile.name.trim().is_empty()
+                || profile.phone.trim().is_empty()
+                || profile.address.trim().is_empty()
+            {
+                return Err(ConfigError::Validation(
+                    "schedule.business_profile needs name, phone and address".into(),
+                ));
+            }
+        }
         Ok(())
     }
+}
+
+/// Parses `HH:MM` (24h) into `(hour, minute)`.
+pub fn parse_daily_time(value: &str) -> Result<(u32, u32), String> {
+    let (h, m) = value
+        .trim()
+        .split_once(':')
+        .ok_or_else(|| format!("invalid time '{value}', expected HH:MM"))?;
+    let hour: u32 = h
+        .parse()
+        .map_err(|_| format!("invalid hour in '{value}'"))?;
+    let minute: u32 = m
+        .parse()
+        .map_err(|_| format!("invalid minute in '{value}'"))?;
+    if hour > 23 || minute > 59 {
+        return Err(format!("time '{value}' out of range"));
+    }
+    Ok((hour, minute))
+}
+
+/// Parses `<n>s`, `<n>m`, `<n>h` or `<n>d` into a duration of at least one minute.
+pub fn parse_interval(value: &str) -> Result<std::time::Duration, String> {
+    let value = value.trim();
+    let (digits, unit) = value.split_at(value.trim_end_matches(char::is_alphabetic).len());
+    let n: u64 = digits
+        .parse()
+        .map_err(|_| format!("invalid interval '{value}', expected e.g. 6h, 90m, 3600s"))?;
+    let secs = match unit {
+        "s" => n,
+        "m" => n * 60,
+        "h" => n * 3600,
+        "d" => n * 86_400,
+        _ => {
+            return Err(format!(
+                "invalid interval unit in '{value}' (use s, m, h or d)"
+            ))
+        }
+    };
+    if secs < 60 {
+        return Err(format!("interval '{value}' is below one minute"));
+    }
+    Ok(std::time::Duration::from_secs(secs))
 }
 
 #[cfg(test)]
@@ -180,6 +317,93 @@ mod tests {
         let mut config = Config::default();
         config.policy.min_compliance = 120.0;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn schedule_jobs_are_validated() {
+        let mut config = Config::default();
+        config.url_profiles.insert(
+            "home".into(),
+            UrlProfile {
+                url: "https://a.test".into(),
+                viewport: None,
+            },
+        );
+        let ok = JobConfig {
+            name: "nightly".into(),
+            profiles: vec!["home".into()],
+            at: Some("02:00".into()),
+            ..Default::default()
+        };
+        config.schedule.jobs = vec![ok.clone()];
+        assert!(config.validate().is_ok());
+
+        let cases = [
+            JobConfig {
+                name: " ".into(),
+                ..ok.clone()
+            },
+            JobConfig {
+                profiles: vec![],
+                ..ok.clone()
+            },
+            JobConfig {
+                profiles: vec!["missing".into()],
+                ..ok.clone()
+            },
+            JobConfig {
+                every: Some("6h".into()),
+                ..ok.clone()
+            },
+            JobConfig {
+                at: Some("25:00".into()),
+                ..ok.clone()
+            },
+            JobConfig {
+                at: None,
+                every: Some("30s".into()),
+                ..ok.clone()
+            },
+        ];
+        for bad in cases {
+            config.schedule.jobs = vec![bad.clone()];
+            assert!(config.validate().is_err(), "{bad:?}");
+        }
+        config.schedule.jobs = vec![ok.clone(), ok];
+        assert!(config.validate().is_err(), "duplicate names");
+    }
+
+    #[test]
+    fn schedule_section_parses_from_yaml() {
+        let yaml = r#"
+url_profiles:
+  home: { url: "https://a.test" }
+schedule:
+  business_profile: { name: "Dupont", phone: "04 12 34 56 78", address: "12 rue X" }
+  jobs:
+    - name: nightly
+      profiles: [home]
+      urls: ["https://a.test/contact"]
+      at: "02:30"
+      head_template: src/layout.html
+    - name: hourly
+      urls: ["https://a.test"]
+      every: 1h
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate().unwrap();
+        assert_eq!(config.schedule.jobs.len(), 2);
+        assert_eq!(parse_daily_time("02:30").unwrap(), (2, 30));
+        assert_eq!(
+            parse_interval("1h").unwrap(),
+            std::time::Duration::from_secs(3600)
+        );
+        assert_eq!(
+            parse_interval("2d").unwrap(),
+            std::time::Duration::from_secs(172_800)
+        );
+        assert!(parse_interval("10x").is_err());
+        assert!(parse_daily_time("2h").is_err());
     }
 
     #[test]

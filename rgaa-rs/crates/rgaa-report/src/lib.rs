@@ -7,15 +7,20 @@
 use rgaa_core::catalog::Automatable;
 use rgaa_core::{ConformityStatus, CriterionResult, CriterionStatus, RgaaCatalog};
 
+pub mod declaration;
 pub mod format;
 pub mod guard;
+pub mod packs;
+pub mod pdf;
 pub mod report;
 
+pub use declaration::{render_declaration_fr, DeclarationFrInput, NcEntry};
 pub use format::ReportFormat;
 pub use guard::{
     schema_export_pack, validate_export, Contact, ContenuNonSoumis, Derogation, ExportPack,
     PageEchantillon, ECHANTILLON_MIN,
 };
+pub use packs::{mention_fr, Pays};
 pub use report::render;
 
 /// Errors from report generation.

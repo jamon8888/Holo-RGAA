@@ -759,6 +759,7 @@ async fn audit_one(
                     confidence: None,
                     justification: Some("Manual verification required".into()),
                     source: "manual".into(),
+                    citations: vec![],
                 });
         } else if !all_results.contains_key(criterion.id) {
             let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
@@ -789,6 +790,7 @@ async fn audit_one(
                     confidence: None,
                     justification: Some(justification),
                     source,
+                    citations: vec![],
                 });
         }
     }
@@ -870,6 +872,7 @@ mod tests {
             confidence: None,
             justification: None,
             source: "test".into(),
+            citations: vec![],
         }
     }
 
@@ -883,6 +886,7 @@ mod tests {
             confidence: None,
             justification: None,
             source: "test".into(),
+            citations: vec![],
         }
     }
 

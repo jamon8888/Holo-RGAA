@@ -28,6 +28,7 @@ impl AxeMapper {
                     confidence: None,
                     justification: None,
                     source: "axe-core".to_string(),
+                    citations: vec![],
                 },
             );
         }

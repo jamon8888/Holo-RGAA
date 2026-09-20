@@ -115,16 +115,26 @@ pub struct SiteMetrics {
 }
 
 /// Per-page rate: passing over passing plus failing, NA/NT excluded.
+/// Entries reduce by `criterion_id` first (same site rule as
+/// [`compute_metrics`]; identity on unique ids).
 #[must_use]
 pub fn compliance_rate(criteria: &[CriterionResult]) -> f64 {
-    let pass = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Pass)
-        .count();
-    let fail = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Fail || c.status == CriterionStatus::Error)
-        .count();
+    let mut par_critere: HashMap<&str, Vec<CriterionStatus>> = HashMap::new();
+    for criterion in criteria {
+        par_critere
+            .entry(criterion.criterion_id.as_str())
+            .or_default()
+            .push(criterion.status.clone());
+    }
+    let mut pass = 0;
+    let mut fail = 0;
+    for statuts in par_critere.values() {
+        match reduire_statuts(statuts) {
+            ConformityStatus::Conforme => pass += 1,
+            ConformityStatus::NonConforme => fail += 1,
+            ConformityStatus::NonApplicable | ConformityStatus::NonTeste => {}
+        }
+    }
     if pass + fail > 0 {
         (pass as f64 / (pass + fail) as f64) * 100.0
     } else {

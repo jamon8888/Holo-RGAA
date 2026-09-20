@@ -43,3 +43,4 @@ url = { version = "2", optional = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
+insta = "1"

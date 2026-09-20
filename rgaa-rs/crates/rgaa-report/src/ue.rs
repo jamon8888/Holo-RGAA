@@ -31,6 +31,56 @@ fn echappe(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Fixed headings in the rendered content language. Only languages with a
+/// validated template exist here (English default, German from the validated
+/// prototype); every other pack renders English and is honestly labeled
+/// `lang="en"` until its translation lands (i18n backlog, not this ticket).
+struct Gabarit {
+    langue: &'static str,
+    titre: &'static str,
+    engagement: &'static str,
+    contenu: &'static str,
+    charge: &'static str,
+    preparation: &'static str,
+    retour: &'static str,
+    recours: &'static str,
+    aucun_nc: &'static str,
+    aucune_derogation: &'static str,
+}
+
+const GABARIT_EN: Gabarit = Gabarit {
+    langue: "en",
+    titre: "Accessibility statement",
+    engagement: "Commitment",
+    contenu: "Non-accessible content",
+    charge: "Disproportionate burden",
+    preparation: "Preparation",
+    retour: "Feedback",
+    recours: "Enforcement",
+    aucun_nc: "None reported.",
+    aucune_derogation: "None claimed.",
+};
+
+const GABARIT_DE: Gabarit = Gabarit {
+    langue: "de",
+    titre: "Erklärung zur Barrierefreiheit",
+    engagement: "Verpflichtung",
+    contenu: "Nicht barrierefreie Inhalte",
+    charge: "Unverhältnismäßige Belastung",
+    preparation: "Erstellung",
+    retour: "Feedback und Kontakt",
+    recours: "Durchsetzungsverfahren",
+    aucun_nc: "Keine gemeldet.",
+    aucune_derogation: "Keine geltend gemacht.",
+};
+
+fn gabarit(pays: Pays) -> &'static Gabarit {
+    match pays {
+        Pays::De => &GABARIT_DE,
+        _ => &GABARIT_EN,
+    }
+}
+
 /// Renders the UE-model declaration of `input.pays`.
 pub fn render_declaration_ue(input: &DeclarationUeInput) -> Result<String, ReportError> {
     if input.statut.trim().is_empty() {
@@ -44,13 +94,15 @@ pub fn render_declaration_ue(input: &DeclarationUeInput) -> Result<String, Repor
         ));
     }
     let pack = pack(input.pays);
+    let gabarit = gabarit(input.pays);
     let mut out = String::new();
     let _ = writeln!(out, "<!DOCTYPE html>");
-    let _ = writeln!(out, "<html lang=\"{}\">", pack.langue);
+    let _ = writeln!(out, "<html lang=\"{}\">", gabarit.langue);
     let _ = writeln!(out, "<head><meta charset=\"utf-8\">");
     let _ = writeln!(
         out,
-        "<title>Accessibility statement — {}</title></head>",
+        "<title>{} — {}</title></head>",
+        gabarit.titre,
         echappe(input.service)
     );
     let _ = writeln!(out, "<body><main>");
@@ -60,10 +112,15 @@ pub fn render_declaration_ue(input: &DeclarationUeInput) -> Result<String, Repor
         echappe(input.service),
         echappe(input.statut)
     );
-    let _ = writeln!(out, "<p>Commitment of {}.</p>", echappe(input.organisme));
-    let _ = writeln!(out, "<h2>Non-accessible content</h2>");
+    let _ = writeln!(
+        out,
+        "<p>{}: {}.</p>",
+        gabarit.engagement,
+        echappe(input.organisme)
+    );
+    let _ = writeln!(out, "<h2>{}</h2>", gabarit.contenu);
     if input.non_conformites.is_empty() {
-        let _ = writeln!(out, "<p>None reported.</p>");
+        let _ = writeln!(out, "<p>{}</p>", gabarit.aucun_nc);
     } else {
         let _ = writeln!(out, "<ul>");
         for nc in input.non_conformites {
@@ -71,36 +128,39 @@ pub fn render_declaration_ue(input: &DeclarationUeInput) -> Result<String, Repor
         }
         let _ = writeln!(out, "</ul>");
     }
-    let _ = writeln!(out, "<h2>Disproportionate burden</h2>");
+    let _ = writeln!(out, "<h2>{}</h2>", gabarit.charge);
     if input.derogations.is_empty() {
-        let _ = writeln!(out, "<p>None claimed.</p>");
+        let _ = writeln!(out, "<p>{}</p>", gabarit.aucune_derogation);
     } else {
         let _ = writeln!(out, "<ul>");
         for derogation in input.derogations {
             let _ = writeln!(
                 out,
-                "<li>{}: {} ; review {}.</li>",
+                "<li>{}: {} ; alternative : {} ; review {}.</li>",
                 echappe(&derogation.contenu),
                 echappe(&derogation.motif),
+                echappe(&derogation.alternative),
                 echappe(&derogation.date_reexamen)
             );
         }
         let _ = writeln!(out, "</ul>");
     }
-    let _ = writeln!(out, "<h2>Preparation</h2>");
+    let _ = writeln!(out, "<h2>{}</h2>", gabarit.preparation);
     let _ = writeln!(
         out,
-        "<p>Prepared {} via {}.</p>",
+        "<p>{} {} via {}.</p>",
+        gabarit.preparation,
         echappe(input.date_declaration),
         echappe(input.methode_evaluation)
     );
-    let _ = writeln!(out, "<h2>Feedback</h2>");
-    let _ = writeln!(
-        out,
-        "<p>Contact channel: {}.</p>",
-        echappe(&input.contact.canal)
-    );
-    let _ = writeln!(out, "<h2>Enforcement</h2>");
+    let _ = writeln!(out, "<h2>{}</h2>", gabarit.retour);
+    let destination = crate::guard::destination_contact(input.contact).ok_or_else(|| {
+        ReportError::invalid_input(
+            "destination du contact de retour d'information manquante".to_string(),
+        )
+    })?;
+    let _ = writeln!(out, "<p>{}.</p>", echappe(destination));
+    let _ = writeln!(out, "<h2>{}</h2>", gabarit.recours);
     let _ = writeln!(
         out,
         "<p>{}: {}.</p>",
@@ -141,9 +201,30 @@ mod tests {
         };
         let html = render_declaration_ue(&input).expect("rendu");
         assert!(html.contains("lang=\"de\""));
+        assert!(html.contains("Erklärung zur Barrierefreiheit"));
         assert!(html.contains("teilweise barrierefrei"));
         assert!(html.contains("Schlichtungsstelle nach § 16 BGG"));
         assert!(html.contains("schlichtungsstelle-bgg.de"));
+        assert!(html.contains("barrierefreiheit@musterbehoerde.de"));
+    }
+
+    #[test]
+    fn pack_sans_traduction_rend_honetement_anglais() {
+        let contact = contact();
+        let input = DeclarationUeInput {
+            pays: Pays::Pt,
+            service: "Portal",
+            organisme: "AMA",
+            statut: "parcialmente conforme",
+            non_conformites: &[],
+            derogations: &[],
+            contact: &contact,
+            date_declaration: "2026-09-19",
+            methode_evaluation: "auto",
+        };
+        let html = render_declaration_ue(&input).expect("rendu");
+        assert!(html.contains("lang=\"en\""));
+        assert!(html.contains("Accessibility statement"));
     }
 
     #[test]

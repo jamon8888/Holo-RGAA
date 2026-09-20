@@ -6,6 +6,13 @@ pub mod config;
 pub use config::{Config, ConfigError};
 pub use rgaa_report::ReportFormat;
 
+/// Moved to [`rgaa_report`]: kept so downstream imports keep compiling.
+#[deprecated(note = "import from rgaa_report instead")]
+pub use rgaa_report::format;
+/// Moved to [`rgaa_report`]: kept so downstream imports keep compiling.
+#[deprecated(note = "import from rgaa_report instead")]
+pub use rgaa_report::report;
+
 /// Errors that can occur during CLI operations.
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {

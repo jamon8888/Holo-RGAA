@@ -59,10 +59,6 @@ pub struct DeclarationFrInput<'a> {
     pub service: &'a str,
     pub organisme: &'a str,
     pub metrics: &'a SiteMetrics,
-    pub conformes: usize,
-    pub non_conformes: usize,
-    pub non_applicables: usize,
-    pub non_testes: usize,
     pub non_conformites: &'a [NcEntry],
     pub derogations: &'a [Derogation],
     pub non_soumis: &'a [ContenuNonSoumis],
@@ -83,15 +79,26 @@ fn echappe(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Renders `url` as a link only for safe schemes (HTTP/S or site-relative);
+/// anything else becomes plain text so no executable scheme lands in `href`.
+fn lien_sur(url: &str, texte: &str) -> String {
+    let cible = url.trim();
+    if cible.starts_with("https://") || cible.starts_with("http://") || cible.starts_with('/') {
+        format!("<a href=\"{}\">{}</a>", echappe(cible), echappe(texte))
+    } else {
+        echappe(cible)
+    }
+}
+
 /// Renders the French declaration, ready to publish on `/accessibilite`.
-/// Fails when the contact channel is missing: a declaration without
+/// Fails when no feedback destination exists: a declaration without
 /// feedback is invalid on its face.
 pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, ReportError> {
-    if input.contact.canal.trim().is_empty() {
-        return Err(ReportError::invalid_input(
-            "contact de retour d'information manquant".to_string(),
-        ));
-    }
+    let destination = crate::guard::destination_contact(input.contact).ok_or_else(|| {
+        ReportError::invalid_input(
+            "destination du contact de retour d'information manquante".to_string(),
+        )
+    })?;
     let mut out = String::new();
     let _ = writeln!(out, "<!DOCTYPE html>");
     let _ = writeln!(out, "<html lang=\"fr\">");
@@ -119,10 +126,10 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
         echappe(input.service),
         etat_fr(&input.metrics.etat_conformite),
         input.metrics.taux_global,
-        input.conformes,
-        input.non_conformes,
-        input.non_applicables,
-        input.non_testes
+        input.metrics.conformes,
+        input.metrics.non_conformes,
+        input.metrics.non_applicables,
+        input.metrics.non_testes
     );
 
     let _ = writeln!(
@@ -197,12 +204,7 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
     );
 
     let _ = writeln!(out, "<h2>5. Retour d'information et contact</h2>");
-    let contact_affiche = input
-        .contact
-        .email
-        .as_deref()
-        .unwrap_or(input.contact.canal.as_str());
-    let _ = writeln!(out, "<p>Contact : {}.</p>", echappe(contact_affiche));
+    let _ = writeln!(out, "<p>Contact : {}.</p>", echappe(destination));
 
     let _ = writeln!(out, "<h2>6. Voies de recours</h2>");
     let _ = writeln!(out, "<p>{}</p>", RECOURS_FR);
@@ -212,9 +214,9 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
         (Some(schema), Some(plan)) => {
             let _ = writeln!(
                 out,
-                "<p>Voir le <a href=\"{}\">schéma pluriannuel</a> et le <a href=\"{}\">plan d'action de l'année en cours</a>.</p>",
-                echappe(schema),
-                echappe(plan)
+                "<p>Voir le {} et le {}.</p>",
+                lien_sur(schema, "schéma pluriannuel"),
+                lien_sur(plan, "plan d'action de l'année en cours")
             );
         }
         _ => {
@@ -260,10 +262,6 @@ mod tests {
             service: "Service Client",
             organisme: "Ministère Exemple",
             metrics,
-            conformes: 48,
-            non_conformes: 12,
-            non_applicables: 46,
-            non_testes: 0,
             non_conformites: ncs,
             derogations: DEROGATIONS.get_or_init(Vec::new),
             non_soumis: NON_SOUMIS.get_or_init(Vec::new),
@@ -329,6 +327,7 @@ mod tests {
             assert!(html.contains(section), "section {section} absente");
         }
         assert!(html.contains("partiellement conforme"));
+        assert!(html.contains("(1 critères conformes, 1 non conformes"));
         assert!(html.contains("Défenseur des droits"));
         assert!(html.contains("https://example.test/schema"));
         assert!(html.contains("image sans alternative"));

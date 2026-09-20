@@ -4,26 +4,27 @@
 //! headless Chromium call. No PDF library, no frozen WebKit: the browser
 //! already driven for audits renders the tagged PDF.
 
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
 
 use crate::ReportError;
 
-/// Renders `html` to `pdf` with headless Chromium (`--print-to-pdf`).
-/// The binary path is explicit so tests inject a missing one.
+/// Renders `html` to `pdf` with headless Chromium.
+///
+/// Chromium takes the output path as the value of `--print-to-pdf`; the
+/// HTML file stays the sole positional target. The binary path is explicit
+/// so tests inject a missing one.
 pub fn print_to_pdf_chromium(
     chromium_bin: &str,
     html: &Path,
     pdf: &Path,
 ) -> Result<(), ReportError> {
+    let mut print_to_pdf = OsString::from("--print-to-pdf=");
+    print_to_pdf.push(pdf);
     let output = Command::new(chromium_bin)
-        .args([
-            "--headless",
-            "--disable-gpu",
-            "--no-pdf-header-footer",
-            "--print-to-pdf",
-        ])
-        .arg(pdf)
+        .args(["--headless", "--disable-gpu", "--no-pdf-header-footer"])
+        .arg(print_to_pdf)
         .arg(html)
         .output()
         .map_err(|error| {

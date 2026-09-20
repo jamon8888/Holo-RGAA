@@ -4,6 +4,8 @@
 //! audit always yields the same figures. Computation is parameterized by
 //! [`Referentiel`]: one constant per national framework, no duplication.
 
+use std::collections::HashMap;
+
 use rgaa_core::catalog::Automatable;
 use rgaa_core::{ConformityStatus, CriterionResult, CriterionStatus, RgaaCatalog};
 
@@ -104,6 +106,10 @@ pub struct SiteMetrics {
     pub conformes: usize,
     /// Applicable criteria failing on at least one page.
     pub non_conformes: usize,
+    /// Criteria not applicable everywhere.
+    pub non_applicables: usize,
+    /// Criteria untested or still awaiting review.
+    pub non_testes: usize,
     /// True when at least one criterion was never tested.
     pub audit_incomplet: bool,
 }
@@ -126,34 +132,68 @@ pub fn compliance_rate(criteria: &[CriterionResult]) -> f64 {
     }
 }
 
+/// Worst status of one criterion across every page (site rule: a single
+/// Fail or Error makes the whole site non-conforming on that criterion).
+fn reduire_statuts(statuts: &[CriterionStatus]) -> ConformityStatus {
+    if statuts
+        .iter()
+        .any(|s| matches!(s, CriterionStatus::Fail | CriterionStatus::Error))
+    {
+        ConformityStatus::NonConforme
+    } else if statuts.iter().all(|s| *s == CriterionStatus::NotApplicable) {
+        ConformityStatus::NonApplicable
+    } else if statuts
+        .iter()
+        .any(|s| matches!(s, CriterionStatus::NeedsReview | CriterionStatus::NotTested))
+    {
+        ConformityStatus::NonTeste
+    } else {
+        ConformityStatus::Conforme
+    }
+}
+
 /// Site-wide metrics for `criteria` under `referentiel`.
+///
+/// Entries are reduced by `criterion_id` first, so concatenating several
+/// pages yields the site rule instead of counting pages. A single page with
+/// unique ids reduces to itself.
 #[must_use]
 pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) -> SiteMetrics {
     let mut conformes = 0;
     let mut non_conformes = 0;
+    let mut non_applicables = 0;
+    let mut non_testes = 0;
     let mut validated_total = 0;
     let mut validated_executed = 0;
     let mut audit_incomplet = false;
+    let mut par_critere: HashMap<&str, Vec<CriterionStatus>> = HashMap::new();
 
     for criterion in criteria {
         if criterion.status == CriterionStatus::NotTested {
             audit_incomplet = true;
         }
-        if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion.criterion_id) {
+        par_critere
+            .entry(criterion.criterion_id.as_str())
+            .or_default()
+            .push(criterion.status.clone());
+    }
+    for (id, statuts) in &par_critere {
+        if let Some((_theme, cat)) = RgaaCatalog::by_id(id) {
             if matches!(
                 cat.automatable,
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if criterion.status != CriterionStatus::NotTested {
+                if !statuts.iter().any(|s| *s == CriterionStatus::NotTested) {
                     validated_executed += 1;
                 }
             }
         }
-        match ConformityStatus::from(criterion.status.clone()) {
+        match reduire_statuts(statuts) {
             ConformityStatus::Conforme => conformes += 1,
             ConformityStatus::NonConforme => non_conformes += 1,
-            ConformityStatus::NonApplicable | ConformityStatus::NonTeste => {}
+            ConformityStatus::NonApplicable => non_applicables += 1,
+            ConformityStatus::NonTeste => non_testes += 1,
         }
     }
 

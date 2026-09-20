@@ -73,6 +73,25 @@ fn vide(value: &str) -> bool {
     value.trim().is_empty()
 }
 
+/// Feedback destination selected by the channel kind: `email` reads the
+/// address, `telephone` the number, `formulaire` the form URL. Any other
+/// kind accepts the first non-blank destination as fallback.
+pub fn destination_contact(contact: &Contact) -> Option<&str> {
+    match contact.canal.trim() {
+        "email" => contact.email.as_deref().filter(|d| !vide(d)),
+        "telephone" => contact.telephone.as_deref().filter(|d| !vide(d)),
+        "formulaire" => contact.formulaire.as_deref().filter(|d| !vide(d)),
+        _ => [
+            contact.email.as_deref(),
+            contact.telephone.as_deref(),
+            contact.formulaire.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|d| !vide(d)),
+    }
+}
+
 /// Refuses the export when any guardrail fails. The first failure wins so
 /// the caller fixes issues one precise message at a time.
 pub fn validate_export(bundle: &AuditBundle, pack: &ExportPack) -> Result<(), ReportError> {
@@ -87,10 +106,12 @@ pub fn validate_export(bundle: &AuditBundle, pack: &ExportPack) -> Result<(), Re
             ECHANTILLON_MIN
         )));
     }
-    let contact = pack.contact.as_ref().filter(|c| !vide(&c.canal));
-    if contact.is_none() {
+    let contact = pack.contact.as_ref().ok_or_else(|| {
+        ReportError::invalid_input("contact de retour d'information manquant".to_string())
+    })?;
+    if destination_contact(contact).is_none() {
         return Err(ReportError::invalid_input(
-            "contact de retour d'information manquant".to_string(),
+            "destination du contact de retour d'information manquante".to_string(),
         ));
     }
 

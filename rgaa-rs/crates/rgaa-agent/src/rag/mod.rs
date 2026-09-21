@@ -4,10 +4,12 @@
 
 pub mod embed;
 pub mod schema;
+pub mod seed;
 pub mod store;
 pub mod tools;
 
 pub use embed::EmbedQuery;
+pub use seed::{ReferentielSeeder, REFERENTIEL_VERSION};
 pub use store::{
     CrawlDocument, CrawlQueryOutput, CrawlRecord, RagReader, RagStats, RagStore,
     ReferentielDocument, ReferentielQueryOutput, ReferentielRecord,

@@ -9,6 +9,11 @@ edition = "2021"
 default = ["vector-store"]
 vector-store = ["rig-lancedb", "lancedb", "fastembed", "arrow", "rig-memory"]
 
+[[bin]]
+name = "seed_referentiel"
+path = "src/bin/seed_referentiel.rs"
+required-features = ["vector-store"]
+
 [dependencies]
 rig-core = { workspace = true, features = ["derive"] }
 rig-agent = { workspace = true }

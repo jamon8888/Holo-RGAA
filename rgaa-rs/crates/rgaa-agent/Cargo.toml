@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 default = ["vector-store"]
-vector-store = ["rig-lancedb", "lancedb", "fastembed", "arrow", "rig-memory"]
+vector-store = ["rig-lancedb", "lancedb", "fastembed", "arrow", "rig-memory", "dep:url"]
 
 [[bin]]
 name = "seed_referentiel"
@@ -38,6 +38,7 @@ rig-memory = { workspace = true, optional = true }
 lancedb = { workspace = true, optional = true }
 fastembed = { workspace = true, optional = true }
 arrow = { version = "58.0.0", optional = true }
+url = { version = "2", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

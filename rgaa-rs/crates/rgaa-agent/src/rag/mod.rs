@@ -2,14 +2,19 @@
 //! per-audit crawl index, plus the read-only tools an agent worker calls
 //! them through. Part of the #121 target architecture (ticket #124).
 
+pub mod crawl_writer;
 pub mod embed;
+pub mod patterns;
 pub mod schema;
 pub mod seed;
 pub mod store;
 pub mod tools;
+mod util;
 
+pub use crawl_writer::{CrawlWriter, DEFAULT_TTL};
 pub use embed::EmbedQuery;
 pub use seed::{ReferentielSeeder, REFERENTIEL_VERSION};
+pub use patterns::{PatternQueryOutput, PatternReader, RemediationPattern};
 pub use store::{
     CrawlDocument, CrawlQueryOutput, CrawlRecord, RagReader, RagStats, RagStore,
     ReferentielDocument, ReferentielQueryOutput, ReferentielRecord,

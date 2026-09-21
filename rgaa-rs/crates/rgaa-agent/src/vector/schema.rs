@@ -5,6 +5,10 @@ use std::sync::Arc;
 /// storage schema must agree on this dimension; declare it once here.
 pub const EMBEDDING_DIM: usize = 384;
 
+/// Table name for the remediation-pattern index (see [`rag::patterns`](crate::rag::patterns)
+/// for the read-only accessor used during an audit).
+pub const REMEDIATION_PATTERNS_TABLE: &str = "rgaa_remediation_patterns";
+
 pub fn rgaa_criteria_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),

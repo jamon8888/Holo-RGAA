@@ -189,6 +189,21 @@ of OOM-killing the first 8.
 - **One-command delivery**: `install.sh` / `install.ps1` (per-platform obscura assets,
   Claude Code plugin symlink, MCP config), `cargo-dist` releases, CI hardened
   (protoc everywhere, OOM-guarded Linux link, rust-cache workspaces fix).
+- **Official documents engine** (`rgaa-report`, PR #134): single source of truth
+  for compliance math (`Referentiel`-parameterized, FR-only NT downgrade) and all
+  renderers (JSON/Markdown/SARIF/JUnit/HTML); JSON pivot schema plus export
+  guardrails (sample, contact, proofs, derogations); pack governance with
+  12-month review expiry. Orchestrator/CLI/TUI delegate — one audit, one set
+  of figures everywhere.
+- **Twelve-country declarations** (spec #104): UE 2018/1523 core templates plus
+  national packs (FR 7-section DINUM with triennial scheme, DE BITV with DGS,
+  IT AgID filing, NL A–E register, PT AccessMonitor thresholds, DK WAS-Tool…),
+  PDF via headless Chromium, per-country canonical URLs.
+- **Agentic RAG stack** (`rgaa-agent`, #135–#148): versioned referentiel seeding,
+  read-only RAG retrieval tools with stats, crawl evidence write/purge, frozen
+  remediation patterns, deterministic dual-corpus router, independent verifier
+  worker, VCR cassette replay + baseline harness, extended adversarial
+  test-corpus with locked budgets, typed citations on every verdict.
 
 ### Channel-based browser core (PR #65, incl. #75 review fixes)
 
@@ -266,6 +281,19 @@ Structured manual testing protocols for criteria that require human observation:
 | **SARIF 2.1.0** | GitHub Code Scanning, security dashboards |
 | **JUnit XML** | CI test results, Jenkins, CircleCI |
 | **HTML** | Stakeholder reports, archival PDF generation |
+
+### Official Accessibility Documents (12 EU countries)
+- **Déclaration d'accessibilité** — publishable HTML per country (FR 7-section
+  DINUM, UE 2018/1523 core with localized EN/DE templates, per-country
+  enforcement blocks), semantic markup without intrusive CSS
+- **Audit report PDF** — tagged PDF via headless Chromium (PDF/A-1a profile
+  for France)
+- **JSON pivot** — schema-validated payload with per-country `extensions`,
+  adapters for national registries (Ara, AgID open data, NL register,
+  WAS-Tool DK, PT observatory)
+- **Guardrails** — export blocked on short sample, missing feedback contact,
+  unproven non-conformity, incomplete derogation, or stale (>12 months)
+  legal pack unless a named, timestamped override is recorded
 
 ### Policy Gates
 - Configurable compliance thresholds per client/audit
@@ -705,24 +733,25 @@ llm:
 
 ```
 rgaa-rs/
-  Cargo.toml              # Workspace root (16 crates)
+  Cargo.toml              # Workspace root (17 crates)
   crates/
     rgaa-core/           # Domain types, 106-criteria catalog
     rgaa-rules/           # axe-core integration, gap-fix snippets
     rgaa-holo/           # Holo3 LLM client
     rgaa-browser-tools/  # Browser automation via CDP
     rgaa-obscura/        # CDP browser automation (Rust-native)
-    rgaa-agent/          # Rig-based agentic evaluator
+    rgaa-agent/          # Rig-based agentic evaluator + RAG stack
     rgaa-orchestrator/   # Pipeline orchestration
     rgaa-tui/            # Interactive TUI (Ratatui)
     rgaa-api/            # Axum HTTP API
     rgaa-mcp/             # MCP server
-    rgaa-cli/             # CLI interface
-    rgaa-storage/         # PostgreSQL storage
-    rgaa-remediation/     # Fix proposal generation
-    rgaa-spider/          # Streaming crawler
-    rgaa-data/            # Shared static data
-    rgaa-test-corpus/     # Test fixtures
+    rgaa-cli/            # CLI interface
+    rgaa-storage/        # PostgreSQL storage
+    rgaa-remediation/    # Fix proposal generation
+    rgaa-report/         # Compliance engine + official documents
+    rgaa-spider/         # Streaming crawler
+    rgaa-data/           # Shared static data
+    rgaa-test-corpus/    # Test fixtures
 ```
 
 ### rgaa-tui

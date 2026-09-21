@@ -102,6 +102,11 @@ jobs:
         with:
           workspaces: rgaa-rs
 
+      # sccache: share compiled artifacts across runs (mirrors the clippy
+      # job). Big win for C/C++ deps (aws-lc-sys, lance native bits) that
+      # rust-cache alone replays less well. Output binaries unchanged.
+      - uses: mozilla-actions/sccache-action@v0.0.7
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -115,6 +120,8 @@ jobs:
         run: echo "CARGO_BUILD_JOBS=2" >> $GITHUB_ENV
 
       - name: Build
+        env:
+          RUSTC_WRAPPER: sccache
         run: cargo build --target ${{ matrix.target }} --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp
         shell: bash
 

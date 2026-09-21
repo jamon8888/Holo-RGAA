@@ -804,20 +804,6 @@ async fn audit_one(
 mod tests {
     use super::*;
 
-    fn test_result(status: CriterionStatus) -> CriterionResult {
-        CriterionResult {
-            criterion_id: "1.1".into(),
-            title: "test".into(),
-            classification: Classification::IaAssiste,
-            status,
-            violations: Vec::new(),
-            confidence: None,
-            justification: None,
-            source: "test".into(),
-            citations: vec![],
-        }
-    }
-
     fn test_result_id(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {
             criterion_id: id.into(),

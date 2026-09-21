@@ -8,6 +8,7 @@ impl AxeMapper {
     /// Map axe-core violations JSON to RGAA criterion results.
     /// Input: JSON array of axe violations from axe.run()
     /// Output: HashMap of criterion_id → CriterionResult
+    #[must_use = "le résultat du mapping doit être utilisé"]
     pub fn map(violations_json: &str) -> Result<IndexMap<String, CriterionResult>, RgaaError> {
         let mapping = Self::rgaa_to_axe_map();
         let violations: Vec<AxeViolation> = serde_json::from_str(violations_json)
@@ -28,6 +29,7 @@ impl AxeMapper {
                     confidence: None,
                     justification: None,
                     source: "axe-core".to_string(),
+                    citations: vec![],
                 },
             );
         }

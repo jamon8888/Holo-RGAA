@@ -297,6 +297,7 @@ impl GapFixRules {
                     confidence: None,
                     justification: None,
                     source: "gap-fix".to_string(),
+                    citations: vec![],
                 },
             );
         }

@@ -1,6 +1,7 @@
 pub mod audit_bundle;
 pub mod catalog;
 pub mod checkpoints;
+pub mod citations;
 pub mod criteria;
 pub mod error;
 pub mod evidence;
@@ -11,6 +12,7 @@ pub mod types;
 pub use audit_bundle::*;
 pub use catalog::RgaaCatalog;
 pub use checkpoints::*;
+pub use citations::Citation;
 pub use criteria::{Criterion, RgaaCriteria};
 pub use error::{Result, RgaaError};
 pub use evidence::*;

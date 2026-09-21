@@ -48,6 +48,14 @@ pub struct CriterionResult {
     pub confidence: Option<f64>,
     pub justification: Option<String>,
     pub source: String,
+    /// Sources backing this verdict, when it relied on retrieved documents
+    /// (see [`crate::Citation`]). Empty for verdicts reached without
+    /// retrieval — deterministic rules, manual review, "not tested" — which
+    /// stay valid with no citations at all. Defaults to empty on
+    /// deserialize so results persisted before this field existed still
+    /// load.
+    #[serde(default)]
+    pub citations: Vec<crate::Citation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,5 +161,60 @@ mod tests {
             ConformityStatus::from(CriterionStatus::Error),
             ConformityStatus::NonConforme
         );
+    }
+
+    fn sample_result(citations: Vec<crate::Citation>) -> CriterionResult {
+        CriterionResult {
+            criterion_id: "1.1.1".into(),
+            title: "Image alt".into(),
+            classification: Classification::IaAssiste,
+            status: CriterionStatus::Fail,
+            violations: vec![],
+            confidence: Some(0.9),
+            justification: Some("missing alt".into()),
+            source: "agent".into(),
+            citations,
+        }
+    }
+
+    #[test]
+    fn result_without_citations_serializes_and_stays_valid() {
+        let result = sample_result(vec![]);
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["citations"], serde_json::json!([]));
+
+        let decoded: CriterionResult = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, result);
+        assert!(decoded.citations.is_empty());
+    }
+
+    #[test]
+    fn result_with_typed_citations_round_trips() {
+        let result = sample_result(vec![
+            crate::Citation::referentiel("1.1.1", "2024.1"),
+            crate::Citation::crawl("https://example.org/", "2025-01-01T00:00:00Z", "sha256:x"),
+        ]);
+        let json = serde_json::to_string(&result).unwrap();
+        let decoded: CriterionResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, result);
+        assert_eq!(decoded.citations.len(), 2);
+    }
+
+    #[test]
+    fn legacy_result_json_without_citations_field_still_deserializes() {
+        // Serialized before this field existed — must keep loading with an
+        // empty citations list rather than failing.
+        let legacy = serde_json::json!({
+            "criterion_id": "1.1.1",
+            "title": "Image alt",
+            "classification": "IaAssiste",
+            "status": "fail",
+            "violations": [],
+            "confidence": 0.9,
+            "justification": "missing alt",
+            "source": "agent"
+        });
+        let decoded: CriterionResult = serde_json::from_value(legacy).unwrap();
+        assert!(decoded.citations.is_empty());
     }
 }

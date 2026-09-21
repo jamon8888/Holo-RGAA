@@ -406,6 +406,7 @@ mod tests {
                     confidence: None,
                     justification: None,
                     source: "axe".into(),
+                    citations: vec![],
                 }],
                 compliance_rate: 0.0,
                 crawl_depth: 0,

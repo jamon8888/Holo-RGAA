@@ -14,6 +14,7 @@ pub mod criteria_defs;
 pub mod error;
 pub mod prompts;
 pub mod ratelimit;
+pub mod references;
 pub mod remediate;
 pub mod verify;
 
@@ -22,6 +23,8 @@ pub mod verify;
 pub mod embeddings;
 #[cfg(feature = "vector-store")]
 pub mod memory;
+#[cfg(feature = "vector-store")]
+pub mod rag;
 #[cfg(feature = "vector-store")]
 pub mod vector;
 

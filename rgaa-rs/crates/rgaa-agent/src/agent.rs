@@ -60,7 +60,8 @@ impl RgaaAgent {
             .base_url(&config.holo3_base_url)
             .api_key(&config.api_key)
             .build()
-            .map_err(|e| AgentError::RigAgent(e.to_string()))?;
+            .map_err(|e| AgentError::RigAgent(e.to_string()))?
+            .completions_api();
 
         // 2. Create rate limiter from config (tactical/reasoning RPM)
         let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));

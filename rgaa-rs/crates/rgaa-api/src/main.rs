@@ -7,6 +7,19 @@ use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Help and version must never require infrastructure (database, …).
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("rgaa-api: RGAA audit HTTP API server");
+        println!("Usage: rgaa-api [--help] [--version]");
+        println!("Env: DATABASE_URL (default postgres://localhost/rgaa), LISTEN_ADDR (default 0.0.0.0:3000)");
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("rgaa-api {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();

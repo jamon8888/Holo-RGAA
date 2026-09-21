@@ -180,7 +180,7 @@ jobs:
   smoke:
     name: Smoke Test
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -242,6 +242,7 @@ jobs:
           else
             ./artifact/rgaa --version
           fi
+        shell: bash
 
       - name: Run rgaa-cli --version
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -252,6 +253,7 @@ jobs:
           else
             ./artifact/rgaa-cli --version
           fi
+        shell: bash
 
       - name: Run rgaa-cli --help
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -261,6 +263,7 @@ jobs:
           else
             ./artifact/rgaa-cli --help | head -5
           fi
+        shell: bash
 
       - name: Run rgaa-api --help
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -270,6 +273,7 @@ jobs:
           else
             ./artifact/rgaa-api --help 2>&1 | head -3
           fi
+        shell: bash
 
       - name: Run rgaa-mcp --help
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -279,6 +283,7 @@ jobs:
           else
             ./artifact/rgaa-mcp --help 2>&1 | head -3
           fi
+        shell: bash
 
   # ─── Installer E2E ────────────────────────────────────────────────────────
 

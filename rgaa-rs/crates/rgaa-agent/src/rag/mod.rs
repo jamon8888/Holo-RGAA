@@ -32,7 +32,6 @@ pub use tools::{
     CrawlSearchArgs, CrawlSearchTool, RagToolError, ReferentielSearchArgs, ReferentielSearchTool,
 };
 pub use verifier::{Verifier, VerifierError, VerifierOutcome, VerifierResponse};
-pub use verifier::{Verifier, VerifierError, VerifierOutcome, VerifierResponse};
 
 #[cfg(test)]
 mod tests {

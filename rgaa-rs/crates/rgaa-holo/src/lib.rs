@@ -1,10 +1,12 @@
 pub mod backend;
+pub mod cassette;
 pub mod client;
 pub mod ollama;
 pub mod prompts;
 pub mod transport;
 
 pub use backend::{BackendConfig, LlmBackend};
+pub use cassette::{Cassette, CassetteBackend, CassetteEntry};
 pub use client::HoloClient;
 pub use ollama::OllamaClient;
 pub use prompts::{format_page_context, PageContext, PromptBuilder};

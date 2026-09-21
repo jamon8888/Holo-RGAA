@@ -4,6 +4,7 @@
 
 pub mod crawl_writer;
 pub mod embed;
+pub mod harness;
 pub mod patterns;
 pub mod router;
 pub mod schema;
@@ -16,6 +17,11 @@ pub mod verifier;
 pub use crawl_writer::{CrawlWriter, DEFAULT_TTL};
 pub use embed::EmbedQuery;
 pub use seed::{ReferentielSeeder, REFERENTIEL_VERSION};
+pub use harness::{
+    run_baseline, run_baseline_with_cassette, BaselineCase, BaselineReport, ConfusionEntry,
+    CostSummary, CriterionConfusion, HallucinationCounters,
+};
+>>>>>>> d7a0445 (feat(holo,agent): VCR cassette replay + baseline measurement harness)
 pub use patterns::{PatternQueryOutput, PatternReader, RemediationPattern};
 pub use router::{EvaluationRole, RouteDecision, Router, RouterThresholds};
 pub use store::{

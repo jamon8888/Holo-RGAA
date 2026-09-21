@@ -24,7 +24,7 @@ Tu dois retourner un JSON avec les champs suivants :
 
 Ne retourne QUE le JSON, sans texte additionnel.";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HoloResponse {
     pub verdict: String,
     pub confidence: f64,

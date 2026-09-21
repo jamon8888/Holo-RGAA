@@ -287,6 +287,7 @@ mod tests {
                     confidence: None,
                     justification: None,
                     source: "t".into(),
+                    citations: Vec::new(),
                 },
                 rgaa_core::CriterionResult {
                     criterion_id: "1.2".into(),
@@ -297,6 +298,7 @@ mod tests {
                     confidence: None,
                     justification: None,
                     source: "t".into(),
+                    citations: Vec::new(),
                 },
             ],
             &RGAA_41,

@@ -2,12 +2,29 @@
 //! per-audit crawl index, plus the read-only tools an agent worker calls
 //! them through. Part of the #121 target architecture (ticket #124).
 
+pub mod crawl_writer;
 pub mod embed;
+pub mod harness;
+pub mod patterns;
+pub mod router;
 pub mod schema;
+pub mod seed;
 pub mod store;
 pub mod tools;
+mod util;
+pub mod verifier;
 
+pub use crawl_writer::{CrawlWriter, DEFAULT_TTL};
 pub use embed::EmbedQuery;
+pub use seed::{ReferentielSeeder, REFERENTIEL_VERSION};
+pub use harness::{
+    check_budget, run_baseline, run_baseline_with_cassette, BaselineCase, BaselineReport,
+    BudgetEnvelope, BudgetExceeded, ConfusionEntry, CostSummary, CriterionConfusion,
+    HallucinationCounters, DEFAULT_BUDGET_MARGIN,
+};
+>>>>>>> d7a0445 (feat(holo,agent): VCR cassette replay + baseline measurement harness)
+pub use patterns::{PatternQueryOutput, PatternReader, RemediationPattern};
+pub use router::{EvaluationRole, RouteDecision, Router, RouterThresholds};
 pub use store::{
     CrawlDocument, CrawlQueryOutput, CrawlRecord, RagReader, RagStats, RagStore,
     ReferentielDocument, ReferentielQueryOutput, ReferentielRecord,
@@ -15,6 +32,8 @@ pub use store::{
 pub use tools::{
     CrawlSearchArgs, CrawlSearchTool, RagToolError, ReferentielSearchArgs, ReferentielSearchTool,
 };
+pub use verifier::{Verifier, VerifierError, VerifierOutcome, VerifierResponse};
+pub use verifier::{Verifier, VerifierError, VerifierOutcome, VerifierResponse};
 
 #[cfg(test)]
 mod tests {

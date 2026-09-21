@@ -6645,6 +6645,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 
@@ -6882,6 +6883,7 @@ dependencies = [
 name = "rgaa-test-corpus"
 version = "0.1.0"
 dependencies = [
+ "rgaa-core",
  "serde",
  "serde_json",
 ]

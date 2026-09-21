@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod cassette;
 pub mod client;
 pub mod fallback;
 pub mod ollama;
@@ -6,6 +7,7 @@ pub mod prompts;
 pub mod transport;
 
 pub use backend::{BackendConfig, LlmBackend};
+pub use cassette::{Cassette, CassetteBackend, CassetteEntry};
 pub use client::HoloClient;
 pub use fallback::{BenchmarkResult, FallbackBackend};
 pub use ollama::OllamaClient;

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 9.1 - Cas adversarial : titres visuels sans structure sémantique</title>
+    <style>
+        .fake-h1 { font-size: 2em; font-weight: bold; }
+        .fake-h2 { font-size: 1.5em; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="fake-h1">Titre principal (visuellement, pas sémantiquement)</div>
+    <p>
+        Cas adversarial : la mise en forme visuelle imite une hiérarchie de
+        titres (tailles et graisses de police), mais aucune balise
+        &lt;h1&gt;-&lt;h6&gt; n'est utilisée. Un lecteur d'écran ne détecte
+        aucune structure de titres ici, alors qu'une simple inspection
+        visuelle du rendu pourrait laisser croire que le critère est
+        respecté.
+    </p>
+    <div class="fake-h2">Sous-titre (visuellement, pas sémantiquement)</div>
+    <p>Contenu de section, toujours sans structure de titres réelle.</p>
+</body>
+</html>

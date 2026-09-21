@@ -168,73 +168,22 @@ of OOM-killing the first 8.
 
 ---
 
-## Project Status — What Is Done
+## What's New
 
-### Shipped (merged to `main`)
-
-- **Unified pipeline** (`rgaa-orchestrator`): axe-core + gap-fix + Holo3 + IGT merged
-  into one run, single `AuditBundle` model, official `taux_global = C / (C + NC)`
-  math (NA/NT excluded), sample-wide aggregation (NC on any page → NC).
-- **Obscura browser substrate** (`rgaa-obscura`): Rust-native CDP automation, pinned
-  v0.2.2 binary with version gates, vendored axe-core 4.13 (`elementRef`,
-  `incomplete`, `patch_attach_internals`), label-aware pre-scan fill, cookie
-  injection **before** navigation, `RGAA_OBSCURA_BIN` honored everywhere.
-- **axe-core parity + IGT** (`rgaa-mcp`, `rgaa-browser-tools`): `waitFor`, cookies,
-  screenshots, keyboard IGT with stable DOM-path focus identity and trap detection
-  (5× same element = trap), CDP failure → `incomplete` + `ExecutionError`.
-- **Interfaces**: unified `rgaa` TUI (Ratatui: audit wizard with live progress,
-  history viewer, install/setup wizards) + headless CLI + MCP server
-  (`analyze`, `audit_url`, `remediate`, `igt`, `get_audit_result`, `list_criteria`)
-  + Axum HTTP API + spider crawler + remediation plugin (Consultant v2.0.0).
-- **One-command delivery**: `install.sh` / `install.ps1` (per-platform obscura assets,
-  Claude Code plugin symlink, MCP config), `cargo-dist` releases, CI hardened
-  (protoc everywhere, OOM-guarded Linux link, rust-cache workspaces fix).
-- **Official documents engine** (`rgaa-report`, PR #134): single source of truth
-  for compliance math (`Referentiel`-parameterized, FR-only NT downgrade) and all
-  renderers (JSON/Markdown/SARIF/JUnit/HTML); JSON pivot schema plus export
-  guardrails (sample, contact, proofs, derogations); pack governance with
+- **Official documents engine** (`rgaa-report`): single source of truth for
+  compliance math (`Referentiel`-parameterized, FR-only NT downgrade) and all
+  renderers; JSON pivot schema plus export guardrails; pack governance with
   12-month review expiry. Orchestrator/CLI/TUI delegate — one audit, one set
   of figures everywhere.
-- **Twelve-country declarations** (spec #104): UE 2018/1523 core templates plus
-  national packs (FR 7-section DINUM with triennial scheme, DE BITV with DGS,
-  IT AgID filing, NL A–E register, PT AccessMonitor thresholds, DK WAS-Tool…),
-  PDF via headless Chromium, per-country canonical URLs.
-- **Agentic RAG stack** (`rgaa-agent`, #135–#148): versioned referentiel seeding,
-  read-only RAG retrieval tools with stats, crawl evidence write/purge, frozen
-  remediation patterns, deterministic dual-corpus router, independent verifier
-  worker, VCR cassette replay + baseline harness, extended adversarial
-  test-corpus with locked budgets, typed citations on every verdict.
-
-### Channel-based browser core (PR #65, incl. #75 review fixes)
-
-Channel-based browser core: `BrowserWorker` on a dedicated thread (tokio-incompatible
-internals isolated) + `Send`-safe `BrowserHandle` over channels. All methods wired
-(navigate, eval_js, click, screenshot, a11y_tree, type_input, press_key, tab_order,
-assert_state). Security deny-by-default (private-network + `file://` blocked unless
-opted in). MCP server reports name/version on initialize. Orchestrator/MCP/CLI all
-migrated to `BrowserHandle`; browser auto-starts in background. Includes TUI real
-progress (pipeline phases + `RgaaError`), audit wizard running the real orchestrator,
-history via storage, and all CodeRabbit findings addressed — including typed
-`RgaaError → McpFailure` mapping (`invalid` / `unsupported` / `incomplete` /
-`execution`) instead of blanket execution errors.
-
-### Production-scale reliability — Scale #1–8 (PR #74, closes #43–#50)
-
-- **#43** build-once static data (criteria catalog, axe map, gap-fix snippets via `OnceLock`).
-- **#44** streaming polite crawler (configurable concurrency/delay/timeout/retry/blacklist).
-- **#45** single audits routed through batch entry points (no duplicate paths).
-- **#46** LLM lane: visual-tier routing wired, page context rendered once and capped at 8 000 chars,
-  shared circuit breaker.
-- **#47** API timeouts, shared concurrency limit (`GlobalConcurrencyLimitLayer`),
-  load shedding.
-- **#48** Obscura workers/V8 heap config, systemd template, fixed silenced logging.
-- **#49** bounded batch orchestration (max 8 in flight), incremental persistence,
-  per-audit browser session.
-- **#50** storage: `list_audits` skips blobs, dead N+1 write path removed.
-- Plus: pinned toolchain, Makefile, mold linking, sccache, nextest, expanded CI. Two real bugs
-  fixed (streaming-crawler deadlock, tower semaphore non-sharing).
-
----
+- **Twelve-country declarations**: UE 2018/1523 core templates plus national
+  packs (FR 7-section DINUM with triennial scheme, DE BITV, IT AgID filing,
+  NL A–E register, PT AccessMonitor thresholds, DK WAS-Tool…), PDF via
+  headless Chromium, per-country canonical URLs.
+- **Agentic RAG stack** (`rgaa-agent`): versioned referentiel seeding,
+  read-only RAG retrieval tools, crawl evidence write/purge, frozen
+  remediation patterns, deterministic dual-corpus router, independent
+  verifier worker, VCR cassette replay + baseline harness, extended
+  adversarial test-corpus, typed citations on every verdict.
 
 ## Features
 

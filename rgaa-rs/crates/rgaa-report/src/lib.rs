@@ -256,6 +256,7 @@ mod tests {
             confidence: None,
             justification: None,
             source: "test".into(),
+            citations: Vec::new(),
         }
     }
 

@@ -269,19 +269,20 @@ impl RagStore {
     /// `records` — the whole-index rebuild #128 does on every referentiel
     /// version change (never migrated in place).
     ///
+    /// The replacement batch is built and validated first, then installed
+    /// with a single overwriting create: a batch failure can never leave
+    /// the live table dropped.
+    ///
     /// # Errors
-    /// Returns [`AgentError::LanceDb`] on any LanceDB failure.
+    /// Returns [`AgentError`] on batch or LanceDB failure.
     pub async fn rebuild_referentiel(
         &self,
         records: Vec<ReferentielRecord>,
     ) -> Result<(), AgentError> {
-        self.db
-            .drop_table(RAG_REFERENTIEL_TABLE, &[])
-            .await
-            .map_err(lancedb_err)?;
         let batch = referentiel_batch(&records)?;
         self.db
             .create_table(RAG_REFERENTIEL_TABLE, batch)
+            .mode(CreateTableMode::Overwrite)
             .execute()
             .await
             .map_err(lancedb_err)?;
@@ -337,7 +338,7 @@ fn referentiel_batch(records: &[ReferentielRecord]) -> Result<RecordBatch, Agent
     let versions =
         StringArray::from_iter_values(records.iter().map(|r| r.referentiel_version.as_str()));
     let contents = StringArray::from_iter_values(records.iter().map(|r| r.content.as_str()));
-    let embeddings = fixed_size_embedding_array(records.iter().map(|r| r.embedding.as_slice()));
+    let embeddings = fixed_size_embedding_array(records.iter().map(|r| r.embedding.as_slice()))?;
 
     RecordBatch::try_new(
         schema,
@@ -361,7 +362,7 @@ fn crawl_batch(records: &[CrawlRecord]) -> Result<RecordBatch, AgentError> {
     let hashes = StringArray::from_iter_values(records.iter().map(|r| r.evidence_hash.as_str()));
     let contents = StringArray::from_iter_values(records.iter().map(|r| r.content.as_str()));
     let expires_ats = Int64Array::from_iter(records.iter().map(|r| r.expires_at));
-    let embeddings = fixed_size_embedding_array(records.iter().map(|r| r.embedding.as_slice()));
+    let embeddings = fixed_size_embedding_array(records.iter().map(|r| r.embedding.as_slice()))?;
 
     RecordBatch::try_new(
         schema,
@@ -378,15 +379,36 @@ fn crawl_batch(records: &[CrawlRecord]) -> Result<RecordBatch, AgentError> {
     .map_err(|e| AgentError::LanceDb(format!("failed to build crawl batch: {e}")))
 }
 
+/// Builds the fixed-size embedding column, rejecting any vector whose
+/// length differs from [`EMBEDDING_DIM`](crate::vector::schema::EMBEDDING_DIM)
+/// instead of letting Arrow panic or misalign rows.
 fn fixed_size_embedding_array<'a>(
     vectors: impl Iterator<Item = &'a [f32]>,
-) -> arrow::array::FixedSizeListArray {
+) -> Result<arrow::array::FixedSizeListArray, AgentError> {
     use arrow::array::types::Float32Type;
-    let dim = crate::vector::schema::EMBEDDING_DIM as i32;
-    arrow::array::FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-        vectors.map(|v| Some(v.iter().copied().map(Some))),
-        dim,
-    )
+    let dim = crate::vector::schema::EMBEDDING_DIM;
+    let checked: Vec<&[f32]> = vectors
+        .map(|v| {
+            if v.len() == dim {
+                Ok(v)
+            } else {
+                Err(AgentError::Embedding(format!(
+                    "embedding de dimension {} au lieu de {dim}",
+                    v.len()
+                )))
+            }
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(arrow::array::FixedSizeListArray::from_iter_primitive::<
+        Float32Type,
+        _,
+        _,
+    >(
+        checked
+            .into_iter()
+            .map(|v| Some(v.iter().copied().map(Some))),
+        dim as i32,
+    ))
 }
 
 async fn create_empty_table(

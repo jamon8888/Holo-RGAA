@@ -139,7 +139,20 @@ fn resolve_url(
 }
 
 fn crawl_config(_config: &Config) -> CrawlConfig {
-    CrawlConfig::default()
+    let mut crawl_config = CrawlConfig::default();
+    if let Some(max_pages) = std::env::var("RGAA_MAX_PAGES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        crawl_config.max_pages = max_pages;
+    }
+    if let Some(max_depth) = std::env::var("RGAA_MAX_DEPTH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        crawl_config.max_depth = max_depth;
+    }
+    crawl_config
 }
 
 #[cfg(test)]

@@ -74,6 +74,13 @@ impl RgaaAgent {
             )
             .append_preamble(&page_discovery_preamble())
             .tool(SpiderTool::new())
+            // Without this, rig-agent's implicit budget is a single model
+            // call (see rig-agent's `default_max_turns` docs); a model that
+            // reaches for `crawl_site` instead of answering directly then
+            // has no turn left to read the tool result and produce a
+            // verdict, and fails with MaxTurnsError. 3 turns covers one
+            // tool call plus the follow-up answer, with a little slack.
+            .default_max_turns(3)
             .build();
 
         Ok(Self {
@@ -226,7 +233,14 @@ impl RgaaAgent {
                     (criterion.id.to_string(), result)
                 }
             })
-            .buffer_unordered(4) // bounded parallelism
+            // Serialized: the local Ollama backend has a single inference
+            // slot on this host, so concurrent requests just queue behind
+            // it — and can sit long enough for reqwest's idle-connection
+            // pool timeout to close them out from under the wait, which
+            // then trips the circuit breaker. `buffer_unordered(1)` sends
+            // one request at a time so nothing is left waiting on a held
+            // connection.
+            .buffer_unordered(1)
             .collect::<HashMap<_, _>>()
             .await;
 
@@ -257,7 +271,7 @@ impl RgaaAgent {
                     (criterion.id.to_string(), result)
                 }
             })
-            .buffer_unordered(4)
+            .buffer_unordered(1)
             .collect::<HashMap<_, _>>()
             .await;
 

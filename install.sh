@@ -448,6 +448,7 @@ probe_with_timeout() {
     done
     if kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
         return 124
     fi
     wait "$pid" 2>/dev/null

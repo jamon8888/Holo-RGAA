@@ -482,15 +482,20 @@ verify_install() {
     # set +e around this: under `set -e` above, a non-zero (expected: 124)
     # from the pipeline would abort the script before we get to check it.
     local mcp_probe_status
+    local mcp_probe_log
+    mcp_probe_log="$(mktemp)"
     set +e
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' \
-        | probe_with_timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
+        | probe_with_timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>"$mcp_probe_log"
     mcp_probe_status=$?
     set -e
     if [[ $mcp_probe_status -ne 124 && $mcp_probe_status -ne 0 ]]; then
-        err "  rgaa-mcp: stdio start probe failed"
-        failures=$((failures + 1))
+        err "  rgaa-mcp: stdio start probe failed (status=$mcp_probe_status)"
+        err "  server stderr (tail):"
+        tail -n 5 "$mcp_probe_log" | sed 's/^/    /' || true
+        failures=$((failures + 1));
     fi
+    rm -f "$mcp_probe_log"
 
     # Check obscura
     if [[ -x "${INSTALL_DIR}/obscura" ]] || command -v obscura &>/dev/null; then

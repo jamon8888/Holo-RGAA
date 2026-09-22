@@ -140,7 +140,7 @@ download_and_install() {
     ensure_dep "curl" "brew install curl (macOS) or apt install curl (Linux)"
 
     tmpdir=$(mktemp -d)
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap 'if [ -n "${tmpdir:-}" ]; then rm -rf "$tmpdir"; fi' EXIT
 
     local url
     url=$(get_release_url "$platform" "$RELEASE_TAG")
@@ -203,7 +203,7 @@ install_obscura() {
     local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d)
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap 'if [ -n "${tmpdir:-}" ]; then rm -rf "$tmpdir"; fi' EXIT
 
     info "Downloading obscura ${OBSCURA_VERSION}..."
     if ! curl -fSL --progress-bar -o "${tmpdir}/obscura.tar.gz" "$url"; then
@@ -450,7 +450,8 @@ verify_install() {
         "${INSTALL_DIR}/${bin}" --help >/dev/null 2>&1 \
             || { err "  ${bin}: --help failed"; failures=$((failures + 1)); }
     done
-    # MCP stdio probe: exit 124 means `timeout` killed an idle healthy server.
+    # MCP stdio probe: exit 124 means `timeout` killed an idle healthy server,
+    # exit 0 means it answered and shut down cleanly on EOF. Both are healthy.
     # set +e around this: under `set -e` above, a non-zero (expected: 124)
     # from the pipeline would abort the script before we get to check it.
     local mcp_probe_status
@@ -459,7 +460,7 @@ verify_install() {
         | timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
     mcp_probe_status=$?
     set -e
-    if [[ $mcp_probe_status -ne 124 ]]; then
+    if [[ $mcp_probe_status -ne 124 && $mcp_probe_status -ne 0 ]]; then
         err "  rgaa-mcp: stdio start probe failed"
         failures=$((failures + 1))
     fi

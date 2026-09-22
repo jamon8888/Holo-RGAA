@@ -427,11 +427,28 @@ CFG_EOF
 
 # ── Verification ──────────────────────────────────────────────────────────────
 
-# Portable timeout: GNU timeout, Homebrew gtimeout, or a bash fallback
-# (macOS ships neither). Returns 124 when the command had to be killed,
-# matching GNU timeout semantics, so callers keep one contract.
+# Portable timeout: python3 first (deterministic stdin forwarding, no bash
+# backgrounding quirks), then GNU timeout / Homebrew gtimeout, then a bash
+# fallback loop. Contract: child's exit code, or 124 when it had to be
+# killed. python3 ships with macOS runners and is present on Linux runners.
 probe_with_timeout() {
     local secs="$1"; shift
+    if command -v python3 &>/dev/null; then
+        PY_SECS="$secs" python3 -c '
+import os, subprocess, sys
+secs = int(os.environ["PY_SECS"])
+data = sys.stdin.buffer.read()
+p = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+try:
+    p.communicate(data, timeout=secs)
+    sys.exit(p.returncode if p.returncode is not None else 1)
+except subprocess.TimeoutExpired:
+    p.kill()
+    p.wait()
+    sys.exit(124)
+' "$@"
+        return $?
+    fi
     if command -v timeout &>/dev/null; then
         timeout "$secs" "$@"
         return $?

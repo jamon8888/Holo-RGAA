@@ -486,7 +486,9 @@ verify_install() {
     local mcp_probe_log
     mcp_probe_log="$(mktemp)"
     set +e
-    echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' \
+    # Complete minimal handshake: initialize + initialized notification,
+    # then EOF. A clean shutdown (0) or an idle kill (124) both mean healthy.
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
         | probe_with_timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>"$mcp_probe_log"
     mcp_probe_status=$?
     set -e

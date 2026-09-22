@@ -427,6 +427,33 @@ CFG_EOF
 
 # ── Verification ──────────────────────────────────────────────────────────────
 
+# Portable timeout: GNU timeout, Homebrew gtimeout, or a bash fallback
+# (macOS ships neither). Returns 124 when the command had to be killed,
+# matching GNU timeout semantics, so callers keep one contract.
+probe_with_timeout() {
+    local secs="$1"; shift
+    if command -v timeout &>/dev/null; then
+        timeout "$secs" "$@"
+        return $?
+    fi
+    if command -v gtimeout &>/dev/null; then
+        gtimeout "$secs" "$@"
+        return $?
+    fi
+    "$@" & local pid=$!
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$secs" ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+        return 124
+    fi
+    wait "$pid" 2>/dev/null
+    return $?
+}
+
 verify_install() {
     info "Verifying installation..."
     local failures=0
@@ -457,7 +484,7 @@ verify_install() {
     local mcp_probe_status
     set +e
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' \
-        | timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
+        | probe_with_timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
     mcp_probe_status=$?
     set -e
     if [[ $mcp_probe_status -ne 124 && $mcp_probe_status -ne 0 ]]; then

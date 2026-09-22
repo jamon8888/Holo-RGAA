@@ -13,12 +13,20 @@ use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// Consecutive Holo3 call failures (across the whole shared agent, not just
 /// one audit) before the circuit breaker trips and further calls fail loud
 /// instead of being attempted.
 const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
+
+/// How long the breaker stays open before letting a single trial call
+/// through again (half-open). A transient blip (an API-side 404, a dropped
+/// connection, a local backend hiccup) shouldn't permanently fail the rest
+/// of a multi-hour audit — only a trial call that *also* fails re-opens it
+/// for another cooldown window.
+const CIRCUIT_BREAKER_COOLDOWN: Duration = Duration::from_secs(60);
 
 /// Picks the model tier for `criterion_id`: criteria that need visual
 /// understanding (see [`VISUAL_CRITERIA`]) route to the reasoning tier,
@@ -45,6 +53,10 @@ pub struct RgaaAgent {
     /// `run_ia_assiste`/`run_partially_automatable`) so a real outage trips
     /// the breaker for the whole audit, not just one task's local retries.
     consecutive_failures: Arc<AtomicU32>,
+    /// When the breaker last tripped (or last re-tripped on a failed
+    /// half-open trial); `None` while closed. Gates the half-open retry in
+    /// [`Self::breaker_open`].
+    tripped_at: Arc<Mutex<Option<Instant>>>,
 }
 
 impl RgaaAgent {
@@ -87,23 +99,43 @@ impl RgaaAgent {
             agent,
             rate_limiter,
             consecutive_failures: Arc::new(AtomicU32::new(0)),
+            tripped_at: Arc::new(Mutex::new(None)),
         })
     }
 
     /// True when the shared circuit breaker is open — a real Holo3 outage has
     /// already been observed, so further calls fail loud instead of piling
     /// more failed requests (and NeedsReview filler) onto a dead upstream.
+    ///
+    /// The breaker is half-open once [`CIRCUIT_BREAKER_COOLDOWN`] has
+    /// elapsed since it tripped: this returns `false` for a single trial
+    /// call (racing concurrent callers may each see `false` and each spend
+    /// a call, which is acceptable — `buffer_unordered` callers run at
+    /// concurrency 1), and [`Self::record_failure`] re-arms the cooldown if
+    /// that trial also fails.
     fn breaker_open(&self) -> bool {
-        self.consecutive_failures.load(Ordering::Acquire) >= CIRCUIT_BREAKER_THRESHOLD
+        if self.consecutive_failures.load(Ordering::Acquire) < CIRCUIT_BREAKER_THRESHOLD {
+            return false;
+        }
+        let tripped_at = *self.tripped_at.lock().expect("tripped_at mutex poisoned");
+        match tripped_at {
+            Some(t) => t.elapsed() < CIRCUIT_BREAKER_COOLDOWN,
+            None => false,
+        }
     }
 
     fn record_success(&self) {
         self.consecutive_failures.store(0, Ordering::Release);
+        *self.tripped_at.lock().expect("tripped_at mutex poisoned") = None;
     }
 
     /// Records a failure and returns the new consecutive-failure count.
     fn record_failure(&self) -> u32 {
-        self.consecutive_failures.fetch_add(1, Ordering::AcqRel) + 1
+        let failures = self.consecutive_failures.fetch_add(1, Ordering::AcqRel) + 1;
+        if failures >= CIRCUIT_BREAKER_THRESHOLD {
+            *self.tripped_at.lock().expect("tripped_at mutex poisoned") = Some(Instant::now());
+        }
+        failures
     }
 
     /// Evaluates a single IA-assistée criterion against the given page context.

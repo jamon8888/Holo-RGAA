@@ -1,0 +1,42 @@
+# CodeRabbit AI review: runs on every commit pushed to a pull request.
+#
+# Scope note (verified against CodeRabbit docs): automatic reviews are
+# INCREMENTAL by design (new hunks only), both in the GitHub App
+# (auto_incremental_review) and in this action. There is no supported
+# "full review on every push" mode. When a from-scratch pass is needed
+# (many accumulated fixes, suspected missed issues), comment
+# `@coderabbitai full review` on the PR — one allowance unit per run.
+#
+# Required repository secret: OPENAI_API_KEY (Settings → Secrets → Actions).
+
+name: CodeRabbit Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  review:
+    name: CodeRabbit Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check review secret
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "::error::OPENAI_API_KEY secret is missing: add it in Settings → Secrets → Actions."
+            exit 1
+          fi
+
+      - uses: coderabbitai/ai-pr-reviewer@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          debug: false
+          review_simple_changes: false
+          review_comment_lgtm: false

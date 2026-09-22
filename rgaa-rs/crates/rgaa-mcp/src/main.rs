@@ -7,6 +7,18 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Help and version must not start the stdio server.
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("rgaa-mcp: RGAA MCP server over stdio");
+        println!("Usage: rgaa-mcp [--help] [--version]");
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("rgaa-mcp {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();

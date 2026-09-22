@@ -140,7 +140,7 @@ download_and_install() {
     ensure_dep "curl" "brew install curl (macOS) or apt install curl (Linux)"
 
     tmpdir=$(mktemp -d)
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap 'if [ -n "${tmpdir:-}" ]; then rm -rf "$tmpdir"; fi' EXIT
 
     local url
     url=$(get_release_url "$platform" "$RELEASE_TAG")
@@ -203,7 +203,7 @@ install_obscura() {
     local url="https://github.com/${OBSCURA_REPO}/releases/download/v${OBSCURA_VERSION}/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d)
-    trap 'rm -rf "$tmpdir"' EXIT
+    trap 'if [ -n "${tmpdir:-}" ]; then rm -rf "$tmpdir"; fi' EXIT
 
     info "Downloading obscura ${OBSCURA_VERSION}..."
     if ! curl -fSL --progress-bar -o "${tmpdir}/obscura.tar.gz" "$url"; then
@@ -427,6 +427,51 @@ CFG_EOF
 
 # ── Verification ──────────────────────────────────────────────────────────────
 
+# Portable timeout: python3 first (deterministic stdin forwarding, no bash
+# backgrounding quirks), then GNU timeout / Homebrew gtimeout, then a bash
+# fallback loop. Contract: child's exit code, or 124 when it had to be
+# killed. python3 ships with macOS runners and is present on Linux runners.
+probe_with_timeout() {
+    local secs="$1"; shift
+    if command -v python3 &>/dev/null; then
+        PY_SECS="$secs" python3 -c '
+import os, subprocess, sys
+secs = int(os.environ["PY_SECS"])
+data = sys.stdin.buffer.read()
+p = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+try:
+    p.communicate(data, timeout=secs)
+    sys.exit(p.returncode if p.returncode is not None else 1)
+except subprocess.TimeoutExpired:
+    p.kill()
+    p.wait()
+    sys.exit(124)
+' "$@"
+        return $?
+    fi
+    if command -v timeout &>/dev/null; then
+        timeout "$secs" "$@"
+        return $?
+    fi
+    if command -v gtimeout &>/dev/null; then
+        gtimeout "$secs" "$@"
+        return $?
+    fi
+    "$@" & local pid=$!
+    local waited=0
+    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$secs" ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+        return 124
+    fi
+    wait "$pid" 2>/dev/null
+    return $?
+}
+
 verify_install() {
     info "Verifying installation..."
     local failures=0
@@ -450,19 +495,27 @@ verify_install() {
         "${INSTALL_DIR}/${bin}" --help >/dev/null 2>&1 \
             || { err "  ${bin}: --help failed"; failures=$((failures + 1)); }
     done
-    # MCP stdio probe: exit 124 means `timeout` killed an idle healthy server.
+    # MCP stdio probe: exit 124 means `timeout` killed an idle healthy server,
+    # exit 0 means it answered and shut down cleanly on EOF. Both are healthy.
     # set +e around this: under `set -e` above, a non-zero (expected: 124)
     # from the pipeline would abort the script before we get to check it.
     local mcp_probe_status
+    local mcp_probe_log
+    mcp_probe_log="$(mktemp)"
     set +e
-    echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' \
-        | timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>&1
+    # Complete minimal handshake: initialize + initialized notification,
+    # then EOF. A clean shutdown (0) or an idle kill (124) both mean healthy.
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"install-verify","version":"0.0.0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+        | probe_with_timeout 15 "${INSTALL_DIR}/rgaa-mcp" >/dev/null 2>"$mcp_probe_log"
     mcp_probe_status=$?
     set -e
-    if [[ $mcp_probe_status -ne 124 ]]; then
-        err "  rgaa-mcp: stdio start probe failed"
-        failures=$((failures + 1))
+    if [[ $mcp_probe_status -ne 124 && $mcp_probe_status -ne 0 ]]; then
+        err "  rgaa-mcp: stdio start probe failed (status=$mcp_probe_status)"
+        err "  server stderr (tail):"
+        tail -n 5 "$mcp_probe_log" | sed 's/^/    /' || true
+        failures=$((failures + 1));
     fi
+    rm -f "$mcp_probe_log"
 
     # Check obscura
     if [[ -x "${INSTALL_DIR}/obscura" ]] || command -v obscura &>/dev/null; then

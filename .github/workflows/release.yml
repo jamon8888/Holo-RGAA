@@ -102,6 +102,11 @@ jobs:
         with:
           workspaces: rgaa-rs
 
+      # sccache: share compiled artifacts across runs (mirrors the clippy
+      # job). Big win for C/C++ deps (aws-lc-sys, lance native bits) that
+      # rust-cache alone replays less well. Output binaries unchanged.
+      - uses: mozilla-actions/sccache-action@v0.0.7
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -115,6 +120,8 @@ jobs:
         run: echo "CARGO_BUILD_JOBS=2" >> $GITHUB_ENV
 
       - name: Build
+        env:
+          RUSTC_WRAPPER: sccache
         run: cargo build --target ${{ matrix.target }} --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp
         shell: bash
 
@@ -173,7 +180,7 @@ jobs:
   smoke:
     name: Smoke Test
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -235,6 +242,7 @@ jobs:
           else
             ./artifact/rgaa --version
           fi
+        shell: bash
 
       - name: Run rgaa-cli --version
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -245,6 +253,7 @@ jobs:
           else
             ./artifact/rgaa-cli --version
           fi
+        shell: bash
 
       - name: Run rgaa-cli --help
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -254,6 +263,7 @@ jobs:
           else
             ./artifact/rgaa-cli --help | head -5
           fi
+        shell: bash
 
       - name: Run rgaa-api --help
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -263,6 +273,7 @@ jobs:
           else
             ./artifact/rgaa-api --help 2>&1 | head -3
           fi
+        shell: bash
 
       - name: Run rgaa-mcp --help
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -272,6 +283,7 @@ jobs:
           else
             ./artifact/rgaa-mcp --help 2>&1 | head -3
           fi
+        shell: bash
 
   # ─── Installer E2E ────────────────────────────────────────────────────────
 

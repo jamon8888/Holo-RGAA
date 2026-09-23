@@ -395,4 +395,4 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ${{ env.TAG == 'latest' && format('Latest Build ({0})', github.sha) || env.TAG }}
           prerelease: ${{ env.TAG == 'latest' }}
-          target_commitish: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+          target_commitish: ${{ github.sha }}

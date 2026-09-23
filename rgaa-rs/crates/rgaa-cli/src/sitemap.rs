@@ -21,7 +21,10 @@ struct SitemapEntry {
 /// ordered by descending sitemap priority (ties broken by URL). Locale
 /// alternates (a first path segment that looks like a language code, e.g.
 /// `/en/...`) are excluded so the audit doesn't mix languages.
-pub async fn discover_pillar_pages(sitemap_url: &str, limit: usize) -> Result<Vec<String>, CliError> {
+pub async fn discover_pillar_pages(
+    sitemap_url: &str,
+    limit: usize,
+) -> Result<Vec<String>, CliError> {
     let body = reqwest::get(sitemap_url)
         .await
         .map_err(|e| CliError::execution(format!("failed to fetch sitemap {sitemap_url}: {e}")))?
@@ -89,9 +92,12 @@ fn path_segments(url: &str) -> Vec<String> {
     reqwest::Url::parse(url)
         .ok()
         .and_then(|parsed| {
-            parsed
-                .path_segments()
-                .map(|segments| segments.filter(|s| !s.is_empty()).map(String::from).collect())
+            parsed.path_segments().map(|segments| {
+                segments
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect()
+            })
         })
         .unwrap_or_default()
 }
@@ -140,7 +146,10 @@ mod tests {
         let pages = select_pillar_pages(xml, 10);
         assert_eq!(
             pages,
-            vec!["https://example.test/high/", "https://example.test/no-priority/"]
+            vec![
+                "https://example.test/high/",
+                "https://example.test/no-priority/"
+            ]
         );
     }
 }

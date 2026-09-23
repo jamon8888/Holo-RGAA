@@ -141,11 +141,7 @@ fn write_html_stats(html: &mut String, summary: &AuditSummary) {
                 </tr>
             </tbody>
         </table>"#,
-        summary.passed,
-        summary.failed,
-        summary.needs_review,
-        summary.na,
-        summary.errors
+        summary.passed, summary.failed, summary.needs_review, summary.na, summary.errors
     );
 }
 
@@ -315,7 +311,12 @@ fn criterion_detail(criterion: &CriterionResult) -> String {
         return criterion
             .violations
             .iter()
-            .map(|v| format!("{} ({}, {} élément(s))", v.description, v.impact, v.nodes_affected))
+            .map(|v| {
+                format!(
+                    "{} ({}, {} élément(s))",
+                    v.description, v.impact, v.nodes_affected
+                )
+            })
             .collect::<Vec<_>>()
             .join("; ");
     }

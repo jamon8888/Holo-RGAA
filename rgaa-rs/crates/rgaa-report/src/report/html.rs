@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use rgaa_core::{AuditBundle, AuditSummary, CriterionStatus, Finding};
+use rgaa_core::{AuditBundle, AuditSummary, CriterionResult, CriterionStatus, Finding};
 
 pub fn generate_html_report(bundle: &AuditBundle) -> String {
     let mut html = String::new();
@@ -8,6 +8,7 @@ pub fn generate_html_report(bundle: &AuditBundle) -> String {
     write_html_summary(&mut html, bundle);
     write_html_stats(&mut html, &bundle.summary);
     write_html_findings(&mut html, bundle);
+    write_html_all_criteria(&mut html, bundle);
     write_html_footer(&mut html);
     html
 }
@@ -143,7 +144,7 @@ fn write_html_stats(html: &mut String, summary: &AuditSummary) {
         summary.passed,
         summary.failed,
         summary.needs_review,
-        summary.passed + summary.failed + summary.needs_review,
+        summary.na,
         summary.errors
     );
 }
@@ -209,6 +210,116 @@ fn write_html_findings(html: &mut String, bundle: &AuditBundle) {
         r#"            </tbody>
         </table>"#
     );
+}
+
+/// Lists every one of the 106 RGAA criteria for every audited page — pass,
+/// fail, needs human review, not applicable, not tested, error — so the
+/// report is a complete record, not just aggregate scores.
+fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
+    for page in &bundle.pages {
+        let _ = writeln!(
+            html,
+            r#"        <h2 style="margin: 2rem 0 1rem; color: #2c3e50;">Détail complet des critères — {}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Critère</th>
+                    <th>Titre</th>
+                    <th>Classification</th>
+                    <th>Statut</th>
+                    <th>Détail</th>
+                </tr>
+            </thead>
+            <tbody>"#,
+            escape_html(&page.url)
+        );
+
+        let mut criteria: Vec<&CriterionResult> = page.criteria.iter().collect();
+        criteria.sort_by(|a, b| {
+            status_rank(&a.status)
+                .cmp(&status_rank(&b.status))
+                .then_with(|| a.criterion_id.cmp(&b.criterion_id))
+        });
+
+        for criterion in criteria {
+            let (badge_class, status_label) = status_badge(&criterion.status);
+            let title = if criterion.title.is_empty() {
+                "—"
+            } else {
+                criterion.title.as_str()
+            };
+
+            let _ = writeln!(
+                html,
+                r#"                <tr>
+                    <td><span class="finding-id">{}</span></td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td><span class="status-badge {}">{}</span></td>
+                    <td>{}</td>
+                </tr>"#,
+                escape_html(&criterion.criterion_id),
+                escape_html(title),
+                classification_label(criterion),
+                badge_class,
+                status_label,
+                escape_html(&criterion_detail(criterion))
+            );
+        }
+
+        let _ = writeln!(html, "            </tbody>\n        </table>");
+    }
+}
+
+/// Sort order within a page's table: problems first, then what still needs a
+/// human, then the rest — so a reviewer sees what needs attention first
+/// without having to scroll past 100 passing rows.
+fn status_rank(status: &CriterionStatus) -> u8 {
+    match status {
+        CriterionStatus::Fail => 0,
+        CriterionStatus::Error => 1,
+        CriterionStatus::NeedsReview => 2,
+        CriterionStatus::NotTested => 3,
+        CriterionStatus::Pass => 4,
+        CriterionStatus::NotApplicable => 5,
+    }
+}
+
+fn status_badge(status: &CriterionStatus) -> (&'static str, &'static str) {
+    match status {
+        CriterionStatus::Pass => ("pass", "Valide"),
+        CriterionStatus::Fail => ("fail", "À corriger"),
+        CriterionStatus::NeedsReview => ("review", "Intervention humaine requise"),
+        CriterionStatus::NotApplicable => ("na", "Non applicable"),
+        CriterionStatus::NotTested => ("na", "Non testé"),
+        CriterionStatus::Error => ("fail", "Erreur"),
+    }
+}
+
+fn classification_label(criterion: &CriterionResult) -> &'static str {
+    match criterion.classification {
+        rgaa_core::Classification::Deterministe => "Déterministe",
+        rgaa_core::Classification::IaAssiste => "IA assistée",
+        rgaa_core::Classification::Manuel => "Manuel",
+    }
+}
+
+/// Best available explanation for a criterion's verdict: the evaluator's own
+/// justification when present, else a summary of the violations that were
+/// found, else a placeholder for criteria with neither (e.g. a clean pass).
+fn criterion_detail(criterion: &CriterionResult) -> String {
+    if let Some(justification) = criterion.justification.as_deref().filter(|j| !j.is_empty()) {
+        return justification.to_string();
+    }
+    if !criterion.violations.is_empty() {
+        return criterion
+            .violations
+            .iter()
+            .map(|v| format!("{} ({}, {} élément(s))", v.description, v.impact, v.nodes_affected))
+            .collect::<Vec<_>>()
+            .join("; ");
+    }
+    "—".to_string()
 }
 
 fn write_html_footer(html: &mut String) {

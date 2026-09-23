@@ -42,6 +42,7 @@ fn common() -> CommonArgs {
         output: None,
         format: None,
         audit_id: None,
+        log_file: None,
     }
 }
 

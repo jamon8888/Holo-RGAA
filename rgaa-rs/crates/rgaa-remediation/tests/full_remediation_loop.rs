@@ -58,6 +58,7 @@ fn make_bundle(findings: Vec<Finding>, completed: bool) -> AuditBundle {
         passed: completed_pages,
         failed: failed_count,
         needs_review: 0,
+        na: 0,
         errors: 0,
     };
     bundle

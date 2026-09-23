@@ -248,3 +248,7 @@ Default five-label vocabulary (needs-triage, needs-info, ready-for-agent, ready-
 ### Domain docs
 
 Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### Code review
+
+Pull requests are also reviewed automatically by **CodeRabbit**. Treat its inline comments and summary like feedback from a human reviewer: read them before merging, and address or explicitly dismiss each finding rather than ignoring it.

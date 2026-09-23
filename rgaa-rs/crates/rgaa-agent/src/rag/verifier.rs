@@ -85,7 +85,8 @@ impl Verifier {
             .base_url(&config.holo3_base_url)
             .api_key(&config.api_key)
             .build()
-            .map_err(|e| AgentError::RigAgent(e.to_string()))?;
+            .map_err(|e| AgentError::RigAgent(e.to_string()))?
+            .completions_api();
 
         let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));
 

@@ -11,3 +11,6 @@ obscura-*.tar.gz
 # Personal agent rules (basemind init)
 CLAUDE.local.md
 AGENTS.local.md
+
+# Local environment / secrets
+.env

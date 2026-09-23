@@ -5,19 +5,39 @@ use std::sync::Arc;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
+const HELP: &str = "\
+rgaa-api - Axum HTTP API for RGAA audit operations
+
+USAGE:
+    rgaa-api [OPTIONS]
+
+OPTIONS:
+    -h, --help       Print this help and exit
+    -V, --version    Print version and exit
+
+ENVIRONMENT:
+    DATABASE_URL     Postgres connection string (default: postgres://localhost/rgaa)
+    LISTEN_ADDR      Address to bind the HTTP server on (default: 0.0.0.0:3000)
+
+Runs until stopped (Ctrl-C or SIGTERM); does not exit on its own once serving.";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Help and version must never require infrastructure (database, …).
-    let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("rgaa-api: RGAA audit HTTP API server");
-        println!("Usage: rgaa-api [--help] [--version]");
-        println!("Env: DATABASE_URL (default postgres://localhost/rgaa), LISTEN_ADDR (default 0.0.0.0:3000)");
-        return Ok(());
-    }
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("rgaa-api {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
+    // Handled before any I/O (DB connect, socket bind) so `--help`/`--version`
+    // return immediately instead of falling through to the server startup
+    // path, which never returns on its own.
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                println!("{HELP}");
+                return Ok(());
+            }
+            "-V" | "--version" => {
+                println!("rgaa-api {}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            _ => {}
+        }
     }
 
     let subscriber = FmtSubscriber::builder()

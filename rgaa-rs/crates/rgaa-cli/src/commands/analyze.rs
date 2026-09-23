@@ -38,7 +38,7 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
         eprintln!("Starting audit for: {}", url);
     }
 
-    let crawl_config = crawl_config(&config);
+    let crawl_config = crawl_config(&config)?;
     let orchestrator = Orchestrator::new();
 
     if args.verbose {
@@ -138,8 +138,26 @@ fn resolve_url(
     }
 }
 
-fn crawl_config(_config: &Config) -> CrawlConfig {
-    CrawlConfig::default()
+fn crawl_config(_config: &Config) -> Result<CrawlConfig, CliError> {
+    let mut crawl_config = CrawlConfig::default();
+    if let Some(max_pages) = std::env::var("RGAA_MAX_PAGES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        if max_pages == 0 {
+            return Err(CliError::invalid_input(
+                "RGAA_MAX_PAGES must be greater than 0",
+            ));
+        }
+        crawl_config.max_pages = max_pages;
+    }
+    if let Some(max_depth) = std::env::var("RGAA_MAX_DEPTH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        crawl_config.max_depth = max_depth;
+    }
+    Ok(crawl_config)
 }
 
 #[cfg(test)]

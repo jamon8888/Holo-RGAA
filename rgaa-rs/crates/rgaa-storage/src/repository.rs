@@ -34,7 +34,9 @@ pub struct CriterionResultRow {
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct FindingRow {
     pub id: Uuid,
-    pub audit_id: Uuid,
+    /// TEXT column (every write path binds `bundle.audit_id: String`);
+    /// serializes identically to the old Uuid in API JSON.
+    pub audit_id: String,
     pub finding_id: String,
     pub rule: String,
     pub criterion_id: Option<String>,
@@ -365,7 +367,7 @@ impl Repository {
         query.push_str(" OFFSET $");
         query.push_str(&param_count.to_string());
 
-        let mut q = sqlx::query_as(&query).bind(audit_id);
+        let mut q = sqlx::query_as(&query).bind(audit_id.to_string());
         if let Some(status) = status {
             q = q.bind(status);
         }

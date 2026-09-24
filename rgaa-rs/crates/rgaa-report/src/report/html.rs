@@ -72,9 +72,16 @@ fn write_html_header(html: &mut String, audit_id: &str, url: &str) {
 }
 
 fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
-    // An audit with technical errors is incomplete, not compliant — errors
-    // must block "Conforme" the same way a failed criterion does.
-    let is_conforme = bundle.summary.failed == 0 && bundle.summary.errors == 0;
+    // An audit with technical errors, or a page that never got to every
+    // catalog criterion (padded to NotTested by complete_criteria below),
+    // is incomplete — neither should be able to show "Conforme" any more
+    // than an outright failed criterion can.
+    let catalog_size = RgaaCriteria::all().len();
+    let is_complete = bundle
+        .pages
+        .iter()
+        .all(|page| page.criteria.len() >= catalog_size);
+    let is_conforme = bundle.summary.failed == 0 && bundle.summary.errors == 0 && is_complete;
     let conformity_badge_class = if is_conforme { "pass" } else { "fail" };
     let conformity_text = if is_conforme {
         "Conforme"
@@ -281,7 +288,7 @@ fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
         .map(|c| (c.criterion_id.as_str(), c))
         .collect();
 
-    RgaaCriteria::all()
+    let mut completed: Vec<CriterionResult> = RgaaCriteria::all()
         .iter()
         .map(|catalog_entry| match by_id.remove(catalog_entry.id) {
             Some(existing) => existing.clone(),
@@ -297,7 +304,14 @@ fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
                 citations: vec![],
             },
         })
-        .collect()
+        .collect();
+
+    // Anything left in `by_id` has a criterion_id the catalog doesn't
+    // recognize — append it rather than silently dropping it, so a stray or
+    // legacy id (including one that failed) still shows up in the "Détail
+    // complet" table instead of vanishing.
+    completed.extend(by_id.into_values().cloned());
+    completed
 }
 
 /// Sort order within a page's table: problems first, then what still needs a
@@ -404,7 +418,21 @@ fn escape_html(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::AuditConfig;
+    use rgaa_core::{AuditConfig, Classification, PageAudit};
+
+    fn criterion(id: &str, status: CriterionStatus) -> CriterionResult {
+        CriterionResult {
+            criterion_id: id.to_string(),
+            title: String::new(),
+            classification: Classification::Deterministe,
+            status,
+            violations: vec![],
+            confidence: None,
+            justification: None,
+            source: "test".into(),
+            citations: vec![],
+        }
+    }
 
     fn sample_bundle() -> AuditBundle {
         let mut bundle =
@@ -461,5 +489,38 @@ mod tests {
         let html = generate_html_report(&bundle);
         assert!(html.contains("&lt;script&gt;"));
         assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn incomplete_page_is_not_conforme_even_without_failures() {
+        let mut bundle =
+            AuditBundle::new("audit-2", "https://example.test", AuditConfig::default());
+        bundle.summary.failed = 0;
+        bundle.summary.errors = 0;
+        bundle.pages.push(PageAudit {
+            page_id: "page-0".into(),
+            url: "https://example.test".into(),
+            title: None,
+            // Only one of the 106 catalog criteria — an incomplete run.
+            criteria: vec![criterion("1.1", CriterionStatus::Pass)],
+            findings: vec![],
+            errors: vec![],
+            completed: true,
+            duration_ms: 0,
+        });
+
+        let html = generate_html_report(&bundle);
+        assert!(html.contains("Non Conforme"));
+    }
+
+    #[test]
+    fn complete_criteria_preserves_results_outside_the_catalog() {
+        let results = vec![criterion("not-a-real-id", CriterionStatus::Fail)];
+        let completed = complete_criteria(&results);
+
+        assert_eq!(completed.len(), RgaaCriteria::all().len() + 1);
+        assert!(completed
+            .iter()
+            .any(|c| c.criterion_id == "not-a-real-id" && c.status == CriterionStatus::Fail));
     }
 }

@@ -155,8 +155,14 @@ fn resolve_url(
 
 /// Prepends `https://` when the URL has no scheme, so bare domains like
 /// `example.com` work the same as they do when typed into a browser.
+///
+/// Checks for an actual leading scheme via `Url::parse` rather than a
+/// substring search for `"://"` — the latter is fooled by a bare domain
+/// whose query string happens to contain `"://"`, e.g.
+/// `example.test/search?next=https://other.test/`, which `contains` sees as
+/// "already has a scheme" and leaves the real host without one.
 fn with_scheme(url: String) -> String {
-    if url.contains("://") {
+    if reqwest::Url::parse(&url).is_ok() {
         url
     } else {
         format!("https://{url}")
@@ -241,6 +247,20 @@ mod tests {
         assert_eq!(
             resolve_url(&config, Some("http://a.test".into()), None).unwrap(),
             "http://a.test"
+        );
+    }
+
+    #[test]
+    fn adds_scheme_even_when_query_string_contains_a_scheme_like_substring() {
+        let config = Config::default();
+        assert_eq!(
+            resolve_url(
+                &config,
+                Some("example.test/search?next=https://other.test/".into()),
+                None
+            )
+            .unwrap(),
+            "https://example.test/search?next=https://other.test/"
         );
     }
 }

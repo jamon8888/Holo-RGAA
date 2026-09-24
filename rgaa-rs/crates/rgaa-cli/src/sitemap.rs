@@ -8,8 +8,15 @@
 //! segment deep, e.g. `/oeuvres/` but not `/oeuvres/item/` — ranked by the
 //! sitemap's own `<priority>`, which is how sitemap generators typically
 //! mark section/index pages above individual content leaves.
+//!
+//! The sitemap document itself is untrusted content (it comes from the site
+//! being audited), so this module treats it defensively: bounded response
+//! size, bounded child-sitemap fan-out, and every fetch — including
+//! redirects — restricted to the audited site's own origin.
 
 use std::time::Duration;
+
+use futures::StreamExt;
 
 use crate::CliError;
 
@@ -22,6 +29,13 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// bounds how many we'll follow so a malicious or oversized index can't turn
 /// page discovery into an unbounded fetch loop.
 const MAX_SITEMAP_INDEX_CHILDREN: usize = 10;
+
+/// Caps the buffered size of any single sitemap response. Generous for any
+/// legitimate sitemap, and a hard stop against a misbehaving or malicious
+/// host streaming unbounded data at the client (CWE-400, uncontrolled
+/// resource consumption) — `.text()`/`.bytes()` would otherwise buffer the
+/// entire body regardless of size.
+const MAX_SITEMAP_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq)]
 struct SitemapEntry {
@@ -42,29 +56,58 @@ pub async fn discover_pillar_pages(
     target_url: &str,
     limit: usize,
 ) -> Result<Vec<String>, CliError> {
+    // Every request this module makes — the initial fetch and every
+    // redirect hop, not just child-sitemap fetches — is restricted to the
+    // audited site's origin. Without this, a redirect (which reqwest
+    // follows by default) or a crafted sitemap-index child could induce a
+    // request to an arbitrary internal address (CWE-918, SSRF).
+    let target_origin = target_url.to_string();
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+            if same_origin(attempt.url().as_str(), &target_origin) {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
         .map_err(|e| CliError::execution(format!("failed to build HTTP client: {e}")))?;
 
-    let entries = fetch_sitemap_entries(&client, sitemap_url).await?;
+    let entries = fetch_sitemap_entries(&client, sitemap_url, target_url).await?;
     Ok(select_pillar_pages(entries, target_url, limit))
 }
 
+/// Fetches `url`'s body, capped at [`MAX_SITEMAP_BYTES`] — streamed rather
+/// than buffered all at once via `.text()`/`.bytes()`, so an oversized
+/// response is rejected instead of exhausting memory.
 async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, CliError> {
-    client
+    let response = client
         .get(url)
         .send()
         .await
-        .map_err(|e| CliError::execution(format!("failed to fetch {url}: {e}")))?
-        .text()
-        .await
-        .map_err(|e| CliError::execution(format!("failed to read {url}: {e}")))
+        .map_err(|e| CliError::execution(format!("failed to fetch {url}: {e}")))?;
+
+    let mut stream = response.bytes_stream();
+    let mut buf = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| CliError::execution(format!("failed to read {url}: {e}")))?;
+        if buf.len() + chunk.len() > MAX_SITEMAP_BYTES {
+            return Err(CliError::execution(format!(
+                "sitemap {url} exceeds the {MAX_SITEMAP_BYTES}-byte limit"
+            )));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+
+    String::from_utf8(buf)
+        .map_err(|e| CliError::execution(format!("sitemap {url} is not valid UTF-8: {e}")))
 }
 
 async fn fetch_sitemap_entries(
     client: &reqwest::Client,
     sitemap_url: &str,
+    target_url: &str,
 ) -> Result<Vec<SitemapEntry>, CliError> {
     let body = fetch_text(client, sitemap_url).await?;
 
@@ -77,6 +120,12 @@ async fn fetch_sitemap_entries(
         .into_iter()
         .take(MAX_SITEMAP_INDEX_CHILDREN)
     {
+        // The index's own content is untrusted (it's the audited site's
+        // content) — reject any child sitemap that isn't on the target
+        // site's origin before ever fetching it (CWE-918, SSRF).
+        if !same_origin(&child_url, target_url) {
+            continue;
+        }
         // Best-effort: one unreachable child sitemap shouldn't fail
         // discovery for every other sitemap the index lists.
         if let Ok(child_body) = fetch_text(client, &child_url).await {
@@ -147,18 +196,58 @@ fn extract_tag(block: &str, tag: &str) -> Option<String> {
     Some(block[start..start + end].trim().to_string())
 }
 
-/// Decodes the 5 predefined XML entities. `sitemap.xml` values are expected
-/// to only ever need these (URLs don't contain raw `<`/`"`/etc. — they'd be
-/// percent-encoded), so this deliberately skips numeric character
-/// references rather than pulling in a full XML/HTML entity decoder.
-/// `&amp;` is decoded last so an escaped literal like `&amp;lt;` becomes the
-/// literal text `&lt;`, not a second decode pass down to `<`.
+/// Decodes XML character references: the 5 predefined named entities
+/// (`&lt;`, `&gt;`, `&quot;`, `&apos;`, `&amp;`) and numeric references
+/// (`&#38;`, `&#x26;`). A single left-to-right pass — rather than sequential
+/// whole-string `.replace()` calls — so a decoded reference is never
+/// re-scanned as if it were part of the original markup (e.g. a literal
+/// `&amp;#38;` must decode to the text `&#38;`, not all the way down to
+/// `&`). An unrecognized or malformed reference is left as-is rather than
+/// dropped.
 fn decode_xml_entities(s: &str) -> String {
-    s.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
+    let mut result = String::with_capacity(s.len());
+    let mut rest = s;
+
+    while let Some(amp_pos) = rest.find('&') {
+        result.push_str(&rest[..amp_pos]);
+        let after_amp = &rest[amp_pos + 1..];
+
+        match after_amp.find(';').and_then(|semi_pos| {
+            decode_entity(&after_amp[..semi_pos]).map(|decoded| (decoded, semi_pos))
+        }) {
+            Some((decoded, semi_pos)) => {
+                result.push(decoded);
+                rest = &after_amp[semi_pos + 1..];
+            }
+            None => {
+                // Not a recognized reference — keep the '&' literally and
+                // keep scanning from just past it.
+                result.push('&');
+                rest = after_amp;
+            }
+        }
+    }
+    result.push_str(rest);
+    result
+}
+
+fn decode_entity(entity: &str) -> Option<char> {
+    match entity {
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "quot" => Some('"'),
+        "apos" => Some('\''),
+        "amp" => Some('&'),
+        _ => {
+            let digits = entity
+                .strip_prefix("#x")
+                .or_else(|| entity.strip_prefix("#X"))
+                .map(|hex| u32::from_str_radix(hex, 16))
+                .or_else(|| entity.strip_prefix('#').map(|dec| dec.parse::<u32>()))?
+                .ok()?;
+            char::from_u32(digits)
+        }
+    }
 }
 
 fn is_top_level(url: &str) -> bool {
@@ -267,6 +356,26 @@ mod tests {
         // here is that the entity was decoded, not double-decoded.
         let pages = select(xml, TARGET, 10);
         assert_eq!(pages, vec!["https://example.test/search?a=1&b=2"]);
+    }
+
+    #[test]
+    fn decodes_numeric_decimal_and_hex_references() {
+        assert_eq!(decode_xml_entities("a&#38;b"), "a&b");
+        assert_eq!(decode_xml_entities("a&#x26;b"), "a&b");
+        assert_eq!(decode_xml_entities("a&#X26;b"), "a&b");
+    }
+
+    #[test]
+    fn does_not_double_decode_escaped_named_entities() {
+        // The literal text "&lt;" escaped once more, as it would appear in
+        // a well-formed sitemap wanting to convey literal "&lt;" text.
+        assert_eq!(decode_xml_entities("&amp;lt;"), "&lt;");
+    }
+
+    #[test]
+    fn leaves_unrecognized_references_untouched() {
+        assert_eq!(decode_xml_entities("a & b"), "a & b");
+        assert_eq!(decode_xml_entities("a &bogus; b"), "a &bogus; b");
     }
 
     #[test]

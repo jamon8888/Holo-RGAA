@@ -371,7 +371,7 @@ async fn audit_discovered_urls(
         return Err("no pages to audit".to_string());
     }
 
-    let batch_results = orchestrator.run_batch(&urls, config).await?;
+    let mut batch_results = orchestrator.run_batch(&urls, config).await?;
 
     if batch_results.is_empty() {
         return Err(format!(
@@ -380,10 +380,15 @@ async fn audit_discovered_urls(
         ));
     }
 
-    // Extract PageResults from each AuditResult
+    // Extract PageResults in the caller's requested order — run_batch
+    // returns a HashMap, whose iteration order is arbitrary and would
+    // otherwise silently discard a meaningful input order (e.g. sitemap
+    // priority ranking) that report/export consumers rely on.
     let mut all_pages = Vec::new();
-    for (_, audit) in batch_results {
-        all_pages.extend(audit.pages);
+    for page_url in &urls {
+        if let Some(audit) = batch_results.remove(page_url) {
+            all_pages.extend(audit.pages);
+        }
     }
 
     // Site-wide aggregation

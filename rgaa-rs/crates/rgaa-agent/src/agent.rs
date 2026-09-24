@@ -49,6 +49,7 @@ fn tier_for(criterion_id: &str) -> ModelTier {
 pub struct RgaaAgent {
     agent: Agent,
     rate_limiter: Arc<Ratelimiter>,
+    agent_concurrency: usize,
     /// Shared across every clone (and every concurrent task spawned from
     /// `run_ia_assiste`/`run_partially_automatable`) so a real outage trips
     /// the breaker for the whole audit, not just one task's local retries.
@@ -98,6 +99,7 @@ impl RgaaAgent {
         Ok(Self {
             agent,
             rate_limiter,
+            agent_concurrency: config.agent_concurrency,
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             tripped_at: Arc::new(Mutex::new(None)),
         })
@@ -254,6 +256,7 @@ impl RgaaAgent {
         use futures::stream::{self, StreamExt};
 
         let rendered_context = Arc::new(PromptBuilder::render_context(page_context));
+        let concurrency = self.agent_concurrency;
         let results = stream::iter(criteria.iter().cloned())
             .map(|criterion| {
                 let self_ = Arc::new(self.clone());
@@ -265,14 +268,7 @@ impl RgaaAgent {
                     (criterion.id.to_string(), result)
                 }
             })
-            // Serialized: the local Ollama backend has a single inference
-            // slot on this host, so concurrent requests just queue behind
-            // it — and can sit long enough for reqwest's idle-connection
-            // pool timeout to close them out from under the wait, which
-            // then trips the circuit breaker. `buffer_unordered(1)` sends
-            // one request at a time so nothing is left waiting on a held
-            // connection.
-            .buffer_unordered(1)
+            .buffer_unordered(concurrency)
             .collect::<HashMap<_, _>>()
             .await;
 
@@ -292,6 +288,7 @@ impl RgaaAgent {
         use futures::stream::{self, StreamExt};
 
         let rendered_context = Arc::new(PromptBuilder::render_context(page_context));
+        let concurrency = self.agent_concurrency;
         let results = stream::iter(criteria.iter().cloned())
             .map(|criterion| {
                 let self_ = Arc::new(self.clone());
@@ -303,7 +300,7 @@ impl RgaaAgent {
                     (criterion.id.to_string(), result)
                 }
             })
-            .buffer_unordered(1)
+            .buffer_unordered(concurrency)
             .collect::<HashMap<_, _>>()
             .await;
 

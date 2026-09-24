@@ -48,6 +48,9 @@ pub struct AuditSummary {
     pub passed: usize,
     pub failed: usize,
     pub needs_review: usize,
+    /// Defaults to 0 on deserialize so bundles persisted before this field
+    /// existed (still schema version 1.0) load without a missing-field error.
+    #[serde(default)]
     pub na: usize,
     pub errors: usize,
 }

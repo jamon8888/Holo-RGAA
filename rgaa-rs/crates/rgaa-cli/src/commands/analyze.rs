@@ -48,7 +48,8 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
                 eprintln!("Discovering pillar pages from sitemap: {sitemap_url}");
             }
             let pages =
-                crate::sitemap::discover_pillar_pages(&sitemap_url, crawl_config.max_pages).await?;
+                crate::sitemap::discover_pillar_pages(&sitemap_url, &url, crawl_config.max_pages)
+                    .await?;
             if pages.is_empty() {
                 return Err(CliError::execution(format!(
                     "sitemap {sitemap_url} yielded no top-level pages to audit"

@@ -11,13 +11,19 @@
 use std::path::{Path, PathBuf};
 
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling::{Builder, Rotation};
+
+use crate::CliError;
 
 /// Initializes process-wide structured logging to a JSON-lines file.
 ///
 /// Returns the log file path actually used and a guard that must be kept
 /// alive for the remainder of `main` — dropping it early can lose buffered
-/// log lines that haven't been flushed to disk yet.
-pub fn init(log_file: Option<&Path>) -> (PathBuf, WorkerGuard) {
+/// log lines that haven't been flushed to disk yet. Returns an error rather
+/// than panicking if the log directory or file can't be created (e.g. an
+/// unwritable `--log-file` destination) — the audit itself would otherwise
+/// be aborted by a monitoring-only failure.
+pub fn init(log_file: Option<&Path>) -> Result<(PathBuf, WorkerGuard), CliError> {
     let path = log_file
         .map(Path::to_path_buf)
         .unwrap_or_else(default_log_path);
@@ -26,12 +32,27 @@ pub fn init(log_file: Option<&Path>) -> (PathBuf, WorkerGuard) {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let _ = std::fs::create_dir_all(dir);
+    std::fs::create_dir_all(dir).map_err(|error| {
+        CliError::execution(format!(
+            "failed to create log directory {}: {error}",
+            dir.display()
+        ))
+    })?;
 
     let file_name = path
         .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("rgaa-audit.jsonl"));
-    let appender = tracing_appender::rolling::never(dir, file_name);
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "rgaa-audit.jsonl".to_string());
+    let appender = Builder::new()
+        .rotation(Rotation::NEVER)
+        .filename_prefix(file_name)
+        .build(dir)
+        .map_err(|error| {
+            CliError::execution(format!(
+                "failed to open log file in {}: {error}",
+                dir.display()
+            ))
+        })?;
     let (non_blocking, guard) = tracing_appender::non_blocking(appender);
 
     // Default: quiet on third-party crates (reqwest/hyper/datafusion/...),
@@ -51,13 +72,17 @@ pub fn init(log_file: Option<&Path>) -> (PathBuf, WorkerGuard) {
         .with_writer(non_blocking)
         .try_init();
 
-    (path, guard)
+    Ok((path, guard))
 }
 
+/// Includes the process id alongside the timestamp so two audits started
+/// within the same second (e.g. launched by a script in a tight loop) get
+/// distinct default log files instead of silently sharing one.
 fn default_log_path() -> PathBuf {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    PathBuf::from(format!("logs/rgaa-audit-{timestamp}.jsonl"))
+    let pid = std::process::id();
+    PathBuf::from(format!("logs/rgaa-audit-{timestamp}-{pid}.jsonl"))
 }

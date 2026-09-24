@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 
-use rgaa_core::{AuditBundle, AuditSummary, CriterionResult, CriterionStatus, Finding};
+use rgaa_core::{
+    AuditBundle, AuditSummary, CriterionResult, CriterionStatus, Finding, RgaaCriteria,
+};
 
 pub fn generate_html_report(bundle: &AuditBundle) -> String {
     let mut html = String::new();
@@ -69,13 +72,14 @@ fn write_html_header(html: &mut String, audit_id: &str, url: &str) {
 }
 
 fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
-    let conformity_badge_class = match bundle.summary.failed {
-        0 => "pass",
-        _ => "fail",
-    };
-    let conformity_text = match bundle.summary.failed {
-        0 => "Conforme",
-        _ => "Non Conforme",
+    // An audit with technical errors is incomplete, not compliant — errors
+    // must block "Conforme" the same way a failed criterion does.
+    let is_conforme = bundle.summary.failed == 0 && bundle.summary.errors == 0;
+    let conformity_badge_class = if is_conforme { "pass" } else { "fail" };
+    let conformity_text = if is_conforme {
+        "Conforme"
+    } else {
+        "Non Conforme"
     };
 
     let _ = writeln!(
@@ -230,14 +234,14 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
             escape_html(&page.url)
         );
 
-        let mut criteria: Vec<&CriterionResult> = page.criteria.iter().collect();
+        let mut criteria = complete_criteria(&page.criteria);
         criteria.sort_by(|a, b| {
             status_rank(&a.status)
                 .cmp(&status_rank(&b.status))
                 .then_with(|| a.criterion_id.cmp(&b.criterion_id))
         });
 
-        for criterion in criteria {
+        for criterion in &criteria {
             let (badge_class, status_label) = status_badge(&criterion.status);
             let title = if criterion.title.is_empty() {
                 "—"
@@ -265,6 +269,35 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
 
         let _ = writeln!(html, "            </tbody>\n        </table>");
     }
+}
+
+/// Pads `results` against the full RGAA catalog so every one of the 106
+/// criteria appears — a page whose audit only returned a subset (a partial
+/// or failed run) would otherwise silently hide the criteria it never got
+/// to, which is the opposite of what a "Détail complet" table promises.
+fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
+    let mut by_id: HashMap<&str, &CriterionResult> = results
+        .iter()
+        .map(|c| (c.criterion_id.as_str(), c))
+        .collect();
+
+    RgaaCriteria::all()
+        .iter()
+        .map(|catalog_entry| match by_id.remove(catalog_entry.id) {
+            Some(existing) => existing.clone(),
+            None => CriterionResult {
+                criterion_id: catalog_entry.id.to_string(),
+                title: catalog_entry.title.clone(),
+                classification: catalog_entry.classification,
+                status: CriterionStatus::NotTested,
+                violations: vec![],
+                confidence: None,
+                justification: Some("Not tested — missing from audit result".into()),
+                source: "missing".into(),
+                citations: vec![],
+            },
+        })
+        .collect()
 }
 
 /// Sort order within a page's table: problems first, then what still needs a

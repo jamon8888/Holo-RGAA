@@ -315,6 +315,8 @@ pub async fn run_crawl_and_audit(
     url: &str,
     config: &CrawlConfig,
 ) -> Result<AuditResult, String> {
+    let start = std::time::Instant::now();
+
     let urls = if config.sample_mode {
         discover_rgaa_sample_pages(url, config).await?
     } else {
@@ -337,7 +339,7 @@ pub async fn run_crawl_and_audit(
         output.pages.into_iter().map(|p| p.url).collect()
     };
 
-    audit_discovered_urls(orchestrator, url, urls, config).await
+    audit_discovered_urls(orchestrator, url, urls, config, start).await
 }
 
 /// Audits an explicit, already-discovered list of page URLs and aggregates
@@ -351,7 +353,8 @@ pub async fn run_explicit_audit(
     urls: Vec<String>,
     config: &CrawlConfig,
 ) -> Result<AuditResult, String> {
-    audit_discovered_urls(orchestrator, url, urls, config).await
+    let start = std::time::Instant::now();
+    audit_discovered_urls(orchestrator, url, urls, config, start).await
 }
 
 async fn audit_discovered_urls(
@@ -359,9 +362,8 @@ async fn audit_discovered_urls(
     url: &str,
     urls: Vec<String>,
     config: &CrawlConfig,
+    start: std::time::Instant,
 ) -> Result<AuditResult, String> {
-    let start = std::time::Instant::now();
-
     // Cap at max_pages
     let urls: Vec<String> = urls.into_iter().take(config.max_pages).collect();
 

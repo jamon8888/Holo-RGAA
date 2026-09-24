@@ -27,7 +27,13 @@ async fn main() {
     let TopCommand::Audit(args) = cli.command;
 
     let (log_path, monitoring_guard) =
-        rgaa_cli::monitoring::init(args.command.common().log_file.as_deref());
+        match rgaa_cli::monitoring::init(args.command.common().log_file.as_deref()) {
+            Ok(initialized) => initialized,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(exit_code(&error));
+            }
+        };
     eprintln!("Monitoring log: {}", log_path.display());
 
     let result = rgaa_cli::commands::dispatch(args.command).await;

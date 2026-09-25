@@ -33,6 +33,11 @@ pub struct AgentConfig {
     /// Requests per minute for the reasoning (slow) model tier.
     #[serde(default = "default_reasoning_rpm")]
     pub reasoning_rpm: u32,
+    /// Maximum concurrent criterion evaluations (LLM calls in flight).
+    /// Defaults to `max(1, min(tactical_rpm / 15, 16))` per perf design doc.
+    /// Set `RGAA_AGENT_CONCURRENCY` to override.
+    #[serde(default = "default_agent_concurrency")]
+    pub agent_concurrency: usize,
 }
 
 fn default_tactical_rpm() -> u32 {
@@ -41,6 +46,11 @@ fn default_tactical_rpm() -> u32 {
 
 fn default_reasoning_rpm() -> u32 {
     20
+}
+
+fn default_agent_concurrency() -> usize {
+    let rpm = default_tactical_rpm();
+    ((rpm / 15).clamp(1, 16)) as usize
 }
 
 impl std::fmt::Debug for AgentConfig {
@@ -148,6 +158,7 @@ impl Default for AgentConfig {
             temperature: 0.3,
             tactical_rpm: default_tactical_rpm(),
             reasoning_rpm: default_reasoning_rpm(),
+            agent_concurrency: default_agent_concurrency(),
         }
     }
 }
@@ -167,25 +178,42 @@ impl AgentConfig {
     ///   Defaults to 10.
     /// - `RGAA_REASONING_RPM` (optional): Reasoning model requests per minute.
     ///   Defaults to 20.
+    /// - `RGAA_AGENT_CONCURRENCY` (optional): Maximum concurrent criterion
+    ///   evaluations. Defaults to `max(1, min(tactical_rpm / 15, 16))`.
     ///
     /// # Errors
     /// Returns [`crate::error::AgentError::Config`] if `HOLO3_API_KEY` is not set.
     pub fn from_env() -> Result<Self, crate::error::AgentError> {
+        let holo3_base_url =
+            std::env::var("HOLO3_BASE_URL").unwrap_or_else(|_| "https://api.hcompany.ai/v1".into());
+        let api_key = std::env::var("HOLO3_API_KEY")
+            .map_err(|_| crate::error::AgentError::Config("HOLO3_API_KEY required".into()))?;
+        let model = std::env::var("HOLO3_MODEL").unwrap_or_else(|_| "holo3-1-35b-a3b".into());
+        let lancedb_path =
+            std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into());
+        let tactical_rpm = std::env::var("RGAA_TACTICAL_RPM")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(default_tactical_rpm);
+        let reasoning_rpm = std::env::var("RGAA_REASONING_RPM")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(default_reasoning_rpm);
+        let agent_concurrency = std::env::var("RGAA_AGENT_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|v| *v > 0)
+            .map(|v| v as usize)
+            .unwrap_or_else(|| ((tactical_rpm / 15).clamp(1, 16)) as usize);
+
         Ok(Self {
-            holo3_base_url: std::env::var("HOLO3_BASE_URL")
-                .unwrap_or_else(|_| "https://api.hcompany.ai/v1".into()),
-            api_key: std::env::var("HOLO3_API_KEY")
-                .map_err(|_| crate::error::AgentError::Config("HOLO3_API_KEY required".into()))?,
-            model: std::env::var("HOLO3_MODEL").unwrap_or_else(|_| "holo3-1-35b-a3b".into()),
-            lancedb_path: std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into()),
-            tactical_rpm: std::env::var("RGAA_TACTICAL_RPM")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_else(default_tactical_rpm),
-            reasoning_rpm: std::env::var("RGAA_REASONING_RPM")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_else(default_reasoning_rpm),
+            holo3_base_url,
+            api_key,
+            model,
+            lancedb_path,
+            tactical_rpm,
+            reasoning_rpm,
+            agent_concurrency,
             ..Default::default()
         })
     }

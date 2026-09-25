@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
-
-use tokio::sync::Mutex;
 
 use crate::ax_tree::AXTree;
 use rgaa_obscura::ObscuraBridge;
@@ -9,8 +9,9 @@ use rgaa_obscura::ObscuraBridge;
 ///
 /// Wraps an `ObscuraBridge` connection and caches the last accessibility tree
 /// and current URL for multi-step evaluation workflows.
+#[derive(Clone)]
 pub struct BrowserSession {
-    bridge: ObscuraBridge,
+    bridge: Arc<ObscuraBridge>,
     last_a11y: Option<AXTree>,
     current_url: Option<String>,
 }
@@ -24,7 +25,7 @@ impl BrowserSession {
     #[must_use]
     pub fn new(bridge: ObscuraBridge) -> Self {
         Self {
-            bridge,
+            bridge: Arc::new(bridge),
             last_a11y: None,
             current_url: None,
         }
@@ -34,15 +35,15 @@ impl BrowserSession {
     #[must_use]
     pub fn new_placeholder() -> Self {
         Self {
-            bridge: ObscuraBridge::new(),
+            bridge: Arc::new(ObscuraBridge::new()),
             last_a11y: None,
             current_url: None,
         }
     }
 
-    /// Returns a reference to the underlying `ObscuraBridge`.
-    pub fn bridge(&self) -> &ObscuraBridge {
-        &self.bridge
+    /// Returns a clone of the underlying `ObscuraBridge` Arc.
+    pub fn bridge(&self) -> Arc<ObscuraBridge> {
+        self.bridge.clone()
     }
 
     /// Returns the current URL if set.
@@ -117,6 +118,41 @@ impl BrowserSession {
     pub async fn assert_state(&self, script: &str) -> Result<serde_json::Value, String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank");
         self.bridge.assert_state(url, script).await
+    }
+
+    /// Run axe-core on multiple URLs concurrently using CDP workers.
+    pub async fn run_axe_batch(
+        &self,
+        urls: &[String],
+        concurrency: usize,
+    ) -> Result<HashMap<String, String>, String> {
+        let urls = urls.to_vec();
+        let bridge = self.bridge.clone();
+        bridge.run_axe_batch(urls, concurrency).await
+    }
+
+    /// Run gap-fix snippets on multiple URLs concurrently via the CLI `scrape` command.
+    pub async fn run_gap_fix_batch(
+        &self,
+        urls: &[String],
+        snippets: &HashMap<String, String>,
+        concurrency: usize,
+    ) -> Result<HashMap<String, HashMap<String, serde_json::Value>>, String> {
+        let urls = urls.to_vec();
+        let snippets = snippets.clone();
+        let binary_path = self.bridge.binary_path().to_string();
+        ObscuraBridge::run_gap_fix_batch(binary_path, urls, snippets, concurrency).await
+    }
+
+    /// Extract page context for multiple URLs concurrently using CLI scrape.
+    pub async fn extract_page_context_batch(
+        &self,
+        urls: &[String],
+        concurrency: usize,
+    ) -> Result<HashMap<String, serde_json::Value>, String> {
+        let urls = urls.to_vec();
+        let binary_path = self.bridge.binary_path().to_string();
+        ObscuraBridge::extract_page_context_batch(binary_path, urls, concurrency).await
     }
 
     /// Returns a reference to the last accessibility tree, if available.

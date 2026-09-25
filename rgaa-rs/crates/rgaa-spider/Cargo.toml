@@ -7,7 +7,7 @@ edition = "2021"
 rust-version.workspace = true
 
 [dependencies]
-spider = { version = "2.53", default-features = false, features = ["sync", "reqwest_native_tls_native_roots"] }
+spider = { version = "2.53", default-features = false, features = ["reqwest_rustls_tls"] }
 tokio = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }

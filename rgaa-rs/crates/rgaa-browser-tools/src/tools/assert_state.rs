@@ -51,7 +51,7 @@ impl PortableTool for AssertStateTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         let result = session
             .assert_state(&args.predicate)
             .await

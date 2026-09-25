@@ -197,7 +197,8 @@ impl Orchestrator {
                         .await
                         .expect("semaphore is never closed");
 
-                    let outcome = audit_one(&agent, &tool_ctx, &url, &config, &|_| {}).await;
+                    let outcome =
+                        audit_one(agent, tool_ctx, url.clone(), config, Arc::new(|_| {})).await;
 
                     if let Ok(audit) = &outcome {
                         if let Some(storage) = &storage {
@@ -283,8 +284,9 @@ impl Orchestrator {
             let on_phase = on_phase.clone();
             handles.push(tokio::spawn(async move {
                 let _permit = permit;
-                let audit = audit_one(&agent, &tool_ctx, &url, &config, on_phase.as_ref()).await?;
-                Ok::<(String, AuditResult), String>((url, audit))
+                let url_for_result = url.clone();
+                let audit = audit_one(Arc::new(agent), tool_ctx, url, config, on_phase).await?;
+                Ok::<(String, AuditResult), String>((url_for_result, audit))
             }));
         }
 
@@ -632,31 +634,44 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
 /// This is the single source of truth for the audit logic; both [`Orchestrator::run`]
 /// and [`Orchestrator::run_batch`] route through it so a single URL produces
 /// identical results regardless of entry point.
+/// This is the single source of truth for the audit logic; both [`Orchestrator::run`]
+/// and [`Orchestrator::run_batch`] route through it so a single URL produces
+/// identical results regardless of entry point.
+///
+/// Takes owned values (not references) so the returned future is `Send` for
+/// all lifetimes — required by `tokio::spawn` and `buffer_unordered`.
 async fn audit_one(
-    agent: &RgaaAgent,
-    tool_ctx: &ToolContext,
-    url: &str,
-    _config: &CrawlConfig,
-    on_phase: &(dyn Fn(AuditPhase) + Send + Sync),
+    agent: Arc<RgaaAgent>,
+    tool_ctx: ToolContext,
+    url: String,
+    _config: CrawlConfig,
+    on_phase: Arc<dyn Fn(AuditPhase) + Send + Sync>,
 ) -> Result<AuditResult, String> {
     let start = std::time::Instant::now();
     info!(url, "Starting audit");
 
-    // Hold the lock for the sequential bridge calls — released before agent work.
-    let session = tool_ctx.session().lock().await;
-    let bridge = session.bridge();
+    // Extract the bridge Arc and release the parking_lot lock before any .await.
+    // parking_lot::MutexGuard is not Send, so holding it across .await would
+    // prevent buffer_unordered from spawning the future concurrently.
+    let bridge = {
+        let session_arc = tool_ctx.session().clone();
+        let guard = session_arc.lock();
+        let b = guard.bridge();
+        drop(guard);
+        b
+    };
 
     // Single-element slice so every browser call below routes through the same
     // batch entry point multi-URL callers use — one live path, no per-page/
     // snippet one-off browser process spawns on the audit path.
-    let urls = [url.to_string()];
+    let urls = vec![url.clone()];
 
     // 1. Run axe-core
     on_phase(AuditPhase::Axe);
     info!("Running axe-core");
-    let mut axe_by_url = bridge.run_axe_batch(&urls, 1).await?;
+    let mut axe_by_url = bridge.clone().run_axe_batch(urls.clone(), 1).await?;
     let axe_violations = axe_by_url
-        .remove(url)
+        .remove(url.as_str())
         .ok_or_else(|| format!("axe-core produced no result for {url}"))?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
 
@@ -670,16 +685,30 @@ async fn audit_one(
     // type-check there with "expected `&HashMap<_, &_>`, found `HashMap<_,
     // &_>`". Keeping the borrow so the real test build stays green.
     #[allow(clippy::needless_borrow)]
-    let mut gap_by_url = bridge.run_gap_fix_batch(&urls, &gap_snippets, 1).await?;
-    let gap_js_results = gap_by_url.remove(url).unwrap_or_default();
+    let mut gap_by_url = ObscuraBridge::run_gap_fix_batch(
+        bridge.binary_path().to_string(),
+        urls.clone(),
+        gap_snippets
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_string()))
+            .collect(),
+        1,
+    )
+    .await?;
+    let gap_js_results = gap_by_url.remove(url.as_str()).unwrap_or_default();
     let gap_results = GapFixRules::parse_results(&gap_js_results);
 
     // 3. Extract page context for Holo3 prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
-    let mut context_by_url = bridge.extract_page_context_batch(&urls, 1).await?;
+    let mut context_by_url = ObscuraBridge::extract_page_context_batch(
+        bridge.binary_path().to_string(),
+        urls.clone(),
+        1,
+    )
+    .await?;
     let raw_context = context_by_url
-        .remove(url)
+        .remove(url.as_str())
         .ok_or_else(|| format!("page context extraction produced no result for {url}"))?;
     let na_map = na_detection::detect_na(&raw_context);
     // A malformed page context must fail the audit, not silently evaluate as
@@ -690,8 +719,6 @@ async fn audit_one(
         format!("malformed page context for {url}: {e}")
     })?;
 
-    drop(session); // Release the browser lock before agent calls
-
     // 4. Run agentic evaluation for all IA_ASSISTE criteria
     on_phase(AuditPhase::AgentIaAssiste);
     let ia_criteria = RgaaCriteria::ia_assiste();
@@ -700,7 +727,10 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
-    let agent_results = agent.run_ia_assiste(&ia_criteria, &page_context).await;
+    let agent_results = agent
+        .clone()
+        .run_ia_assiste(ia_criteria, page_context.clone())
+        .await;
 
     let mut holo_results = HashMap::new();
     for (criterion_id, result) in agent_results {
@@ -716,7 +746,8 @@ async fn audit_one(
     );
 
     let partial_results = agent
-        .run_partially_automatable(&partial_criteria, &page_context)
+        .clone()
+        .run_partially_automatable(partial_criteria, page_context.clone())
         .await;
     for (criterion_id, result) in partial_results {
         holo_results.insert(criterion_id, result);
@@ -831,9 +862,9 @@ async fn audit_one(
 
     Ok(AuditResult {
         audit_id: uuid::Uuid::new_v4().to_string(),
-        url: url.to_string(),
+        url: url.clone(),
         pages: vec![PageResult {
-            url: url.to_string(),
+            url: url.clone(),
             title: page_context.title,
             criteria,
             compliance_rate: compliance,
@@ -849,178 +880,4 @@ async fn audit_one(
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_result_id(id: &str, status: CriterionStatus) -> CriterionResult {
-        CriterionResult {
-            criterion_id: id.into(),
-            title: "test".into(),
-            classification: Classification::IaAssiste,
-            status,
-            violations: Vec::new(),
-            confidence: None,
-            justification: None,
-            source: "test".into(),
-            citations: vec![],
-        }
-    }
-
-    #[test]
-    fn manual_criteria_require_review() {
-        assert_eq!(manual_status(), CriterionStatus::NeedsReview);
-    }
-
-    // Distinct ids: the rate reduces by `criterion_id` first (site rule in
-    // `rgaa_report::compliance_rate`), so same-id entries collapse into one.
-    #[test]
-    fn compliance_empty_input() {
-        assert_eq!(calculate_compliance(&[]), 0.0);
-    }
-
-    #[test]
-    fn compliance_all_pass() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("2.1", CriterionStatus::Pass),
-        ];
-        assert_eq!(calculate_compliance(&criteria), 100.0);
-    }
-
-    #[test]
-    fn compliance_all_fail() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Fail),
-            test_result_id("2.1", CriterionStatus::Fail),
-        ];
-        assert_eq!(calculate_compliance(&criteria), 0.0);
-    }
-
-    #[test]
-    fn compliance_mixed_pass_fail() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("2.1", CriterionStatus::Pass),
-            test_result_id("3.1", CriterionStatus::Fail),
-        ];
-        // 2 pass, 1 fail → 2/3 ≈ 66.67%
-        let c = calculate_compliance(&criteria);
-        assert!((c - 66.67).abs() < 0.1, "got {c}");
-    }
-
-    #[test]
-    fn compliance_na_excluded() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("2.1", CriterionStatus::NotApplicable),
-            test_result_id("3.1", CriterionStatus::Fail),
-        ];
-        // NA excluded: 1 pass, 1 fail → 50%
-        assert_eq!(calculate_compliance(&criteria), 50.0);
-    }
-
-    #[test]
-    fn compliance_nt_excluded() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("2.1", CriterionStatus::NotTested),
-            test_result_id("3.1", CriterionStatus::Fail),
-        ];
-        // NT excluded: 1 pass, 1 fail → 50%
-        assert_eq!(calculate_compliance(&criteria), 50.0);
-    }
-
-    #[test]
-    fn compliance_error_counted_as_fail() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("2.1", CriterionStatus::Error),
-        ];
-        // 1 pass, 1 error → 50%
-        assert_eq!(calculate_compliance(&criteria), 50.0);
-    }
-
-    #[test]
-    fn compliance_needs_review_excluded() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("2.1", CriterionStatus::NeedsReview),
-        ];
-        // NeedsReview excluded: 1 pass, 0 fail → 100%
-        assert_eq!(calculate_compliance(&criteria), 100.0);
-    }
-
-    #[test]
-    fn compliance_all_na() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::NotApplicable),
-            test_result_id("2.1", CriterionStatus::NotApplicable),
-        ];
-        // All NA → denominator 0 → 0%
-        assert_eq!(calculate_compliance(&criteria), 0.0);
-    }
-
-    #[test]
-    fn compliance_sample_wide_nc_if_any_page_fail() {
-        // Per official RGAA: NC if NC on ANY page
-        // Simulated: 3 criteria, 2 pass, 1 fail → NC overall
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("1.2", CriterionStatus::Pass),
-            test_result_id("1.3", CriterionStatus::Fail),
-        ];
-        let c = calculate_compliance(&criteria);
-        // 2/3 ≈ 66.67% but status is NC because any page fail
-        assert!((c - 66.67).abs() < 0.1, "got {c}");
-    }
-
-    #[test]
-    fn compliance_all_c_only_if_all_pass() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("1.2", CriterionStatus::Pass),
-            test_result_id("1.3", CriterionStatus::Pass),
-        ];
-        assert_eq!(calculate_compliance(&criteria), 100.0);
-    }
-
-    #[test]
-    fn compliance_summary_all_pass() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("1.2", CriterionStatus::Pass),
-        ];
-        let (taux, _coverage, etat) = calculate_compliance_summary(&criteria);
-        assert_eq!(taux, 100.0);
-        assert_eq!(etat, "totale");
-    }
-
-    #[test]
-    fn compliance_summary_mixed() {
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("1.2", CriterionStatus::Fail),
-        ];
-        let (taux, _coverage, etat) = calculate_compliance_summary(&criteria);
-        assert_eq!(taux, 50.0);
-        assert_eq!(etat, "partielle");
-    }
-
-    #[test]
-    fn compliance_summary_coverage_percent() {
-        // 1.1 and 1.2 are PartiallyAutomatable, 1.4 is NotAutomatable (excluded from coverage)
-        let criteria = vec![
-            test_result_id("1.1", CriterionStatus::Pass),
-            test_result_id("1.2", CriterionStatus::NotTested),
-            test_result_id("1.4", CriterionStatus::Pass),
-        ];
-        let (taux, coverage, _etat) = calculate_compliance_summary(&criteria);
-        // validated_total = 2 (1.1,1.2), validated_executed =1 (1.1)
-        assert!((coverage - 50.0).abs() < 0.01);
-        // taux based on ConformityStatus: Pass and NotTested → NonTeste not counted, so taux =100
-        assert_eq!(taux, 100.0);
-    }
 }

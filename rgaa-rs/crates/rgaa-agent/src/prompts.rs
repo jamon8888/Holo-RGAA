@@ -104,20 +104,44 @@ impl PromptBuilder {
         prompt
     }
 
-    /// Builds a prompt that includes an image description.
-    ///
-    /// Useful when a screenshot is available and the evaluator should
-    /// incorporate visual information into the assessment.
-    pub fn build_with_image(
-        criterion_id: &str,
-        context: &PageContext,
-        image_description: &str,
-    ) -> String {
-        let mut prompt = Self::build(criterion_id, context);
-        prompt.push_str(&format!(
-            "\n\n## Capture d'écran\n\nUne capture d'écran de la page est fournie. Utilise-la pour évaluer le critère {}.\nDescription: {}",
-            criterion_id, image_description
-        ));
+    /// Builds a batch evaluation prompt for multiple criteria from an
+    /// already-rendered page context. Returns a JSON array of results.
+    pub fn build_batch_from_rendered(criterion_ids: &[&str], rendered_context: &str) -> String {
+        let mut prompt = String::new();
+
+        prompt.push_str("Évalue les critères RGAA suivants sur cette page web.\n\n");
+
+        prompt.push_str("## Contexte de la page\n\n");
+        prompt.push_str(rendered_context);
+        prompt.push_str("\n\n");
+
+        prompt.push_str("## Critères à évaluer\n\n");
+        for criterion_id in criterion_ids {
+            if let Some(def) = get_criterion_definition(criterion_id) {
+                prompt.push_str(&format!("### Critère {}\n", criterion_id));
+                prompt.push_str(&format!("- **Titre:** {}\n", def.title));
+                prompt.push_str(&format!("- **Références WCAG:** {}\n", def.wcag_refs));
+                prompt.push_str(&format!("- **Définition:** {}\n\n", def.definition));
+            }
+        }
+
+        prompt.push_str("## Instructions\n\n");
+        prompt.push_str(
+            "1. Analyse chaque critère en fonction de la définition et du contexte de la page\n",
+        );
+        prompt.push_str(
+            "2. Retourne un JSON array où chaque élément correspond à un critère dans l'ordre:\n",
+        );
+        prompt.push_str("   - criterion_id: l'ID du critère\n");
+        prompt.push_str("   - verdict: \"pass\", \"fail\", ou \"na\"\n");
+        prompt.push_str("   - confidence: nombre entre 0.0 et 1.0\n");
+        prompt.push_str("   - justification: explication détaillée en français\n\n");
+        prompt.push_str("Exemple de format de réponse:\n");
+        prompt.push_str("[\n");
+        prompt.push_str("  {\"criterion_id\": \"1.1\", \"verdict\": \"pass\", \"confidence\": 0.95, \"justification\": \"...\"},\n");
+        prompt.push_str("  {\"criterion_id\": \"1.3\", \"verdict\": \"fail\", \"confidence\": 0.8, \"justification\": \"...\"}\n");
+        prompt.push_str("]\n");
+
         prompt
     }
 }

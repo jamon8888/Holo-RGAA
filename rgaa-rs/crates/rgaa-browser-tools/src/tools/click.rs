@@ -52,7 +52,7 @@ impl PortableTool for ClickTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         session
             .click_element(&args.selector)
             .await

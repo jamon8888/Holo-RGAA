@@ -139,9 +139,9 @@ impl Ratelimiter {
 
         loop {
             self.refill(tier).await;
-            let tokens = match tier {
-                ModelTier::Tactical => &self.inner.tactical_tokens,
-                ModelTier::Reasoning => &self.inner.reasoning_tokens,
+            let (tokens, rpm) = match tier {
+                ModelTier::Tactical => (&self.inner.tactical_tokens, self.inner.tactical_rpm),
+                ModelTier::Reasoning => (&self.inner.reasoning_tokens, self.inner.reasoning_rpm),
             };
             let prev = tokens.load(Ordering::Acquire);
             if prev > 0 {
@@ -152,7 +152,9 @@ impl Ratelimiter {
                     return;
                 }
             } else {
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                // Calculate exact wait time for 1 token: (60_000 ms / RPM) per token
+                let wait_ms: u64 = (60_000 / rpm.max(1)).max(50) as u64;
+                tokio::time::sleep(Duration::from_millis(wait_ms)).await;
             }
         }
     }

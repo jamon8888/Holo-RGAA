@@ -11,6 +11,7 @@ use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
 use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -39,6 +40,18 @@ fn tier_for(criterion_id: &str) -> ModelTier {
     }
 }
 
+/// Batch evaluation response from the LLM
+#[derive(Deserialize, Debug, Clone)]
+struct BatchEvaluationResponse {
+    verdict: String,
+    confidence: f64,
+    justification: String,
+}
+
+/// Number of criteria to evaluate per batch LLM call.
+/// Default: 5 (balances prompt size vs. number of API calls).
+const BATCH_SIZE: usize = 5;
+
 /// RGAA agentic evaluator for IA-assistée criteria.
 ///
 /// Uses a single Holo3 model with token-bucket rate limiting, tiered by
@@ -49,6 +62,7 @@ fn tier_for(criterion_id: &str) -> ModelTier {
 pub struct RgaaAgent {
     agent: Agent,
     rate_limiter: Arc<Ratelimiter>,
+    agent_concurrency: usize,
     /// Shared across every clone (and every concurrent task spawned from
     /// `run_ia_assiste`/`run_partially_automatable`) so a real outage trips
     /// the breaker for the whole audit, not just one task's local retries.
@@ -67,6 +81,9 @@ impl RgaaAgent {
     /// limiter fails to initialize.
     #[tracing::instrument(skip_all)]
     pub async fn new(config: &AgentConfig) -> Result<Self, AgentError> {
+        if config.agent_concurrency == 0 {
+            return Err(AgentError::Config("agent_concurrency must be > 0".into()));
+        }
         // 1. Create OpenAI-compatible client pointing at Holo3
         let client = openai::Client::builder()
             .base_url(&config.holo3_base_url)
@@ -98,6 +115,7 @@ impl RgaaAgent {
         Ok(Self {
             agent,
             rate_limiter,
+            agent_concurrency: config.agent_concurrency,
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             tripped_at: Arc::new(Mutex::new(None)),
         })
@@ -246,33 +264,157 @@ impl RgaaAgent {
     /// the same page. Uses bounded concurrency with the internal rate
     /// limiter, tiered per criterion by [`tier_for`], to avoid overwhelming
     /// the Holo3 API while keeping evaluations parallel.
+    ///
+    /// Criteria are evaluated in batches of `BATCH_SIZE` to reduce the number
+    /// of LLM API calls.
     pub async fn run_ia_assiste(
-        &self,
-        criteria: &[Criterion],
-        page_context: &PageContext,
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        page_context: PageContext,
+    ) -> HashMap<String, CriterionResult> {
+        let rendered_context = Arc::new(PromptBuilder::render_context(&page_context));
+        let mut all_results = HashMap::new();
+
+        // Process criteria in batches
+        let mut remaining = criteria;
+        while !remaining.is_empty() {
+            let take = remaining.len().min(BATCH_SIZE);
+            let batch: Vec<Criterion> = remaining.drain(..take).collect();
+
+            let batch_results = self
+                .clone()
+                .evaluate_batch(batch, rendered_context.clone(), ModelTier::Tactical)
+                .await;
+
+            for (criterion_id, result) in batch_results {
+                all_results.insert(criterion_id, result);
+            }
+        }
+
+        all_results
+    }
+
+    /// Evaluate a batch of criteria with a single LLM call
+    async fn evaluate_batch(
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        rendered_context: Arc<String>,
+        tier: ModelTier,
+    ) -> HashMap<String, CriterionResult> {
+        if criteria.is_empty() {
+            return HashMap::new();
+        }
+        let criterion_ids: Vec<&str> = criteria.iter().map(|c| c.id).collect();
+
+        // Build batch prompt
+        let prompt = PromptBuilder::build_batch_from_rendered(&criterion_ids, &rendered_context);
+
+        // Rate limit
+        self.rate_limiter.acquire(tier).await;
+
+        // Call LLM
+        let response = match self.agent.prompt(prompt.as_str()).await {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::warn!(criteria = ?criterion_ids, error = %e, "batch evaluation failed");
+                // Fall back to individual evaluation on error
+                return self.evaluate_individually(criteria, rendered_context).await;
+            }
+        };
+
+        // Parse batch response
+        let parsed = HoloClient::extract_json(&response);
+        let batch_responses: Vec<BatchEvaluationResponse> = match parsed {
+            Some(parsed) if parsed.verdict == "batch" => {
+                // Handle if response is already structured
+                vec![BatchEvaluationResponse {
+                    verdict: parsed.verdict,
+                    confidence: parsed.confidence,
+                    justification: parsed.justification,
+                }]
+            }
+            _ => {
+                // Try to parse as JSON array from the response text
+                serde_json::from_str(&response).unwrap_or_else(|_| {
+                    // Fallback: try to extract from HoloResponse format
+                    if let Some(hr) = HoloClient::extract_json(&response) {
+                        vec![BatchEvaluationResponse {
+                            verdict: hr.verdict,
+                            confidence: hr.confidence,
+                            justification: hr.justification,
+                        }]
+                    } else {
+                        vec![]
+                    }
+                })
+            }
+        };
+
+        // Map responses to results
+        let mut results = HashMap::new();
+        for (idx, criterion_id) in criterion_ids.iter().enumerate() {
+            let response =
+                batch_responses
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| BatchEvaluationResponse {
+                        verdict: "na".to_string(),
+                        confidence: 0.0,
+                        justification: "Failed to parse batch response".to_string(),
+                    });
+
+            let status = map_verdict(&HoloResponse {
+                verdict: response.verdict,
+                confidence: response.confidence,
+                justification: response.justification.clone(),
+            });
+
+            // Find the criterion to get title and classification
+            let criterion = criteria.iter().find(|c| c.id == *criterion_id);
+            let (title, classification) = criterion
+                .map(|c| (c.title.clone(), c.classification))
+                .unwrap_or_else(|| (criterion_id.to_string(), Classification::IaAssiste));
+
+            results.insert(
+                criterion_id.to_string(),
+                CriterionResult {
+                    criterion_id: criterion_id.to_string(),
+                    title,
+                    classification,
+                    status,
+                    violations: vec![],
+                    confidence: Some(response.confidence),
+                    justification: Some(response.justification),
+                    source: "agent-batch".to_string(),
+                    citations: vec![],
+                },
+            );
+        }
+
+        results
+    }
+
+    /// Fallback: evaluate criteria individually when batch fails
+    async fn evaluate_individually(
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        rendered_context: Arc<String>,
     ) -> HashMap<String, CriterionResult> {
         use futures::stream::{self, StreamExt};
 
-        let rendered_context = Arc::new(PromptBuilder::render_context(page_context));
-        let results = stream::iter(criteria.iter().cloned())
+        let results = stream::iter(criteria)
             .map(|criterion| {
-                let self_ = Arc::new(self.clone());
+                let self_ = self.clone();
                 let rendered_context = rendered_context.clone();
+                let criterion_id = criterion.id;
                 async move {
                     let result = self_
                         .evaluate_criterion_rendered(&criterion, &rendered_context)
                         .await;
-                    (criterion.id.to_string(), result)
+                    (criterion_id.to_string(), result)
                 }
             })
-            // Serialized: the local Ollama backend has a single inference
-            // slot on this host, so concurrent requests just queue behind
-            // it — and can sit long enough for reqwest's idle-connection
-            // pool timeout to close them out from under the wait, which
-            // then trips the circuit breaker. `buffer_unordered(1)` sends
-            // one request at a time so nothing is left waiting on a held
-            // connection.
-            .buffer_unordered(1)
+            .buffer_unordered(1) // Sequential for fallback
             .collect::<HashMap<_, _>>()
             .await;
 
@@ -285,16 +427,17 @@ impl RgaaAgent {
     /// PartiallyAutomatable criteria need human judgment on the portions
     /// not covered by automated checks. Results are marked [`CriterionStatus::NeedsReview`].
     pub async fn run_partially_automatable(
-        &self,
-        criteria: &[Criterion],
-        page_context: &PageContext,
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        page_context: PageContext,
     ) -> HashMap<String, CriterionResult> {
         use futures::stream::{self, StreamExt};
 
-        let rendered_context = Arc::new(PromptBuilder::render_context(page_context));
-        let results = stream::iter(criteria.iter().cloned())
+        let rendered_context = Arc::new(PromptBuilder::render_context(&page_context));
+        let concurrency = self.agent_concurrency;
+        let results = stream::iter(criteria)
             .map(|criterion| {
-                let self_ = Arc::new(self.clone());
+                let self_ = self.clone();
                 let rendered_context = rendered_context.clone();
                 async move {
                     let result = self_
@@ -303,7 +446,7 @@ impl RgaaAgent {
                     (criterion.id.to_string(), result)
                 }
             })
-            .buffer_unordered(1)
+            .buffer_unordered(concurrency)
             .collect::<HashMap<_, _>>()
             .await;
 

@@ -12,7 +12,8 @@ async fn test_obscura_bridge_sync() {
     // the live production path, not a one-off; see pipeline::audit_one.
     let bridge = ObscuraBridge::new();
     let urls = vec!["https://example.com".to_string()];
-    let result = bridge.extract_page_context_batch(&urls, 1).await;
+    let result =
+        ObscuraBridge::extract_page_context_batch(bridge.binary_path().to_string(), urls, 1).await;
     println!("Page context result: {:?}", result);
     assert!(
         result.is_ok(),
@@ -49,7 +50,9 @@ async fn test_obscura_bridge_axe_via_cdp() {
 
     // Run axe-core
     let urls = vec!["https://example.com".to_string()];
-    let result = bridge.run_axe_batch(&urls, 1).await;
+    let result = std::sync::Arc::new(bridge.clone())
+        .run_axe_batch(urls, 1)
+        .await;
     println!("Axe result: {:?}", result);
 
     // Stop server
@@ -84,7 +87,9 @@ async fn test_obscura_bridge_axe_batch_multiple_urls() {
         "https://example.com".to_string(),
         "https://example.org".to_string(),
     ];
-    let results = bridge.run_axe_batch(&urls, 2).await;
+    let results = std::sync::Arc::new(bridge.clone())
+        .run_axe_batch(urls, 2)
+        .await;
     println!("Batch axe results: {:?}", results);
 
     bridge.stop_server().await;
@@ -122,7 +127,8 @@ async fn test_obscura_bridge_extract_page_context_batch() {
         "https://example.com".to_string(),
         "https://example.org".to_string(),
     ];
-    let results = bridge.extract_page_context_batch(&urls, 2).await;
+    let results =
+        ObscuraBridge::extract_page_context_batch(bridge.binary_path().to_string(), urls, 2).await;
     println!("Batch page context results: {:?}", results);
 
     bridge.stop_server().await;
@@ -168,9 +174,12 @@ async fn test_obscura_bridge_axe_batch_performance() {
     ];
 
     let start = std::time::Instant::now();
-    let results = bridge.run_axe_batch(&urls, 4).await;
+    let url_count = urls.len();
+    let results = std::sync::Arc::new(bridge.clone())
+        .run_axe_batch(urls, 4)
+        .await;
     let elapsed = start.elapsed();
-    println!("axe batch of {} urls took {:?}", urls.len(), elapsed);
+    println!("axe batch of {url_count} urls took {:?}", elapsed);
 
     bridge.stop_server().await;
 
@@ -178,7 +187,7 @@ async fn test_obscura_bridge_axe_batch_performance() {
     let results = results.unwrap();
     assert_eq!(
         results.len(),
-        urls.len(),
+        url_count,
         "axe batch must return one entry per URL"
     );
     for (url, ax) in &results {

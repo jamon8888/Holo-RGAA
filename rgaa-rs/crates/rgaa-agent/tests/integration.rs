@@ -95,7 +95,9 @@ async fn test_run_ia_assiste() {
         navigation: vec![],
     };
 
-    let results = agent.run_ia_assiste(&criteria, &page_context).await;
+    let results = std::sync::Arc::new(agent)
+        .run_ia_assiste(criteria, page_context)
+        .await;
     assert_eq!(results.len(), 2);
     assert!(results.contains_key("1.3"));
     assert!(results.contains_key("11.2"));

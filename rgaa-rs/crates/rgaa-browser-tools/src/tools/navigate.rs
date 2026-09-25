@@ -50,7 +50,7 @@ impl PortableTool for NavigateTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let mut session = self.ctx.session().lock().await;
+        let mut session = self.ctx.session().lock().clone();
         session
             .navigate(&args.url)
             .await

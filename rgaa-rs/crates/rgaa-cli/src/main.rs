@@ -25,14 +25,32 @@ struct AuditArgs {
 async fn main() {
     let cli = Cli::parse();
     let TopCommand::Audit(args) = cli.command;
+
+    let (log_path, monitoring_guard) =
+        match rgaa_cli::monitoring::init(args.command.common().log_file.as_deref()) {
+            Ok(initialized) => initialized,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(exit_code(&error));
+            }
+        };
+    eprintln!("Monitoring log: {}", log_path.display());
+
     let result = rgaa_cli::commands::dispatch(args.command).await;
-    match result {
-        Ok(code) => std::process::exit(code),
+    let code = match &result {
+        Ok(code) => *code,
         Err(error) => {
             eprintln!("{error}");
-            std::process::exit(exit_code(&error));
+            exit_code(error)
         }
-    }
+    };
+
+    // `std::process::exit` skips destructors, so the monitoring guard's
+    // flush-on-drop (which pushes buffered JSON-lines to disk) must run
+    // explicitly first — otherwise a fast-failing run can exit before the
+    // async writer ever gets scheduled, silently losing every log line.
+    drop(monitoring_guard);
+    std::process::exit(code);
 }
 
 fn exit_code(error: &CliError) -> i32 {

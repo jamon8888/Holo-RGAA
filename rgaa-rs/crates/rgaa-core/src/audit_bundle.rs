@@ -48,6 +48,10 @@ pub struct AuditSummary {
     pub passed: usize,
     pub failed: usize,
     pub needs_review: usize,
+    /// Defaults to 0 on deserialize so bundles persisted before this field
+    /// existed (still schema version 1.0) load without a missing-field error.
+    #[serde(default)]
+    pub na: usize,
     pub errors: usize,
 }
 
@@ -236,6 +240,16 @@ impl From<AuditResult> for AuditBundle {
             .flat_map(|p| &p.criteria)
             .filter(|c| c.status == CriterionStatus::NeedsReview)
             .count();
+        let na = page_audits
+            .iter()
+            .flat_map(|p| &p.criteria)
+            .filter(|c| c.status == CriterionStatus::NotApplicable)
+            .count();
+        let errors = page_audits
+            .iter()
+            .flat_map(|p| &p.criteria)
+            .filter(|c| c.status == CriterionStatus::Error)
+            .count();
 
         Self {
             schema_version: CURRENT_SCHEMA_VERSION.to_owned(),
@@ -252,7 +266,8 @@ impl From<AuditResult> for AuditBundle {
                 passed: result.passed,
                 failed: result.failed,
                 needs_review,
-                errors: 0,
+                na,
+                errors,
             },
         }
     }

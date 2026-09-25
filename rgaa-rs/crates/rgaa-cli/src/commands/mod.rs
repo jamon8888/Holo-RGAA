@@ -21,6 +21,12 @@ pub struct CommonArgs {
     /// Audit ID for operations that require it.
     #[clap(long)]
     pub audit_id: Option<String>,
+    /// Path to a JSON-lines file for verbose, queryable audit-progress logs
+    /// (phase transitions, per-page pass/fail/NA counts, errors). Defaults to
+    /// `logs/rgaa-audit-<unix-timestamp>.jsonl` when unset. Tail it live with
+    /// `tail -f <path> | jq` while the audit runs.
+    #[clap(long)]
+    pub log_file: Option<std::path::PathBuf>,
 }
 
 /// Available audit commands.
@@ -36,6 +42,20 @@ pub enum AuditCommand {
     Report(report::ReportArgs),
     /// Check compliance against the configured policy.
     Policy(policy::PolicyArgs),
+}
+
+impl AuditCommand {
+    /// Returns the [`CommonArgs`] flattened into whichever variant this is,
+    /// so `main` can read `--log-file` before dispatching to the handler.
+    pub fn common(&self) -> &CommonArgs {
+        match self {
+            AuditCommand::Analyze(args) => &args.common,
+            AuditCommand::Igt(args) => &args.common,
+            AuditCommand::Verify(args) => &args.common,
+            AuditCommand::Report(args) => &args.common,
+            AuditCommand::Policy(args) => &args.common,
+        }
+    }
 }
 
 /// Dispatches a command to the appropriate handler.

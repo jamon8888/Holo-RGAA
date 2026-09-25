@@ -2,6 +2,8 @@
 
 pub mod commands;
 pub mod config;
+pub mod monitoring;
+pub mod sitemap;
 
 pub use config::{Config, ConfigError};
 pub use rgaa_report::ReportFormat;

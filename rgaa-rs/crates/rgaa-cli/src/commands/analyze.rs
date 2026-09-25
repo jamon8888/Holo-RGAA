@@ -19,12 +19,6 @@ pub struct AnalyzeArgs {
         help = "Name of a configured URL profile"
     )]
     pub profile: Option<String>,
-    #[clap(
-        long,
-        default_value = "json",
-        help = "Output format: json, table, or html"
-    )]
-    pub format: Option<String>,
     #[clap(long, help = "Enable verbose output with detailed progress")]
     pub verbose: bool,
 }
@@ -45,19 +39,39 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
         eprintln!("Running accessibility audit...");
     }
 
-    let result = orchestrator
-        .run_crawl_and_audit(&url, &crawl_config)
-        .await
-        .map_err(|error| CliError::execution(error.to_string()))?;
+    let result = match std::env::var("RGAA_SITEMAP_URL")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        Some(sitemap_url) => {
+            if args.verbose {
+                eprintln!("Discovering pillar pages from sitemap: {sitemap_url}");
+            }
+            let pages =
+                crate::sitemap::discover_pillar_pages(&sitemap_url, &url, crawl_config.max_pages)
+                    .await?;
+            if pages.is_empty() {
+                return Err(CliError::execution(format!(
+                    "sitemap {sitemap_url} yielded no top-level pages to audit"
+                )));
+            }
+            if args.verbose {
+                eprintln!("Auditing {} page(s): {}", pages.len(), pages.join(", "));
+            }
+            orchestrator
+                .run_explicit_audit(&url, pages, &crawl_config)
+                .await
+        }
+        None => orchestrator.run_crawl_and_audit(&url, &crawl_config).await,
+    }
+    .map_err(|error| CliError::execution(error.to_string()))?;
+
+    let format = args.common.format.as_deref().unwrap_or("json");
 
     if args.verbose {
-        eprintln!(
-            "Audit complete. Generating {} report...",
-            args.format.as_deref().unwrap_or("json")
-        );
+        eprintln!("Audit complete. Generating {format} report...");
     }
 
-    let format = args.format.as_deref().unwrap_or("json");
     let rendered = render_output(&result, format)?;
     write_output(&args.common.output, &rendered)?;
     Ok(0)
@@ -122,7 +136,7 @@ fn resolve_url(
     url: Option<String>,
     profile: Option<String>,
 ) -> Result<String, CliError> {
-    match (url, profile) {
+    let resolved = match (url, profile) {
         (Some(url), None) => Ok(url),
         (None, Some(profile)) => config
             .url_profiles
@@ -135,6 +149,23 @@ fn resolve_url(
             .map(|entry| entry.url.clone())
             .ok_or_else(|| CliError::invalid_input("provide --url or a configured url profile")),
         (Some(_), Some(_)) => unreachable!("clap enforces url/profile exclusivity"),
+    }?;
+    Ok(with_scheme(resolved))
+}
+
+/// Prepends `https://` when the URL has no scheme, so bare domains like
+/// `example.com` work the same as they do when typed into a browser.
+///
+/// Checks for an actual leading scheme via `Url::parse` rather than a
+/// substring search for `"://"` — the latter is fooled by a bare domain
+/// whose query string happens to contain `"://"`, e.g.
+/// `example.test/search?next=https://other.test/`, which `contains` sees as
+/// "already has a scheme" and leaves the real host without one.
+fn with_scheme(url: String) -> String {
+    if reqwest::Url::parse(&url).is_ok() {
+        url
+    } else {
+        format!("https://{url}")
     }
 }
 
@@ -156,6 +187,12 @@ fn crawl_config(_config: &Config) -> Result<CrawlConfig, CliError> {
         .and_then(|v| v.parse().ok())
     {
         crawl_config.max_depth = max_depth;
+    }
+    if let Some(sample_mode) = std::env::var("RGAA_SAMPLE_MODE")
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+    {
+        crawl_config.sample_mode = sample_mode;
     }
     Ok(crawl_config)
 }
@@ -192,6 +229,38 @@ mod tests {
         assert_eq!(
             resolve_url(&config, None, None).unwrap(),
             "https://default.test"
+        );
+    }
+
+    #[test]
+    fn adds_https_scheme_to_bare_domain() {
+        let config = Config::default();
+        assert_eq!(
+            resolve_url(&config, Some("danijelagracner.com".into()), None).unwrap(),
+            "https://danijelagracner.com"
+        );
+    }
+
+    #[test]
+    fn preserves_explicit_http_scheme() {
+        let config = Config::default();
+        assert_eq!(
+            resolve_url(&config, Some("http://a.test".into()), None).unwrap(),
+            "http://a.test"
+        );
+    }
+
+    #[test]
+    fn adds_scheme_even_when_query_string_contains_a_scheme_like_substring() {
+        let config = Config::default();
+        assert_eq!(
+            resolve_url(
+                &config,
+                Some("example.test/search?next=https://other.test/".into()),
+                None
+            )
+            .unwrap(),
+            "https://example.test/search?next=https://other.test/"
         );
     }
 }

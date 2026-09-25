@@ -132,6 +132,20 @@ impl Orchestrator {
         run_crawl_and_audit(self, url, config).await
     }
 
+    /// Audit an explicit, already-discovered list of page URLs, aggregated
+    /// into one site-wide [`AuditResult`] the same way
+    /// [`Orchestrator::run_crawl_and_audit`] does. For callers that discover
+    /// pages another way (e.g. a site's `sitemap.xml`) rather than the RGAA
+    /// sample or spider-crawl discovery built into `run_crawl_and_audit`.
+    pub async fn run_explicit_audit(
+        &self,
+        url: &str,
+        urls: Vec<String>,
+        config: &CrawlConfig,
+    ) -> Result<AuditResult, String> {
+        run_explicit_audit(self, url, urls, config).await
+    }
+
     /// Audit multiple URLs, returning one [`AuditResult`] per URL keyed by the
     /// URL (successful audits only — a failed URL is logged and skipped, not
     /// allowed to abort the rest of the batch).
@@ -325,6 +339,31 @@ pub async fn run_crawl_and_audit(
         output.pages.into_iter().map(|p| p.url).collect()
     };
 
+    audit_discovered_urls(orchestrator, url, urls, config, start).await
+}
+
+/// Audits an explicit, already-discovered list of page URLs and aggregates
+/// them into one site-wide [`AuditResult`] — the same aggregation
+/// [`run_crawl_and_audit`] does for its own (RGAA-sample or spider-crawl)
+/// discovery, shared here for callers that discover pages another way, e.g.
+/// from a site's `sitemap.xml`.
+pub async fn run_explicit_audit(
+    orchestrator: &Orchestrator,
+    url: &str,
+    urls: Vec<String>,
+    config: &CrawlConfig,
+) -> Result<AuditResult, String> {
+    let start = std::time::Instant::now();
+    audit_discovered_urls(orchestrator, url, urls, config, start).await
+}
+
+async fn audit_discovered_urls(
+    orchestrator: &Orchestrator,
+    url: &str,
+    urls: Vec<String>,
+    config: &CrawlConfig,
+    start: std::time::Instant,
+) -> Result<AuditResult, String> {
     // Cap at max_pages
     let urls: Vec<String> = urls.into_iter().take(config.max_pages).collect();
 
@@ -332,12 +371,24 @@ pub async fn run_crawl_and_audit(
         return Err("no pages to audit".to_string());
     }
 
-    let batch_results = orchestrator.run_batch(&urls, config).await?;
+    let mut batch_results = orchestrator.run_batch(&urls, config).await?;
 
-    // Extract PageResults from each AuditResult
+    if batch_results.is_empty() {
+        return Err(format!(
+            "audit failed for all {} discovered page(s); see warnings above for per-page errors",
+            urls.len()
+        ));
+    }
+
+    // Extract PageResults in the caller's requested order — run_batch
+    // returns a HashMap, whose iteration order is arbitrary and would
+    // otherwise silently discard a meaningful input order (e.g. sitemap
+    // priority ranking) that report/export consumers rely on.
     let mut all_pages = Vec::new();
-    for (_, audit) in batch_results {
-        all_pages.extend(audit.pages);
+    for page_url in &urls {
+        if let Some(audit) = batch_results.remove(page_url) {
+            all_pages.extend(audit.pages);
+        }
     }
 
     // Site-wide aggregation

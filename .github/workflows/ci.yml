@@ -44,6 +44,21 @@ jobs:
     defaults:
       run:
         working-directory: rgaa-rs
+    # Postgres for rgaa-storage's union-schema integration test
+    # (tests/union_schema.rs reads DATABASE_URL; skipped when unset).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rgaa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -105,6 +120,7 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
           RUSTC_WRAPPER: sccache
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/rgaa
           # Same simultaneous-multi-binary-link memory pressure as the build
           # step above, but for nextest's per-crate test binaries.
           CARGO_BUILD_JOBS: "2"

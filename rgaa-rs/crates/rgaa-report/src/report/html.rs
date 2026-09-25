@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 
-use rgaa_core::{AuditBundle, AuditSummary, CriterionStatus, Finding};
+use rgaa_core::{
+    AuditBundle, AuditSummary, CriterionResult, CriterionStatus, Finding, RgaaCriteria,
+};
 
 pub fn generate_html_report(bundle: &AuditBundle) -> String {
     let mut html = String::new();
@@ -8,6 +11,7 @@ pub fn generate_html_report(bundle: &AuditBundle) -> String {
     write_html_summary(&mut html, bundle);
     write_html_stats(&mut html, &bundle.summary);
     write_html_findings(&mut html, bundle);
+    write_html_all_criteria(&mut html, bundle);
     write_html_footer(&mut html);
     html
 }
@@ -68,13 +72,21 @@ fn write_html_header(html: &mut String, audit_id: &str, url: &str) {
 }
 
 fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
-    let conformity_badge_class = match bundle.summary.failed {
-        0 => "pass",
-        _ => "fail",
-    };
-    let conformity_text = match bundle.summary.failed {
-        0 => "Conforme",
-        _ => "Non Conforme",
+    // An audit with technical errors, or a page that never got to every
+    // catalog criterion (padded to NotTested by complete_criteria below),
+    // is incomplete — neither should be able to show "Conforme" any more
+    // than an outright failed criterion can.
+    let catalog_size = RgaaCriteria::all().len();
+    let is_complete = bundle
+        .pages
+        .iter()
+        .all(|page| page.criteria.len() >= catalog_size);
+    let is_conforme = bundle.summary.failed == 0 && bundle.summary.errors == 0 && is_complete;
+    let conformity_badge_class = if is_conforme { "pass" } else { "fail" };
+    let conformity_text = if is_conforme {
+        "Conforme"
+    } else {
+        "Non Conforme"
     };
 
     let _ = writeln!(
@@ -140,11 +152,7 @@ fn write_html_stats(html: &mut String, summary: &AuditSummary) {
                 </tr>
             </tbody>
         </table>"#,
-        summary.passed,
-        summary.failed,
-        summary.needs_review,
-        summary.passed + summary.failed + summary.needs_review,
-        summary.errors
+        summary.passed, summary.failed, summary.needs_review, summary.na, summary.errors
     );
 }
 
@@ -211,6 +219,157 @@ fn write_html_findings(html: &mut String, bundle: &AuditBundle) {
     );
 }
 
+/// Lists every one of the 106 RGAA criteria for every audited page — pass,
+/// fail, needs human review, not applicable, not tested, error — so the
+/// report is a complete record, not just aggregate scores.
+fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
+    for page in &bundle.pages {
+        let _ = writeln!(
+            html,
+            r#"        <h2 style="margin: 2rem 0 1rem; color: #2c3e50;">Détail complet des critères — {}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Critère</th>
+                    <th>Titre</th>
+                    <th>Classification</th>
+                    <th>Statut</th>
+                    <th>Détail</th>
+                </tr>
+            </thead>
+            <tbody>"#,
+            escape_html(&page.url)
+        );
+
+        let mut criteria = complete_criteria(&page.criteria);
+        criteria.sort_by(|a, b| {
+            status_rank(&a.status)
+                .cmp(&status_rank(&b.status))
+                .then_with(|| a.criterion_id.cmp(&b.criterion_id))
+        });
+
+        for criterion in &criteria {
+            let (badge_class, status_label) = status_badge(&criterion.status);
+            let title = if criterion.title.is_empty() {
+                "—"
+            } else {
+                criterion.title.as_str()
+            };
+
+            let _ = writeln!(
+                html,
+                r#"                <tr>
+                    <td><span class="finding-id">{}</span></td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td><span class="status-badge {}">{}</span></td>
+                    <td>{}</td>
+                </tr>"#,
+                escape_html(&criterion.criterion_id),
+                escape_html(title),
+                classification_label(criterion),
+                badge_class,
+                status_label,
+                escape_html(&criterion_detail(criterion))
+            );
+        }
+
+        let _ = writeln!(html, "            </tbody>\n        </table>");
+    }
+}
+
+/// Pads `results` against the full RGAA catalog so every one of the 106
+/// criteria appears — a page whose audit only returned a subset (a partial
+/// or failed run) would otherwise silently hide the criteria it never got
+/// to, which is the opposite of what a "Détail complet" table promises.
+fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
+    let mut by_id: HashMap<&str, &CriterionResult> = results
+        .iter()
+        .map(|c| (c.criterion_id.as_str(), c))
+        .collect();
+
+    let mut completed: Vec<CriterionResult> = RgaaCriteria::all()
+        .iter()
+        .map(|catalog_entry| match by_id.remove(catalog_entry.id) {
+            Some(existing) => existing.clone(),
+            None => CriterionResult {
+                criterion_id: catalog_entry.id.to_string(),
+                title: catalog_entry.title.clone(),
+                classification: catalog_entry.classification,
+                status: CriterionStatus::NotTested,
+                violations: vec![],
+                confidence: None,
+                justification: Some("Not tested — missing from audit result".into()),
+                source: "missing".into(),
+                citations: vec![],
+            },
+        })
+        .collect();
+
+    // Anything left in `by_id` has a criterion_id the catalog doesn't
+    // recognize — append it rather than silently dropping it, so a stray or
+    // legacy id (including one that failed) still shows up in the "Détail
+    // complet" table instead of vanishing.
+    completed.extend(by_id.into_values().cloned());
+    completed
+}
+
+/// Sort order within a page's table: problems first, then what still needs a
+/// human, then the rest — so a reviewer sees what needs attention first
+/// without having to scroll past 100 passing rows.
+fn status_rank(status: &CriterionStatus) -> u8 {
+    match status {
+        CriterionStatus::Fail => 0,
+        CriterionStatus::Error => 1,
+        CriterionStatus::NeedsReview => 2,
+        CriterionStatus::NotTested => 3,
+        CriterionStatus::Pass => 4,
+        CriterionStatus::NotApplicable => 5,
+    }
+}
+
+fn status_badge(status: &CriterionStatus) -> (&'static str, &'static str) {
+    match status {
+        CriterionStatus::Pass => ("pass", "Valide"),
+        CriterionStatus::Fail => ("fail", "À corriger"),
+        CriterionStatus::NeedsReview => ("review", "Intervention humaine requise"),
+        CriterionStatus::NotApplicable => ("na", "Non applicable"),
+        CriterionStatus::NotTested => ("na", "Non testé"),
+        CriterionStatus::Error => ("fail", "Erreur"),
+    }
+}
+
+fn classification_label(criterion: &CriterionResult) -> &'static str {
+    match criterion.classification {
+        rgaa_core::Classification::Deterministe => "Déterministe",
+        rgaa_core::Classification::IaAssiste => "IA assistée",
+        rgaa_core::Classification::Manuel => "Manuel",
+    }
+}
+
+/// Best available explanation for a criterion's verdict: the evaluator's own
+/// justification when present, else a summary of the violations that were
+/// found, else a placeholder for criteria with neither (e.g. a clean pass).
+fn criterion_detail(criterion: &CriterionResult) -> String {
+    if let Some(justification) = criterion.justification.as_deref().filter(|j| !j.is_empty()) {
+        return justification.to_string();
+    }
+    if !criterion.violations.is_empty() {
+        return criterion
+            .violations
+            .iter()
+            .map(|v| {
+                format!(
+                    "{} ({}, {} élément(s))",
+                    v.description, v.impact, v.nodes_affected
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+    }
+    "—".to_string()
+}
+
 fn write_html_footer(html: &mut String) {
     let _ = writeln!(
         html,
@@ -259,7 +418,21 @@ fn escape_html(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::AuditConfig;
+    use rgaa_core::{AuditConfig, Classification, PageAudit};
+
+    fn criterion(id: &str, status: CriterionStatus) -> CriterionResult {
+        CriterionResult {
+            criterion_id: id.to_string(),
+            title: String::new(),
+            classification: Classification::Deterministe,
+            status,
+            violations: vec![],
+            confidence: None,
+            justification: None,
+            source: "test".into(),
+            citations: vec![],
+        }
+    }
 
     fn sample_bundle() -> AuditBundle {
         let mut bundle =
@@ -316,5 +489,38 @@ mod tests {
         let html = generate_html_report(&bundle);
         assert!(html.contains("&lt;script&gt;"));
         assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn incomplete_page_is_not_conforme_even_without_failures() {
+        let mut bundle =
+            AuditBundle::new("audit-2", "https://example.test", AuditConfig::default());
+        bundle.summary.failed = 0;
+        bundle.summary.errors = 0;
+        bundle.pages.push(PageAudit {
+            page_id: "page-0".into(),
+            url: "https://example.test".into(),
+            title: None,
+            // Only one of the 106 catalog criteria — an incomplete run.
+            criteria: vec![criterion("1.1", CriterionStatus::Pass)],
+            findings: vec![],
+            errors: vec![],
+            completed: true,
+            duration_ms: 0,
+        });
+
+        let html = generate_html_report(&bundle);
+        assert!(html.contains("Non Conforme"));
+    }
+
+    #[test]
+    fn complete_criteria_preserves_results_outside_the_catalog() {
+        let results = vec![criterion("not-a-real-id", CriterionStatus::Fail)];
+        let completed = complete_criteria(&results);
+
+        assert_eq!(completed.len(), RgaaCriteria::all().len() + 1);
+        assert!(completed
+            .iter()
+            .any(|c| c.criterion_id == "not-a-real-id" && c.status == CriterionStatus::Fail));
     }
 }

@@ -45,6 +45,69 @@ rgaa-rs/
 - French domain terminology for RGAA concepts, English for code identifiers
 - Structured tracing with context fields: `info!(attempt, max_retries, "message")`
 
+### Fast Build, Check & Test
+
+This box has **4 cores / 7.7 GB RAM** and a heavy dependency graph
+(lancedb/datafusion/arrow via `rgaa-agent`'s `vector-store` feature). A naive
+`cargo build --workspace` takes many minutes and can OOM. Always:
+
+1. **Enable the compile cache first** — `sccache` is installed but not default:
+
+   ```bash
+   export RUSTC_WRAPPER=sccache
+   sccache --start-server   # once per shell
+   ```
+
+   Check it took: `sccache --show-stats` (hits should climb on repeat runs).
+
+2. **Scope to one crate while iterating**, widen only at the end:
+
+   ```bash
+   cargo check -p rgaa-orchestrator              # fastest inner loop
+   cargo check --workspace                       # library code, all crates
+   cargo check --workspace --all-targets         # + tests/benches/examples
+   ```
+
+   `--all-targets` roughly doubles work — do not put it in the inner loop.
+
+3. **Never let rustflags drift** — `RUSTFLAGS`/`RUSTC_WRAPPER` changes
+   invalidate the *entire* cargo cache and force a full dependency rebuild
+   (observed: 3.5 min). Set them once per shell, not per command.
+
+4. **Use `cargo nextest`** (installed) instead of `cargo test` — it runs tests
+   in parallel with a fresh process per test:
+
+   ```bash
+   cargo nextest run --workspace          # all tests
+   cargo nextest run -p rgaa-agent        # one crate
+   cargo nextest run -p rgaa-core --no-fail-fast
+   ```
+
+5. **Lint narrow too** — `cargo clippy --workspace --all-targets` is expensive.
+   Run `cargo clippy -p <crate> --all-targets` while iterating, workspace-wide
+   only before committing. Same for `cargo fmt --check`.
+
+6. **Read the error, not the wall** — pipe through a filter so a failed build
+   doesn't dump thousands of dep lines:
+
+   ```bash
+   cargo check --workspace --all-targets 2>&1 | grep -E "^error|error\[" | head -40
+   ```
+
+7. **Do not `cargo clean`** to "fix" a stale build — it throws away the cache
+   that makes the next run bearable. If an invalid state is suspected, delete
+   only the affected crate's artifacts under `target/debug/deps`.
+
+Standard verification sequence before claiming done:
+
+```bash
+export RUSTC_WRAPPER=sccache
+cargo fmt --check
+cargo clippy --workspace --all-targets 2>&1 | grep -E "^error|^warning: unused" | head -40
+cargo check --workspace --all-targets 2>&1 | grep -E "^error" | head -40
+cargo nextest run --workspace
+```
+
 ---
 
 ## CRITICAL: Ownership & Borrowing

@@ -251,4 +251,11 @@ Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
 
 ### Code review
 
-Pull requests are also reviewed automatically by **CodeRabbit**. Treat its inline comments and summary like feedback from a human reviewer: read them before merging, and address or explicitly dismiss each finding rather than ignoring it.
+Two bots review pull requests here, and only one of them runs on its own:
+
+- **Sourcery** reviews automatically on every PR — a review verdict plus a "Reviewer's Guide" summarising the change.
+- **CodeRabbit does *not* review automatically.** It declines on this repository because it has fewer than 10 stars ("This repository does not receive automatic reviews"), and posts only that notice. A CodeRabbit review has to be requested per PR, by commenting `@coderabbitai review`.
+
+So the absence of CodeRabbit findings on a PR means nothing was asked, not that nothing was found. Decide per PR whether to request one; a small, well-tested change with a clean Sourcery review does not need it.
+
+Whatever review does arrive, treat its inline comments and summary like feedback from a human reviewer: read them before merging, and address or explicitly dismiss each finding rather than ignoring it.

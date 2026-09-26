@@ -301,7 +301,10 @@ pub async fn list_findings(
     State(state): State<AppState>,
     Query(query): Query<ListFindingsQuery>,
 ) -> Result<Json<FindingsResponse>, StatusCode> {
-    let audit_id = uuid::Uuid::parse_str(&query.audit_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    // No UUID gate: `findings.audit_id` is TEXT and bundles are written with
+    // whatever `AuditBundle::audit_id` string they carry, so parsing here
+    // rejected audits that are stored and readable.
+    let audit_id = query.audit_id.as_str();
     let limit = query.limit.unwrap_or(100) as i64;
     let offset = query.offset.unwrap_or(0) as i64;
 

@@ -11,6 +11,7 @@ members = [
     "crates/rgaa-agent",
     "crates/rgaa-api",
     "crates/rgaa-mcp",
+    "crates/rgaa-mcp-http",
     "crates/rgaa-cli",
     "crates/rgaa-browser-tools",
     "crates/rgaa-data",

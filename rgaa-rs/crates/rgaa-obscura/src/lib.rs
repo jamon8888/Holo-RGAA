@@ -2,7 +2,7 @@ use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
@@ -12,10 +12,13 @@ use tokio::time::{timeout, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{info, warn};
 
+pub mod cdp_pool;
 pub mod config;
 pub mod evidence;
 pub mod guided;
 pub mod results;
+
+use crate::cdp_pool::CdpSessionPool;
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
@@ -34,6 +37,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
+
+/// Cached axe-core source to avoid repeated CDN downloads
+static AXE_CORE_CACHE: OnceLock<String> = OnceLock::new();
 
 /// Pinned substrate version. Keep in sync with `OBSCURA_VERSION` in
 /// `install.sh` / `install.ps1` and the e2e gate in `ci.yml`.
@@ -168,7 +174,27 @@ fn findings_from_axe(
 pub struct ObscuraBridge {
     binary_path: String,
     server_port: u16,
-    server_process: Option<Child>,
+    server_process: std::sync::Mutex<Option<Child>>,
+    cdp_pool: Option<Arc<CdpSessionPool>>,
+}
+
+impl ObscuraBridge {
+    /// Returns the binary path used for the obscura substrate.
+    #[must_use]
+    pub fn binary_path(&self) -> &str {
+        &self.binary_path
+    }
+}
+
+impl Clone for ObscuraBridge {
+    fn clone(&self) -> Self {
+        Self {
+            binary_path: self.binary_path.clone(),
+            server_port: self.server_port,
+            server_process: std::sync::Mutex::new(None), // Don't clone the child process
+            cdp_pool: self.cdp_pool.clone(),
+        }
+    }
 }
 
 impl Default for ObscuraBridge {
@@ -197,7 +223,8 @@ impl ObscuraBridge {
         Self {
             binary_path: "obscura".to_string(),
             server_port: 9222,
-            server_process: None,
+            server_process: std::sync::Mutex::new(None),
+            cdp_pool: None,
         }
     }
 
@@ -205,7 +232,8 @@ impl ObscuraBridge {
         Self {
             binary_path: path,
             server_port: 9222,
-            server_process: None,
+            server_process: std::sync::Mutex::new(None),
+            cdp_pool: None,
         }
     }
 
@@ -216,12 +244,6 @@ impl ObscuraBridge {
             Ok(path) if !path.is_empty() => Self::with_binary_path(path),
             _ => Self::new(),
         }
-    }
-
-    /// The resolved substrate binary path.
-    #[must_use]
-    pub fn binary_path(&self) -> &str {
-        &self.binary_path
     }
 
     /// Returns a lightweight handle to the same running server: shares
@@ -236,7 +258,8 @@ impl ObscuraBridge {
         Self {
             binary_path: self.binary_path.clone(),
             server_port: self.server_port,
-            server_process: None,
+            server_process: std::sync::Mutex::new(None),
+            cdp_pool: self.cdp_pool.clone(),
         }
     }
 
@@ -844,7 +867,7 @@ impl ObscuraBridge {
             .spawn()
             .map_err(|e| format!("Failed to start obscura serve: {e}"))?;
 
-        self.server_process = Some(child);
+        *self.server_process.lock().unwrap() = Some(child);
 
         // Wait for server to be ready
         for i in 0..50 {
@@ -856,6 +879,17 @@ impl ObscuraBridge {
             {
                 if resp.status().is_success() {
                     info!(attempt = i, %version, "Obscura CDP server ready");
+
+                    // Initialize CDP session pool
+                    let ws_url = self.get_browser_ws_url().await?;
+                    let cpu_count = std::thread::available_parallelism().map_or(1, |n| n.get());
+                    let workers = resolve_workers(
+                        std::env::var("OBSCURA_WORKERS").ok().as_deref(),
+                        cpu_count,
+                    );
+                    let pool = Arc::new(CdpSessionPool::new(ws_url, workers).await?);
+                    self.cdp_pool = Some(pool);
+
                     return Ok(());
                 }
             }
@@ -867,7 +901,10 @@ impl ObscuraBridge {
 
     /// Stop the background CDP server
     pub async fn stop_server(&mut self) {
-        if let Some(mut child) = self.server_process.take() {
+        // Take the child out first so the mutex guard is dropped before the
+        // await point — a `std::sync::MutexGuard` is !Send and cannot cross it.
+        let child = self.server_process.lock().unwrap().take();
+        if let Some(mut child) = child {
             let _ = child.kill().await;
             info!("Obscura CDP server stopped");
         }
@@ -895,70 +932,90 @@ impl ObscuraBridge {
 
     /// Fetch the axe-core source once (used by single and batch runs)
     async fn fetch_axe_source(&self) -> Result<String, String> {
-        reqwest::get(AXE_CORE_CDN)
+        if let Some(cached) = AXE_CORE_CACHE.get() {
+            return Ok(cached.clone());
+        }
+        let source = reqwest::get(AXE_CORE_CDN)
             .await
             .map_err(|e| format!("Failed to fetch axe-core: {e}"))?
             .text()
             .await
-            .map_err(|e| format!("Failed to read axe-core: {e}"))
+            .map_err(|e| format!("Failed to read axe-core: {e}"))?;
+        AXE_CORE_CACHE.set(source.clone()).ok();
+        Ok(source)
     }
 
     /// Run axe-core against `url` using a pre-fetched axe-core source string.
     ///
-    /// This avoids re-downloading axe-core per URL when batching. The created CDP
+    /// Uses the CDP session pool for connection reuse. The created CDP
     /// target is always detached/closed on every exit path (success or error).
     pub(crate) async fn run_axe_with_script(
         &self,
         url: &str,
         axe_source: &str,
     ) -> Result<String, String> {
-        // 1. Connect to browser-level WebSocket
-        let ws_url = self.get_browser_ws_url().await?;
-        let (mut ws, _) = connect_async(&ws_url)
-            .await
-            .map_err(|e| format!("Failed to connect to CDP WebSocket: {e}"))?;
+        // Use CDP session pool if available, otherwise fall back to direct connection
+        if let Some(pool) = &self.cdp_pool {
+            let mut guard = pool.acquire().await?;
 
-        // 2. Create a new target and get its ID
-        let target_id = {
-            let resp = Self::cdp_send(
-                &mut ws,
-                "Target.createTarget",
-                serde_json::json!({
-                    "url": url,
-                }),
-            )
-            .await?;
-            resp.get("targetId")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "No targetId in createTarget response".to_string())?
-                .to_string()
-        };
+            // Use pooled session methods
+            guard.navigate(url).await?;
+            guard.wait_for_load(Duration::from_secs(30)).await?;
+            let outcome = guard.run_axe_core(axe_source).await?;
 
-        // 3. Attach to the target and get session ID
-        let session_id = {
-            let resp = Self::cdp_send(
-                &mut ws,
-                "Target.attachToTarget",
-                serde_json::json!({
-                    "targetId": target_id,
-                    "flatten": true,
-                }),
-            )
-            .await?;
-            resp.get("sessionId")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
-                .to_string()
-        };
+            // Note: We don't clean up the target here - the session is returned to pool
+            // The target will be reused for subsequent operations
+            Ok(outcome)
+        } else {
+            // Fallback: direct connection (original behavior)
+            // 1. Connect to browser-level WebSocket
+            let ws_url = self.get_browser_ws_url().await?;
+            let (mut ws, _) = connect_async(&ws_url)
+                .await
+                .map_err(|e| format!("Failed to connect to CDP WebSocket: {e}"))?;
 
-        // 4. Run the actual evaluation, then always clean up the target.
-        let outcome = self.run_axe_core(&mut ws, &session_id, axe_source).await;
+            // 2. Create a new target and get its ID
+            let target_id = {
+                let resp = Self::cdp_send(
+                    &mut ws,
+                    "Target.createTarget",
+                    serde_json::json!({
+                        "url": url,
+                    }),
+                )
+                .await?;
+                resp.get("targetId")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "No targetId in createTarget response".to_string())?
+                    .to_string()
+            };
 
-        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
-        match (outcome, cleanup) {
-            (Ok(value), Ok(())) => Ok(value),
-            (Ok(_), Err(error)) => Err(error),
-            (Err(error), _) => Err(error),
+            // 3. Attach to the target and get session ID
+            let session_id = {
+                let resp = Self::cdp_send(
+                    &mut ws,
+                    "Target.attachToTarget",
+                    serde_json::json!({
+                        "targetId": target_id,
+                        "flatten": true,
+                    }),
+                )
+                .await?;
+                resp.get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+                    .to_string()
+            };
+
+            // 4. Run the actual evaluation, then always clean up the target.
+            let outcome = self.run_axe_core(&mut ws, &session_id, axe_source).await;
+
+            let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+            match (outcome, cleanup) {
+                (Ok(value), Ok(())) => Ok(value),
+                (Ok(_), Err(error)) => Err(error),
+                (Err(error), _) => Err(error),
+            }
         }
     }
 
@@ -1487,11 +1544,11 @@ impl ObscuraBridge {
 
     /// Run axe-core on multiple URLs concurrently using CDP workers.
     ///
-    /// Fetches axe-core once, then bounds concurrent `run_axe_with_script` calls
-    /// with a semaphore sized by `concurrency` (treated as 1 when 0).
+    /// Uses the CDP session pool for connection reuse. Fetches axe-core once,
+    /// then bounds concurrent evaluations with a semaphore.
     pub async fn run_axe_batch(
-        &self,
-        urls: &[String],
+        self: std::sync::Arc<Self>,
+        urls: Vec<String>,
         concurrency: usize,
     ) -> Result<HashMap<String, String>, String> {
         if urls.is_empty() {
@@ -1502,7 +1559,7 @@ impl ObscuraBridge {
 
         info!(
             urls = urls.len(),
-            concurrency, "Running batch axe-core audit via CDP"
+            concurrency, "Running batch axe-core audit via CDP (pooled)"
         );
 
         // Fetch axe-core once for the whole batch.
@@ -1513,22 +1570,14 @@ impl ObscuraBridge {
 
         for url in urls {
             let tx = tx.clone();
-            let binary_path = self.binary_path.clone();
-            let port = self.server_port;
-            let url = url.clone();
             let axe = axe_source.clone();
             let sem = Arc::clone(&sem);
+            let this = self.clone();
 
             tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
 
-                let bridge = ObscuraBridge {
-                    binary_path,
-                    server_port: port,
-                    server_process: None,
-                };
-
-                let result = bridge.run_axe_with_script(&url, &axe).await;
+                let result = this.run_axe_with_script(&url, &axe).await;
                 let _ = tx.send((url, result)).await;
             });
         }
@@ -1556,12 +1605,12 @@ impl ObscuraBridge {
     /// multiple positional URLs). The single JSON object returned is parsed into a
     /// per-URL map; a non-conforming payload is an error (entries are never dropped silently).
     pub async fn run_gap_fix_batch(
-        &self,
-        urls: &[String],
-        snippets: &HashMap<String, &str>,
+        binary_path: String,
+        urls: Vec<String>,
+        snippets: HashMap<String, String>,
         concurrency: usize,
     ) -> Result<HashMap<String, HashMap<String, serde_json::Value>>, String> {
-        let script = Self::build_gap_fix_script(snippets);
+        let script = Self::build_gap_fix_script(&snippets);
 
         info!(
             urls = urls.len(),
@@ -1570,8 +1619,8 @@ impl ObscuraBridge {
             "Running batch gap-fix via CLI"
         );
 
-        let output = timeout(Duration::from_secs(300), async {
-            Command::new(&self.binary_path)
+        let output = timeout(Duration::from_secs(300), async move {
+            Command::new(&binary_path)
                 .arg("scrape")
                 .args(urls.iter())
                 .arg("--eval")
@@ -1616,8 +1665,8 @@ impl ObscuraBridge {
     /// All URLs are passed to a single `obscura scrape` invocation and the result
     /// is parsed into a per-URL map (entries are never dropped silently).
     pub async fn extract_page_context_batch(
-        &self,
-        urls: &[String],
+        binary_path: String,
+        urls: Vec<String>,
         concurrency: usize,
     ) -> Result<HashMap<String, serde_json::Value>, String> {
         let script = Self::build_page_context_script();
@@ -1627,8 +1676,8 @@ impl ObscuraBridge {
             concurrency, "Running batch page context extraction via CLI"
         );
 
-        let output = timeout(Duration::from_secs(300), async {
-            Command::new(&self.binary_path)
+        let output = timeout(Duration::from_secs(300), async move {
+            Command::new(&binary_path)
                 .arg("scrape")
                 .args(urls.iter())
                 .arg("--eval")
@@ -1701,7 +1750,7 @@ impl ObscuraBridge {
     /// rather than a string. Without the `return`, every snippet evaluated
     /// to `undefined` and `JSON.stringify` dropped its key, so the batch
     /// silently came back empty.
-    fn build_gap_fix_script(snippets: &HashMap<String, &str>) -> String {
+    fn build_gap_fix_script(snippets: &HashMap<String, String>) -> String {
         let snippet_decls: String = snippets
             .iter()
             .map(|(id, snippet)| {
@@ -2273,7 +2322,7 @@ impl ObscuraBridge {
 
 impl Drop for ObscuraBridge {
     fn drop(&mut self) {
-        if let Some(mut child) = self.server_process.take() {
+        if let Some(mut child) = self.server_process.lock().unwrap().take() {
             let _ = child.start_kill();
         }
     }
@@ -2314,7 +2363,7 @@ mod tests {
         let handle = bridge.handle();
         assert_eq!(handle.binary_path(), bridge.binary_path());
         assert_eq!(handle.server_port, bridge.server_port);
-        assert!(handle.server_process.is_none());
+        assert!(handle.server_process.lock().unwrap().is_none());
     }
 
     // Network-dependent: requires a reachable browser/CDP server and example.com.
@@ -2530,16 +2579,19 @@ mod tests {
 
     #[test]
     fn gap_fix_script_returns_each_snippet_value_as_an_object() {
-        let mut snippets: HashMap<String, &str> = HashMap::new();
+        let mut snippets: HashMap<String, String> = HashMap::new();
         // Real gap-fix shape: an IIFE that returns a JSON *string*.
         snippets.insert(
             "1.1".into(),
-            "(() => { return JSON.stringify({ pass: false, details: '2 images without alt', nodes: 2 }); })()",
+            "(() => { return JSON.stringify({ pass: false, details: '2 images without alt', nodes: 2 }); })()".to_string(),
         );
         // A snippet returning a plain value is passed through untouched.
-        snippets.insert("plain".into(), "(() => ({ pass: true }))()");
+        snippets.insert("plain".into(), "(() => ({ pass: true }))()".to_string());
         // A throwing snippet must not take the others down.
-        snippets.insert("boom".into(), "(() => { throw new Error('nope'); })()");
+        snippets.insert(
+            "boom".into(),
+            "(() => { throw new Error('nope'); })()".to_string(),
+        );
 
         let script = ObscuraBridge::build_gap_fix_script(&snippets);
         assert!(
@@ -2556,5 +2608,28 @@ mod tests {
         assert_eq!(result["plain"]["pass"], serde_json::json!(true));
         assert_eq!(result["boom"]["success"], serde_json::json!(false));
         assert_eq!(result["boom"]["error"], serde_json::json!("nope"));
+    }
+}
+
+#[cfg(test)]
+mod send_sync_tests {
+    use super::*;
+
+    #[test]
+    fn obscura_bridge_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<ObscuraBridge>();
+        assert_sync::<ObscuraBridge>();
+        assert_send::<Arc<ObscuraBridge>>();
+    }
+}
+
+#[cfg(test)]
+mod send_sync_types {
+    #[test]
+    fn core_types_are_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<crate::ObscuraBridge>();
     }
 }

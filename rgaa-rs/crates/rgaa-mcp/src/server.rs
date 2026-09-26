@@ -675,7 +675,7 @@ impl ToolServer {
     }
 }
 
-#[tool_router]
+#[tool_router(vis = "pub")]
 impl ToolServer {
     #[tool(
         name = "analyze",

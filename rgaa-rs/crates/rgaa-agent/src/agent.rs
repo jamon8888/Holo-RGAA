@@ -11,6 +11,7 @@ use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
 use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -39,6 +40,58 @@ fn tier_for(criterion_id: &str) -> ModelTier {
     }
 }
 
+/// Batch evaluation response from the LLM
+#[derive(Deserialize, Debug, Clone)]
+struct BatchEvaluationResponse {
+    /// Echoed back by the model — the batch prompt asks for it explicitly.
+    /// Results are matched on this, never on array position: a model that
+    /// reorders or omits an element would otherwise have its verdict recorded
+    /// against a different RGAA criterion.
+    #[serde(default)]
+    criterion_id: String,
+    verdict: String,
+    confidence: f64,
+    justification: String,
+}
+
+/// Extracts the outermost JSON array from `text`.
+///
+/// Models routinely wrap the array in a ```json fence or a sentence of prose,
+/// which makes a bare `serde_json::from_str` on the whole reply fail.
+fn extract_json_array(text: &str) -> Option<&str> {
+    let start = text.find('[')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, c) in text[start..].char_indices() {
+        if in_string {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[start..=start + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Number of criteria to evaluate per batch LLM call.
+/// Default: 5 (balances prompt size vs. number of API calls).
+const BATCH_SIZE: usize = 5;
+
 /// RGAA agentic evaluator for IA-assistée criteria.
 ///
 /// Holds one agent per [`ModelTier`] — the tactical tier for most criteria,
@@ -58,6 +111,7 @@ pub struct RgaaAgent {
     /// unless the operator set a reasoning-specific one.
     reasoning: Agent,
     rate_limiter: Arc<Ratelimiter>,
+    agent_concurrency: usize,
     /// Shared across every clone (and every concurrent task spawned from
     /// `run_ia_assiste`/`run_partially_automatable`) so a real outage trips
     /// the breaker for the whole audit, not just one task's local retries.
@@ -76,6 +130,9 @@ impl RgaaAgent {
     /// limiter fails to initialize.
     #[tracing::instrument(skip_all)]
     pub async fn new(config: &AgentConfig) -> Result<Self, AgentError> {
+        if config.agent_concurrency == 0 {
+            return Err(AgentError::Config("agent_concurrency must be > 0".into()));
+        }
         // 1. One OpenAI-compatible client for the configured provider —
         //    Holo3, OpenAI, Groq, a local Ollama, anything in
         //    `rgaa_core::PROVIDERS`. Both tiers share it: they differ by
@@ -128,6 +185,11 @@ impl RgaaAgent {
             tactical: build_agent(config.model_tactical()),
             reasoning: build_agent(config.model_reasoning()),
             rate_limiter,
+            // Floored at 1 independently of `AgentConfig::from_env`, which
+            // already drops a zero: the field is public, so a hand-built
+            // config could still carry one, and `buffer_unordered(0)` never
+            // polls its source stream — the audit would hang rather than fail.
+            agent_concurrency: config.agent_concurrency.max(1),
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             tripped_at: Arc::new(Mutex::new(None)),
         })
@@ -285,33 +347,196 @@ impl RgaaAgent {
     /// the same page. Uses bounded concurrency with the internal rate
     /// limiter, tiered per criterion by [`tier_for`], to avoid overwhelming
     /// the Holo3 API while keeping evaluations parallel.
+    ///
+    /// Criteria are evaluated in batches of `BATCH_SIZE` to reduce the number
+    /// of LLM API calls.
     pub async fn run_ia_assiste(
-        &self,
-        criteria: &[Criterion],
-        page_context: &PageContext,
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        page_context: PageContext,
     ) -> HashMap<String, CriterionResult> {
         use futures::stream::{self, StreamExt};
 
-        let rendered_context = Arc::new(PromptBuilder::render_context(page_context));
-        let results = stream::iter(criteria.iter().cloned())
-            .map(|criterion| {
-                let self_ = Arc::new(self.clone());
+        let rendered_context = Arc::new(PromptBuilder::render_context(&page_context));
+
+        // Grouped by tier before chunking, so a batch never mixes tiers and
+        // `tier_for`'s routing survives: forcing `Tactical` on every batch sent
+        // the visual criteria to the cheap model and billed the wrong bucket.
+        let mut tactical: Vec<Criterion> = Vec::new();
+        let mut reasoning: Vec<Criterion> = Vec::new();
+        for criterion in criteria {
+            match tier_for(criterion.id) {
+                ModelTier::Tactical => tactical.push(criterion),
+                ModelTier::Reasoning => reasoning.push(criterion),
+            }
+        }
+
+        let batches: Vec<(Vec<Criterion>, ModelTier)> = tactical
+            .chunks(BATCH_SIZE)
+            .map(|c| (c.to_vec(), ModelTier::Tactical))
+            .chain(
+                reasoning
+                    .chunks(BATCH_SIZE)
+                    .map(|c| (c.to_vec(), ModelTier::Reasoning)),
+            )
+            .collect();
+
+        // Batches run concurrently up to `agent_concurrency` — awaiting them
+        // one by one meant the configured concurrency was never used on this
+        // path, which is the whole point of batching here.
+        let concurrency = self.agent_concurrency;
+        stream::iter(batches)
+            .map(|(batch, tier)| {
+                let self_ = self.clone();
                 let rendered_context = rendered_context.clone();
+                async move { self_.evaluate_batch(batch, rendered_context, tier).await }
+            })
+            .buffer_unordered(concurrency)
+            .fold(HashMap::new(), |mut acc, batch_results| async move {
+                acc.extend(batch_results);
+                acc
+            })
+            .await
+    }
+
+    /// Evaluate a batch of criteria with a single LLM call
+    async fn evaluate_batch(
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        rendered_context: Arc<String>,
+        tier: ModelTier,
+    ) -> HashMap<String, CriterionResult> {
+        if criteria.is_empty() {
+            return HashMap::new();
+        }
+        let criterion_ids: Vec<&str> = criteria.iter().map(|c| c.id).collect();
+
+        // Build batch prompt
+        let prompt = PromptBuilder::build_batch_from_rendered(&criterion_ids, &rendered_context);
+
+        // The breaker gates the batch path too: without this, every batch of
+        // a dead upstream spent a request and only the per-criterion fallback
+        // ever tripped it, so other callers kept hammering it.
+        if self.breaker_open() {
+            tracing::warn!(criteria = ?criterion_ids, "circuit breaker open; skipping batch call");
+            return self.evaluate_individually(criteria, rendered_context).await;
+        }
+
+        // Rate limit
+        self.rate_limiter.acquire(tier).await;
+
+        // Call LLM
+        let response = match self.agent_for(tier).prompt(prompt.as_str()).await {
+            Ok(response) => {
+                self.record_success();
+                response
+            }
+            Err(e) => {
+                let failures = self.record_failure();
+                if failures >= CIRCUIT_BREAKER_THRESHOLD {
+                    tracing::warn!(consecutive_failures = failures, "circuit breaker tripped");
+                }
+                tracing::warn!(criteria = ?criterion_ids, error = %e, "batch evaluation failed");
+                // Fall back to individual evaluation on error
+                return self.evaluate_individually(criteria, rendered_context).await;
+            }
+        };
+
+        // Parse the batch response, keyed by the `criterion_id` the prompt
+        // asks the model to echo. The array is extracted from the reply first
+        // because models wrap it in a ```json fence or a line of prose.
+        let batch_responses: Vec<BatchEvaluationResponse> = extract_json_array(&response)
+            .and_then(|array| serde_json::from_str(array).ok())
+            .or_else(|| serde_json::from_str(&response).ok())
+            .unwrap_or_default();
+
+        let mut by_id: HashMap<&str, &BatchEvaluationResponse> = HashMap::new();
+        let mut duplicated: Vec<&str> = Vec::new();
+        for r in &batch_responses {
+            let id = r.criterion_id.trim();
+            if id.is_empty() {
+                continue;
+            }
+            if by_id.insert(id, r).is_some() {
+                // Two results for one criterion: neither can be trusted, so
+                // the criterion goes to the individual path below.
+                duplicated.push(id);
+            }
+        }
+        for id in duplicated {
+            by_id.remove(id);
+        }
+
+        // Map responses to results
+        let mut results = HashMap::new();
+        let mut unmatched: Vec<Criterion> = Vec::new();
+        for criterion in &criteria {
+            let Some(response) = by_id.get(criterion.id) else {
+                // No usable result for this criterion. Evaluating it on its own
+                // is the only honest option — defaulting it to "na" would
+                // record a verdict the model never gave.
+                unmatched.push(criterion.clone());
+                continue;
+            };
+
+            let status = map_verdict(&HoloResponse {
+                verdict: response.verdict.clone(),
+                confidence: response.confidence,
+                justification: response.justification.clone(),
+            });
+
+            results.insert(
+                criterion.id.to_string(),
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.clone(),
+                    classification: criterion.classification,
+                    status,
+                    violations: vec![],
+                    confidence: Some(response.confidence),
+                    justification: Some(response.justification.clone()),
+                    source: "agent-batch".to_string(),
+                    citations: vec![],
+                },
+            );
+        }
+
+        if !unmatched.is_empty() {
+            tracing::warn!(
+                missing = unmatched.len(),
+                of = criteria.len(),
+                "batch response did not cover every criterion; evaluating the rest individually"
+            );
+            let fallback = self
+                .evaluate_individually(unmatched, rendered_context)
+                .await;
+            results.extend(fallback);
+        }
+
+        results
+    }
+
+    /// Fallback: evaluate criteria individually when batch fails
+    async fn evaluate_individually(
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        rendered_context: Arc<String>,
+    ) -> HashMap<String, CriterionResult> {
+        use futures::stream::{self, StreamExt};
+
+        let results = stream::iter(criteria)
+            .map(|criterion| {
+                let self_ = self.clone();
+                let rendered_context = rendered_context.clone();
+                let criterion_id = criterion.id;
                 async move {
                     let result = self_
                         .evaluate_criterion_rendered(&criterion, &rendered_context)
                         .await;
-                    (criterion.id.to_string(), result)
+                    (criterion_id.to_string(), result)
                 }
             })
-            // Serialized: the local Ollama backend has a single inference
-            // slot on this host, so concurrent requests just queue behind
-            // it — and can sit long enough for reqwest's idle-connection
-            // pool timeout to close them out from under the wait, which
-            // then trips the circuit breaker. `buffer_unordered(1)` sends
-            // one request at a time so nothing is left waiting on a held
-            // connection.
-            .buffer_unordered(1)
+            .buffer_unordered(1) // Sequential for fallback
             .collect::<HashMap<_, _>>()
             .await;
 
@@ -324,16 +549,17 @@ impl RgaaAgent {
     /// PartiallyAutomatable criteria need human judgment on the portions
     /// not covered by automated checks. Results are marked [`CriterionStatus::NeedsReview`].
     pub async fn run_partially_automatable(
-        &self,
-        criteria: &[Criterion],
-        page_context: &PageContext,
+        self: std::sync::Arc<Self>,
+        criteria: Vec<Criterion>,
+        page_context: PageContext,
     ) -> HashMap<String, CriterionResult> {
         use futures::stream::{self, StreamExt};
 
-        let rendered_context = Arc::new(PromptBuilder::render_context(page_context));
-        let results = stream::iter(criteria.iter().cloned())
+        let rendered_context = Arc::new(PromptBuilder::render_context(&page_context));
+        let concurrency = self.agent_concurrency;
+        let results = stream::iter(criteria)
             .map(|criterion| {
-                let self_ = Arc::new(self.clone());
+                let self_ = self.clone();
                 let rendered_context = rendered_context.clone();
                 async move {
                     let result = self_
@@ -342,7 +568,7 @@ impl RgaaAgent {
                     (criterion.id.to_string(), result)
                 }
             })
-            .buffer_unordered(1)
+            .buffer_unordered(concurrency)
             .collect::<HashMap<_, _>>()
             .await;
 
@@ -424,5 +650,92 @@ impl RgaaAgent {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+
+    fn parse(text: &str) -> Vec<BatchEvaluationResponse> {
+        extract_json_array(text)
+            .and_then(|a| serde_json::from_str(a).ok())
+            .or_else(|| serde_json::from_str(text).ok())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn extracts_the_array_from_a_fenced_reply() {
+        // The usual shape of a model reply: prose, a ```json fence, more prose.
+        let reply = "Voici mon analyse :\n```json\n[{\"criterion_id\":\"1.1\",\
+                     \"verdict\":\"pass\",\"confidence\":0.9,\"justification\":\"ok\"}]\n```\nFin.";
+        let parsed = parse(reply);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].criterion_id, "1.1");
+        assert_eq!(parsed[0].verdict, "pass");
+    }
+
+    #[test]
+    fn extracts_a_bare_array_too() {
+        let reply =
+            r#"[{"criterion_id":"3.1","verdict":"fail","confidence":0.5,"justification":"x"}]"#;
+        assert_eq!(parse(reply)[0].criterion_id, "3.1");
+    }
+
+    #[test]
+    fn a_bracket_inside_a_string_does_not_end_the_array() {
+        let reply = r#"[{"criterion_id":"1.1","verdict":"fail","confidence":0.5,
+                        "justification":"le texte ] et [ sont cités"}]"#;
+        let parsed = parse(reply);
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].justification.contains(']'));
+    }
+
+    #[test]
+    fn nothing_parsable_yields_no_responses_rather_than_a_wrong_one() {
+        assert!(parse("Je n'ai pas pu évaluer ces critères.").is_empty());
+        assert!(parse("").is_empty());
+    }
+
+    /// The mapping rule this whole rewrite exists for: a reordered or partial
+    /// batch must never land a verdict on the wrong criterion.
+    #[test]
+    fn responses_are_matched_by_id_not_by_position() {
+        let reply = r#"[
+            {"criterion_id":"3.1","verdict":"fail","confidence":0.8,"justification":"contraste"},
+            {"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"alt ok"}
+        ]"#;
+        let parsed = parse(reply);
+        let by_id: HashMap<&str, &BatchEvaluationResponse> = parsed
+            .iter()
+            .map(|r| (r.criterion_id.as_str(), r))
+            .collect();
+
+        // Positional mapping would have given 1.1 the "fail" meant for 3.1.
+        assert_eq!(by_id["1.1"].verdict, "pass");
+        assert_eq!(by_id["3.1"].verdict, "fail");
+    }
+
+    #[test]
+    fn a_criterion_absent_from_the_response_has_no_entry() {
+        // It must fall through to individual evaluation, not be defaulted to
+        // "na" — a verdict the model never gave.
+        let reply =
+            r#"[{"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"ok"}]"#;
+        let parsed = parse(reply);
+        let by_id: HashMap<&str, &BatchEvaluationResponse> = parsed
+            .iter()
+            .map(|r| (r.criterion_id.as_str(), r))
+            .collect();
+        assert!(by_id.contains_key("1.1"));
+        assert!(!by_id.contains_key("3.1"));
+    }
+
+    #[test]
+    fn criteria_split_into_batches_keep_their_tier() {
+        // 1.1 is textual, 3.1 needs the visual model: grouping by tier first is
+        // what stops a batch from being billed and answered on the wrong one.
+        assert_eq!(tier_for("3.1"), ModelTier::Reasoning);
+        assert_eq!(tier_for("1.1"), ModelTier::Tactical);
     }
 }

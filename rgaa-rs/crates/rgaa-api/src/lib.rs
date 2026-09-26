@@ -26,11 +26,12 @@ pub struct AppState {
 /// Request timeout, in seconds, for every route. A long audit call cannot
 /// hold a server worker forever — the timeout surfaces as a marked error
 /// (408) instead. Configurable via `RGAA_API_REQUEST_TIMEOUT_SECS`.
+/// Default raised to 600s (10min) to accommodate multi-criterion LLM evaluation.
 fn request_timeout() -> Duration {
     let secs = std::env::var("RGAA_API_REQUEST_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(120);
+        .unwrap_or(600);
     Duration::from_secs(secs)
 }
 

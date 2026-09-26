@@ -647,7 +647,7 @@ async fn a11y_tree_tool_calls_err_when_not_connected() {
 async fn test_tool_context_creation() {
     let session = BrowserSession::new_placeholder();
     let ctx = ToolContext::new(session);
-    assert!(ctx.session().lock().await.current_url().is_none());
+    assert!(ctx.session().lock().current_url().is_none());
 }
 
 #[test]

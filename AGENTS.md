@@ -92,7 +92,7 @@ This box has **4 cores / 7.7 GB RAM** and a heavy dependency graph
 
    ```bash
    cargo check --workspace --all-targets 2>&1 | tee /tmp/check.log | grep -E "^error|error\[" | head -40
-   test "${PIPESTATUS[0]}" -eq 0 || echo "cargo check FAILED (see /tmp/check.log)"
+   CHECK=${PIPESTATUS[0]}; [ "$CHECK" -eq 0 ] || { echo "cargo check FAILED (see /tmp/check.log)" >&2; exit "$CHECK"; }
    ```
 
    `${PIPESTATUS[0]}` is what makes this honest: bash reports the status of the
@@ -111,9 +111,9 @@ Standard verification sequence before claiming done:
 export RUSTC_WRAPPER=sccache
 cargo fmt --check
 cargo clippy --workspace --all-targets 2>&1 | grep -E "^error|^warning: unused" | head -40
-test "${PIPESTATUS[0]}" -eq 0 || echo "clippy FAILED"
+CHECK=${PIPESTATUS[0]}; [ "$CHECK" -eq 0 ] || { echo "clippy FAILED" >&2; exit "$CHECK"; }
 cargo check --workspace --all-targets 2>&1 | grep -E "^error" | head -40
-test "${PIPESTATUS[0]}" -eq 0 || echo "check FAILED"
+CHECK=${PIPESTATUS[0]}; [ "$CHECK" -eq 0 ] || { echo "check FAILED" >&2; exit "$CHECK"; }
 cargo nextest run --workspace
 ```
 

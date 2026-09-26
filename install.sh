@@ -564,8 +564,13 @@ verify_install() {
     echo "  Next steps:"
     echo "    1. Ensure ${INSTALL_DIR} is in your PATH"
     echo "    2. Restart Claude Code to load the MCP server"
-    echo "    3. Set HOLO3_API_KEY for AI-assisted evaluation"
-    echo "       export HOLO3_API_KEY=\"your-key\""
+    echo "    3. Configure the LLM for AI-assisted evaluation"
+    # Fetched from the default branch rather than ${RELEASE_TAG}: the installer
+    # is normally run straight off a URL with no repository checkout, so there
+    # is no local .env.example to copy.
+    echo "       curl -fsSL https://raw.githubusercontent.com/${REPO}/master/.env.example -o .env"
+    echo "       then set RGAA_LLM_PROVIDER / RGAA_LLM_MODEL / RGAA_LLM_API_KEY in .env"
+    echo "       providers: holo3, openai, openrouter, groq, mistral, ollama, custom, ..."
     echo ""
     echo "  Quick test:"
     echo "    rgaa-cli analyze --url https://example.com"

@@ -32,19 +32,41 @@ pub async fn audit(url: Option<String>, output: Option<PathBuf>) -> anyhow::Resu
 }
 
 pub async fn config_show() -> anyhow::Result<()> {
-    let api_key = crate::keyring::get_api_key().ok();
-    let base_url = crate::keyring::get_base_url()
-        .unwrap_or_else(|| "https://api.hcompany.ai/v1/chat/completions".to_string());
-
-    println!(
-        "API Key: {}",
-        if api_key.is_some() {
-            "*** (set)"
-        } else {
-            "(not set)"
+    // The LLM route is whatever an audit would actually resolve from the
+    // environment (and the `.env` loaded at startup), not the stored keyring
+    // entry — printing the latter would describe a configuration no audit
+    // uses.
+    match rgaa_core::LlmSettings::from_env() {
+        Ok(llm) => {
+            println!("Provider: {}", llm.provider.name);
+            println!("Base URL: {}", llm.base_url);
+            println!(
+                "API Key: {}",
+                if llm.api_key.is_empty() {
+                    "(none needed)"
+                } else {
+                    "*** (set)"
+                }
+            );
+            println!("Model: {}", llm.model);
+            if llm.model_tactical != llm.model {
+                println!("  tactical:  {}", llm.model_tactical);
+            }
+            if llm.model_reasoning != llm.model {
+                println!("  reasoning: {}", llm.model_reasoning);
+            }
+            println!("Timeout: {}s", llm.timeout.as_secs());
         }
-    );
-    println!("Base URL: {}", base_url);
+        Err(e) => {
+            println!("LLM: not configured ({e})");
+            println!("Copy .env.example to .env and set RGAA_LLM_* to fix this.");
+        }
+    }
+
+    let stored_key = crate::keyring::get_api_key().ok().flatten();
+    if stored_key.is_some() {
+        println!("Keyring: a Holo3 key is stored (used only when exported as HOLO3_API_KEY)");
+    }
     println!("Storage: ~/.rgaa/audits.db");
 
     Ok(())

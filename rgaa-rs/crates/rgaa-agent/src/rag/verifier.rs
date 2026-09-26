@@ -82,16 +82,20 @@ impl Verifier {
     /// initialize.
     pub async fn new(config: &AgentConfig) -> Result<Self, AgentError> {
         let client = openai::Client::builder()
-            .base_url(&config.holo3_base_url)
+            .base_url(&config.base_url)
             .api_key(&config.api_key)
+            .http_client(config.http_client()?)
             .build()
             .map_err(|e| AgentError::RigAgent(e.to_string()))?
             .completions_api();
 
         let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));
 
+        // Verification is the hard-judgement half of the loop, so it runs on
+        // the reasoning tier's model — the same one as `config.model` unless
+        // the operator pointed RGAA_LLM_MODEL_REASONING somewhere better.
         let agent = client
-            .agent(config.model.as_str())
+            .agent(config.model_reasoning())
             .preamble(
                 "Tu es un vérificateur RGAA indépendant. Tu juges uniquement sur les \
                  éléments déjà fournis dans ce message (contexte de page déjà extrait, \
@@ -141,7 +145,11 @@ impl Verifier {
         // at all — see the struct docs) versus the evaluator's
         // tool-using flow: the asymmetry the spec calls for falls out of
         // this worker simply having nothing to loop on.
-        self.rate_limiter.acquire(ModelTier::Tactical).await;
+        //
+        // The tier must match the model this agent was built on
+        // (`config.model_reasoning()`), or reasoning-model calls would drain
+        // the tactical bucket and leave the reasoning limit unenforced.
+        self.rate_limiter.acquire(ModelTier::Reasoning).await;
 
         let text = self
             .agent

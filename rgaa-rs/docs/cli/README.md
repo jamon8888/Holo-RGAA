@@ -222,9 +222,16 @@ Styled report suitable for sharing.
 
 ## Environment Variables
 
+The CLI loads a `.env` file from the working directory (or any parent) at
+startup; variables already set in the real environment win. See
+[`.env.example`](../../../.env.example) for the full list.
+
 | Variable | Description |
 |----------|-------------|
-| `HOLO3_API_KEY` | API key for LLM-assisted evaluation |
+| `RGAA_LLM_PROVIDER` | LLM provider (`holo3`, `openai`, `groq`, `ollama`, `custom`, ...); defaults to `holo3` |
+| `RGAA_LLM_MODEL` | Model identifier sent to the provider |
+| `RGAA_LLM_API_KEY` | API key; the provider's native variable (`HOLO3_API_KEY`, ...) also works |
+| `RGAA_LLM_MODEL_TACTICAL` / `RGAA_LLM_MODEL_REASONING` | Per-tier model overrides |
 | `RGAA_EVIDENCE_DIR` | Override evidence directory |
 | `OBSCURA_BIN` | Path to Obscura browser binary |
 

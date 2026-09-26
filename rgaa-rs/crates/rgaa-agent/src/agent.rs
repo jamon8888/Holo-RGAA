@@ -94,13 +94,22 @@ const BATCH_SIZE: usize = 5;
 
 /// RGAA agentic evaluator for IA-assistée criteria.
 ///
-/// Uses a single Holo3 model with token-bucket rate limiting, tiered by
-/// [`tier_for`]. Conversation memory and vector retrieval are available via
-/// [`LanceDbMemory`] and [`LanceDbVectorStore`] but are not yet
-/// integrated into the evaluation path.
+/// Holds one agent per [`ModelTier`] — the tactical tier for most criteria,
+/// the reasoning tier for the visual/hard ones [`tier_for`] routes there —
+/// each on the model its `RGAA_LLM_MODEL_TACTICAL` / `RGAA_LLM_MODEL_REASONING`
+/// variable names, both against the provider resolved by
+/// [`rgaa_core::LlmSettings`]. When neither tier is overridden the two
+/// agents run the same model, which is the single-model setup this used to
+/// hardcode. Token-bucket rate limiting is applied per tier. Conversation
+/// memory and vector retrieval are available via [`LanceDbMemory`] and
+/// [`LanceDbVectorStore`] but are not yet integrated into the evaluation path.
 #[derive(Clone)]
 pub struct RgaaAgent {
-    agent: Agent,
+    /// Agent for [`ModelTier::Tactical`].
+    tactical: Agent,
+    /// Agent for [`ModelTier::Reasoning`]; the same model as `tactical`
+    /// unless the operator set a reasoning-specific one.
+    reasoning: Agent,
     rate_limiter: Arc<Ratelimiter>,
     agent_concurrency: usize,
     /// Shared across every clone (and every concurrent task spawned from
@@ -124,10 +133,18 @@ impl RgaaAgent {
         if config.agent_concurrency == 0 {
             return Err(AgentError::Config("agent_concurrency must be > 0".into()));
         }
-        // 1. Create OpenAI-compatible client pointing at Holo3
+        // 1. One OpenAI-compatible client for the configured provider —
+        //    Holo3, OpenAI, Groq, a local Ollama, anything in
+        //    `rgaa_core::PROVIDERS`. Both tiers share it: they differ by
+        //    model, not by endpoint.
         let client = openai::Client::builder()
-            .base_url(&config.holo3_base_url)
+            .base_url(&config.base_url)
             .api_key(&config.api_key)
+            // Without an explicit HTTP backend, rig builds a default
+            // `reqwest::Client` with no timeout of its own, so the resolved
+            // `RGAA_LLM_TIMEOUT_SECS` (and the 600s local default that slow
+            // CPU inference needs) would never reach the wire.
+            .http_client(config.http_client()?)
             .build()
             .map_err(|e| AgentError::RigAgent(e.to_string()))?
             .completions_api();
@@ -135,25 +152,38 @@ impl RgaaAgent {
         // 2. Create rate limiter from config (tactical/reasoning RPM)
         let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));
 
-        // 3. Build agent with preamble and spider tool
-        let agent = client
-            .agent(config.model.as_str())
-            .preamble(
-                "You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.",
-            )
-            .append_preamble(&page_discovery_preamble())
-            .tool(SpiderTool::new())
-            // Without this, rig-agent's implicit budget is a single model
-            // call (see rig-agent's `default_max_turns` docs); a model that
-            // reaches for `crawl_site` instead of answering directly then
-            // has no turn left to read the tool result and produce a
-            // verdict, and fails with MaxTurnsError. 3 turns covers one
-            // tool call plus the follow-up answer, with a little slack.
-            .default_max_turns(3)
-            .build();
+        // 3. Build one agent per tier. When both tiers resolve to the same
+        //    model this builds the same agent twice, which is cheap — no
+        //    request is issued until `prompt`.
+        let build_agent = |model: &str| {
+            client
+                .agent(model)
+                .preamble(
+                    "You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.",
+                )
+                .append_preamble(&page_discovery_preamble())
+                .tool(SpiderTool::new())
+                // Without this, rig-agent's implicit budget is a single model
+                // call (see rig-agent's `default_max_turns` docs); a model that
+                // reaches for `crawl_site` instead of answering directly then
+                // has no turn left to read the tool result and produce a
+                // verdict, and fails with MaxTurnsError. 3 turns covers one
+                // tool call plus the follow-up answer, with a little slack.
+                .default_max_turns(3)
+                .build()
+        };
+
+        tracing::info!(
+            provider = %config.provider,
+            base_url = %config.base_url,
+            model_tactical = %config.model_tactical(),
+            model_reasoning = %config.model_reasoning(),
+            "LLM route configured"
+        );
 
         Ok(Self {
-            agent,
+            tactical: build_agent(config.model_tactical()),
+            reasoning: build_agent(config.model_reasoning()),
             rate_limiter,
             // Floored at 1 independently of `AgentConfig::from_env`, which
             // already drops a zero: the field is public, so a hand-built
@@ -163,6 +193,14 @@ impl RgaaAgent {
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             tripped_at: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// The agent bound to `tier`'s model.
+    fn agent_for(&self, tier: ModelTier) -> &Agent {
+        match tier {
+            ModelTier::Tactical => &self.tactical,
+            ModelTier::Reasoning => &self.reasoning,
+        }
     }
 
     /// True when the shared circuit breaker is open — a real Holo3 outage has
@@ -253,9 +291,10 @@ impl RgaaAgent {
 
         let prompt = PromptBuilder::build_from_rendered(criterion.id, rendered_context);
 
-        self.rate_limiter.acquire(tier_for(criterion.id)).await;
+        let tier = tier_for(criterion.id);
+        self.rate_limiter.acquire(tier).await;
 
-        match self.agent.prompt(prompt.as_str()).await {
+        match self.agent_for(tier).prompt(prompt.as_str()).await {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
@@ -387,7 +426,7 @@ impl RgaaAgent {
         self.rate_limiter.acquire(tier).await;
 
         // Call LLM
-        let response = match self.agent.prompt(prompt.as_str()).await {
+        let response = match self.agent_for(tier).prompt(prompt.as_str()).await {
             Ok(response) => {
                 self.record_success();
                 response
@@ -565,9 +604,10 @@ impl RgaaAgent {
 
         let prompt = PromptBuilder::build_from_rendered(criterion.id, rendered_context);
 
-        self.rate_limiter.acquire(tier_for(criterion.id)).await;
+        let tier = tier_for(criterion.id);
+        self.rate_limiter.acquire(tier).await;
 
-        match self.agent.prompt(prompt.as_str()).await {
+        match self.agent_for(tier).prompt(prompt.as_str()).await {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {

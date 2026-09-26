@@ -8,6 +8,13 @@ mod validate;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Loads `.env` from the working directory (or any parent) so a local
+    // checkout is configured by that one file. Variables already present in
+    // the real environment always win, so a container or systemd unit keeps
+    // precedence over a stray `.env`. Deliberately in the binary only: a
+    // library must never reach for the filesystem behind its caller.
+    let _ = dotenvy::dotenv();
+
     tracing_subscriber::fmt::init();
     let out_dir = PathBuf::from("crates/rgaa-core/data/rgaa-4.1.2");
     std::fs::create_dir_all(&out_dir)?;

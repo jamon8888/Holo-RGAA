@@ -23,6 +23,11 @@ struct PooledSession {
     session_id: String,
     target_id: String,
     created_at: Instant,
+    /// `loaderId` of a navigation that has been requested but not yet seen to
+    /// commit. A pooled target still holds the *previous* document until then,
+    /// so anything that waits for "loaded" has to know which navigation it is
+    /// waiting for.
+    pending_loader: Mutex<Option<String>>,
     last_used: Mutex<Instant>,
     /// Atomic so [`CdpSessionGuard::drop`] can release the slot without
     /// taking any lock — a `try_lock` there silently leaked the slot whenever
@@ -50,30 +55,47 @@ impl CdpSessionGuard {
     pub async fn navigate(&mut self, url: &str) -> Result<(), String> {
         let session_id = self.session_id().to_string();
         let url = url.to_string();
-        let mut ws = self.session.ws.lock().await;
-        cdp_send_session(
-            &mut ws,
-            &session_id,
-            "Page.navigate",
-            serde_json::json!({"url": url}),
-        )
-        .await?;
+        let result = {
+            let mut ws = self.session.ws.lock().await;
+            cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.navigate",
+                serde_json::json!({"url": url}),
+            )
+            .await?
+        };
+        // Absent for navigations Chrome turns into a download; the wait then
+        // degrades to the unscoped behaviour rather than hanging.
+        let loader_id = result
+            .get("loaderId")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        *self.session.pending_loader.lock().await = loader_id;
         Ok(())
     }
 
     /// Wait for page load
     pub async fn wait_for_load(&mut self, timeout: Duration) -> Result<(), String> {
         let session_id = self.session_id().to_string();
+        let expected_loader = self.session.pending_loader.lock().await.take();
         let mut ws = self.session.ws.lock().await;
-        wait_for_load(&mut ws, &session_id, timeout).await
+        wait_for_load(&mut ws, &session_id, timeout, expected_loader.as_deref()).await
     }
 
     /// Run axe-core evaluation
     pub async fn run_axe_core(&mut self, axe_source: &str) -> Result<String, String> {
         let session_id = self.session_id().to_string();
         let axe_source = axe_source.to_string();
+        let expected_loader = self.session.pending_loader.lock().await.take();
         let mut ws = self.session.ws.lock().await;
-        run_axe_core_static(&mut ws, &session_id, &axe_source).await
+        run_axe_core_static(
+            &mut ws,
+            &session_id,
+            &axe_source,
+            expected_loader.as_deref(),
+        )
+        .await
     }
 
     /// Evaluate JavaScript expression
@@ -127,26 +149,43 @@ async fn cdp_send_session(
 /// Wait for navigation to finish by observing `Page.loadEventFired` /
 /// `Page.lifecycleEvent` (name == "load") OR polling `document.readyState`
 /// until "complete". Returns once either is observed, or Err on timeout.
+///
+/// `expected_loader` scopes the wait to one navigation. A pooled target is
+/// reused, so until the requested navigation commits, every one of those
+/// signals still describes the *previous* document — the first `readyState`
+/// poll in particular answers "complete" immediately and used to end the wait
+/// on the spot, letting axe run against the old page and report its
+/// violations under the new URL. Nothing is accepted before a
+/// `Page.frameNavigated` (or lifecycle event) carrying that `loaderId` proves
+/// the new document is in place. `None` keeps the old unscoped behaviour, for
+/// callers with no navigation in flight.
 async fn wait_for_load(
     ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     session_id: &str,
     timeout_dur: Duration,
+    expected_loader: Option<&str>,
 ) -> Result<(), String> {
     let deadline = Instant::now() + timeout_dur;
     let poll_interval = Duration::from_millis(300);
     let mut last_poll = Instant::now() - poll_interval - Duration::from_millis(1);
     let mut pending_readystate: Option<u64> = None;
+    // With no loader to wait for there is nothing to commit.
+    let mut committed = expected_loader.is_none();
 
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err(
-                "timed out waiting for page load (loadEventFired / readyState)".to_string(),
-            );
+            return Err(if committed {
+                "timed out waiting for page load (loadEventFired / readyState)".to_string()
+            } else {
+                "timed out waiting for the requested navigation to commit".to_string()
+            });
         }
 
         // Issue a readyState poll when none is outstanding and the interval elapsed.
-        if pending_readystate.is_none() && last_poll.elapsed() >= poll_interval {
+        // Not polled before the navigation commits: the answer would describe
+        // the document being replaced.
+        if committed && pending_readystate.is_none() && last_poll.elapsed() >= poll_interval {
             last_poll = Instant::now();
             let id = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -190,16 +229,50 @@ async fn wait_for_load(
                             }
                         }
                     } else if let Some(method) = value.get("method").and_then(|m| m.as_str()) {
-                        if method == "Page.loadEventFired" {
-                            return Ok(());
-                        }
-                        if method == "Page.lifecycleEvent"
-                            && value
-                                .get("params")
-                                .and_then(|p| p.get("name"))
-                                .and_then(|n| n.as_str())
-                                == Some("load")
+                        let params = value.get("params");
+                        let event_loader = |path: &[&str]| -> Option<String> {
+                            let mut node = params?;
+                            for key in path {
+                                node = node.get(key)?;
+                            }
+                            node.as_str().map(str::to_string)
+                        };
+
+                        // The new document is live from here on.
+                        if method == "Page.frameNavigated"
+                            && matches!(
+                                (expected_loader, event_loader(&["frame", "loaderId"])),
+                                (Some(expected), Some(ref seen)) if seen == expected
+                            )
                         {
+                            committed = true;
+                            continue;
+                        }
+
+                        if method == "Page.lifecycleEvent" {
+                            let name = params.and_then(|p| p.get("name")).and_then(|n| n.as_str());
+                            let loader = event_loader(&["loaderId"]);
+                            let ours = match (expected_loader, loader.as_deref()) {
+                                (Some(expected), Some(seen)) => seen == expected,
+                                // Unscoped wait, or an event without a loader:
+                                // fall back to the pre-existing behaviour.
+                                (None, _) => true,
+                                (Some(_), None) => false,
+                            };
+                            if ours {
+                                if name == Some("load") {
+                                    return Ok(());
+                                }
+                                if matches!(name, Some("init") | Some("commit")) {
+                                    committed = true;
+                                }
+                            }
+                            continue;
+                        }
+
+                        // Carries no loaderId of its own, so it is only
+                        // trustworthy once the navigation has committed.
+                        if method == "Page.loadEventFired" && committed {
                             return Ok(());
                         }
                     }
@@ -229,9 +302,12 @@ async fn run_axe_core_static(
     ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     session_id: &str,
     axe_source: &str,
+    expected_loader: Option<&str>,
 ) -> Result<String, String> {
-    // Wait for the page to load (lifecycle event or readyState), bounded.
-    wait_for_load(ws, session_id, Duration::from_secs(15)).await?;
+    // Wait for the page to load (lifecycle event or readyState), bounded, and
+    // scoped to the navigation in flight so axe cannot run on the previous
+    // document of a reused target.
+    wait_for_load(ws, session_id, Duration::from_secs(15), expected_loader).await?;
 
     // Inject axe-core via script source
     let inject = cdp_send_session(
@@ -492,6 +568,7 @@ impl CdpSessionPool {
             session_id,
             target_id,
             created_at: now,
+            pending_loader: Mutex::new(None),
             last_used: Mutex::new(now),
             in_use: AtomicBool::new(true),
         });

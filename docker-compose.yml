@@ -12,7 +12,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d
+      # Schema is provisioned by rgaa-api at startup (sqlx migrations in
+      # crates/rgaa-storage/migrations) — no initdb mount (the old
+      # ./backend/migrations path never existed).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

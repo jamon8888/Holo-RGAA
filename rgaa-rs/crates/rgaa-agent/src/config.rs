@@ -33,6 +33,11 @@ pub struct AgentConfig {
     /// Requests per minute for the reasoning (slow) model tier.
     #[serde(default = "default_reasoning_rpm")]
     pub reasoning_rpm: u32,
+    /// Maximum concurrent criterion evaluations (LLM calls in flight).
+    /// Defaults to `max(1, min(tactical_rpm / 15, 16))` per perf design doc.
+    /// Set `RGAA_AGENT_CONCURRENCY` to override.
+    #[serde(default = "default_agent_concurrency")]
+    pub agent_concurrency: usize,
 }
 
 fn default_tactical_rpm() -> u32 {
@@ -41,6 +46,16 @@ fn default_tactical_rpm() -> u32 {
 
 fn default_reasoning_rpm() -> u32 {
     20
+}
+
+/// `max(1, min(rpm / 15, 16))` — the perf design doc's formula, applied to
+/// whichever tactical RPM is actually configured.
+fn agent_concurrency_for(rpm: u32) -> usize {
+    ((rpm / 15).clamp(1, 16)) as usize
+}
+
+fn default_agent_concurrency() -> usize {
+    agent_concurrency_for(default_tactical_rpm())
 }
 
 impl std::fmt::Debug for AgentConfig {
@@ -148,6 +163,7 @@ impl Default for AgentConfig {
             temperature: 0.3,
             tactical_rpm: default_tactical_rpm(),
             reasoning_rpm: default_reasoning_rpm(),
+            agent_concurrency: default_agent_concurrency(),
         }
     }
 }
@@ -167,10 +183,20 @@ impl AgentConfig {
     ///   Defaults to 10.
     /// - `RGAA_REASONING_RPM` (optional): Reasoning model requests per minute.
     ///   Defaults to 20.
+    /// - `RGAA_AGENT_CONCURRENCY` (optional): Maximum concurrent criterion
+    ///   evaluations. Defaults to `max(1, min(tactical_rpm / 15, 16))` using
+    ///   the `RGAA_TACTICAL_RPM` value resolved above. A value of `0` is
+    ///   ignored in favour of that default.
     ///
     /// # Errors
     /// Returns [`crate::error::AgentError::Config`] if `HOLO3_API_KEY` is not set.
     pub fn from_env() -> Result<Self, crate::error::AgentError> {
+        // Parsed before the struct literal so the concurrency fallback can be
+        // derived from it.
+        let tactical_rpm = std::env::var("RGAA_TACTICAL_RPM")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(default_tactical_rpm);
         Ok(Self {
             holo3_base_url: std::env::var("HOLO3_BASE_URL")
                 .unwrap_or_else(|_| "https://api.hcompany.ai/v1".into()),
@@ -178,15 +204,50 @@ impl AgentConfig {
                 .map_err(|_| crate::error::AgentError::Config("HOLO3_API_KEY required".into()))?,
             model: std::env::var("HOLO3_MODEL").unwrap_or_else(|_| "holo3-1-35b-a3b".into()),
             lancedb_path: std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into()),
-            tactical_rpm: std::env::var("RGAA_TACTICAL_RPM")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_else(default_tactical_rpm),
+            tactical_rpm,
             reasoning_rpm: std::env::var("RGAA_REASONING_RPM")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or_else(default_reasoning_rpm),
+            // Zero is dropped rather than honoured: it would reach
+            // `buffer_unordered(0)`, which never polls its source stream and
+            // leaves an audit pending forever. Falling back matches how the
+            // RPM variables treat an unparseable value.
+            agent_concurrency: std::env::var("RGAA_AGENT_CONCURRENCY")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&v| v > 0)
+                // Derived from the RPM actually configured above, not from the
+                // hardcoded default: raising RGAA_TACTICAL_RPM must raise the
+                // parallelism the formula documents.
+                .unwrap_or_else(|| agent_concurrency_for(tactical_rpm)),
             ..Default::default()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn concurrency_follows_the_configured_rpm_not_the_default() {
+        // The formula is documented as max(1, min(rpm / 15, 16)). Deriving it
+        // from the hardcoded default instead pinned every deployment to 1.
+        assert_eq!(agent_concurrency_for(10), 1);
+        assert_eq!(agent_concurrency_for(60), 4);
+        assert_eq!(agent_concurrency_for(300), 16);
+        // Clamped at both ends.
+        assert_eq!(agent_concurrency_for(0), 1);
+        assert_eq!(agent_concurrency_for(100_000), 16);
+        assert_eq!(default_agent_concurrency(), agent_concurrency_for(10));
+    }
+
+    #[test]
+    fn concurrency_is_never_zero() {
+        // `buffer_unordered(0)` never polls its source stream, so a zero here
+        // hangs an audit instead of failing it.
+        assert!(agent_concurrency_for(0) >= 1);
+        assert!(default_agent_concurrency() >= 1);
     }
 }

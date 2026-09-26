@@ -43,34 +43,10 @@ impl PostgresStorage {
             .connect(database_url)
             .await?;
 
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS audits (
-                id TEXT PRIMARY KEY,
-                url TEXT NOT NULL,
-                data JSONB NOT NULL,
-                taux_global REAL NOT NULL,
-                etat_conformite TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS audit_logs (
-                id TEXT PRIMARY KEY,
-                audit_id TEXT NOT NULL,
-                action TEXT NOT NULL,
-                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                details JSONB
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
+        // Single schema source: migrations/001 (the union of legacy /audit
+        // columns and every /v1 table/column). Replaces the old inline DDL
+        // that created only `audits`+`audit_logs` and left /v1 500-ing.
+        sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self { pool })
     }
@@ -233,11 +209,13 @@ impl Storage for PostgresStorage {
             r#"
             INSERT INTO audits (id, url, data, taux_global, etat_conformite, schema_version, audit_id, config, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-            ON CONFLICT (audit_id, schema_version) DO UPDATE SET
+            ON CONFLICT (id) DO UPDATE SET
                 url = EXCLUDED.url,
                 data = EXCLUDED.data,
                 taux_global = EXCLUDED.taux_global,
                 etat_conformite = EXCLUDED.etat_conformite,
+                audit_id = EXCLUDED.audit_id,
+                schema_version = EXCLUDED.schema_version,
                 config = EXCLUDED.config,
                 updated_at = NOW()
             "#,

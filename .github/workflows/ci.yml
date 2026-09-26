@@ -228,31 +228,41 @@ jobs:
   e2e:
     name: E2E (browser + agent + orchestrator)
     runs-on: ubuntu-latest
-    if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
     defaults:
       run:
         working-directory: rgaa-rs
     steps:
+      - name: Check E2E prerequisites
+        if: ${{ vars.HOLO3_E2E_ENABLED != 'true' }}
+        run: |
+          echo "::notice::E2E skipped: set repository variable HOLO3_E2E_ENABLED=true to enable"
+          exit 0
       - uses: actions/checkout@v4
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
       - uses: Swatinem/rust-cache@v2
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
       - uses: dtolnay/rust-toolchain@stable
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
       - uses: mozilla-actions/sccache-action@v0.0.7
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
       - uses: rui314/setup-mold@v1
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
       - name: Install system dependencies
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
       - name: Prepare Obscura backend
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
         working-directory: ${{ github.workspace }}
         run: |
-          # Substrate pin gate (keep in sync with OBSCURA_VERSION in install.sh).
-          # Binaries are fetched from upstream, never stored in git.
           curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.2/obscura-x86_64-linux.tar.gz"
           tar -xzf obscura.tar.gz
           chmod +x obscura obscura-worker
           ./obscura --version | grep -q "obscura 0.2.2" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
       - name: Validate Holo3 API key
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
         env:
           HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
         run: |
@@ -261,6 +271,7 @@ jobs:
             exit 0
           fi
       - name: Run E2E pipeline tests
+        if: ${{ vars.HOLO3_E2E_ENABLED == 'true' }}
         working-directory: rgaa-rs
         env:
           RUN_E2E: "1"

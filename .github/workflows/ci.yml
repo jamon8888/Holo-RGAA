@@ -234,6 +234,7 @@ jobs:
     steps:
       - name: Check E2E prerequisites
         if: ${{ vars.HOLO3_E2E_ENABLED != 'true' }}
+        working-directory: .
         run: |
           echo "::notice::E2E skipped: set repository variable HOLO3_E2E_ENABLED=true to enable"
           exit 0

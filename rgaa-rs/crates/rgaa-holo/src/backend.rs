@@ -97,7 +97,10 @@ impl BackendConfig {
     /// See [`Self::from_env`].
     pub fn from_env_with(var: impl Fn(&str) -> Option<String>) -> Result<Self, RgaaError> {
         let primary = Self::Single(LlmSettings::from_env_prefixed("", &var)?);
-        match var("RGAA_LLM_FALLBACK_PROVIDER") {
+        // A blank value counts as unset here too: tooling that injects
+        // `RGAA_LLM_FALLBACK_PROVIDER=` must not switch on a fallback route
+        // nobody configured, which would then fail closed on its missing model.
+        match var("RGAA_LLM_FALLBACK_PROVIDER").filter(|v| !v.trim().is_empty()) {
             Some(_) => Ok(Self::Fallback {
                 primary: Box::new(primary),
                 secondary: Box::new(Self::Single(LlmSettings::from_env_prefixed(
@@ -300,6 +303,20 @@ mod tests {
         assert_eq!(secondary.primary_settings().model, "qwen2.5:7b-instruct");
         // A fallback backend is named after the route calls are tried on.
         assert_eq!(cfg.build().unwrap().name(), "openai");
+    }
+
+    #[test]
+    fn a_blank_fallback_provider_does_not_switch_on_a_fallback_route() {
+        let cfg = BackendConfig::from_env_with(env(&[
+            ("HOLO3_API_KEY", "k"),
+            ("HOLO3_MODEL", "m"),
+            ("RGAA_LLM_FALLBACK_PROVIDER", ""),
+        ]))
+        .unwrap();
+        assert!(
+            matches!(cfg, BackendConfig::Single(_)),
+            "blank fallback provider enabled a route nobody configured: {cfg:?}"
+        );
     }
 
     #[test]

@@ -258,11 +258,19 @@ impl LlmSettings {
     ) -> Result<Self, RgaaError> {
         let is_primary = prefix.is_empty();
         let key = |suffix: &str| format!("RGAA_LLM_{prefix}{suffix}");
+        // An empty value counts as unset, for *every* variable below: CI
+        // secrets and `.env` templates routinely inject a variable with no
+        // value, and treating that as a real setting turns a working
+        // configuration into a startup failure (a blank provider read as
+        // unknown, a blank base URL overriding the preset, a blank generic key
+        // hiding the provider's own, a blank timeout failing to parse).
+        let non_empty = |v: String| Some(v).filter(|v| !v.trim().is_empty());
+        let get = |name: &str| var(name).and_then(non_empty);
         // Legacy `HOLO3_*` fallback, primary route only.
-        let legacy = |name: &'static str| if is_primary { var(name) } else { None };
+        let legacy = |name: &'static str| if is_primary { get(name) } else { None };
 
         let provider_var = key("PROVIDER");
-        let name = var(&provider_var).unwrap_or_else(|| "holo3".to_string());
+        let name = get(&provider_var).unwrap_or_else(|| "holo3".to_string());
         let provider = provider(&name).ok_or_else(|| {
             config_error(format!(
                 "unknown {provider_var} `{name}` (expected one of: {})",
@@ -271,7 +279,7 @@ impl LlmSettings {
         })?;
 
         let base_url_var = key("BASE_URL");
-        let base_url = var(&base_url_var)
+        let base_url = get(&base_url_var)
             .or_else(|| legacy("HOLO3_BASE_URL"))
             .unwrap_or_else(|| provider.base_url.to_string());
         if base_url.is_empty() {
@@ -281,8 +289,20 @@ impl LlmSettings {
         }
 
         let api_key_var = key("API_KEY");
-        let api_key = var(&api_key_var)
-            .or_else(|| var(provider.key_var))
+        // The generic `RGAA_LLM_API_KEY` belongs to the primary route only.
+        // `custom`'s `key_var` *is* that generic variable, so without this a
+        // prefixed `custom` route would inherit the primary provider's key and
+        // `ChatBackend` would send it as a bearer token to an arbitrary host,
+        // possibly over plain HTTP.
+        let native_key = |name: &str| {
+            if !is_primary && name == "RGAA_LLM_API_KEY" {
+                None
+            } else {
+                get(name)
+            }
+        };
+        let api_key = get(&api_key_var)
+            .or_else(|| native_key(provider.key_var))
             .unwrap_or_default();
         if provider.requires_key && api_key.is_empty() {
             return Err(config_error(format!(
@@ -292,13 +312,8 @@ impl LlmSettings {
         }
 
         let model_var = key("MODEL");
-        // An empty value counts as unset: CI secrets and `.env` templates
-        // routinely inject a variable with no value, and failing on that
-        // would be indistinguishable from a real misconfiguration.
-        let non_empty = |v: String| Some(v).filter(|v| !v.trim().is_empty());
-        let model = var(&model_var)
-            .and_then(non_empty)
-            .or_else(|| legacy("HOLO3_MODEL").and_then(non_empty))
+        let model = get(&model_var)
+            .or_else(|| legacy("HOLO3_MODEL"))
             .or_else(|| provider.default_model.map(str::to_string))
             .ok_or_else(|| {
                 config_error(format!(
@@ -307,18 +322,13 @@ impl LlmSettings {
                 ))
             })?;
 
-        // Same empty-is-unset rule as `model` above: a tier variable injected
-        // blank must fall back to the route's model, never be sent as an
-        // empty model identifier.
-        let model_tactical = var(&key("MODEL_TACTICAL"))
-            .and_then(non_empty)
-            .unwrap_or_else(|| model.clone());
-        let model_reasoning = var(&key("MODEL_REASONING"))
-            .and_then(non_empty)
-            .unwrap_or_else(|| model.clone());
+        // A blank tier variable falls back to the route's model rather than
+        // being sent as an empty model identifier.
+        let model_tactical = get(&key("MODEL_TACTICAL")).unwrap_or_else(|| model.clone());
+        let model_reasoning = get(&key("MODEL_REASONING")).unwrap_or_else(|| model.clone());
 
         let timeout_var = key("TIMEOUT_SECS");
-        let timeout_secs = match var(&timeout_var) {
+        let timeout_secs = match get(&timeout_var) {
             Some(raw) => raw.trim().parse::<u64>().map_err(|_| {
                 config_error(format!("{timeout_var} is not a whole number of seconds"))
             })?,
@@ -635,6 +645,72 @@ mod tests {
         assert_eq!(fallback.model, "qwen2.5:14b-instruct");
         // The primary's key never leaks onto the fallback route.
         assert!(fallback.api_key.is_empty());
+    }
+
+    #[test]
+    fn a_custom_fallback_route_never_inherits_the_primary_generic_key() {
+        // `custom`'s own `key_var` IS the generic `RGAA_LLM_API_KEY`, so
+        // without the primary-only guard the fallback route would send the
+        // OpenAI key as a bearer token to an arbitrary host — over plain HTTP
+        // here. CWE-522.
+        let vars = env(&[
+            ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_API_KEY", "sk-primary-secret"),
+            ("RGAA_LLM_MODEL", "gpt-4o-mini"),
+            ("RGAA_LLM_FALLBACK_PROVIDER", "custom"),
+            ("RGAA_LLM_FALLBACK_BASE_URL", "http://gpu-box:8000/v1"),
+            ("RGAA_LLM_FALLBACK_MODEL", "Qwen/Qwen2.5-32B-Instruct"),
+            // No RGAA_LLM_FALLBACK_API_KEY.
+        ]);
+        let primary = LlmSettings::from_env_prefixed("", &vars).unwrap();
+        assert_eq!(primary.api_key, "sk-primary-secret");
+
+        let fallback = LlmSettings::from_env_prefixed("FALLBACK_", &vars).unwrap();
+        assert!(
+            fallback.api_key.is_empty(),
+            "primary key leaked to the custom fallback host: {:?}",
+            fallback.api_key
+        );
+        assert_eq!(fallback.api_key_opt(), None);
+
+        // A fallback key set explicitly is still honoured.
+        let vars = env(&[
+            ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_API_KEY", "sk-primary-secret"),
+            ("RGAA_LLM_MODEL", "gpt-4o-mini"),
+            ("RGAA_LLM_FALLBACK_PROVIDER", "custom"),
+            ("RGAA_LLM_FALLBACK_BASE_URL", "http://gpu-box:8000/v1"),
+            ("RGAA_LLM_FALLBACK_MODEL", "m"),
+            ("RGAA_LLM_FALLBACK_API_KEY", "own-key"),
+        ]);
+        let fallback = LlmSettings::from_env_prefixed("FALLBACK_", &vars).unwrap();
+        assert_eq!(fallback.api_key, "own-key");
+    }
+
+    #[test]
+    fn a_blank_value_is_unset_for_every_route_variable() {
+        // Deployment tooling injects blank variables wholesale; none of them
+        // may turn a valid configuration into a startup failure.
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", ""),
+            ("RGAA_LLM_BASE_URL", "  "),
+            ("RGAA_LLM_API_KEY", ""),
+            ("OPENAI_API_KEY", "native-key"),
+            ("RGAA_LLM_MODEL", ""),
+            ("RGAA_LLM_TIMEOUT_SECS", ""),
+            ("HOLO3_API_KEY", "holo-key"),
+        ]))
+        .unwrap();
+        // Blank provider → the default, not "unknown provider ``".
+        assert_eq!(s.provider.name, "holo3");
+        // Blank base URL → the preset, not an empty endpoint.
+        assert_eq!(s.base_url, "https://api.hcompany.ai/v1");
+        // Blank generic key → the provider's native variable still wins.
+        assert_eq!(s.api_key, "holo-key");
+        // Blank model → holo3's default.
+        assert_eq!(s.model, "holo3-1-35b-a3b");
+        // Blank timeout → the locality default, not a parse error.
+        assert_eq!(s.timeout.as_secs(), 30);
     }
 
     #[test]

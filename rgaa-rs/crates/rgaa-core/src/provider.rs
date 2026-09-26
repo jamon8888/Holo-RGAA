@@ -307,8 +307,15 @@ impl LlmSettings {
                 ))
             })?;
 
-        let model_tactical = var(&key("MODEL_TACTICAL")).unwrap_or_else(|| model.clone());
-        let model_reasoning = var(&key("MODEL_REASONING")).unwrap_or_else(|| model.clone());
+        // Same empty-is-unset rule as `model` above: a tier variable injected
+        // blank must fall back to the route's model, never be sent as an
+        // empty model identifier.
+        let model_tactical = var(&key("MODEL_TACTICAL"))
+            .and_then(non_empty)
+            .unwrap_or_else(|| model.clone());
+        let model_reasoning = var(&key("MODEL_REASONING"))
+            .and_then(non_empty)
+            .unwrap_or_else(|| model.clone());
 
         let timeout_var = key("TIMEOUT_SECS");
         let timeout_secs = match var(&timeout_var) {
@@ -495,6 +502,21 @@ mod tests {
                 p.name
             );
         }
+    }
+
+    #[test]
+    fn a_blank_tier_variable_falls_back_to_the_route_model() {
+        // Deployment tooling routinely injects an empty variable; sending an
+        // empty model identifier to the provider would be a 400 at best.
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "ollama"),
+            ("RGAA_LLM_MODEL", "base"),
+            ("RGAA_LLM_MODEL_TACTICAL", ""),
+            ("RGAA_LLM_MODEL_REASONING", "   "),
+        ]))
+        .unwrap();
+        assert_eq!(s.model_tactical, "base");
+        assert_eq!(s.model_reasoning, "base");
     }
 
     #[test]

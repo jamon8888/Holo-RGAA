@@ -83,6 +83,11 @@ impl RgaaAgent {
         let client = openai::Client::builder()
             .base_url(&config.base_url)
             .api_key(&config.api_key)
+            // Without an explicit HTTP backend, rig builds a default
+            // `reqwest::Client` with no timeout of its own, so the resolved
+            // `RGAA_LLM_TIMEOUT_SECS` (and the 600s local default that slow
+            // CPU inference needs) would never reach the wire.
+            .http_client(config.http_client()?)
             .build()
             .map_err(|e| AgentError::RigAgent(e.to_string()))?
             .completions_api();

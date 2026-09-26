@@ -84,6 +84,7 @@ impl Verifier {
         let client = openai::Client::builder()
             .base_url(&config.base_url)
             .api_key(&config.api_key)
+            .http_client(config.http_client()?)
             .build()
             .map_err(|e| AgentError::RigAgent(e.to_string()))?
             .completions_api();
@@ -144,7 +145,11 @@ impl Verifier {
         // at all — see the struct docs) versus the evaluator's
         // tool-using flow: the asymmetry the spec calls for falls out of
         // this worker simply having nothing to loop on.
-        self.rate_limiter.acquire(ModelTier::Tactical).await;
+        //
+        // The tier must match the model this agent was built on
+        // (`config.model_reasoning()`), or reasoning-model calls would drain
+        // the tactical bucket and leave the reasoning limit unenforced.
+        self.rate_limiter.acquire(ModelTier::Reasoning).await;
 
         let text = self
             .agent

@@ -61,6 +61,14 @@ pub enum BackendConfig {
     /// A primary route with a second route as a technical fallback: calls
     /// go to `primary` first, and only reach `secondary` when `primary`
     /// fails (after its own internal retries) — see [`FallbackBackend`].
+    ///
+    /// **Not on the audit path.** `RgaaAgent` builds its own `rig` client
+    /// from `AgentConfig` because it needs tool calls, which this trait does
+    /// not carry, so an audit never fails over to `secondary`. Configuring
+    /// `RGAA_LLM_FALLBACK_*` affects only the callers that build a
+    /// `BackendConfig` — today the RAG baseline harness. Wiring failover
+    /// into the audit path means giving `LlmBackend` a tool-calling shape
+    /// first.
     Fallback {
         primary: Box<BackendConfig>,
         secondary: Box<BackendConfig>,

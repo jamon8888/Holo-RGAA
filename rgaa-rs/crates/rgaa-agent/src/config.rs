@@ -1,4 +1,5 @@
 use rgaa_core::provider::LlmSettings;
+use rig_core::http_client::ReqwestClient;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -25,6 +26,11 @@ pub struct AgentConfig {
     /// Model for the reasoning (slow, capable) tier. Defaults to [`Self::model`].
     #[serde(default)]
     pub model_reasoning: String,
+    /// Per-request timeout applied to the HTTP client both the evaluator and
+    /// the verifier talk through. Resolved from `RGAA_LLM_TIMEOUT_SECS`,
+    /// defaulting to 30s remote / 600s local (see [`LlmSettings::timeout`]).
+    #[serde(default = "default_timeout")]
+    pub timeout: Duration,
     /// Filesystem path used by LanceDB for memory and vector storage.
     pub lancedb_path: String,
     /// Embedding backend used for memory and vector retrieval.
@@ -59,6 +65,10 @@ fn default_provider() -> String {
     "holo3".to_string()
 }
 
+fn default_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
 impl std::fmt::Debug for AgentConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AgentConfig")
@@ -68,6 +78,7 @@ impl std::fmt::Debug for AgentConfig {
             .field("model", &self.model)
             .field("model_tactical", &self.model_tactical)
             .field("model_reasoning", &self.model_reasoning)
+            .field("timeout", &self.timeout)
             .field("lancedb_path", &self.lancedb_path)
             .field("embedding_backend", &self.embedding_backend)
             .field("embedding_dimensions", &self.embedding_dimensions)
@@ -93,6 +104,7 @@ impl Serialize for AgentConfig {
             model: &'a str,
             model_tactical: &'a str,
             model_reasoning: &'a str,
+            timeout_secs: u64,
             lancedb_path: &'a str,
             embedding_backend: &'a EmbeddingBackendConfig,
             embedding_dimensions: usize,
@@ -110,6 +122,7 @@ impl Serialize for AgentConfig {
             model: &self.model,
             model_tactical: self.model_tactical(),
             model_reasoning: self.model_reasoning(),
+            timeout_secs: self.timeout.as_secs(),
             lancedb_path: &self.lancedb_path,
             embedding_backend: &self.embedding_backend,
             embedding_dimensions: self.embedding_dimensions,
@@ -162,6 +175,7 @@ impl Default for AgentConfig {
             model: "holo3-1-35b-a3b".into(),
             model_tactical: String::new(),
             model_reasoning: String::new(),
+            timeout: default_timeout(),
             lancedb_path: "./data/lancedb".into(),
             embedding_backend: EmbeddingBackendConfig::FastEmbed {
                 model_name: "all-MiniLM-L6-v2".into(),
@@ -224,6 +238,7 @@ impl AgentConfig {
             model: llm.model,
             model_tactical: llm.model_tactical,
             model_reasoning: llm.model_reasoning,
+            timeout: llm.timeout,
             lancedb_path: std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into()),
             tactical_rpm: env_u32("RGAA_TACTICAL_RPM", default_tactical_rpm()),
             reasoning_rpm: env_u32("RGAA_REASONING_RPM", default_reasoning_rpm()),
@@ -251,6 +266,26 @@ impl AgentConfig {
         } else {
             &self.model_reasoning
         }
+    }
+
+    /// Builds the HTTP backend the `rig` clients run on, carrying
+    /// [`Self::timeout`]. `rig`'s default client has no timeout of its own,
+    /// so without this a slow local backend would hang past the configured
+    /// limit and a hung remote one would never be cut off.
+    ///
+    /// Built from `rig`'s own re-exported reqwest (`ReqwestClient`), not the
+    /// workspace's: the workspace is on reqwest 0.12 and rig on 0.13, and
+    /// only rig's own type implements the `HttpClientExt` its client builder
+    /// requires.
+    ///
+    /// # Errors
+    /// Returns [`crate::error::AgentError::Config`] if the HTTP client cannot
+    /// be built (e.g. TLS initialization failure).
+    pub fn http_client(&self) -> Result<ReqwestClient, crate::error::AgentError> {
+        ReqwestClient::builder()
+            .timeout(self.timeout)
+            .build()
+            .map_err(|e| crate::error::AgentError::Config(format!("HTTP client init failed: {e}")))
     }
 
     /// True when both tiers resolve to the same model — the single-model
@@ -327,6 +362,24 @@ mod tests {
             ..Default::default()
         };
         assert!(!format!("{c:?}").contains("sk-super-secret"));
+    }
+
+    #[test]
+    fn from_llm_settings_carries_the_resolved_timeout() {
+        // A local provider's long default must survive into the agent config,
+        // otherwise the advertised 600s never reaches the HTTP client.
+        let llm = LlmSettings::from_env_with(|k| {
+            match k {
+                "RGAA_LLM_PROVIDER" => Some("ollama"),
+                "RGAA_LLM_MODEL" => Some("qwen2.5:14b-instruct"),
+                _ => None,
+            }
+            .map(str::to_string)
+        })
+        .unwrap();
+        let c = AgentConfig::from_llm_settings(llm);
+        assert_eq!(c.timeout.as_secs(), 600);
+        assert!(c.http_client().is_ok());
     }
 
     #[test]

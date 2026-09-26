@@ -15,6 +15,7 @@ path = "src/bin/seed_referentiel.rs"
 required-features = ["vector-store"]
 
 [dependencies]
+dotenvy = { workspace = true }
 rig-core = { workspace = true, features = ["derive"] }
 rig-agent = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }

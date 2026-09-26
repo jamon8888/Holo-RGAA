@@ -10,6 +10,7 @@ name = "rgaa-api"
 path = "src/main.rs"
 
 [dependencies]
+dotenvy = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }
 rgaa-storage = { path = "../rgaa-storage" }
 rgaa-orchestrator = { path = "../rgaa-orchestrator" }

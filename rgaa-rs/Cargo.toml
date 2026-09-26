@@ -46,6 +46,7 @@ indexmap = "2"
 chrono = { version = "0.4", features = ["serde"] }
 spider = { version = "2.53", default-features = false, features = ["sync", "reqwest_native_tls_native_roots"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+dotenvy = "0.15"
 
 [profile.dev]
 debug = 1

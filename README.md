@@ -106,7 +106,7 @@ installs to `~/.local/bin/`, configures the Claude Code plugin, and verifies eve
 export PATH="$HOME/.local/bin:$PATH"
 rgaa                                # interactive TUI
 rgaa audit https://example.com      # headless audit
-export HOLO3_API_KEY="your-key"     # AI-assisted evaluation
+cp .env.example .env                # then set RGAA_LLM_* for AI-assisted evaluation
 ```
 
 TUI shortcuts: `a` audit, `h` history, `s` settings, `q` quit.
@@ -323,14 +323,52 @@ Production scale is enforced in code, not documentation: static data built once 
 
 ### Environment Variables
 
+Every binary loads a `.env` file from the working directory (or any parent) at
+startup; variables already set in the real environment take precedence. Start
+from [`.env.example`](.env.example):
+
+```bash
+cp .env.example .env
+```
+
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `HOLO3_API_KEY` | Holo3 API key for LLM evaluation | Yes (for AI-assisted audits) |
+| `RGAA_LLM_PROVIDER` | LLM provider: `holo3`, `openai`, `openrouter`, `groq`, `mistral`, `deepseek`, `together`, `xai`, `ollama`, `lmstudio`, `vllm`, `custom` | No (default `holo3`) |
+| `RGAA_LLM_MODEL` | Model identifier sent to the provider | Yes |
+| `RGAA_LLM_API_KEY` | API key; the provider's native variable (`HOLO3_API_KEY`, `OPENAI_API_KEY`, …) is also accepted | Yes, except for local providers |
+| `RGAA_LLM_BASE_URL` | Endpoint override, without `/chat/completions` | Only for `custom` |
+| `RGAA_LLM_MODEL_TACTICAL` | Model for the fast tier (most criteria) | No (defaults to `RGAA_LLM_MODEL`) |
+| `RGAA_LLM_MODEL_REASONING` | Model for the reasoning tier (visual/hard criteria, verifier) | No (defaults to `RGAA_LLM_MODEL`) |
+| `RGAA_LLM_TIMEOUT_SECS` | Per-request timeout | No (30s remote, 600s local) |
+| `RGAA_TACTICAL_RPM` / `RGAA_REASONING_RPM` | Requests per minute per tier | No (10 / 20) |
 | `RGAA_OBSCURA_BIN` | Path to Obscura browser binary | Yes |
 | `DATABASE_URL` | PostgreSQL connection string | No (for storage) |
 | `RUST_LOG` | Logging level (`info`, `debug`, `trace`) | No |
 
+`HOLO3_API_KEY`, `HOLO3_BASE_URL` and `HOLO3_MODEL` still work and select the
+`holo3` provider.
+
 Cookie values can be injected from `RGAA_COOKIE_<NAME>` (e.g. `session` → `RGAA_COOKIE_SESSION`).
+
+### Choosing a Model
+
+Any OpenAI-compatible provider works without a recompile — only the endpoint,
+key and model change:
+
+```bash
+# Fully local, no outbound traffic
+RGAA_LLM_PROVIDER=ollama
+RGAA_LLM_MODEL=qwen2.5:14b-instruct
+
+# Cheap model for the bulk, strong one for the hard criteria
+RGAA_LLM_PROVIDER=groq
+RGAA_LLM_API_KEY=gsk_...
+RGAA_LLM_MODEL=llama-3.3-70b-versatile
+RGAA_LLM_MODEL_TACTICAL=llama-3.1-8b-instant
+```
+
+Anthropic models are reached through `openrouter`: the Messages API is not
+OpenAI-compatible, so there is no `anthropic` provider.
 
 ### Policy Configuration
 

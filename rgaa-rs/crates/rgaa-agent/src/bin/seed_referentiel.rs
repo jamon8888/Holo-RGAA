@@ -18,6 +18,13 @@ use rgaa_agent::rag::{RagStore, ReferentielSeeder};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Loads `.env` from the working directory (or any parent) so a local
+    // checkout is configured by that one file. Variables already present in
+    // the real environment always win, so a container or systemd unit keeps
+    // precedence over a stray `.env`. Deliberately in the binary only: a
+    // library must never reach for the filesystem behind its caller.
+    let _ = dotenvy::dotenv();
+
     let lancedb_path =
         std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".to_string());
 

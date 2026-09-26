@@ -82,7 +82,7 @@ impl Verifier {
     /// initialize.
     pub async fn new(config: &AgentConfig) -> Result<Self, AgentError> {
         let client = openai::Client::builder()
-            .base_url(&config.holo3_base_url)
+            .base_url(&config.base_url)
             .api_key(&config.api_key)
             .build()
             .map_err(|e| AgentError::RigAgent(e.to_string()))?
@@ -90,8 +90,11 @@ impl Verifier {
 
         let rate_limiter = Arc::new(Ratelimiter::new(config.tactical_rpm, config.reasoning_rpm));
 
+        // Verification is the hard-judgement half of the loop, so it runs on
+        // the reasoning tier's model — the same one as `config.model` unless
+        // the operator pointed RGAA_LLM_MODEL_REASONING somewhere better.
         let agent = client
-            .agent(config.model.as_str())
+            .agent(config.model_reasoning())
             .preamble(
                 "Tu es un vérificateur RGAA indépendant. Tu juges uniquement sur les \
                  éléments déjà fournis dans ce message (contexte de page déjà extrait, \

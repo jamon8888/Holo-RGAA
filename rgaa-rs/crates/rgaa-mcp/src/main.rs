@@ -7,6 +7,13 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Loads `.env` from the working directory (or any parent) so a local
+    // checkout is configured by that one file. Variables already present in
+    // the real environment always win, so a container or systemd unit keeps
+    // precedence over a stray `.env`. Deliberately in the binary only: a
+    // library must never reach for the filesystem behind its caller.
+    let _ = dotenvy::dotenv();
+
     // Help and version must not start the stdio server.
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--help" || a == "-h") {

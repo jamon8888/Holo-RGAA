@@ -10,6 +10,7 @@ name = "rgaa-data"
 path = "src/main.rs"
 
 [dependencies]
+dotenvy = { workspace = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio = { workspace = true }
 serde = { workspace = true }

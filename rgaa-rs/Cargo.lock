@@ -6625,6 +6625,7 @@ version = "0.1.0"
 dependencies = [
  "arrow",
  "chrono",
+ "dotenvy",
  "fastembed",
  "futures",
  "insta",
@@ -6657,6 +6658,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "dotenvy",
  "reqwest 0.12.28",
  "rgaa-core",
  "rgaa-obscura",
@@ -6697,6 +6699,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "dotenvy",
  "futures",
  "reqwest 0.12.28",
  "rgaa-core",
@@ -6729,6 +6732,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dotenvy",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -6756,6 +6760,7 @@ dependencies = [
 name = "rgaa-mcp"
 version = "0.1.0"
 dependencies = [
+ "dotenvy",
  "rgaa-core",
  "rgaa-obscura",
  "rgaa-orchestrator",
@@ -6901,6 +6906,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "dotenvy",
  "keyring",
  "ratatui",
  "reqwest 0.12.28",

@@ -23,6 +23,13 @@ Runs until stopped (Ctrl-C or SIGTERM); does not exit on its own once serving.";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Loads `.env` from the working directory (or any parent) so a local
+    // checkout is configured by that one file. Variables already present in
+    // the real environment always win, so a container or systemd unit keeps
+    // precedence over a stray `.env`. Deliberately in the binary only: a
+    // library must never reach for the filesystem behind its caller.
+    let _ = dotenvy::dotenv();
+
     // Handled before any I/O (DB connect, socket bind) so `--help`/`--version`
     // return immediately instead of falling through to the server startup
     // path, which never returns on its own.

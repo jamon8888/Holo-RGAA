@@ -182,3 +182,94 @@ Sequence if this is ever pursued: fixtures for the interaction criteria → judg
 
 - **Model IDs are a generation stale.** `holo4-35b-a3b` / `holo4-27b` ship with 262k context and function calling; `GET /v1/models` exposes `supported_features` and `deprecation_date`. `holo3-122b-a10b`'s lack of function calling is a capability fact the tier router should not hardcode around.
 - **`enable_thinking` is per-mode, not global.** #186's transport patch turning it off is right for single-shot judging and wrong for any loop; Holo's docs call reasoning "essential in agent mode".
+
+---
+
+# Addendum — external validation (2026-09-26)
+
+Everything above is inward-looking: workspace code plus the vendor's own docs. That is a weak base for a "no" on an architecture question, because it can only show that *this* codebase is not ready — not that the architecture is wrong. This addendum adds outside evidence: standards bodies, shipping tools, and 2023–2026 literature.
+
+**The verdict holds, and is now quantified rather than argued.** Three substantive changes: an independent replication supplies precision/recall numbers that settle it against [#192](https://github.com/jamon8888/Holo-RGAA/issues/192)'s floor rule; the 12.9 determinism claim above is narrower than stated; and a feasible Option C — H's **Agents API** — was never named because §2 read only `/models-api/*`.
+
+## A. Standards bodies: focus order has no automatable rule at all
+
+- **W3C ACT Rules publish no rule for WCAG 2.4.3** (= RGAA 12.8), the criterion §1 ranked highest-value. Rules exist for adjacent things — `oj04fd` *Element in sequential focus order has visible focus* — but not for order coherence itself. ACT also defines a **`cantTell`** outcome for the case where "applicability was automated, but the expectations have to be evaluated manually." That is precisely the probe/judge split §1 recommends, already formalised as an outcome by the standards body: the harness establishes applicability and collects the sequence; the coherence call is a separate act.
+- **ACT `ebe86a` (proposed), *Focusable element has no keyboard trap via non-standard navigation*, narrows the 12.9 finding above.** It carries three expectations: help information is visible and reachable (or reachable from inside the trap), it *explains* the non-standard exit method, and the advised method *actually works*. The workspace's two trap checks — the `run_igt_keyboard` counter ≥5 and `PressKey`'s `activeElement` signature diff — only cover **standard** navigation. Whether help text clearly explains a `Ctrl+M`-style escape is not a deterministic property. See §F.
+- **RGAA has 13 topics and no topic 14** — confirmed against `accessibilite.numerique.gouv.fr`. The four numbering corrections in §1 stand on an external source, not just the in-repo catalog.
+
+## B. The recommended shape is already what shipping tools and the literature do
+
+- **Accessibility Insights for Web, *Tab stops*** (Microsoft) is the recommendation, shipped, with a human in the judge seat: it walks focus, **numbers each stop as a visual path**, auto-detects "possible failures" once the walk returns, and leaves the coherence call to the reviewer. "Partial automation" is the vendor's own framing. Replacing that reviewer with one completion is a substitution, not an invention — no novel architecture is being proposed.
+- **BAGEL** (CHI 2023) provides the first formalisation of the W3C's **Keyboard Navigation Failures** and detects them **fully deterministically at F1 ≈ 90 %, with no model in the loop**. This is direct external support for "12.9 and accordion/modal states need no LLM", and it gives the scripted probe a concrete accuracy target rather than a hope.
+- **A11yLTLNav** (arXiv `2609.17959`, 2026) extends that line with **Linear Temporal Logic properties over the focus walk** — "eventually reaches the target", "focus is never trapped" — *model-checked, not model-decided*. This is the right shape for prerequisite (3): the widened `observe_state` vocabulary should be closed enough for a temporal property to be checked against it by the harness. Upgraded in §F.
+
+## C. The quantified case: an independent replication of this exact question
+
+**arXiv `2609.09379`, *Agentic Web Accessibility Auditing: Authoring and Evaluating Per-Criterion Worker Agents for WCAG*** builds the architecture this ticket asks about — one worker agent per success criterion, each alternating reasoning and action over a tool library of AXTree extraction, element queries, screenshots, **keyboard and pointer operations**, computed styles, contrast measurement and axe — and measures it on a 250-row benchmark (78 positive cases).
+
+| Method | Precision | Recall | Cost / 250 rows |
+|---|---|---|---|
+| axe-core | **0.90** | 0.36 | ~0 |
+| batch VLM, uncued (3 page-level calls) | 0.61 | 0.67 | $6.38 |
+| batch VLM, cued (3 page-level calls) | 0.64 | 0.74 | $7.29 |
+| **interactive per-criterion workers** | **0.56** | **0.86** | **$36.65 – $64.19** |
+
+Four consequences.
+
+1. **A model-driven loop fails #192's floor.** #192 requires **recall ≥ 70 % AND precision ≥ 70 %**. Workers reach 0.86 recall at **0.56 precision** — they fail. The static batch fails too (0.64). Only axe-core clears precision, and it fails recall. The loop buys recall by spending precision, which is the wrong trade for an *opposable* audit: every false Fail is a claim a client can contest. §4 rejected the loop on budget; this rejects it on the acceptance criterion the project already committed to, which is the stronger ground.
+2. **5–9× the cost for +0.12 recall and −0.08 precision** — §4's arithmetic, reproduced independently on a different codebase and model family.
+3. **But the entire gain sits on exactly the two criteria §1 shortlisted.** Keyboard (2.1.1) and No Keyboard Trap (2.1.2): workers recovered **7/8 and 2/2 where the static VLM recovered none**. Focus Order (2.4.3): workers 6/7 vs 4/7. So the *interaction evidence* is indispensable for 12.8/12.9 — and that evidence is what a scripted probe produces. The paper's own prescription: "run appropriate deterministic checks, apply model-based assessment where contextual interpretation is needed, and request targeted browser operations for unresolved cases."
+4. **They reach §3's disqualification independently.** A tool's structured summary "is itself a product of an implemented procedure", so a disputed finding "may require examining the underlying operations rather than treating the summary as independently verified evidence"; workers must connect observations to normative requirements through instructions, not author their own verdict logic. That is the same reason §3 disqualifies predicate-form `assert_state` with model-authored JavaScript.
+
+## D. The counter-example, stated fairly
+
+**TaskAudit** (CHI 2026, arXiv `2510.12972`) is the strongest case *for* a model-driven loop: a Decision agent chooses actions freely, a screen-reader proxy executes them, and it finds **48 functionality errors across 54 app screens against 4–20 for existing checkers**, at **~$0.61 per screen** and a 9.8 % false-positive rate. Its whole premise is the one this ticket raises — errors that "only manifest through interaction", where the static UI looks accessible and the dynamic behaviour fails.
+
+It does not overturn the verdict, for three reasons:
+
+- **It already separates acting from judging.** The Decision agent acts; a distinct *Accessibility Analyzer* judges post-hoc over the collected trace in a two-stage prompt. Structurally that is the split recommended here — the only difference is who picks the actions.
+- **The model picking the actions is where its errors come from.** Of its false positives, **52.2 % originate in task generation and 17.4 % in agent execution** — roughly 70 % of the error budget attributable to the model-chosen-action part, with essentially none attributed to the judging stage. That is a measured price for precisely the capability this ticket proposed to buy.
+- **Not transferable.** Mobile apps, exploratory, no per-page completion cap, and its unit of output is a "functionality error", not a per-criterion RGAA verdict that has to survive #180's precedence and a 10-completions-per-page budget.
+
+## E. Option C, never named: H's Agents API
+
+§2 read only `/models-api/*` and concluded from it. H also ships a separate **Agents API** (`agp.eu.hcompany.ai/api/v2`) that is a hosted act→observe product:
+
+- **Registered agents** — environment + model + skills + instructions as a reusable spec, with a public `h/` catalog.
+- **Sessions** with an explicit lifecycle, queueing, webhooks, and an **observe-and-steer** event stream.
+- **Browser environments**, cloud *or* local: `host: user_device` drives **real Chrome on your own machine** through the `hai-drivers` package.
+- **Custom tools** — the agent emits `pending_tool_calls`, enters `awaiting_tool_results`, *your* code executes the function and echoes `POST /tool_results`. So an `ax:`-ref action space **is** expressible without pixel coordinates.
+- **`force_answer`** — an out-of-band "stop exploring and commit".
+
+So the loop is available as a product and the grounded action space is expressible: Option C is **technically feasible**, which §2 did not establish. It is still the wrong choice here, on grounds worth stating rather than omitting:
+
+1. **Evidence custody.** The loop and its artifacts live in H's sessions. An opposable RGAA audit needs its evidence produced, retained and replayable by the harness that signs the report. Handing the act→verify trail to a third-party session store is a reproducibility problem, not a cost one.
+2. **Concurrency.** Local control is documented as one browser per process, and starting a new session that wants it **hands the browser over and cancels the earlier session**. That is incompatible with [#195](https://github.com/jamon8888/Holo-RGAA/issues/195)'s parallel audit concurrency.
+3. **It drives a browser carrying the operator's own credentials.** The docs warn the agent "can browse, run page scripts, and read that browser's cookies and storage". Auditing arbitrary client sites from a signed-in Chrome is not acceptable regardless of fidelity.
+
+`force_answer` also independently confirms §2's `answer` finding: H's own product needs an out-of-band stop because a turn without a tool call is not a completion signal.
+
+## F. Revisions to the resolution
+
+| Above | Revised |
+|---|---|
+| **12.9** → no LLM, deterministic | **12.9 standard navigation** → no LLM, confirmed (BAGEL, F1 ≈ 90 %). **12.9 non-standard escape** (ACT `ebe86a`) → *one* judging completion to assess whether the help text explains a working escape — **conditional on a trap already being detected**, so it costs 0 on clean pages and cannot blow the budget |
+| Prerequisite (3): widen `observe_state`, closed vocabulary | …**and express the 12.8/12.9 expectations as harness-checked temporal properties over the walk** (A11yLTLNav), not free-form assertions. A closed vocabulary is the means; a checkable property is the end |
+| §5: not scoreable — zero fixtures | Unchanged, but the bake-off now has an external prior: expect ≈ 0.86 recall / 0.56 precision from a loop and ≈ 0.74 / 0.64 from a static batch. **#192's precision floor is the binding constraint, not cost** |
+| §2: what the hosted API exposes | Add the **Agents API** as a named, feasible, and rejected **Option C** (§E) |
+
+Unchanged: the verdict; the shortlist and its four numbering corrections; §3's disqualification of model-authored assertions and `eval_js`; §4's budget arithmetic; the routing to [#180](https://github.com/jamon8888/Holo-RGAA/issues/180).
+
+## Sources
+
+- W3C ACT Rules index — <https://www.w3.org/WAI/standards-guidelines/act/rules/>
+- ACT `oj04fd`, *Element in sequential focus order has visible focus* — <https://www.w3.org/WAI/standards-guidelines/act/rules/oj04fd/>
+- ACT `ebe86a` (proposed), *Focusable element has no keyboard trap via non-standard navigation* — <https://www.w3.org/WAI/standards-guidelines/act/rules/ebe86a/proposed/>
+- Understanding SC 2.4.3 Focus Order — <https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html>
+- Accessibility Insights for Web, *Tab stops* / FastPass — <https://accessibilityinsights.io/docs/web/getstarted/fastpass/>
+- RGAA 4.1.2 criteria and tests — <https://accessibilite.numerique.gouv.fr/methode/criteres-et-tests/>
+- BAGEL (CHI 2023) — <https://dl.acm.org/doi/10.1145/3544548.3580749>
+- A11yLTLNav (2026) — <https://arxiv.org/abs/2609.17959>
+- Agentic Web Accessibility Auditing: per-criterion worker agents (2026) — <https://arxiv.org/abs/2609.09379>
+- TaskAudit (CHI 2026) — <https://arxiv.org/abs/2510.12972>
+- H Platform docs, Agents API (agents, sessions, browser/local-control, custom-tools, observe-and-steer, force-answer) and Models API (`/models-api/build-an-agent/function-calling`, confirming `holo3-122b-a10b` does not support `tools`) — read 2026-09-26 via the docs MCP server

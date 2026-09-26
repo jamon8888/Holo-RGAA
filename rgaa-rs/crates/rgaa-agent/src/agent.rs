@@ -115,7 +115,11 @@ impl RgaaAgent {
         Ok(Self {
             agent,
             rate_limiter,
-            agent_concurrency: config.agent_concurrency,
+            // Floored at 1 independently of `AgentConfig::from_env`, which
+            // already drops a zero: the field is public, so a hand-built
+            // config could still carry one, and `buffer_unordered(0)` never
+            // polls its source stream — the audit would hang rather than fail.
+            agent_concurrency: config.agent_concurrency.max(1),
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             tripped_at: Arc::new(Mutex::new(None)),
         })

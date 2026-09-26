@@ -330,9 +330,15 @@ impl Repository {
         Ok(())
     }
 
+    /// Lists findings for `audit_id`.
+    ///
+    /// Takes `&str`, not `Uuid`: `findings.audit_id` is a TEXT column and
+    /// every write path binds `AuditBundle::audit_id`, which is a `String`
+    /// that need not be a UUID. Demanding a `Uuid` here made `/v1/findings`
+    /// reject with 400 an audit whose findings were stored just fine.
     pub async fn list_findings(
         &self,
-        audit_id: Uuid,
+        audit_id: &str,
         status: Option<&str>,
         severity: Option<&str>,
         rule: Option<&str>,
@@ -367,7 +373,7 @@ impl Repository {
         query.push_str(" OFFSET $");
         query.push_str(&param_count.to_string());
 
-        let mut q = sqlx::query_as(&query).bind(audit_id.to_string());
+        let mut q = sqlx::query_as(&query).bind(audit_id);
         if let Some(status) = status {
             q = q.bind(status);
         }

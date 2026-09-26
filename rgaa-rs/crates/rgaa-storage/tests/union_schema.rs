@@ -71,14 +71,7 @@ async fn union_schema_supports_every_live_api_path() {
     // /v1/findings path: Repository::list_findings against the findings table.
     let repo = Repository::new(storage.pool());
     let findings = repo
-        .list_findings(
-            uuid::Uuid::parse_str(&audit_id).unwrap(),
-            None,
-            None,
-            None,
-            100,
-            0,
-        )
+        .list_findings(&audit_id, None, None, None, 100, 0)
         .await
         .expect("list_findings");
     assert_eq!(findings.len(), 1);

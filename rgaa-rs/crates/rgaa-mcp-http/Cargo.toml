@@ -21,3 +21,4 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["stream"] }
+tower = { version = "0.5", features = ["util"] }

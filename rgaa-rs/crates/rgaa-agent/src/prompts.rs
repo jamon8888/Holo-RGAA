@@ -117,11 +117,21 @@ impl PromptBuilder {
 
         prompt.push_str("## Critères à évaluer\n\n");
         for criterion_id in criterion_ids {
-            if let Some(def) = get_criterion_definition(criterion_id) {
-                prompt.push_str(&format!("### Critère {}\n", criterion_id));
-                prompt.push_str(&format!("- **Titre:** {}\n", def.title));
-                prompt.push_str(&format!("- **Références WCAG:** {}\n", def.wcag_refs));
-                prompt.push_str(&format!("- **Définition:** {}\n\n", def.definition));
+            // The header is written for every requested id, even one with no
+            // local definition: omitting it asked the model for fewer results
+            // than there are criteria, and the caller then had no element to
+            // match that id against.
+            prompt.push_str(&format!("### Critère {}\n", criterion_id));
+            match get_criterion_definition(criterion_id) {
+                Some(def) => {
+                    prompt.push_str(&format!("- **Titre:** {}\n", def.title));
+                    prompt.push_str(&format!("- **Références WCAG:** {}\n", def.wcag_refs));
+                    prompt.push_str(&format!("- **Définition:** {}\n\n", def.definition));
+                }
+                None => prompt.push_str(
+                    "- **Définition:** non disponible localement ; évalue d'après le \
+                     référentiel RGAA 4.1.2.\n\n",
+                ),
             }
         }
 

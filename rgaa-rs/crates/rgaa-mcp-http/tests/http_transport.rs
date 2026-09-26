@@ -170,8 +170,14 @@ async fn unknown_method_returns_method_not_found() {
     assert_eq!(resp["error"]["code"], serde_json::json!(-32601));
 }
 
+/// With no allowlist configured, an unknown origin gets no CORS grant.
+///
+/// This used to assert the opposite — that any origin was allowed. That
+/// default is what let a page open in the user's browser POST to the MCP
+/// endpoint and drive `tools/call`, so the expectation is inverted rather
+/// than the behaviour restored.
 #[tokio::test]
-async fn cors_reflects_plugin_origin() {
+async fn cors_denies_an_unconfigured_origin() {
     let (addr, _h) = spawn(Duration::ZERO).await;
     let client = reqwest::Client::new();
     let resp = client
@@ -186,8 +192,8 @@ async fn cors_reflects_plugin_origin() {
         .get("access-control-allow-origin")
         .map(|v| v.to_str().unwrap_or("").to_string());
     assert!(
-        acao.as_deref() == Some("*") || acao.as_deref() == Some("https://plugin.example"),
-        "missing/incorrect CORS header, got {acao:?}"
+        acao.is_none(),
+        "an unconfigured origin was granted CORS access: {acao:?}"
     );
 }
 

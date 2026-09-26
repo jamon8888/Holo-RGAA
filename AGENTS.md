@@ -91,8 +91,15 @@ This box has **4 cores / 7.7 GB RAM** and a heavy dependency graph
    doesn't dump thousands of dep lines:
 
    ```bash
-   cargo check --workspace --all-targets 2>&1 | grep -E "^error|error\[" | head -40
+   cargo check --workspace --all-targets 2>&1 | tee /tmp/check.log | grep -E "^error|error\[" | head -40
+   test "${PIPESTATUS[0]}" -eq 0 || echo "cargo check FAILED (see /tmp/check.log)"
    ```
+
+   `${PIPESTATUS[0]}` is what makes this honest: bash reports the status of the
+   *last* command in a pipeline, so `head` exiting 0 hides a failed `cargo`.
+   `set -o pipefail` is the wrong tool here — `grep` returns 1 when a
+   successful build produces no matching line, which would report failure on a
+   clean run.
 
 7. **Do not `cargo clean`** to "fix" a stale build — it throws away the cache
    that makes the next run bearable. If an invalid state is suspected, delete
@@ -104,9 +111,15 @@ Standard verification sequence before claiming done:
 export RUSTC_WRAPPER=sccache
 cargo fmt --check
 cargo clippy --workspace --all-targets 2>&1 | grep -E "^error|^warning: unused" | head -40
+test "${PIPESTATUS[0]}" -eq 0 || echo "clippy FAILED"
 cargo check --workspace --all-targets 2>&1 | grep -E "^error" | head -40
+test "${PIPESTATUS[0]}" -eq 0 || echo "check FAILED"
 cargo nextest run --workspace
 ```
+
+Each filtered command is followed by a `${PIPESTATUS[0]}` test: without it a
+`cargo` failure is masked by `head` exiting 0, and the sequence looks green
+while the build is broken.
 
 ---
 

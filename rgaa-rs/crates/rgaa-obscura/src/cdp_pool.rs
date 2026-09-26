@@ -4,33 +4,45 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::debug;
 
-/// A pooled CDP session with a persistent WebSocket and browser target
+/// A pooled CDP session with a persistent WebSocket and browser target.
+///
+/// The WebSocket sits behind its *own* lock rather than the pool's: a CDP
+/// round trip can take tens of seconds (`wait_for_load`, `axe.run()`), and
+/// holding the pool-wide lock across it serialized every session and blocked
+/// `acquire` — no pooled operation ran in parallel.
 struct PooledSession {
-    ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    ws: Mutex<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     session_id: String,
+    target_id: String,
     created_at: Instant,
-    last_used: Instant,
-    in_use: bool,
+    last_used: Mutex<Instant>,
+    /// Atomic so [`CdpSessionGuard::drop`] can release the slot without
+    /// taking any lock — a `try_lock` there silently leaked the slot whenever
+    /// it was contended.
+    in_use: AtomicBool,
 }
 
 /// Guard that returns the session to the pool when dropped
 pub struct CdpSessionGuard {
-    pool: Arc<Mutex<Vec<PooledSession>>>,
-    index: usize,
-    session_id: String,
+    session: Arc<PooledSession>,
+    /// Held for the guard's lifetime so `max_concurrent` actually bounds the
+    /// number of live sessions; a plain `acquire()` permit was released as
+    /// soon as `acquire` returned, making the limit a no-op.
+    _permit: OwnedSemaphorePermit,
 }
 
 impl CdpSessionGuard {
     /// Get the CDP session ID for this guard
     pub fn session_id(&self) -> &str {
-        &self.session_id
+        &self.session.session_id
     }
 
     /// Execute an async closure with mutable access to the WebSocket
@@ -38,10 +50,9 @@ impl CdpSessionGuard {
     pub async fn navigate(&mut self, url: &str) -> Result<(), String> {
         let session_id = self.session_id().to_string();
         let url = url.to_string();
-        let mut pool = self.pool.lock().await;
-        let ws = &mut pool[self.index].ws;
+        let mut ws = self.session.ws.lock().await;
         cdp_send_session(
-            ws,
+            &mut ws,
             &session_id,
             "Page.navigate",
             serde_json::json!({"url": url}),
@@ -53,27 +64,24 @@ impl CdpSessionGuard {
     /// Wait for page load
     pub async fn wait_for_load(&mut self, timeout: Duration) -> Result<(), String> {
         let session_id = self.session_id().to_string();
-        let mut pool = self.pool.lock().await;
-        let ws = &mut pool[self.index].ws;
-        wait_for_load(ws, &session_id, timeout).await
+        let mut ws = self.session.ws.lock().await;
+        wait_for_load(&mut ws, &session_id, timeout).await
     }
 
     /// Run axe-core evaluation
     pub async fn run_axe_core(&mut self, axe_source: &str) -> Result<String, String> {
         let session_id = self.session_id().to_string();
         let axe_source = axe_source.to_string();
-        let mut pool = self.pool.lock().await;
-        let ws = &mut pool[self.index].ws;
-        run_axe_core_static(ws, &session_id, &axe_source).await
+        let mut ws = self.session.ws.lock().await;
+        run_axe_core_static(&mut ws, &session_id, &axe_source).await
     }
 
     /// Evaluate JavaScript expression
     pub async fn eval_js(&mut self, expression: &str) -> Result<serde_json::Value, String> {
         let session_id = self.session_id().to_string();
         let expression = expression.to_string();
-        let mut pool = self.pool.lock().await;
-        let ws = &mut pool[self.index].ws;
-        eval_js_static(ws, &session_id, &expression).await
+        let mut ws = self.session.ws.lock().await;
+        eval_js_static(&mut ws, &session_id, &expression).await
     }
 }
 
@@ -330,12 +338,15 @@ async fn cdp_send(
 
 impl Drop for CdpSessionGuard {
     fn drop(&mut self) {
-        if let Ok(mut pool) = self.pool.try_lock() {
-            if let Some(session) = pool.get_mut(self.index) {
-                session.in_use = false;
-                session.last_used = Instant::now();
-            }
+        // `last_used` is best-effort: this guard is the session's only user
+        // while `in_use` is set, so the try_lock succeeds in practice, and a
+        // stale timestamp only makes the session look older and be evicted
+        // sooner. Releasing the slot is not best-effort — it happens either
+        // way, which is what the old pool-wide `try_lock` could not promise.
+        if let Ok(mut last_used) = self.session.last_used.try_lock() {
+            *last_used = Instant::now();
         }
+        self.session.in_use.store(false, Ordering::Release);
     }
 }
 
@@ -343,14 +354,23 @@ impl Drop for CdpSessionGuard {
 pub struct CdpSessionPool {
     browser_ws_url: String,
     semaphore: Arc<Semaphore>,
-    pool: Arc<Mutex<Vec<PooledSession>>>,
+    /// The pool lock covers slot bookkeeping only — never a CDP round trip.
+    pool: Arc<Mutex<Vec<Arc<PooledSession>>>>,
     max_idle: Duration,
     max_lifetime: Duration,
 }
 
 impl CdpSessionPool {
     /// Create a new CDP session pool
+    ///
+    /// # Errors
+    /// Returns `Err` if `max_concurrent` is zero: a zero-permit semaphore
+    /// makes every `acquire` wait forever, which is indistinguishable from a
+    /// hung browser.
     pub async fn new(browser_ws_url: String, max_concurrent: usize) -> Result<Self, String> {
+        if max_concurrent == 0 {
+            return Err("CdpSessionPool requires max_concurrent >= 1".to_string());
+        }
         Ok(Self {
             browser_ws_url,
             semaphore: Arc::new(Semaphore::new(max_concurrent)),
@@ -362,30 +382,61 @@ impl CdpSessionPool {
 
     /// Acquire a session from the pool (creates new if none available)
     pub async fn acquire(&self) -> Result<CdpSessionGuard, String> {
-        let _permit = self.semaphore.acquire().await.map_err(|_| "pool closed")?;
+        // Owned, so the permit lives as long as the guard rather than as long
+        // as this function.
+        let permit = Arc::clone(&self.semaphore)
+            .acquire_owned()
+            .await
+            .map_err(|_| "pool closed")?;
 
-        let mut pool = self.pool.lock().await;
         let now = Instant::now();
 
-        // Try to reuse an idle session within TTL
-        if let Some(idx) = pool.iter().position(|s| {
-            !s.in_use
-                && now.duration_since(s.last_used) < self.max_idle
-                && now.duration_since(s.created_at) < self.max_lifetime
-        }) {
-            let session = &mut pool[idx];
-            session.in_use = true;
-            session.last_used = now;
+        // Bookkeeping only: evict what has expired, then claim an idle slot.
+        // The lock is dropped before any CDP I/O below.
+        let reused = {
+            let mut pool = self.pool.lock().await;
+
+            // Expired sessions used to stay in the Vec forever, so the vector,
+            // the sockets and the browser targets all grew without bound over
+            // a long batch.
+            let mut expired: Vec<Arc<PooledSession>> = Vec::new();
+            pool.retain(|s| {
+                if s.in_use.load(Ordering::Acquire) {
+                    return true;
+                }
+                let last_used = s.last_used.try_lock().map(|l| *l).unwrap_or(s.created_at);
+                let alive = now.duration_since(last_used) < self.max_idle
+                    && now.duration_since(s.created_at) < self.max_lifetime;
+                if !alive {
+                    expired.push(Arc::clone(s));
+                }
+                alive
+            });
+            for session in expired {
+                let ws_url = self.browser_ws_url.clone();
+                // Off the lock: closing a target is itself a CDP round trip.
+                tokio::spawn(async move { close_session(&session, &ws_url).await });
+            }
+
+            // `compare_exchange` claims the slot atomically, so two callers
+            // racing here cannot walk away with the same session.
+            pool.iter()
+                .find(|s| {
+                    s.in_use
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                })
+                .cloned()
+        };
+
+        if let Some(session) = reused {
+            *session.last_used.lock().await = now;
             debug!("Reused CDP session {}", session.session_id);
             return Ok(CdpSessionGuard {
-                pool: self.pool.clone(),
-                index: idx,
-                session_id: session.session_id.clone(),
+                session,
+                _permit: permit,
             });
         }
-
-        // Create new session - release lock before async operations
-        drop(pool);
 
         let (mut ws, _) = connect_async(&self.browser_ws_url)
             .await
@@ -436,21 +487,40 @@ impl CdpSessionPool {
         .await
         .map_err(|e| format!("Emulation.setDeviceMetricsOverride failed: {e}"))?;
 
-        let mut pool = self.pool.lock().await;
-        let session = PooledSession {
-            ws,
-            session_id: session_id.clone(),
+        let session = Arc::new(PooledSession {
+            ws: Mutex::new(ws),
+            session_id,
+            target_id,
             created_at: now,
-            last_used: now,
-            in_use: true,
-        };
-        let index = pool.len();
-        pool.push(session);
+            last_used: Mutex::new(now),
+            in_use: AtomicBool::new(true),
+        });
+        self.pool.lock().await.push(Arc::clone(&session));
 
         Ok(CdpSessionGuard {
-            pool: self.pool.clone(),
-            index,
-            session_id,
+            session,
+            _permit: permit,
         })
     }
+}
+
+/// Best-effort teardown of an evicted session: close the browser target, then
+/// let the socket drop. Failures are logged and ignored — the session is
+/// already out of the pool, and an unreachable browser is the usual cause.
+async fn close_session(session: &PooledSession, browser_ws_url: &str) {
+    let mut ws = session.ws.lock().await;
+    if let Err(e) = cdp_send_session(
+        &mut ws,
+        &session.session_id,
+        "Target.closeTarget",
+        serde_json::json!({"targetId": session.target_id}),
+    )
+    .await
+    {
+        debug!(
+            "closing evicted CDP target {} on {browser_ws_url} failed: {e}",
+            session.target_id
+        );
+    }
+    let _ = ws.close(None).await;
 }

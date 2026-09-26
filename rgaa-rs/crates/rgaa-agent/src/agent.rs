@@ -43,9 +43,49 @@ fn tier_for(criterion_id: &str) -> ModelTier {
 /// Batch evaluation response from the LLM
 #[derive(Deserialize, Debug, Clone)]
 struct BatchEvaluationResponse {
+    /// Echoed back by the model — the batch prompt asks for it explicitly.
+    /// Results are matched on this, never on array position: a model that
+    /// reorders or omits an element would otherwise have its verdict recorded
+    /// against a different RGAA criterion.
+    #[serde(default)]
+    criterion_id: String,
     verdict: String,
     confidence: f64,
     justification: String,
+}
+
+/// Extracts the outermost JSON array from `text`.
+///
+/// Models routinely wrap the array in a ```json fence or a sentence of prose,
+/// which makes a bare `serde_json::from_str` on the whole reply fail.
+fn extract_json_array(text: &str) -> Option<&str> {
+    let start = text.find('[')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, c) in text[start..].char_indices() {
+        if in_string {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[start..=start + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Number of criteria to evaluate per batch LLM call.
@@ -276,26 +316,48 @@ impl RgaaAgent {
         criteria: Vec<Criterion>,
         page_context: PageContext,
     ) -> HashMap<String, CriterionResult> {
+        use futures::stream::{self, StreamExt};
+
         let rendered_context = Arc::new(PromptBuilder::render_context(&page_context));
-        let mut all_results = HashMap::new();
 
-        // Process criteria in batches
-        let mut remaining = criteria;
-        while !remaining.is_empty() {
-            let take = remaining.len().min(BATCH_SIZE);
-            let batch: Vec<Criterion> = remaining.drain(..take).collect();
-
-            let batch_results = self
-                .clone()
-                .evaluate_batch(batch, rendered_context.clone(), ModelTier::Tactical)
-                .await;
-
-            for (criterion_id, result) in batch_results {
-                all_results.insert(criterion_id, result);
+        // Grouped by tier before chunking, so a batch never mixes tiers and
+        // `tier_for`'s routing survives: forcing `Tactical` on every batch sent
+        // the visual criteria to the cheap model and billed the wrong bucket.
+        let mut tactical: Vec<Criterion> = Vec::new();
+        let mut reasoning: Vec<Criterion> = Vec::new();
+        for criterion in criteria {
+            match tier_for(criterion.id) {
+                ModelTier::Tactical => tactical.push(criterion),
+                ModelTier::Reasoning => reasoning.push(criterion),
             }
         }
 
-        all_results
+        let batches: Vec<(Vec<Criterion>, ModelTier)> = tactical
+            .chunks(BATCH_SIZE)
+            .map(|c| (c.to_vec(), ModelTier::Tactical))
+            .chain(
+                reasoning
+                    .chunks(BATCH_SIZE)
+                    .map(|c| (c.to_vec(), ModelTier::Reasoning)),
+            )
+            .collect();
+
+        // Batches run concurrently up to `agent_concurrency` — awaiting them
+        // one by one meant the configured concurrency was never used on this
+        // path, which is the whole point of batching here.
+        let concurrency = self.agent_concurrency;
+        stream::iter(batches)
+            .map(|(batch, tier)| {
+                let self_ = self.clone();
+                let rendered_context = rendered_context.clone();
+                async move { self_.evaluate_batch(batch, rendered_context, tier).await }
+            })
+            .buffer_unordered(concurrency)
+            .fold(HashMap::new(), |mut acc, batch_results| async move {
+                acc.extend(batch_results);
+                acc
+            })
+            .await
     }
 
     /// Evaluate a batch of criteria with a single LLM call
@@ -313,86 +375,103 @@ impl RgaaAgent {
         // Build batch prompt
         let prompt = PromptBuilder::build_batch_from_rendered(&criterion_ids, &rendered_context);
 
+        // The breaker gates the batch path too: without this, every batch of
+        // a dead upstream spent a request and only the per-criterion fallback
+        // ever tripped it, so other callers kept hammering it.
+        if self.breaker_open() {
+            tracing::warn!(criteria = ?criterion_ids, "circuit breaker open; skipping batch call");
+            return self.evaluate_individually(criteria, rendered_context).await;
+        }
+
         // Rate limit
         self.rate_limiter.acquire(tier).await;
 
         // Call LLM
         let response = match self.agent.prompt(prompt.as_str()).await {
-            Ok(response) => response,
+            Ok(response) => {
+                self.record_success();
+                response
+            }
             Err(e) => {
+                let failures = self.record_failure();
+                if failures >= CIRCUIT_BREAKER_THRESHOLD {
+                    tracing::warn!(consecutive_failures = failures, "circuit breaker tripped");
+                }
                 tracing::warn!(criteria = ?criterion_ids, error = %e, "batch evaluation failed");
                 // Fall back to individual evaluation on error
                 return self.evaluate_individually(criteria, rendered_context).await;
             }
         };
 
-        // Parse batch response
-        let parsed = HoloClient::extract_json(&response);
-        let batch_responses: Vec<BatchEvaluationResponse> = match parsed {
-            Some(parsed) if parsed.verdict == "batch" => {
-                // Handle if response is already structured
-                vec![BatchEvaluationResponse {
-                    verdict: parsed.verdict,
-                    confidence: parsed.confidence,
-                    justification: parsed.justification,
-                }]
+        // Parse the batch response, keyed by the `criterion_id` the prompt
+        // asks the model to echo. The array is extracted from the reply first
+        // because models wrap it in a ```json fence or a line of prose.
+        let batch_responses: Vec<BatchEvaluationResponse> = extract_json_array(&response)
+            .and_then(|array| serde_json::from_str(array).ok())
+            .or_else(|| serde_json::from_str(&response).ok())
+            .unwrap_or_default();
+
+        let mut by_id: HashMap<&str, &BatchEvaluationResponse> = HashMap::new();
+        let mut duplicated: Vec<&str> = Vec::new();
+        for r in &batch_responses {
+            let id = r.criterion_id.trim();
+            if id.is_empty() {
+                continue;
             }
-            _ => {
-                // Try to parse as JSON array from the response text
-                serde_json::from_str(&response).unwrap_or_else(|_| {
-                    // Fallback: try to extract from HoloResponse format
-                    if let Some(hr) = HoloClient::extract_json(&response) {
-                        vec![BatchEvaluationResponse {
-                            verdict: hr.verdict,
-                            confidence: hr.confidence,
-                            justification: hr.justification,
-                        }]
-                    } else {
-                        vec![]
-                    }
-                })
+            if by_id.insert(id, r).is_some() {
+                // Two results for one criterion: neither can be trusted, so
+                // the criterion goes to the individual path below.
+                duplicated.push(id);
             }
-        };
+        }
+        for id in duplicated {
+            by_id.remove(id);
+        }
 
         // Map responses to results
         let mut results = HashMap::new();
-        for (idx, criterion_id) in criterion_ids.iter().enumerate() {
-            let response =
-                batch_responses
-                    .get(idx)
-                    .cloned()
-                    .unwrap_or_else(|| BatchEvaluationResponse {
-                        verdict: "na".to_string(),
-                        confidence: 0.0,
-                        justification: "Failed to parse batch response".to_string(),
-                    });
+        let mut unmatched: Vec<Criterion> = Vec::new();
+        for criterion in &criteria {
+            let Some(response) = by_id.get(criterion.id) else {
+                // No usable result for this criterion. Evaluating it on its own
+                // is the only honest option — defaulting it to "na" would
+                // record a verdict the model never gave.
+                unmatched.push(criterion.clone());
+                continue;
+            };
 
             let status = map_verdict(&HoloResponse {
-                verdict: response.verdict,
+                verdict: response.verdict.clone(),
                 confidence: response.confidence,
                 justification: response.justification.clone(),
             });
 
-            // Find the criterion to get title and classification
-            let criterion = criteria.iter().find(|c| c.id == *criterion_id);
-            let (title, classification) = criterion
-                .map(|c| (c.title.clone(), c.classification))
-                .unwrap_or_else(|| (criterion_id.to_string(), Classification::IaAssiste));
-
             results.insert(
-                criterion_id.to_string(),
+                criterion.id.to_string(),
                 CriterionResult {
-                    criterion_id: criterion_id.to_string(),
-                    title,
-                    classification,
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.clone(),
+                    classification: criterion.classification,
                     status,
                     violations: vec![],
                     confidence: Some(response.confidence),
-                    justification: Some(response.justification),
+                    justification: Some(response.justification.clone()),
                     source: "agent-batch".to_string(),
                     citations: vec![],
                 },
             );
+        }
+
+        if !unmatched.is_empty() {
+            tracing::warn!(
+                missing = unmatched.len(),
+                of = criteria.len(),
+                "batch response did not cover every criterion; evaluating the rest individually"
+            );
+            let fallback = self
+                .evaluate_individually(unmatched, rendered_context)
+                .await;
+            results.extend(fallback);
         }
 
         results
@@ -531,5 +610,92 @@ impl RgaaAgent {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+
+    fn parse(text: &str) -> Vec<BatchEvaluationResponse> {
+        extract_json_array(text)
+            .and_then(|a| serde_json::from_str(a).ok())
+            .or_else(|| serde_json::from_str(text).ok())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn extracts_the_array_from_a_fenced_reply() {
+        // The usual shape of a model reply: prose, a ```json fence, more prose.
+        let reply = "Voici mon analyse :\n```json\n[{\"criterion_id\":\"1.1\",\
+                     \"verdict\":\"pass\",\"confidence\":0.9,\"justification\":\"ok\"}]\n```\nFin.";
+        let parsed = parse(reply);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].criterion_id, "1.1");
+        assert_eq!(parsed[0].verdict, "pass");
+    }
+
+    #[test]
+    fn extracts_a_bare_array_too() {
+        let reply =
+            r#"[{"criterion_id":"3.1","verdict":"fail","confidence":0.5,"justification":"x"}]"#;
+        assert_eq!(parse(reply)[0].criterion_id, "3.1");
+    }
+
+    #[test]
+    fn a_bracket_inside_a_string_does_not_end_the_array() {
+        let reply = r#"[{"criterion_id":"1.1","verdict":"fail","confidence":0.5,
+                        "justification":"le texte ] et [ sont cités"}]"#;
+        let parsed = parse(reply);
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].justification.contains(']'));
+    }
+
+    #[test]
+    fn nothing_parsable_yields_no_responses_rather_than_a_wrong_one() {
+        assert!(parse("Je n'ai pas pu évaluer ces critères.").is_empty());
+        assert!(parse("").is_empty());
+    }
+
+    /// The mapping rule this whole rewrite exists for: a reordered or partial
+    /// batch must never land a verdict on the wrong criterion.
+    #[test]
+    fn responses_are_matched_by_id_not_by_position() {
+        let reply = r#"[
+            {"criterion_id":"3.1","verdict":"fail","confidence":0.8,"justification":"contraste"},
+            {"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"alt ok"}
+        ]"#;
+        let parsed = parse(reply);
+        let by_id: HashMap<&str, &BatchEvaluationResponse> = parsed
+            .iter()
+            .map(|r| (r.criterion_id.as_str(), r))
+            .collect();
+
+        // Positional mapping would have given 1.1 the "fail" meant for 3.1.
+        assert_eq!(by_id["1.1"].verdict, "pass");
+        assert_eq!(by_id["3.1"].verdict, "fail");
+    }
+
+    #[test]
+    fn a_criterion_absent_from_the_response_has_no_entry() {
+        // It must fall through to individual evaluation, not be defaulted to
+        // "na" — a verdict the model never gave.
+        let reply =
+            r#"[{"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"ok"}]"#;
+        let parsed = parse(reply);
+        let by_id: HashMap<&str, &BatchEvaluationResponse> = parsed
+            .iter()
+            .map(|r| (r.criterion_id.as_str(), r))
+            .collect();
+        assert!(by_id.contains_key("1.1"));
+        assert!(!by_id.contains_key("3.1"));
+    }
+
+    #[test]
+    fn criteria_split_into_batches_keep_their_tier() {
+        // 1.1 is textual, 3.1 needs the visual model: grouping by tier first is
+        // what stops a batch from being billed and answered on the wrong one.
+        assert_eq!(tier_for("3.1"), ModelTier::Reasoning);
+        assert_eq!(tier_for("1.1"), ModelTier::Tactical);
     }
 }

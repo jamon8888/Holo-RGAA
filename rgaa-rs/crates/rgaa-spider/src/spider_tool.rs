@@ -7,9 +7,9 @@ use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
 
 const HTML_TRUNCATE_LEN: usize = 50_000;
-/// Broadcast channel capacity for `Website::subscribe` — a small buffer is
-/// enough since we drain it continuously while the crawl runs concurrently.
-const SUBSCRIBE_CAPACITY: usize = 16;
+/// Broadcast channel capacity for `Website::subscribe` — increased to handle
+/// faster producers without lagging. Use larger buffer for concurrent crawls.
+const SUBSCRIBE_CAPACITY: usize = 64;
 
 /// True when `url` matches any blacklist pattern (plain substring match).
 fn is_blacklisted(url: &str, patterns: &[String]) -> bool {

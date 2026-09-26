@@ -49,7 +49,7 @@ impl PortableTool for A11yTreeTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         let tree = session
             .get_a11y_tree()
             .await

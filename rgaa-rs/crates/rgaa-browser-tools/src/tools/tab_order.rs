@@ -55,7 +55,7 @@ impl PortableTool for TabOrderTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         let raw = session
             .get_tab_order()
             .await

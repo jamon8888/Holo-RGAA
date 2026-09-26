@@ -48,7 +48,7 @@ impl PortableTool for ScreenshotTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         let (data_base64, width, height) = session
             .screenshot_with_dimensions()
             .await

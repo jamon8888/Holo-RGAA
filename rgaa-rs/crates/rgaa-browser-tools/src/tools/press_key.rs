@@ -49,7 +49,7 @@ impl PortableTool for PressKeyTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         session
             .press_key(&args.key)
             .await

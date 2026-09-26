@@ -51,7 +51,7 @@ impl PortableTool for TypeTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         session
             .type_input(&args.selector, &args.text)
             .await

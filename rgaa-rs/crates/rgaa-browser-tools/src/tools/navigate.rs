@@ -50,11 +50,18 @@ impl PortableTool for NavigateTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let mut session = self.ctx.session().lock().await;
+        // The session is cloned because the lock is synchronous and cannot be
+        // held across the await below.
+        let mut session = self.ctx.session().lock().clone();
         session
             .navigate(&args.url)
             .await
             .map_err(NavigateError::NavigationFailed)?;
+        // `navigate` set `current_url` on the clone, which is dropped here.
+        // Writing it back is what every later tool reads: without this, click,
+        // screenshot, type_input, press_key, tab_order, assert_state and
+        // a11y_tree all fell back to "about:blank".
+        self.ctx.session().lock().set_current_url(args.url.clone());
         Ok(NavigateOutput {
             success: true,
             message: format!("Navigated to {}", args.url),

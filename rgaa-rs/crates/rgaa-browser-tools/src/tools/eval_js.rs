@@ -50,7 +50,7 @@ impl PortableTool for EvalJsTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let session = self.ctx.session().lock().await;
+        let session = self.ctx.session().lock().clone();
         let result = session
             .eval_js(&args.expression)
             .await

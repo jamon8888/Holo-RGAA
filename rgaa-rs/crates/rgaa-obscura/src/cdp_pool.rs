@@ -65,12 +65,18 @@ impl CdpSessionGuard {
             )
             .await?
         };
-        // Absent for navigations Chrome turns into a download; the wait then
-        // degrades to the unscoped behaviour rather than hanging.
+        if let Some(error_text) = result.get("errorText").and_then(|v| v.as_str()) {
+            return Err(format!("Page.navigate refused by browser: {error_text}"));
+        }
         let loader_id = result
             .get("loaderId")
             .and_then(|v| v.as_str())
             .map(str::to_string);
+        if loader_id.is_none() {
+            return Err(format!(
+                "Page.navigate returned no loaderId for {url} — likely a download or non-document response"
+            ));
+        }
         *self.session.pending_loader.lock().await = loader_id;
         Ok(())
     }

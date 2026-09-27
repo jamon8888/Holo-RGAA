@@ -42,6 +42,7 @@ impl AxeMapper {
                     justification: None,
                     source: "axe-core".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 },
             );
         }

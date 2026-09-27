@@ -1,3 +1,4 @@
+use crate::merge;
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::catalog::Automatable;
@@ -754,11 +755,18 @@ async fn audit_one(
     }
 
     // 5. Merge results
+    //
+    // Precedence is decided by `merge::merge_results`, not by the order the
+    // sources are listed here: an errored evaluation never overwrites a
+    // verdict, and deterministic evidence outranks an LLM verdict. The order
+    // below only fixes the order of `considered_sources` on each winner.
     on_phase(AuditPhase::Merging);
-    let mut all_results: HashMap<String, CriterionResult> = HashMap::new();
-    all_results.extend(axe_results);
-    all_results.extend(gap_results);
-    all_results.extend(holo_results);
+    let mut all_results: HashMap<String, CriterionResult> = merge::merge_results(
+        axe_results
+            .into_iter()
+            .chain(gap_results)
+            .chain(holo_results),
+    );
 
     // 6. Ensure every criterion has an entry.
     //
@@ -784,6 +792,7 @@ async fn audit_one(
                     justification: Some("Manual verification required".into()),
                     source: "manual".into(),
                     citations: vec![],
+                    considered_sources: vec![],
                 });
         } else if !all_results.contains_key(criterion.id) {
             let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
@@ -815,6 +824,7 @@ async fn audit_one(
                     justification: Some(justification),
                     source,
                     citations: vec![],
+                    considered_sources: vec![],
                 });
         }
     }

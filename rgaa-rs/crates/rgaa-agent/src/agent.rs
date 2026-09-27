@@ -286,6 +286,7 @@ impl RgaaAgent {
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
+                considered_sources: vec![],
             };
         }
 
@@ -313,6 +314,7 @@ impl RgaaAgent {
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 }
             }
             Err(e) => {
@@ -334,6 +336,7 @@ impl RgaaAgent {
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 }
             }
         }
@@ -497,6 +500,7 @@ impl RgaaAgent {
                     justification: Some(response.justification.clone()),
                     source: "agent-batch".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 },
             );
         }
@@ -599,6 +603,7 @@ impl RgaaAgent {
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
+                considered_sources: vec![],
             };
         }
 
@@ -626,6 +631,7 @@ impl RgaaAgent {
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 }
             }
             Err(e) => {
@@ -647,6 +653,7 @@ impl RgaaAgent {
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 }
             }
         }

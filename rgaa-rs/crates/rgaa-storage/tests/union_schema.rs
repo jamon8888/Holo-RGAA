@@ -123,6 +123,7 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
                 justification: None,
                 source: "axe".into(),
                 citations: vec![],
+                considered_sources: vec![],
             }],
             compliance_rate: 0.0,
             crawl_depth: 0,

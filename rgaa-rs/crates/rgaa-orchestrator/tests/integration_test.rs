@@ -21,6 +21,7 @@ fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> Criteri
         justification: None,
         source: "test".to_string(),
         citations: vec![],
+        considered_sources: vec![],
     }
 }
 

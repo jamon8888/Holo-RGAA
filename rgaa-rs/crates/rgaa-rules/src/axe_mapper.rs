@@ -158,8 +158,8 @@ mod tests {
     fn every_mapped_rule_name_is_a_real_axe_rule_id() {
         let real = real_axe_rule_ids();
         let mut fictional: Vec<(&str, &str)> = Vec::new();
-        for (criterion_id, rules) in AxeMapper::rgaa_to_axe_map() {
-            for rule in rules {
+        for (criterion_id, mechanism) in AxeMapper::rgaa_to_axe_map() {
+            for rule in &mechanism.rules {
                 if !real.contains(rule) {
                     fictional.push((criterion_id.as_str(), rule.as_str()));
                 }

@@ -343,7 +343,26 @@ async fn run_axe_core_static(
     )
     .await?;
 
-    // Validate the result
+    extract_axe_violations(&result)
+}
+
+/// Pull the violations array out of a `Runtime.evaluate` response for `axe.run()`.
+///
+/// `axe.run()` resolves to the full run object — `{violations, passes, incomplete,
+/// inapplicable, testEngine, ...}` — and `AxeMapper::map` parses a **violations
+/// array**. Serialising the whole object instead hands the mapper a JSON map, which
+/// it rejects with "invalid type: map, expected a sequence", and every page of the
+/// audit fails.
+///
+/// The pooled session path did exactly that while the direct-connection fallback
+/// extracted the field correctly, so which path ran decided whether an audit worked.
+/// Both now go through this one function, so the two cannot drift again.
+///
+/// Before #199 the mapper swallowed the parse error with `unwrap_or_default()`, so
+/// this surfaced as *every axe criterion passing with no violations* rather than as a
+/// failure — a fabricated clean report. That is why it is validated here rather than
+/// left to the caller.
+pub(crate) fn extract_axe_violations(result: &Value) -> Result<String, String> {
     if let Some(ex) = result.get("exceptionDetails") {
         return Err(format!("axe.run() raised an exception: {ex}"));
     }
@@ -356,9 +375,21 @@ async fn run_axe_core_static(
         return Err("axe.run() returned an error object".to_string());
     }
 
-    let violations = remote
+    let value = remote
         .get("value")
         .ok_or_else(|| "axe.run() result missing value".to_string())?;
+
+    if value.is_null() {
+        return Err("axe.run() result value is null".to_string());
+    }
+
+    let violations = value
+        .get("violations")
+        .ok_or_else(|| "axe result is missing the 'violations' field".to_string())?;
+
+    if !violations.is_array() {
+        return Err("axe result 'violations' is not an array".to_string());
+    }
 
     serde_json::to_string(violations)
         .map_err(|e| format!("failed to serialize axe violations: {e}"))
@@ -606,4 +637,94 @@ async fn close_session(session: &PooledSession, browser_ws_url: &str) {
         );
     }
     let _ = ws.close(None).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn evaluate_response(value: Value) -> Value {
+        json!({"result": {"type": "object", "value": value}})
+    }
+
+    /// The regression. `axe.run()` resolves to the whole run object; the pooled path
+    /// used to serialise it wholesale, so `AxeMapper::map` received a JSON map and
+    /// rejected it with "invalid type: map, expected a sequence" on every page.
+    #[test]
+    fn the_violations_array_is_extracted_not_the_whole_axe_run_object() {
+        let response = evaluate_response(json!({
+            "violations": [{"id": "image-alt", "impact": "critical", "description": "x", "nodes": []}],
+            "passes": [{"id": "region"}],
+            "incomplete": [],
+            "inapplicable": [],
+            "testEngine": {"name": "axe-core", "version": "4.10.0"},
+        }));
+
+        let extracted = extract_axe_violations(&response).expect("a well-formed run extracts");
+        let parsed: Value = serde_json::from_str(&extracted).expect("the output is JSON");
+
+        assert!(
+            parsed.is_array(),
+            "the mapper parses a sequence, so this must be an array, got: {parsed}"
+        );
+        assert_eq!(parsed.as_array().map(Vec::len), Some(1));
+        assert_eq!(parsed[0]["id"], "image-alt");
+        assert!(
+            !extracted.contains("testEngine"),
+            "the run envelope must not be handed to the mapper: {extracted}"
+        );
+    }
+
+    #[test]
+    fn an_empty_violations_array_is_a_clean_page_not_an_error() {
+        let response = evaluate_response(json!({"violations": [], "passes": []}));
+        assert_eq!(extract_axe_violations(&response).unwrap(), "[]");
+    }
+
+    /// A run object with no `violations` key means axe did not produce a result we can
+    /// read. It must not be reported as a clean page.
+    #[test]
+    fn a_run_object_without_violations_is_an_error() {
+        let response = evaluate_response(json!({"passes": [], "testEngine": {}}));
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("missing the 'violations' field"), "{err}");
+    }
+
+    #[test]
+    fn violations_that_are_not_an_array_are_an_error() {
+        let response = evaluate_response(json!({"violations": {"image-alt": 1}}));
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("not an array"), "{err}");
+    }
+
+    #[test]
+    fn a_null_value_is_an_error_not_an_empty_page() {
+        let response = evaluate_response(Value::Null);
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("value is null"), "{err}");
+    }
+
+    #[test]
+    fn a_thrown_exception_is_surfaced() {
+        let response = json!({
+            "exceptionDetails": {"text": "axe is not defined"},
+            "result": {"type": "undefined"},
+        });
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("raised an exception"), "{err}");
+    }
+
+    #[test]
+    fn an_error_subtype_is_surfaced() {
+        let response = json!({"result": {"type": "object", "subtype": "error"}});
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("returned an error object"), "{err}");
+    }
+
+    #[test]
+    fn a_missing_result_object_is_an_error() {
+        let err = extract_axe_violations(&json!({})).unwrap_err();
+        assert!(err.contains("missing result object"), "{err}");
+    }
 }

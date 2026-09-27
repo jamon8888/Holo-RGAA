@@ -256,4 +256,28 @@ mod tests {
             .expect("4.7-no-video-na.html must be loaded");
         assert_eq!(page.expected_status, "NotApplicable");
     }
+
+    /// #202 AC4: every deterministic mechanism added there ships a known-bad and a
+    /// known-good page, so the mechanism can be exercised without a live site.
+    #[test]
+    fn corpus_covers_both_polarities_for_the_new_deterministic_mechanisms() {
+        let corpus = load_corpus();
+        for criterion_id in ["10.1", "11.5", "1.9"] {
+            let pages: Vec<&TestPage> = corpus
+                .all_pages()
+                .iter()
+                .filter(|p| p.criterion_id == criterion_id)
+                .collect();
+            assert!(
+                pages.iter().any(|p| p.expected_status == "Fail"),
+                "{criterion_id} needs a known-bad page, found {:?}",
+                pages.iter().map(|p| &p.name).collect::<Vec<_>>()
+            );
+            assert!(
+                pages.iter().any(|p| p.expected_status == "Pass"),
+                "{criterion_id} needs a known-good page, found {:?}",
+                pages.iter().map(|p| &p.name).collect::<Vec<_>>()
+            );
+        }
+    }
 }

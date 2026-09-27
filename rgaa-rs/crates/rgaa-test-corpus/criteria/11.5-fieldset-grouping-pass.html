@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 11.5 - Champs de même nature regroupés</title>
+</head>
+<body>
+    <h1>Critère 11.5 - Groupes de champs correctement regroupés</h1>
+    <form>
+        <fieldset>
+            <legend>Formule d'abonnement</legend>
+            <label for="f1">Mensuelle</label>
+            <input type="radio" id="f1" name="formule" value="mois">
+            <label for="f2">Annuelle</label>
+            <input type="radio" id="f2" name="formule" value="an">
+        </fieldset>
+        <div role="group" aria-labelledby="opt-legend">
+            <p id="opt-legend">Options</p>
+            <label for="o1">Newsletter</label>
+            <input type="checkbox" id="o1" name="options" value="news">
+            <label for="o2">Alertes</label>
+            <input type="checkbox" id="o2" name="options" value="alertes">
+        </div>
+        <p>
+            <label for="cgv">J'accepte les conditions</label>
+            <input type="checkbox" id="cgv" name="cgv" value="oui">
+        </p>
+        <button type="submit">Envoyer</button>
+    </form>
+</body>
+</html>

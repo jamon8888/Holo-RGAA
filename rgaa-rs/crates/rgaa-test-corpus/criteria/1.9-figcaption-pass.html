@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 1.9 - Légende reliée à son image</title>
+</head>
+<body>
+    <h1>Critère 1.9 - Légendes correctement associées</h1>
+    <figure>
+        <img src="graphique-ventes.png"
+             alt="Diagramme en barres des ventes par région"
+             aria-describedby="cap-ventes">
+        <figcaption id="cap-ventes">Répartition des ventes par région en 2025</figcaption>
+    </figure>
+    <figure>
+        <img src="schema.png" alt="Schéma du circuit de validation">
+        <figcaption>Circuit de validation d'une demande</figcaption>
+    </figure>
+    <figure>
+        <figcaption>Extrait de configuration</figcaption>
+        <pre><code>max_pages = 5</code></pre>
+    </figure>
+</body>
+</html>

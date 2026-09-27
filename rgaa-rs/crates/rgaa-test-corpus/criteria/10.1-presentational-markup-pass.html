@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 10.1 - Mise en forme par CSS uniquement</title>
+    <style>
+        .intro { font-size: 1.25rem; text-align: center; }
+        table { border-collapse: collapse; }
+        td, th { padding: 0.5rem; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <h1>Critère 10.1 - Aucune mise en forme dans le balisage</h1>
+    <p class="intro">Le centrage et la taille viennent de la feuille de styles, pas de
+        &lt;center&gt; ni d'un attribut align.</p>
+    <table>
+        <caption>Espacement et bordures définis en CSS</caption>
+        <thead><tr><th scope="col">Colonne</th></tr></thead>
+        <tbody><tr><td>Valeur</td></tr></tbody>
+    </table>
+</body>
+</html>

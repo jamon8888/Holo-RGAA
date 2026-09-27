@@ -70,6 +70,7 @@ impl AxeMapper {
                         ),
                         source: "axe-core".to_string(),
                         citations: vec![],
+                        considered_sources: vec![],
                     });
                 result.status = CriterionStatus::Fail;
                 result.violations.push(Violation {

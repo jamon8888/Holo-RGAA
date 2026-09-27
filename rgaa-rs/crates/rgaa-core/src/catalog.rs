@@ -29,7 +29,31 @@ struct AutomatableRoot {
 struct AxeMappingEntry {
     criterion_id: String,
     axe_rules: Vec<String>,
+    #[serde(default)]
+    coverage: AxeCoverage,
     provenance: AxeProvenance,
+}
+
+/// How much of a criterion its mapped axe-core rules actually decide.
+///
+/// This is what stops a rule that covers one of a criterion's fifteen tests from
+/// asserting the whole criterion conforms. `meta-refresh` finding nothing says
+/// nothing about the other fourteen tests of 13.1, so 13.1 is [`Partial`] and axe
+/// may only *fail* it, never pass it (#201). [`Complete`] is reserved for criteria
+/// whose mapped rules decide every test, where axe's silence really is evidence.
+///
+/// [`Partial`]: AxeCoverage::Partial
+/// [`Complete`]: AxeCoverage::Complete
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AxeCoverage {
+    /// The mapped rules decide every test of the criterion: axe may assert `Pass`.
+    Complete,
+    /// The mapped rules detect some violations, but their silence proves nothing:
+    /// axe may assert `Fail` only. The default, so an entry that forgets to declare
+    /// its coverage cannot accidentally claim conformance.
+    #[default]
+    Partial,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +92,8 @@ pub struct CatalogCriterion {
     #[serde(default)]
     pub axe_rules: Vec<String>,
     #[serde(default)]
+    pub axe_coverage: AxeCoverage,
+    #[serde(default)]
     pub axe_provenance: Option<AxeProvenance>,
 }
 
@@ -100,9 +126,11 @@ impl RgaaCatalog {
         }
 
         let mut axe_rules_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut axe_coverage_map: HashMap<String, AxeCoverage> = HashMap::new();
         let mut axe_provenance_map: HashMap<String, AxeProvenance> = HashMap::new();
         for entry in axe_entries {
             axe_rules_map.insert(entry.criterion_id.clone(), entry.axe_rules);
+            axe_coverage_map.insert(entry.criterion_id.clone(), entry.coverage);
             axe_provenance_map.insert(entry.criterion_id, entry.provenance);
         }
 
@@ -113,6 +141,8 @@ impl RgaaCatalog {
                 cw.criterium.automatable =
                     automatable_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.axe_rules = axe_rules_map.remove(&criterion_id).unwrap_or_default();
+                cw.criterium.axe_coverage =
+                    axe_coverage_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.axe_provenance = axe_provenance_map.remove(&criterion_id);
             }
         }
@@ -238,10 +268,45 @@ mod tests {
                 }
             }
         }
-        assert_eq!(fully, 39, "expected 39 FullyAutomatable criteria");
+        // 41 / 45 / 20, not 39 / 45 / 22: #201 corrected 2.1 and 12.3, both of which
+        // were labelled NotAutomatable although axe decides 2.1 outright and 12.3
+        // carries 3 of 3 automatable tests.
+        assert_eq!(fully, 41, "expected 41 FullyAutomatable criteria");
         assert_eq!(partially, 45, "expected 45 PartiallyAutomatable criteria");
-        assert_eq!(not_automatable, 22, "expected 22 NotAutomatable criteria");
+        assert_eq!(not_automatable, 20, "expected 20 NotAutomatable criteria");
         assert_eq!(fully + partially + not_automatable, 106);
+    }
+
+    /// #201 AC4. Both rows were wrong in `automatable_criteres.json`: 2.1 claimed 0 of
+    /// 1 automatable tests although `frame-title` decides its single test, and 12.3
+    /// was labelled `NotAutomatable` while carrying 3 of 3 automatable tests — the
+    /// label contradicting its own counts.
+    #[test]
+    fn corrected_automatability_labels_stay_corrected() {
+        let (_, two_one) = RgaaCatalog::by_id("2.1").expect("2.1 is in the catalog");
+        assert_eq!(two_one.automatable, Automatable::FullyAutomatable);
+        assert!(
+            two_one.axe_rules.iter().any(|r| r == "frame-title"),
+            "2.1 is automatable because frame-title decides it: {:?}",
+            two_one.axe_rules
+        );
+
+        let (_, twelve_three) = RgaaCatalog::by_id("12.3").expect("12.3 is in the catalog");
+        assert_eq!(twelve_three.automatable, Automatable::FullyAutomatable);
+    }
+
+    /// A criterion carrying axe rules must declare whether those rules decide it
+    /// completely; the serde default is `Partial`, so a forgotten declaration fails
+    /// closed rather than claiming a conformance axe cannot establish (#201 AC3).
+    #[test]
+    fn complete_axe_coverage_is_declared_not_inferred() {
+        let (_, three_three) = RgaaCatalog::by_id("3.3").expect("3.3 is in the catalog");
+        assert_eq!(three_three.axe_coverage, AxeCoverage::Complete);
+
+        // 13.1 has fifteen tests and one rule, meta-refresh.
+        let (_, thirteen_one) = RgaaCatalog::by_id("13.1").expect("13.1 is in the catalog");
+        assert_eq!(thirteen_one.axe_coverage, AxeCoverage::Partial);
+        assert!(!thirteen_one.axe_rules.is_empty());
     }
 
     #[test]

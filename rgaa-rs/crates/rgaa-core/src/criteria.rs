@@ -24,7 +24,9 @@ const CLASSIFICATION: &[(&str, Classification, &str)] = &[
     ("1.7", Classification::IaAssiste, "1.1.1"),
     ("1.8", Classification::Deterministe, "1.4.5"),
     ("1.9", Classification::Deterministe, "1.1.1, 4.1.2"),
-    ("2.1", Classification::IaAssiste, "1.3.1, 4.1.2"),
+    // Deterministe, not IaAssiste: the criterion's single test is "every frame has a
+    // frame title", which axe-core's frame-title decides outright (#201 AC4).
+    ("2.1", Classification::Deterministe, "1.3.1, 4.1.2"),
     ("2.2", Classification::IaAssiste, "4.1.2"),
     ("3.1", Classification::IaAssiste, "1.3.1, 1.4.1"),
     ("3.2", Classification::Deterministe, "1.4.1"),

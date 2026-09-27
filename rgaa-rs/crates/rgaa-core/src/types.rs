@@ -56,6 +56,16 @@ pub struct CriterionResult {
     /// load.
     #[serde(default)]
     pub citations: Vec<crate::Citation>,
+    /// Every source that produced a candidate verdict for this criterion
+    /// before merge precedence picked a winner, in the order they were
+    /// considered (see `rgaa_orchestrator::merge`). Keeps an overwrite
+    /// auditable after the fact: a `Pass` from `axe-core` that outranked an
+    /// `agent` `needs_review` still records both here. Empty for results that
+    /// never went through a merge (a single source, or a catalog fallback).
+    /// Defaults to empty on deserialize, and is omitted when empty, so
+    /// results persisted before this field existed still load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub considered_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -174,6 +184,7 @@ mod tests {
             justification: Some("missing alt".into()),
             source: "agent".into(),
             citations,
+            considered_sources: vec![],
         }
     }
 

@@ -257,6 +257,7 @@ mod tests {
             justification: None,
             source: "test".into(),
             citations: Vec::new(),
+            considered_sources: vec![],
         }
     }
 

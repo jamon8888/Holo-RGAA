@@ -298,6 +298,7 @@ impl GapFixRules {
                     justification: None,
                     source: "gap-fix".to_string(),
                     citations: vec![],
+                    considered_sources: vec![],
                 },
             );
         }

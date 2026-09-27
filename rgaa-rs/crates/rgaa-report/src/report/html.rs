@@ -302,6 +302,7 @@ fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
                 justification: Some("Not tested — missing from audit result".into()),
                 source: "missing".into(),
                 citations: vec![],
+                considered_sources: vec![],
             },
         })
         .collect();
@@ -431,6 +432,7 @@ mod tests {
             justification: None,
             source: "test".into(),
             citations: vec![],
+            considered_sources: vec![],
         }
     }
 

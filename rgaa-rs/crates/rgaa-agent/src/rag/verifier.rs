@@ -273,6 +273,7 @@ mod tests {
             justification: Some("Image sans alt".into()),
             source: "agent".into(),
             citations: vec![],
+            considered_sources: vec![],
         }
     }
 

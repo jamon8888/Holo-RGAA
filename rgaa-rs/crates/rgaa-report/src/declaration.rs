@@ -288,6 +288,7 @@ mod tests {
                     justification: None,
                     source: "t".into(),
                     citations: Vec::new(),
+                    considered_sources: vec![],
                 },
                 rgaa_core::CriterionResult {
                     criterion_id: "1.2".into(),
@@ -299,6 +300,7 @@ mod tests {
                     justification: None,
                     source: "t".into(),
                     citations: Vec::new(),
+                    considered_sources: vec![],
                 },
             ],
             &RGAA_41,

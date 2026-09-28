@@ -423,6 +423,7 @@ mod tests {
                     source: "axe".into(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 }],
                 compliance_rate: 0.0,
                 crawl_depth: 0,

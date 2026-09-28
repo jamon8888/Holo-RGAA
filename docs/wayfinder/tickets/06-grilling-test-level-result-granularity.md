@@ -1,7 +1,8 @@
 # Test-level result granularity: per-test outcomes, the `taux_global` denominator, and the applicability gate
 
 - Label: `wayfinder:grilling` (HITL — resolve only through live exchange with the human)
-- Status: **open · recommendations below await human confirmation**
+- Status: **recommendations 1, 2 and 4 applied; 3 is a no-op by design; 5 belongs to #180; 6 is the ceiling**
+- Applied in: `feat/test-level-granularity`
 - Issue: #203
 - Blocked by: #181 · #199 (landed as #204)
 - Related: #188 (deterministic-core semantics) · #190 (coverage denominator) · #180 (completion budget) · #201 · #202
@@ -37,7 +38,7 @@ consumes them except the bulk `NeedsReview` branch at
 
 ## Recommendations
 
-### 1. Does `CriterionResult` gain per-test outcomes? — **Yes, additively**
+### 1. Does `CriterionResult` gain per-test outcomes? — **Yes, additively** · *applied*
 
 `CriterionResult` keeps its atomic `status`, and gains
 `tests: Vec<TestOutcome>` under `#[serde(default, skip_serializing_if = "Vec::is_empty")]`.
@@ -62,7 +63,7 @@ The same field then lets the #201/#202 coverage flags be **computed** rather tha
 declared: a criterion is `complete` exactly when every applicable test has a mechanism.
 That is the payoff, and it is why this is worth the schema change.
 
-### 2. Decision rule for a partly covered criterion — **deterministic inapplicability only**
+### 2. Decision rule for a partly covered criterion — **deterministic inapplicability only** · *applied*
 
 A criterion is decidable automatically **iff every test its mechanisms do not cover is
 inapplicable on that page**, and inapplicability may be established **only by a
@@ -74,7 +75,7 @@ declaring the uncovered tests out of scope. Allowing that would rest a published
 conformance claim on an unreproducible judgement — the same defect as a `Pass` that
 cannot fail, reached by a longer route.
 
-### 3. Does this reopen #188? — **No. Let #188 land, accept a second pass**
+### 3. Does this reopen #188? — **No. Let #188 land, accept a second pass** · *nothing to apply*
 
 #188's semantics (`NotTested` when no test executed, `NeedsReview` on axe `incomplete`)
 restate at test granularity without changing meaning — they are the same two rules at a
@@ -83,7 +84,7 @@ finer grain, and the reduction in recommendation 1 is where they get applied. Bl
 #188 lands at criterion granularity, then the per-test pass moves those two rules down
 one level.
 
-### 4. Reconciling with #190 — **tests for coverage, criteria for the rate, always published together**
+### 4. Reconciling with #190 — **tests for coverage, criteria for the rate, always published together** · *applied*
 
 - `coverage_percent` counts validated **tests**, per #190's settled denominator.
   Unchanged.
@@ -100,7 +101,7 @@ immediately beside it as a qualifier that cannot be separated from it:
 A conformance rate with no coverage figure next to it should be treated as a defect, not
 a formatting choice.
 
-### 5. The applicability gate in front of the 32 `IaAssiste` criteria — **in scope, and free of the cap**
+### 5. The applicability gate in front of the 32 `IaAssiste` criteria — **in scope, and free of the cap** · *decision only; the gate is #180's to build*
 
 In scope for #180's flow, and a deterministic `not_applicable` **does not** count against
 the 10-completions-per-page cap, because it consumes no completion. That is the entire
@@ -128,6 +129,29 @@ it.
   pass routes existing criterion-level completions and records their results per test
   where the mechanism knows which test it answered.
 
+## What applying them actually changed
+
+- `TestOutcome { test_key, status, source, evidence }`, and `CriterionResult.tests`
+  under `serde(default, skip_serializing_if)` — so a result written before the field
+  existed still loads and a report with no per-test data stays byte-identical.
+- `reduce_test_outcomes(tests, total_tests)`, which returns `None` when there is no
+  per-test data so every mechanism that speaks only at criterion granularity is
+  untouched. `total_tests` comes from the catalog, which is what stops a criterion being
+  passed on the strength of the tests its mechanisms happened to reach.
+- `is_deterministic_source`, the one gate recommendation 2 turns on: `axe-core`,
+  `gap-fix`, `manual` and `automated` may settle a test as inapplicable; `agent`,
+  `agent-batch` and `agent-error` may fail or flag a test and nothing else.
+- `SiteMetrics::conformance_statement()` and `rate_is_a_conformance_claim()`, so the rate
+  cannot be rendered without the coverage it rests on.
+- The four contradictory catalog rows fixed (4.9, 5.5, 10.2, 10.14), and
+  `KNOWN_LABEL_COUNT_DISAGREEMENTS` emptied. The list survives as a tripwire.
+
+**Not wired into the pipeline yet.** No mechanism populates `tests` — the reduction and
+its gate exist and are tested, but `AxeMapper`, `GapFixRules` and the agent still report
+at criterion granularity. Teaching them which RGAA test they answered is the next step,
+and it is where the 42 coverage declarations from #201/#202 become computed rather than
+declared. Keeping that separate is the ceiling in recommendation 6, not an oversight.
+
 ## Fog patch found while writing this
 
 `automatable_criteres.json` has **five** rows whose `classification` contradicts its own
@@ -135,5 +159,6 @@ counts, all labelled `NotAutomatable` with every test automatable: **4.9, 5.5, 1
 10.14** and **12.3**. #201 fixed 12.3 (its AC4 named it) and left the other four, because
 none carries axe rules and relabelling them moves `coverage_percent` on grounds #201 does
 not discuss. A test now pins them as known-wrong with an exception list, so the next
-person meets them deliberately. They should be resolved before per-test counting starts —
-recommendation 1 makes the counts load-bearing.
+person meets them deliberately. **Resolved.** All four were relabelled `FullyAutomatable` when recommendation 1 was
+applied, because the reduction makes those counts decide a criterion's verdict. The
+catalog now reads 45 / 45 / 16 where it read 39 / 45 / 22 before #201.

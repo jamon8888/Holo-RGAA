@@ -289,6 +289,7 @@ mod tests {
                     source: "t".into(),
                     citations: Vec::new(),
                     considered_sources: vec![],
+                    tests: vec![],
                 },
                 rgaa_core::CriterionResult {
                     criterion_id: "1.2".into(),
@@ -301,6 +302,7 @@ mod tests {
                     source: "t".into(),
                     citations: Vec::new(),
                     considered_sources: vec![],
+                    tests: vec![],
                 },
             ],
             &RGAA_41,

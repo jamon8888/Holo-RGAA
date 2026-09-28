@@ -303,6 +303,7 @@ fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
                 source: "missing".into(),
                 citations: vec![],
                 considered_sources: vec![],
+                tests: vec![],
             },
         })
         .collect();
@@ -433,6 +434,7 @@ mod tests {
             source: "test".into(),
             citations: vec![],
             considered_sources: vec![],
+            tests: vec![],
         }
     }
 

@@ -114,6 +114,37 @@ pub struct SiteMetrics {
     pub audit_incomplet: bool,
 }
 
+impl SiteMetrics {
+    /// The conformance rate and the coverage it rests on, as one inseparable statement.
+    ///
+    /// #203 recommendation 4. The two numbers count different things — `taux_global`
+    /// counts criteria, because that is the unit RGAA conformance and the *Déclaration
+    /// d'accessibilité* are defined in; `coverage_percent` counts validated tests, per
+    /// #190's settled denominator — and neither is derivable from the other.
+    ///
+    /// Publishing the rate alone is what produced the `taux_global: 81.08` claim over a
+    /// run where two thirds of the passes could not fail, at a coverage figure of 100 %
+    /// that counted 48 criteria nothing could contradict. So a rate with no coverage
+    /// beside it is treated here as a defect rather than a formatting choice: any surface
+    /// that shows the rate calls this, and gets both or neither.
+    #[must_use]
+    pub fn conformance_statement(&self) -> String {
+        format!(
+            "{:.2} % conforme, établi sur {:.2} % de la surface testable",
+            self.taux_global, self.coverage_percent
+        )
+    }
+
+    /// Whether the rate may be presented as a conformance claim at all.
+    ///
+    /// False when the audit is incomplete: under RGAA 4.1 an incomplete audit is
+    /// retrograded regardless of the rate, so the number is a measurement, not a claim.
+    #[must_use]
+    pub fn rate_is_a_conformance_claim(&self) -> bool {
+        !self.audit_incomplet
+    }
+}
+
 /// Per-page rate: passing over passing plus failing, NA/NT excluded.
 /// Entries reduce by `criterion_id` first (same site rule as
 /// [`compute_metrics`]; identity on unique ids).
@@ -258,6 +289,7 @@ mod tests {
             source: "test".into(),
             citations: Vec::new(),
             considered_sources: vec![],
+            tests: vec![],
         }
     }
 
@@ -348,5 +380,49 @@ mod tests {
         ];
         let m = compute_metrics(&criteria, &UE);
         assert!((m.coverage_percent - 50.0).abs() < 0.01);
+    }
+
+    /// #203 recommendation 4: the rate never travels without the coverage it rests on.
+    #[test]
+    fn the_conformance_statement_carries_both_numbers() {
+        let m = SiteMetrics {
+            taux_global: 34.285_714_285_714_285,
+            coverage_percent: 76.744_186_046_511_63,
+            etat_conformite: "non conforme".into(),
+            conformes: 12,
+            non_conformes: 23,
+            non_applicables: 30,
+            non_testes: 41,
+            audit_incomplet: true,
+        };
+
+        let statement = m.conformance_statement();
+        assert!(statement.contains("34.29"), "{statement}");
+        assert!(statement.contains("76.74"), "{statement}");
+        assert!(
+            statement.contains("surface testable"),
+            "the coverage must be named, not just printed: {statement}"
+        );
+    }
+
+    /// The parisprivate baseline is the case this guards against: 81.08 % presented as a
+    /// conformance claim over an audit that had never tested 48 criteria.
+    #[test]
+    fn an_incomplete_audit_rate_is_not_a_conformance_claim() {
+        let mut m = SiteMetrics {
+            taux_global: 81.08,
+            coverage_percent: 100.0,
+            etat_conformite: "partielle".into(),
+            conformes: 30,
+            non_conformes: 7,
+            non_applicables: 20,
+            non_testes: 49,
+            audit_incomplet: true,
+        };
+        assert!(!m.rate_is_a_conformance_claim());
+
+        m.audit_incomplet = false;
+        m.non_testes = 0;
+        assert!(m.rate_is_a_conformance_claim());
     }
 }

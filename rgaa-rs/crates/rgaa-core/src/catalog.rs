@@ -321,12 +321,14 @@ mod tests {
                 }
             }
         }
-        // 41 / 45 / 20, not 39 / 45 / 22: #201 corrected 2.1 and 12.3, both of which
-        // were labelled NotAutomatable although axe decides 2.1 outright and 12.3
-        // carries 3 of 3 automatable tests.
-        assert_eq!(fully, 41, "expected 41 FullyAutomatable criteria");
+        // 45 / 45 / 16. Was 39 / 45 / 22 before #201 corrected 2.1 and 12.3, and before
+        // #203 corrected the remaining four rows whose label contradicted its own counts
+        // (4.9, 5.5, 10.2, 10.14 — all NotAutomatable with every test automatable). Those
+        // counts decide a criterion's verdict once results are reduced per test, so they
+        // had to agree with the label first.
+        assert_eq!(fully, 45, "expected 45 FullyAutomatable criteria");
         assert_eq!(partially, 45, "expected 45 PartiallyAutomatable criteria");
-        assert_eq!(not_automatable, 20, "expected 20 NotAutomatable criteria");
+        assert_eq!(not_automatable, 16, "expected 16 NotAutomatable criteria");
         assert_eq!(fully + partially + not_automatable, 106);
     }
 
@@ -378,15 +380,16 @@ mod tests {
         }
     }
 
-    /// #203 groundwork. The per-test counts become load-bearing the moment a criterion
-    /// verdict is reduced from test outcomes, so a row whose label contradicts its own
-    /// counts is a latent wrong answer. Five exist; #201 fixed the one its AC4 named
-    /// (12.3) and left four, because none of them carries axe rules and relabelling
-    /// them moves `coverage_percent` on grounds #201 does not discuss.
+    /// Rows whose `classification` contradicts its own test counts, tolerated for now.
     ///
-    /// They are pinned here rather than ignored: the next person to touch this data
-    /// meets them deliberately, and the list must shrink, never grow.
-    const KNOWN_LABEL_COUNT_DISAGREEMENTS: &[&str] = &["4.9", "5.5", "10.2", "10.14"];
+    /// **Empty, and it must stay that way.** Five existed: #201 fixed the one its AC4
+    /// named (12.3) and pinned the other four; #203 fixed those (4.9, 5.5, 10.2, 10.14)
+    /// because reducing a criterion verdict from its test outcomes makes the counts
+    /// decide the answer, so a label that disagrees with them is a latent wrong verdict.
+    ///
+    /// The list survives as a tripwire: an entry added here is a row someone chose to
+    /// leave wrong, and the assertion below refuses to let it be left silently.
+    const KNOWN_LABEL_COUNT_DISAGREEMENTS: &[&str] = &[];
 
     #[test]
     fn automatability_labels_agree_with_their_own_test_counts() {

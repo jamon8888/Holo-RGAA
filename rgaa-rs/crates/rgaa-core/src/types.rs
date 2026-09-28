@@ -65,11 +65,17 @@ pub struct TestOutcome {
 
 /// Whether `source` is reproducible evidence, as opposed to a model's judgement.
 ///
-/// This gates one thing only, and it is the asymmetry #203 recommendation 2 turns on: a
-/// model may **fail** a test and may **flag** one for review, but it may not make a
-/// criterion conform by declaring the tests nobody covered inapplicable. Allowing that
-/// would rest a published conformance claim on an unreproducible judgement — the same
-/// defect as a `Pass` that cannot fail, reached by a longer route.
+/// This gates **inapplicability and nothing else**, which is the asymmetry #203
+/// recommendation 2 turns on: a model may not make a criterion conform by declaring the
+/// tests nobody covered inapplicable, because that would rest a published conformance
+/// claim on an unreproducible judgement — the same defect as a `Pass` that cannot fail,
+/// reached by a longer route.
+///
+/// It deliberately does **not** gate `Pass`. A model verdict can still pass a test, as it
+/// can today at criterion granularity, so `IaAssiste` criteria stay decidable. Whether an
+/// unreproducible `Pass` should be allowed to close a test at all is a real question and a
+/// wider one than recommendation 2 settled — it belongs with #181 (what default-Pass rests
+/// on), not here, and changing it silently would alter every `IaAssiste` verdict.
 #[must_use]
 pub fn is_deterministic_source(source: &str) -> bool {
     matches!(source, "axe-core" | "gap-fix" | "manual" | "automated")
@@ -77,22 +83,38 @@ pub fn is_deterministic_source(source: &str) -> bool {
 
 /// Derive a criterion's verdict from its per-test outcomes.
 ///
-/// `total_tests` is the criterion's test count from the catalog, so a criterion whose
-/// mechanisms reported on only some of its tests cannot be passed on the strength of the
-/// ones they did reach.
+/// `expected_keys` is the criterion's **test keys** from the catalog
+/// (`CatalogCriterion::tests` / `TestAccounting::test_keys`), not a count. Coverage is
+/// checked key by key, so a criterion whose mechanisms reported on only some of its tests
+/// — or reported a key that does not belong to it — cannot be passed on the strength of
+/// what they did reach.
+///
+/// Taking a bare count here was wrong twice over. It let outcomes for unknown keys stand
+/// in for real ones (`("1", Pass), ("2", Pass), ("99", Pass)` covering a 3-test criterion
+/// whose test 3 was never reported), and the only count available in the catalog,
+/// `total_test_count`, counts **sub-items** rather than tests — 20 for criterion 1.1,
+/// which has 8 test keys — so a count-based check was unsatisfiable for every criterion
+/// with sub-items.
 ///
 /// The rule (#203 recommendations 1 and 2):
 ///
 /// 1. no outcomes at all → `None`, and the caller keeps whatever the mechanism set;
 /// 2. any test failed → `Fail`, whatever else is known;
 /// 3. any test errored → the criterion is not decided: `NotTested`;
-/// 4. every test accounted for, each either `Pass` or deterministically
-///    `NotApplicable` → `Pass`;
-/// 5. every test deterministically `NotApplicable` → `NotApplicable`;
-/// 6. anything else — a test left unreported, or one only a model called inapplicable —
-///    → `NeedsReview`, because a human still has to close it.
+/// 4. any outcome still unresolved — `NeedsReview`, `NotTested`, or an inapplicability
+///    only a model asserted → `NeedsReview`, even when another outcome passed the same
+///    key. A `Pass` next to an open question does not close the question;
+/// 5. every expected key settled, and at least one of them by a `Pass` → `Pass`;
+/// 6. every expected key settled and all of them deterministically inapplicable →
+///    `NotApplicable`;
+/// 7. an expected key left unsettled, or no expected keys known at all → `NeedsReview`,
+///    because a human still has to close it. Not knowing which tests exist is not grounds
+///    for declaring them satisfied.
 #[must_use]
-pub fn reduce_test_outcomes(tests: &[TestOutcome], total_tests: usize) -> Option<CriterionStatus> {
+pub fn reduce_test_outcomes(
+    tests: &[TestOutcome],
+    expected_keys: &[String],
+) -> Option<CriterionStatus> {
     if tests.is_empty() {
         return None;
     }
@@ -109,16 +131,25 @@ pub fn reduce_test_outcomes(tests: &[TestOutcome], total_tests: usize) -> Option
         t.status == CriterionStatus::NotApplicable && is_deterministic_source(&t.source)
     };
 
-    let mut reported: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    for t in tests {
-        if t.status == CriterionStatus::Pass || settled_na(t) {
-            reported.insert(t.test_key.as_str());
-        }
+    // Rule 4: an unresolved outcome blocks the criterion even if the same key also has a
+    // Pass. Whoever raised the question is still owed an answer.
+    let unresolved = tests.iter().any(|t| {
+        matches!(
+            t.status,
+            CriterionStatus::NeedsReview | CriterionStatus::NotTested
+        ) || (t.status == CriterionStatus::NotApplicable && !is_deterministic_source(&t.source))
+    });
+    if unresolved {
+        return Some(CriterionStatus::NeedsReview);
     }
 
-    // `total_tests == 0` means the catalog has no test count for this criterion; not
-    // knowing how many tests exist is not grounds for declaring them all satisfied.
-    if total_tests == 0 || reported.len() < total_tests {
+    let settled: std::collections::BTreeSet<&str> = tests
+        .iter()
+        .filter(|t| t.status == CriterionStatus::Pass || settled_na(t))
+        .map(|t| t.test_key.as_str())
+        .collect();
+
+    if expected_keys.is_empty() || !expected_keys.iter().all(|k| settled.contains(k.as_str())) {
         return Some(CriterionStatus::NeedsReview);
     }
 
@@ -332,6 +363,11 @@ mod tests {
 
     // ------------------------------------------------------------------ #203
 
+    /// The criterion's test keys as the catalog carries them.
+    fn keys(k: &[&str]) -> Vec<String> {
+        k.iter().map(|s| (*s).to_string()).collect()
+    }
+
     fn outcome(test_key: &str, status: CriterionStatus, source: &str) -> TestOutcome {
         TestOutcome {
             test_key: test_key.into(),
@@ -345,7 +381,7 @@ mod tests {
     /// verdict stands untouched. This is what keeps every existing mechanism working.
     #[test]
     fn no_test_outcomes_leaves_the_criterion_verdict_alone() {
-        assert_eq!(reduce_test_outcomes(&[], 3), None);
+        assert_eq!(reduce_test_outcomes(&[], &keys(&["1", "2", "3"])), None);
     }
 
     /// A failure is a failure whatever else is known, and whoever found it.
@@ -356,7 +392,10 @@ mod tests {
             outcome("2", CriterionStatus::Fail, "agent"),
             outcome("3", CriterionStatus::Pass, "axe-core"),
         ];
-        assert_eq!(reduce_test_outcomes(&tests, 3), Some(CriterionStatus::Fail));
+        assert_eq!(
+            reduce_test_outcomes(&tests, &keys(&["1", "2", "3"])),
+            Some(CriterionStatus::Fail)
+        );
     }
 
     #[test]
@@ -365,7 +404,10 @@ mod tests {
             outcome("1", CriterionStatus::Pass, "axe-core"),
             outcome("2", CriterionStatus::Pass, "gap-fix"),
         ];
-        assert_eq!(reduce_test_outcomes(&tests, 2), Some(CriterionStatus::Pass));
+        assert_eq!(
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
+            Some(CriterionStatus::Pass)
+        );
     }
 
     /// The core of recommendation 1: a criterion with three tests, two of them passing
@@ -378,7 +420,7 @@ mod tests {
             outcome("2", CriterionStatus::Pass, "axe-core"),
         ];
         assert_eq!(
-            reduce_test_outcomes(&tests, 3),
+            reduce_test_outcomes(&tests, &keys(&["1", "2", "3"])),
             Some(CriterionStatus::NeedsReview),
             "test 3 was never reported, so a human still has to close the criterion"
         );
@@ -392,7 +434,10 @@ mod tests {
             outcome("1", CriterionStatus::Pass, "axe-core"),
             outcome("2", CriterionStatus::NotApplicable, "automated"),
         ];
-        assert_eq!(reduce_test_outcomes(&tests, 2), Some(CriterionStatus::Pass));
+        assert_eq!(
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
+            Some(CriterionStatus::Pass)
+        );
     }
 
     /// Recommendation 2, the half that matters. A model saying a test does not apply is
@@ -405,7 +450,7 @@ mod tests {
             outcome("2", CriterionStatus::NotApplicable, "agent"),
         ];
         assert_eq!(
-            reduce_test_outcomes(&tests, 2),
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
             Some(CriterionStatus::NeedsReview),
             "an LLM may fail or flag a test, never declare it out of scope to reach a Pass"
         );
@@ -417,7 +462,7 @@ mod tests {
                 outcome("2", CriterionStatus::NotApplicable, source),
             ];
             assert_eq!(
-                reduce_test_outcomes(&tests, 2),
+                reduce_test_outcomes(&tests, &keys(&["1", "2"])),
                 Some(CriterionStatus::NeedsReview),
                 "{source} must not settle a test either"
             );
@@ -428,7 +473,10 @@ mod tests {
     #[test]
     fn a_model_can_still_fail_a_test() {
         let tests = vec![outcome("1", CriterionStatus::Fail, "agent")];
-        assert_eq!(reduce_test_outcomes(&tests, 1), Some(CriterionStatus::Fail));
+        assert_eq!(
+            reduce_test_outcomes(&tests, &keys(&["1"])),
+            Some(CriterionStatus::Fail)
+        );
     }
 
     #[test]
@@ -438,7 +486,7 @@ mod tests {
             outcome("2", CriterionStatus::NotApplicable, "automated"),
         ];
         assert_eq!(
-            reduce_test_outcomes(&tests, 2),
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
             Some(CriterionStatus::NotApplicable)
         );
     }
@@ -452,19 +500,88 @@ mod tests {
             outcome("2", CriterionStatus::Error, "agent"),
         ];
         assert_eq!(
-            reduce_test_outcomes(&tests, 2),
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
             Some(CriterionStatus::NotTested)
         );
     }
 
-    /// Not knowing how many tests a criterion has is not grounds for declaring them all
+    /// Not knowing which tests a criterion has is not grounds for declaring them all
     /// satisfied.
     #[test]
-    fn an_unknown_test_count_cannot_yield_a_pass() {
+    fn an_unknown_test_set_cannot_yield_a_pass() {
         let tests = vec![outcome("1", CriterionStatus::Pass, "axe-core")];
         assert_eq!(
-            reduce_test_outcomes(&tests, 0),
+            reduce_test_outcomes(&tests, &keys(&[])),
             Some(CriterionStatus::NeedsReview)
+        );
+    }
+
+    /// Reported by CodeRabbit and Sourcery on #209, and real: a count-based check let
+    /// outcomes for keys the criterion does not have stand in for the ones it does.
+    #[test]
+    fn an_outcome_for_an_unknown_key_does_not_cover_a_real_one() {
+        let tests = vec![
+            outcome("1", CriterionStatus::Pass, "axe-core"),
+            outcome("2", CriterionStatus::Pass, "axe-core"),
+            outcome("99", CriterionStatus::Pass, "axe-core"),
+        ];
+        assert_eq!(
+            reduce_test_outcomes(&tests, &keys(&["1", "2", "3"])),
+            Some(CriterionStatus::NeedsReview),
+            "test 3 was never reported; an outcome for key 99 does not stand in for it"
+        );
+    }
+
+    /// Reported by CodeRabbit on #209, and real: a `Pass` on a key did not stop an
+    /// unresolved outcome on that same key from being ignored.
+    #[test]
+    fn an_unresolved_outcome_blocks_the_pass_even_beside_a_pass_on_the_same_key() {
+        for open_status in [CriterionStatus::NeedsReview, CriterionStatus::NotTested] {
+            let tests = vec![
+                outcome("1", CriterionStatus::Pass, "axe-core"),
+                outcome("1", open_status.clone(), "agent"),
+                outcome("2", CriterionStatus::Pass, "axe-core"),
+            ];
+            assert_eq!(
+                reduce_test_outcomes(&tests, &keys(&["1", "2"])),
+                Some(CriterionStatus::NeedsReview),
+                "a {open_status:?} on key 1 is still owed an answer"
+            );
+        }
+
+        // and a model-asserted inapplicability beside a Pass on the same key
+        let tests = vec![
+            outcome("1", CriterionStatus::Pass, "axe-core"),
+            outcome("1", CriterionStatus::NotApplicable, "agent"),
+            outcome("2", CriterionStatus::Pass, "axe-core"),
+        ];
+        assert_eq!(
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
+            Some(CriterionStatus::NeedsReview)
+        );
+    }
+
+    /// The bug neither reviewer caught. `total_test_count` counts **sub-items** (20 for
+    /// criterion 1.1) while the criterion has 8 test keys, so any count-based coverage
+    /// check was unsatisfiable for every criterion with sub-items. Keys, not counts.
+    #[test]
+    fn coverage_is_measured_against_keys_not_the_catalogs_sub_item_count() {
+        let (_, one_one) = crate::catalog::RgaaCatalog::by_id("1.1").expect("1.1 exists");
+        let expected = &one_one.test_accounting.test_keys;
+        assert_eq!(expected.len(), 8, "1.1 has 8 test keys");
+        assert_eq!(
+            one_one.test_accounting.total, 20,
+            "while total_test_count counts 20 sub-items — the two must not be conflated"
+        );
+
+        let tests: Vec<TestOutcome> = expected
+            .iter()
+            .map(|k| outcome(k, CriterionStatus::Pass, "axe-core"))
+            .collect();
+        assert_eq!(
+            reduce_test_outcomes(&tests, expected),
+            Some(CriterionStatus::Pass),
+            "all 8 keys passing must pass the criterion, not demand 20"
         );
     }
 
@@ -476,7 +593,7 @@ mod tests {
             outcome("1", CriterionStatus::Pass, "gap-fix"),
         ];
         assert_eq!(
-            reduce_test_outcomes(&tests, 2),
+            reduce_test_outcomes(&tests, &keys(&["1", "2"])),
             Some(CriterionStatus::NeedsReview),
             "test 1 reported twice still leaves test 2 unreported"
         );

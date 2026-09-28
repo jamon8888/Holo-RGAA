@@ -26,8 +26,9 @@ and that is the strongest argument for deciding it now.
   declared `complete` only because demoting it would move verdicts in the published
   report. Both are wrong in opposite directions, and only per-test results fix either.
 - The two coverage lists are therefore **the migration checklist** for this work: 30
-  `complete` and 13 `partial` axe criteria, plus 12 `complete` gap-fix criteria, are
-  precisely the declarations that per-test outcomes would replace with computed values.
+  `complete` and 13 `partial` axe criteria, plus 12 `complete` gap-fix criteria — 55
+  declarations in all — are precisely what per-test outcomes would replace with computed
+  values.
 
 Restating the facts from the issue, unchanged: the catalog already stores
 `automatable_test_count`, `total_test_count` and `test_keys` per criterion and nothing
@@ -45,9 +46,13 @@ consumes them except the bulk `NeedsReview` branch at
 `TestOutcome` is `{ test_key, status, source, evidence }`.
 
 The criterion `status` stops being *set* and becomes *derived*: when `tests` is non-empty
-it is the reduction over them (any `Fail` → `Fail`; all applicable tests `Pass` →
-`Pass`; otherwise `NeedsReview`/`NotTested` per #188's rules). When `tests` is empty the
-status is whatever the mechanism set, exactly as today.
+it is the reduction over them, checked against the criterion's **test keys** from the
+catalog rather than a count. Any `Fail` → `Fail`; any errored test → `NotTested`; any test
+still unresolved → `NeedsReview`; every expected key settled with at least one `Pass` →
+`Pass`; every expected key settled and all deterministically inapplicable →
+`NotApplicable`. An empty set of applicable tests therefore never reduces to `Pass` — a
+`Pass` requires at least one test to have passed. When `tests` is empty the status is
+whatever the mechanism set, exactly as today.
 
 Why additive rather than replacing the atomic verdict:
 
@@ -122,7 +127,7 @@ it.
 - **No re-derivation of the catalog.** `test_keys` as shipped in
   `automatable_criteres.json` is the test identity; this pass consumes it, it does not
   re-source it from the RGAA reference.
-- **No re-assessment of the 42 coverage declarations** from #201/#202 in the same change.
+- **No re-assessment of the 55 coverage declarations** from #201/#202 in the same change.
   They are replaced by computed values only once the reduction is in place and tested,
   so the two changes stay separately reviewable.
 - **No change to the LLM prompt shape.** Per-test prompting is a later question; this
@@ -149,14 +154,14 @@ it.
 **Not wired into the pipeline yet.** No mechanism populates `tests` — the reduction and
 its gate exist and are tested, but `AxeMapper`, `GapFixRules` and the agent still report
 at criterion granularity. Teaching them which RGAA test they answered is the next step,
-and it is where the 42 coverage declarations from #201/#202 become computed rather than
+and it is where the 55 coverage declarations from #201/#202 become computed rather than
 declared. Keeping that separate is the ceiling in recommendation 6, not an oversight.
 
 ## Fog patch found while writing this
 
-`automatable_criteres.json` has **five** rows whose `classification` contradicts its own
-counts, all labelled `NotAutomatable` with every test automatable: **4.9, 5.5, 10.2,
-10.14** and **12.3**. #201 fixed 12.3 (its AC4 named it) and left the other four, because
+`automatable_criteres.json` **had five** rows whose `classification` contradicted its own
+counts, all labelled `NotAutomatable` with every test automatable: **12.3**, since fixed by
+#201 because its AC4 named it, and **4.9, 5.5, 10.2, 10.14**, which it left because
 none carries axe rules and relabelling them moves `coverage_percent` on grounds #201 does
 not discuss. A test now pins them as known-wrong with an exception list, so the next
 person meets them deliberately. **Resolved.** All four were relabelled `FullyAutomatable` when recommendation 1 was

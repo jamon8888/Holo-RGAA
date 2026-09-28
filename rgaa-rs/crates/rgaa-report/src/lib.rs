@@ -139,9 +139,15 @@ impl SiteMetrics {
     ///
     /// False when the audit is incomplete: under RGAA 4.1 an incomplete audit is
     /// retrograded regardless of the rate, so the number is a measurement, not a claim.
+    ///
+    /// `audit_incomplet` alone is not enough, as Sourcery pointed out on #209:
+    /// `compute_metrics` raises it for a `NotTested` criterion but not for one awaiting
+    /// review, so an audit whose criteria all reduced to `NeedsReview` would have read as
+    /// a claim. `non_testes` counts both, which is the honest gate — a criterion nobody
+    /// has closed is a criterion nobody has closed, whichever word it carries.
     #[must_use]
     pub fn rate_is_a_conformance_claim(&self) -> bool {
-        !self.audit_incomplet
+        !self.audit_incomplet && self.non_testes == 0
     }
 }
 
@@ -424,5 +430,26 @@ mod tests {
         m.audit_incomplet = false;
         m.non_testes = 0;
         assert!(m.rate_is_a_conformance_claim());
+    }
+
+    /// Sourcery on #209: `compute_metrics` raises `audit_incomplet` for a `NotTested`
+    /// criterion but not for one awaiting review, so gating on that field alone let an
+    /// all-`NeedsReview` audit read as a conformance claim.
+    #[test]
+    fn criteria_awaiting_review_are_not_a_conformance_claim_either() {
+        let m = SiteMetrics {
+            taux_global: 100.0,
+            coverage_percent: 100.0,
+            etat_conformite: "totale".into(),
+            conformes: 20,
+            non_conformes: 0,
+            non_applicables: 10,
+            non_testes: 7,
+            audit_incomplet: false,
+        };
+        assert!(
+            !m.rate_is_a_conformance_claim(),
+            "7 criteria nobody closed is not a 100 % conformance claim"
+        );
     }
 }

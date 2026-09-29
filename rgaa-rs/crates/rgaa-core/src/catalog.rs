@@ -29,7 +29,31 @@ struct AutomatableRoot {
 struct AxeMappingEntry {
     criterion_id: String,
     axe_rules: Vec<String>,
+    #[serde(default)]
+    coverage: AxeCoverage,
     provenance: AxeProvenance,
+}
+
+/// How much of a criterion its mapped axe-core rules actually decide.
+///
+/// This is what stops a rule that covers one of a criterion's fifteen tests from
+/// asserting the whole criterion conforms. `meta-refresh` finding nothing says
+/// nothing about the other fourteen tests of 13.1, so 13.1 is [`Partial`] and axe
+/// may only *fail* it, never pass it (#201). [`Complete`] is reserved for criteria
+/// whose mapped rules decide every test, where axe's silence really is evidence.
+///
+/// [`Partial`]: AxeCoverage::Partial
+/// [`Complete`]: AxeCoverage::Complete
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AxeCoverage {
+    /// The mapped rules decide every test of the criterion: axe may assert `Pass`.
+    Complete,
+    /// The mapped rules detect some violations, but their silence proves nothing:
+    /// axe may assert `Fail` only. The default, so an entry that forgets to declare
+    /// its coverage cannot accidentally claim conformance.
+    #[default]
+    Partial,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +68,45 @@ pub struct AxeProvenance {
 struct AutomatableCriterion {
     criterion_id: String,
     classification: Automatable,
+    #[serde(default)]
+    automatable_test_count: usize,
+    #[serde(default)]
+    total_test_count: usize,
+    #[serde(default)]
+    test_keys: Vec<String>,
+}
+
+/// The catalog's per-test accounting for one criterion: how many of its RGAA tests a
+/// mechanism could decide, out of how many, and which ones.
+///
+/// Shipped in `automatable_criteres.json` since the catalog was built and, until #203,
+/// consumed by nothing but the pipeline's bulk `NeedsReview` branch. Exposed here
+/// because the test-level reduction #203 recommends needs it, and because its coherence
+/// is worth asserting: five rows currently contradict their own
+/// [`Automatable`] label.
+#[derive(Debug, Clone, Default)]
+pub struct TestAccounting {
+    /// RGAA tests of this criterion a mechanism could decide.
+    pub automatable: usize,
+    /// RGAA tests this criterion has in total.
+    pub total: usize,
+    /// Test identities, as the RGAA reference numbers them within the criterion.
+    pub test_keys: Vec<String>,
+}
+
+impl TestAccounting {
+    /// The [`Automatable`] label these counts imply, independent of the label the data
+    /// file carries. Where the two disagree, one of them is wrong.
+    #[must_use]
+    pub fn implied_classification(&self) -> Automatable {
+        if self.total == 0 || self.automatable == 0 {
+            Automatable::NotAutomatable
+        } else if self.automatable == self.total {
+            Automatable::FullyAutomatable
+        } else {
+            Automatable::PartiallyAutomatable
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -67,6 +130,11 @@ pub struct CatalogCriterion {
     pub automatable: Automatable,
     #[serde(default)]
     pub axe_rules: Vec<String>,
+    #[serde(default)]
+    pub axe_coverage: AxeCoverage,
+    /// Per-test accounting from `automatable_criteres.json`. See [`TestAccounting`].
+    #[serde(skip)]
+    pub test_accounting: TestAccounting,
     #[serde(default)]
     pub axe_provenance: Option<AxeProvenance>,
 }
@@ -95,14 +163,25 @@ impl RgaaCatalog {
             serde_json::from_str(AXE_MAPPING_JSON).expect("axe_mapping.json must parse");
 
         let mut automatable_map: HashMap<String, Automatable> = HashMap::new();
+        let mut accounting_map: HashMap<String, TestAccounting> = HashMap::new();
         for ac in automatable_root.criteria {
-            automatable_map.insert(ac.criterion_id, ac.classification);
+            automatable_map.insert(ac.criterion_id.clone(), ac.classification);
+            accounting_map.insert(
+                ac.criterion_id,
+                TestAccounting {
+                    automatable: ac.automatable_test_count,
+                    total: ac.total_test_count,
+                    test_keys: ac.test_keys,
+                },
+            );
         }
 
         let mut axe_rules_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut axe_coverage_map: HashMap<String, AxeCoverage> = HashMap::new();
         let mut axe_provenance_map: HashMap<String, AxeProvenance> = HashMap::new();
         for entry in axe_entries {
             axe_rules_map.insert(entry.criterion_id.clone(), entry.axe_rules);
+            axe_coverage_map.insert(entry.criterion_id.clone(), entry.coverage);
             axe_provenance_map.insert(entry.criterion_id, entry.provenance);
         }
 
@@ -112,7 +191,11 @@ impl RgaaCatalog {
                 let criterion_id = cw.criterium.id_for_theme(theme.number);
                 cw.criterium.automatable =
                     automatable_map.remove(&criterion_id).unwrap_or_default();
+                cw.criterium.test_accounting =
+                    accounting_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.axe_rules = axe_rules_map.remove(&criterion_id).unwrap_or_default();
+                cw.criterium.axe_coverage =
+                    axe_coverage_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.axe_provenance = axe_provenance_map.remove(&criterion_id);
             }
         }
@@ -238,10 +321,45 @@ mod tests {
                 }
             }
         }
-        assert_eq!(fully, 39, "expected 39 FullyAutomatable criteria");
+        // 41 / 45 / 20, not 39 / 45 / 22: #201 corrected 2.1 and 12.3, both of which
+        // were labelled NotAutomatable although axe decides 2.1 outright and 12.3
+        // carries 3 of 3 automatable tests.
+        assert_eq!(fully, 41, "expected 41 FullyAutomatable criteria");
         assert_eq!(partially, 45, "expected 45 PartiallyAutomatable criteria");
-        assert_eq!(not_automatable, 22, "expected 22 NotAutomatable criteria");
+        assert_eq!(not_automatable, 20, "expected 20 NotAutomatable criteria");
         assert_eq!(fully + partially + not_automatable, 106);
+    }
+
+    /// #201 AC4. Both rows were wrong in `automatable_criteres.json`: 2.1 claimed 0 of
+    /// 1 automatable tests although `frame-title` decides its single test, and 12.3
+    /// was labelled `NotAutomatable` while carrying 3 of 3 automatable tests — the
+    /// label contradicting its own counts.
+    #[test]
+    fn corrected_automatability_labels_stay_corrected() {
+        let (_, two_one) = RgaaCatalog::by_id("2.1").expect("2.1 is in the catalog");
+        assert_eq!(two_one.automatable, Automatable::FullyAutomatable);
+        assert!(
+            two_one.axe_rules.iter().any(|r| r == "frame-title"),
+            "2.1 is automatable because frame-title decides it: {:?}",
+            two_one.axe_rules
+        );
+
+        let (_, twelve_three) = RgaaCatalog::by_id("12.3").expect("12.3 is in the catalog");
+        assert_eq!(twelve_three.automatable, Automatable::FullyAutomatable);
+    }
+
+    /// A criterion carrying axe rules must declare whether those rules decide it
+    /// completely; the serde default is `Partial`, so a forgotten declaration fails
+    /// closed rather than claiming a conformance axe cannot establish (#201 AC3).
+    #[test]
+    fn complete_axe_coverage_is_declared_not_inferred() {
+        let (_, three_three) = RgaaCatalog::by_id("3.3").expect("3.3 is in the catalog");
+        assert_eq!(three_three.axe_coverage, AxeCoverage::Complete);
+
+        // 13.1 has fifteen tests and one rule, meta-refresh.
+        let (_, thirteen_one) = RgaaCatalog::by_id("13.1").expect("13.1 is in the catalog");
+        assert_eq!(thirteen_one.axe_coverage, AxeCoverage::Partial);
+        assert!(!thirteen_one.axe_rules.is_empty());
     }
 
     #[test]
@@ -258,5 +376,85 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// #203 groundwork. The per-test counts become load-bearing the moment a criterion
+    /// verdict is reduced from test outcomes, so a row whose label contradicts its own
+    /// counts is a latent wrong answer. Five exist; #201 fixed the one its AC4 named
+    /// (12.3) and left four, because none of them carries axe rules and relabelling
+    /// them moves `coverage_percent` on grounds #201 does not discuss.
+    ///
+    /// They are pinned here rather than ignored: the next person to touch this data
+    /// meets them deliberately, and the list must shrink, never grow.
+    const KNOWN_LABEL_COUNT_DISAGREEMENTS: &[&str] = &["4.9", "5.5", "10.2", "10.14"];
+
+    #[test]
+    fn automatability_labels_agree_with_their_own_test_counts() {
+        let mut disagreements: Vec<String> = Vec::new();
+        for theme in RgaaCatalog::all() {
+            for cw in &theme.criteria {
+                let criterion = &cw.criterium;
+                let id = criterion.id_for_theme(theme.number);
+                let implied = criterion.test_accounting.implied_classification();
+                if implied != criterion.automatable {
+                    disagreements.push(format!(
+                        "{id}: labelled {:?} but {}/{} tests imply {implied:?}",
+                        criterion.automatable,
+                        criterion.test_accounting.automatable,
+                        criterion.test_accounting.total
+                    ));
+                }
+            }
+        }
+
+        let unexpected: Vec<&String> = disagreements
+            .iter()
+            .filter(|d| {
+                let id = d.split(':').next().unwrap_or_default();
+                !KNOWN_LABEL_COUNT_DISAGREEMENTS.contains(&id)
+            })
+            .collect();
+        assert!(
+            unexpected.is_empty(),
+            "new label/count disagreements in automatable_criteres.json: {unexpected:#?}"
+        );
+        assert_eq!(
+            disagreements.len(),
+            KNOWN_LABEL_COUNT_DISAGREEMENTS.len(),
+            "the known-disagreement list is stale — it must shrink as rows are fixed, \
+             never be left claiming rows that are now correct. Found: {disagreements:#?}"
+        );
+    }
+
+    /// The counts #203's reduction would consume must actually be loaded — they were
+    /// shipped in the data file and read by nothing.
+    #[test]
+    fn per_test_accounting_is_loaded_from_the_catalog() {
+        let (_, one_one) = RgaaCatalog::by_id("1.1").expect("1.1 is in the catalog");
+        assert_eq!(one_one.test_accounting.automatable, 12);
+        assert_eq!(one_one.test_accounting.total, 20);
+        assert!(!one_one.test_accounting.test_keys.is_empty());
+        assert_eq!(
+            one_one.test_accounting.implied_classification(),
+            Automatable::PartiallyAutomatable
+        );
+
+        let total_tests: usize = RgaaCatalog::all()
+            .iter()
+            .flat_map(|t| t.criteria.iter())
+            .map(|cw| cw.criterium.test_accounting.total)
+            .sum();
+        let automatable_tests: usize = RgaaCatalog::all()
+            .iter()
+            .flat_map(|t| t.criteria.iter())
+            .map(|cw| cw.criterium.test_accounting.automatable)
+            .sum();
+        assert_eq!(total_tests, 693, "the catalog carries 693 RGAA tests");
+        // 371, not the 370 #203 measured: #201 corrected 2.1 from 0 of 1 automatable
+        // tests to 1 of 1, because frame-title decides its single test.
+        assert_eq!(
+            automatable_tests, 371,
+            "371 of them are marked automatable (54%)"
+        );
     }
 }

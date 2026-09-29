@@ -1,8 +1,8 @@
 {
   "total_criteria": 106,
-  "fully_automatable": 39,
+  "fully_automatable": 41,
   "partially_automatable": 45,
-  "not_automatable": 22,
+  "not_automatable": 20,
   "criteria": [
     {
       "criterion_id": "1.1",
@@ -147,8 +147,8 @@
     {
       "criterion_id": "2.1",
       "title": "Chaque [cadre](#cadre) a-t-il un [titre de cadre](#titre-de-cadre) ?",
-      "classification": "NotAutomatable",
-      "automatable_test_count": 0,
+      "classification": "FullyAutomatable",
+      "automatable_test_count": 1,
       "total_test_count": 1,
       "test_keys": [
         "1"
@@ -992,7 +992,7 @@
     {
       "criterion_id": "12.3",
       "title": "La [page « plan du site »](#page-plan-du-site) est-elle pertinente ?",
-      "classification": "NotAutomatable",
+      "classification": "FullyAutomatable",
       "automatable_test_count": 3,
       "total_test_count": 3,
       "test_keys": [

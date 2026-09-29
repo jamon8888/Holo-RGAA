@@ -391,6 +391,12 @@ pub(crate) fn extract_axe_violations(result: &Value) -> Result<String, String> {
         return Err("axe result 'violations' is not an array".to_string());
     }
 
+    // The shape check above accepts `[null]` and other malformed elements, which
+    // `run_axe_batch` would then insert as a successful per-URL result. Validate the
+    // elements with the same rule the single-page path uses.
+    crate::validate_axe_payload(violations)
+        .map_err(|error| format!("invalid axe violations: {error}"))?;
+
     serde_json::to_string(violations)
         .map_err(|e| format!("failed to serialize axe violations: {e}"))
 }
@@ -654,7 +660,12 @@ mod tests {
     #[test]
     fn the_violations_array_is_extracted_not_the_whole_axe_run_object() {
         let response = evaluate_response(json!({
-            "violations": [{"id": "image-alt", "impact": "critical", "description": "x", "nodes": []}],
+            "violations": [{
+                "id": "image-alt",
+                "impact": "critical",
+                "description": "x",
+                "nodes": [{"target": ["img"], "html": "<img src=\"a.png\">"}],
+            }],
             "passes": [{"id": "region"}],
             "incomplete": [],
             "inapplicable": [],
@@ -726,5 +737,23 @@ mod tests {
     fn a_missing_result_object_is_an_error() {
         let err = extract_axe_violations(&json!({})).unwrap_err();
         assert!(err.contains("missing result object"), "{err}");
+    }
+
+    /// `[null]` is an array, so the shape check alone let it through and
+    /// `run_axe_batch` inserted it as a successful per-URL result. The elements
+    /// have to be validated too, or a malformed payload reaches the mapper.
+    #[test]
+    fn a_null_violation_element_is_rejected() {
+        let response = evaluate_response(json!({"violations": [null]}));
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("invalid axe violations"), "{err}");
+    }
+
+    #[test]
+    fn a_violation_missing_required_fields_is_rejected() {
+        let response =
+            evaluate_response(json!({"violations": [{"id": "", "description": "", "nodes": []}]}));
+        let err = extract_axe_violations(&response).unwrap_err();
+        assert!(err.contains("invalid axe violations"), "{err}");
     }
 }

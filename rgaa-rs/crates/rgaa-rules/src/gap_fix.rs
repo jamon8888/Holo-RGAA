@@ -254,9 +254,13 @@ impl GapFixRules {
                 const problems = [];
                 document.querySelectorAll('figure').forEach((fig, idx) => {
                     const cap = fig.querySelector('figcaption');
-                    if (!cap || !cap.textContent.trim()) {
+                    // No legend at all: 1.9 governs the association between a legend
+                    // and its image, so a figure carrying none is out of scope, not in
+                    // violation. CMS output wraps plain images in <figure> routinely.
+                    if (!cap) return;
+                    if (!cap.textContent.trim()) {
                         bad++;
-                        problems.push('figure ' + idx + ': no figcaption text');
+                        problems.push('figure ' + idx + ': empty figcaption');
                         return;
                     }
                     const media = fig.querySelector('img, svg, object, canvas, video, audio');

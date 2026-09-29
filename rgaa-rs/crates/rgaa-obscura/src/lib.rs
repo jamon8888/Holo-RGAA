@@ -1410,41 +1410,19 @@ impl ObscuraBridge {
         Self::validate_axe_result(&result)
     }
 
-    /// Validate the resolved axe.run() result. Any missing/exception/null/subtype
-    /// result is treated as an error so a failure cannot masquerade as a clean run.
+    /// Validate the resolved axe.run() result and return its violations array. Any
+    /// missing/exception/null/subtype result is treated as an error so a failure cannot
+    /// masquerade as a clean run.
     ///
-    /// `result` is the CDP `Runtime.evaluate` "result" object: `{ result: <RemoteObject>, exceptionDetails? }`.
+    /// `result` is the CDP `Runtime.evaluate` "result" object:
+    /// `{ result: <RemoteObject>, exceptionDetails? }`.
+    ///
+    /// Delegates to [`crate::cdp_pool::extract_axe_violations`] rather than repeating the
+    /// extraction: this path used to extract `value.violations` while the pooled path
+    /// serialised the whole run object, so which one ran decided whether an audit worked
+    /// at all.
     fn validate_axe_result(result: &serde_json::Value) -> Result<String, String> {
-        if let Some(ex) = result.get("exceptionDetails") {
-            return Err(format!("axe.run() raised an exception: {ex}"));
-        }
-
-        let remote = result
-            .get("result")
-            .ok_or_else(|| "axe.run() response missing result object".to_string())?;
-
-        if remote.get("subtype").and_then(|s| s.as_str()) == Some("error") {
-            return Err("axe.run() returned an error object".to_string());
-        }
-
-        let value = remote
-            .get("value")
-            .ok_or_else(|| "axe.run() result value is missing".to_string())?;
-
-        if value.is_null() {
-            return Err("axe.run() result value is null".to_string());
-        }
-
-        let violations = value
-            .get("violations")
-            .ok_or_else(|| "axe result is missing the 'violations' field".to_string())?;
-
-        if !violations.is_array() {
-            return Err("axe result 'violations' is not an array".to_string());
-        }
-
-        serde_json::to_string(violations)
-            .map_err(|e| format!("failed to serialize axe violations: {e}"))
+        crate::cdp_pool::extract_axe_violations(result)
     }
 
     /// Wait for navigation to finish by observing `Page.loadEventFired` /

@@ -492,14 +492,14 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # The version in npm/mcp-types/package.json is a committed placeholder
+      # The version in types/package.json is a committed placeholder
       # (0.0.0). Stamping it here rather than keeping it in sync by hand is
       # the point: a hand-maintained version is a version that is wrong on the
       # release where it matters. --no-git-tag-version because the tag already
       # exists; this is a working-tree edit, not a release commit.
       - name: Stamp package version from the release tag
         if: steps.gate.outputs.publish == 'true'
-        working-directory: npm/mcp-types
+        working-directory: types
         run: |
           version="${{ env.TAG }}"
           version="${version#v}"
@@ -508,7 +508,7 @@ jobs:
 
       - name: Publish to npm
         if: steps.gate.outputs.publish == 'true'
-        working-directory: npm/mcp-types
+        working-directory: types
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public --provenance

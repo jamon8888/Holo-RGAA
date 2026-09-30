@@ -122,7 +122,7 @@ jobs:
       - name: Build
         env:
           RUSTC_WRAPPER: sccache
-        run: cargo build --target ${{ matrix.target }} --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp
+        run: cargo build --target ${{ matrix.target }} --release -p rgaa-tui -p rgaa-cli -p rgaa-api -p rgaa-mcp -p rgaa-mcp-http
         shell: bash
 
       - name: Package (Unix)
@@ -130,11 +130,11 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/rgaa-rs/dist"
           cd "$GITHUB_WORKSPACE/rgaa-rs/target/${{ matrix.target }}/release"
-          tar czf "$GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.tarball }}" rgaa rgaa-cli rgaa-api rgaa-mcp
+          tar czf "$GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.tarball }}" rgaa rgaa-cli rgaa-api rgaa-mcp rgaa-mcp-http
           cd "$GITHUB_WORKSPACE/rgaa-rs/dist"
           sha256sum "${{ matrix.tarball }}" > "${{ matrix.tarball }}.sha256"
           base="$(basename "${{ matrix.tarball }}" .tar.gz)"
-          printf '{"tag": "%s", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp"]}\n' "${{ env.TAG }}" > "${base}.manifest.json"
+          printf '{"tag": "%s", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp", "rgaa-mcp-http"]}\n' "${{ env.TAG }}" > "${base}.manifest.json"
         shell: bash
 
       - name: Package (Windows)
@@ -142,13 +142,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Push-Location target/${{ matrix.target }}/release
-          Compress-Archive -Path rgaa.exe,rgaa-cli.exe,rgaa-api.exe,rgaa-mcp.exe -DestinationPath "$env:GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.zip }}" -Force
+          Compress-Archive -Path rgaa.exe,rgaa-cli.exe,rgaa-api.exe,rgaa-mcp.exe,rgaa-mcp-http.exe -DestinationPath "$env:GITHUB_WORKSPACE/rgaa-rs/dist/${{ matrix.zip }}" -Force
           Pop-Location
           Push-Location dist
           $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.zip }}").Hash.ToLower()
           "$hash  ${{ matrix.zip }}" | Set-Content -Encoding ascii "${{ matrix.zip }}.sha256"
           $base = [System.IO.Path]::GetFileNameWithoutExtension("${{ matrix.zip }}")
-          $manifest = '{"tag": "' + "${{ env.TAG }}" + '", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp"]}'
+          $manifest = '{"tag": "' + "${{ env.TAG }}" + '", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp", "rgaa-mcp-http"]}'
           Set-Content -Path "$base.manifest.json" -Value $manifest -Encoding ascii
           Pop-Location
         shell: pwsh
@@ -285,6 +285,52 @@ jobs:
           fi
         shell: bash
 
+      # `--help` proves the file is a runnable executable for this target and
+      # nothing more. Everything below actually talks to the server, because
+      # the failures worth catching at release time — a transport that binds
+      # nothing, a tool router that came up empty, a tool that got renamed out
+      # from under the transport — all pass `--help`.
+
+      - name: Verify MCP server and CLI report the same version
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            bash scripts/check-version-parity.sh \
+              --cli ./artifact/rgaa-cli.exe \
+              --server ./artifact/rgaa-mcp-http.exe \
+              --tag "${{ env.TAG }}"
+          else
+            bash scripts/check-version-parity.sh \
+              --cli ./artifact/rgaa-cli \
+              --server ./artifact/rgaa-mcp-http \
+              --tag "${{ env.TAG }}"
+          fi
+        shell: bash
+
+      # Spawns the HTTP transport and calls EVERY registered tool over
+      # JSON-RPC. The tool list is derived from the `#[tool(name = ...)]`
+      # attributes in the checked-out source, not hardcoded here, so a newly
+      # added tool is covered the day it lands instead of quietly shipping
+      # untested. See the header of the script for the pass/fail semantics —
+      # in short, a tool answering with a JSON-RPC error is a PASS (it was
+      # reached), an unreachable or unknown tool is a FAIL. The runner has no
+      # browser and no audit target, so "did the audit succeed" is not, and
+      # cannot be, what is being asserted.
+      #
+      # The port is fixed and overridable (RGAA_SMOKE_PORT): matrix jobs run on
+      # separate runners, so nothing else is bound there.
+      - name: Smoke MCP HTTP transport (every tool over JSON-RPC)
+        if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
+        env:
+          RGAA_SMOKE_PORT: 34117
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            bash scripts/smoke-mcp-http.sh --bin ./artifact/rgaa-mcp-http.exe
+          else
+            bash scripts/smoke-mcp-http.sh --bin ./artifact/rgaa-mcp-http
+          fi
+        shell: bash
+
   # ─── Installer E2E ────────────────────────────────────────────────────────
 
   installer-e2e:
@@ -396,3 +442,73 @@ jobs:
           name: ${{ env.TAG == 'latest' && format('Latest Build ({0})', github.sha) || env.TAG }}
           prerelease: ${{ env.TAG == 'latest' }}
           target_commitish: ${{ github.sha }}
+
+  # ─── Publish npm types package ─────────────────────────────────────────────
+
+  npm-types:
+    name: Publish npm types package
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm publish --provenance mints a signed attestation from the OIDC
+      # token; without id-token: write the publish fails on a missing token
+      # rather than falling back to an unsigned publish.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Two reasons a release run reaches here and should NOT publish, and
+      # both are a clean skip rather than a red job:
+      #
+      #   * TAG == 'latest'. That tag is a rolling prerelease rebuilt on every
+      #     push to master. npm versions are immutable, so the second push
+      #     would fail on "cannot publish over an existing version" — the
+      #     release itself is fine, only npm cannot express a moving target.
+      #   * NPM_TOKEN is unset. Forks and repos that have not been wired up to
+      #     npm yet must still be able to cut a GitHub release.
+      #
+      # A missing token is reported as a notice, not swallowed silently, so a
+      # maintainer expecting a publish can see why it did not happen.
+      - name: Decide whether to publish
+        id: gate
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "${{ env.TAG }}" = "latest" ]; then
+            echo "::notice::skipping npm publish: 'latest' is a rolling tag and npm versions are immutable"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$NPM_TOKEN" ]; then
+            echo "::notice::skipping npm publish: NPM_TOKEN secret is not set"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The version in npm/mcp-types/package.json is a committed placeholder
+      # (0.0.0). Stamping it here rather than keeping it in sync by hand is
+      # the point: a hand-maintained version is a version that is wrong on the
+      # release where it matters. --no-git-tag-version because the tag already
+      # exists; this is a working-tree edit, not a release commit.
+      - name: Stamp package version from the release tag
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: npm/mcp-types
+        run: |
+          version="${{ env.TAG }}"
+          version="${version#v}"
+          npm version "$version" --no-git-tag-version --allow-same-version
+          node -e "console.log('publishing ' + require('./package.json').name + '@' + require('./package.json').version)"
+
+      - name: Publish to npm
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: npm/mcp-types
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance

@@ -1,0 +1,25 @@
+{
+  "name": "@holo-rgaa/mcp-types",
+  "version": "0.0.0",
+  "description": "TypeScript types for the RGAA MCP server (rgaa-mcp / rgaa-mcp-http) JSON-RPC surface",
+  "types": "index.d.ts",
+  "files": [
+    "index.d.ts",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamon8888/Holo-RGAA.git",
+    "directory": "npm/mcp-types"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "rgaa",
+    "accessibility",
+    "mcp",
+    "model-context-protocol"
+  ]
+}

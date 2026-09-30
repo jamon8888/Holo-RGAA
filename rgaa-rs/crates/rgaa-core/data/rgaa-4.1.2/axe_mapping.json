@@ -385,12 +385,12 @@
       "html-lang-valid",
       "duplicate-id-aria"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "provenance": {
       "source": "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table",
       "validated_by": "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima",
       "validated_at": "2026-09-27",
-      "notes": "Extends html-has-lang/html-lang-valid with duplicate-id-aria. Still partial: none of the three tests source validity."
+      "notes": "Extends html-has-lang/html-lang-valid with duplicate-id-aria. Partial: none of the three rules decides source validity, which is what 8.2 asks, so their silence is not conformance."
     }
   },
   {

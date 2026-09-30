@@ -127,7 +127,8 @@ it.
 - **No re-derivation of the catalog.** `test_keys` as shipped in
   `automatable_criteres.json` is the test identity; this pass consumes it, it does not
   re-source it from the RGAA reference.
-- **No re-assessment of the 55 coverage declarations** from #201/#202 in the same change.
+- **No re-assessment of the 42 `complete` coverage declarations** — the 30 axe plus the
+  12 gap-fix ones, not the `partial` entries — from #201/#202 in the same change.
   They are replaced by computed values only once the reduction is in place and tested,
   so the two changes stay separately reviewable.
 - **No change to the LLM prompt shape.** Per-test prompting is a later question; this
@@ -159,9 +160,10 @@ declared. Keeping that separate is the ceiling in recommendation 6, not an overs
 
 ## Fog patch found while writing this
 
-`automatable_criteres.json` **had five** rows whose `classification` contradicted its own
-counts, all labelled `NotAutomatable` with every test automatable: **12.3**, since fixed by
-#201 because its AC4 named it, and **4.9, 5.5, 10.2, 10.14**, which it left because
+`automatable_criteres.json` had **five** rows whose `classification` contradicted its own
+counts, all labelled `NotAutomatable` with every test automatable: **4.9, 5.5, 10.2,
+10.14** and **12.3**. #201 fixed 12.3 (its AC4 named it), so **four** remain — 4.9, 5.5,
+10.2 and 10.14. It left those, because
 none carries axe rules and relabelling them moves `coverage_percent` on grounds #201 does
 not discuss. A test now pins them as known-wrong with an exception list, so the next
 person meets them deliberately. **Resolved.** All four were relabelled `FullyAutomatable` when recommendation 1 was

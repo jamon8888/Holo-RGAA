@@ -8,9 +8,12 @@
 
 After #199 removed the verdicts that could not fail and #201 harvested the 49 RGAAv4
 axe rules that were being computed and discarded, a residue remains: RGAA criteria whose
-check **is** deterministic but which axe-core does not implement. They are not LLM work
-— no judgement is required — but the audit has no mechanism for them, so they reach the
-report as `NeedsReview` or `NotTested` on every page.
+check **is** deterministic but which axe-core does not implement. Detecting the
+candidates is deterministic — no judgement is required to establish applicability — and
+for most of these mechanisms that is the whole check. Mechanisms 7, 8 and 9 still spend
+one judging completion, but only on the candidates detection leaves standing. Either way
+the audit has no mechanism for them today, so they reach the report as `NeedsReview` or
+`NotTested` on every page.
 
 Nine such mechanisms are worth building. Six need no completion at all. The other three
 — mechanisms 7, 8 and 9 — make **candidate detection** deterministic and leave a judgement

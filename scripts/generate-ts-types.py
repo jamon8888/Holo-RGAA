@@ -28,6 +28,12 @@ import pathlib
 import re
 import sys
 
+# Encoding is always explicit below. The schemas and the emitted header
+# both contain em dashes, and read_text/write_text otherwise use the
+# locale default — cp1252 on a default Windows install. That produces
+# mojibake or a UnicodeEncodeError, and either way the regenerated file
+# differs from the committed one, failing the drift gate for a reason
+# that has nothing to do with the server.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "types" / "schemas.json"
 OUT = ROOT / "types" / "src" / "tools.d.ts"
@@ -180,7 +186,7 @@ def main() -> int:
         )
         return 1
 
-    document = json.loads(SCHEMAS.read_text())
+    document = json.loads(SCHEMAS.read_text(encoding="utf-8"))
     tools = document.get("tools") or []
     if not tools:
         print("schemas.json lists no tools; refusing to emit an empty file", file=sys.stderr)
@@ -229,7 +235,7 @@ def main() -> int:
     )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("".join(chunks))
+    OUT.write_text("".join(chunks), encoding="utf-8")
     print(f"wrote {OUT.relative_to(ROOT)} ({len(names)} tools: {', '.join(names)})")
     return 0
 

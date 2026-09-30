@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rgaa-rs
+          workspaces: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
       - uses: mozilla-actions/sccache-action@v0.0.7
       - uses: rui314/setup-mold@v1
@@ -122,7 +122,7 @@ jobs:
           df -h /
       - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rgaa-rs
+          workspaces: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
       - uses: mozilla-actions/sccache-action@v0.0.7
       - uses: rui314/setup-mold@v1
@@ -224,7 +224,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rgaa-rs
+          workspaces: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

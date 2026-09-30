@@ -8,7 +8,7 @@ does not exist yet, this guide says so rather than describing it.
 - **REST API** — bundle storage, findings, policy evaluation.
 
 Those are two different servers with two different auth stories. Read
-[Authentication](#authentication) before wiring anything.
+[Authentication](#2-authentication) before wiring anything.
 
 ---
 

@@ -41,6 +41,8 @@ fn render_markdown(bundle: &AuditBundle) -> String {
     let _ = writeln!(out, "| Errors | {} |", bundle.summary.errors);
     let _ = writeln!(out);
 
+    write_markdown_sources(&mut out, bundle);
+
     let findings = all_findings(bundle);
     if findings.is_empty() {
         let _ = writeln!(out, "No findings.");
@@ -64,6 +66,51 @@ fn render_markdown(bundle: &AuditBundle) -> String {
         }
     }
     out
+}
+
+/// Per-criterion RAG evidence.
+///
+/// Emitted only for criteria that actually carry citations. A
+/// deterministic pass, a manual review and a "not tested" legitimately have
+/// none, so listing all 106 here would bury the sourced handful in 100 rows
+/// of "—" and make the absence of evidence look like a rendering gap rather
+/// than a property of the verdict.
+fn write_markdown_sources(out: &mut String, bundle: &AuditBundle) {
+    let sourced = crate::sources::sourced_criteria(bundle);
+    if sourced.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "## Sources");
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "Criteria whose verdict relied on retrieved documents, and what was retrieved."
+    );
+    let _ = writeln!(out);
+    let mut current_page: Option<&str> = None;
+    for (page_url, criterion) in sourced {
+        if current_page != Some(page_url) {
+            let _ = writeln!(out, "### {page_url}");
+            let _ = writeln!(out);
+            current_page = Some(page_url);
+        }
+        let title = if criterion.title.is_empty() {
+            "—"
+        } else {
+            criterion.title.as_str()
+        };
+        let _ = writeln!(
+            out,
+            "- **{}** {} — {}",
+            criterion.criterion_id,
+            title,
+            status_str(&criterion.status)
+        );
+        if let Some(line) = crate::sources::sources_line(criterion) {
+            let _ = writeln!(out, "  - Sources: {line}");
+        }
+    }
+    let _ = writeln!(out);
 }
 
 fn render_sarif(bundle: &AuditBundle) -> String {
@@ -208,6 +255,151 @@ mod tests {
         finding.description = Some("missing alternative text".into());
         bundle.findings.push(finding);
         bundle
+    }
+
+    /// A bundle with one page carrying a sourced criterion (RAG verdict)
+    /// and an unsourced one (deterministic verdict).
+    fn bundle_with_citations() -> AuditBundle {
+        use rgaa_core::{Citation, Classification, PageAudit};
+
+        let sourced = rgaa_core::CriterionResult {
+            criterion_id: "1.1".into(),
+            title: "Image porteuse d'information".into(),
+            classification: Classification::IaAssiste,
+            status: CriterionStatus::Fail,
+            violations: Vec::new(),
+            confidence: Some(0.87),
+            justification: Some("alternative absente".into()),
+            source: "holo3".into(),
+            citations: vec![
+                Citation::referentiel("1.1.1", "2024.1"),
+                Citation::crawl(
+                    "https://example.test/accueil",
+                    "2025-01-01T00:00:00Z",
+                    "sha256:abc",
+                ),
+            ],
+            considered_sources: Vec::new(),
+            tests: Vec::new(),
+        };
+        let unsourced = rgaa_core::CriterionResult {
+            criterion_id: "8.1".into(),
+            title: "Document valide".into(),
+            classification: Classification::Deterministe,
+            status: CriterionStatus::Pass,
+            violations: Vec::new(),
+            confidence: None,
+            justification: None,
+            source: "axe-core".into(),
+            citations: Vec::new(),
+            considered_sources: Vec::new(),
+            tests: Vec::new(),
+        };
+
+        let mut bundle =
+            AuditBundle::new("audit-cit", "https://example.test", AuditConfig::default());
+        bundle.pages.push(PageAudit {
+            page_id: "page-1".into(),
+            url: "https://example.test/accueil".into(),
+            title: Some("Accueil".into()),
+            criteria: vec![sourced, unsourced],
+            findings: Vec::new(),
+            errors: Vec::new(),
+            completed: true,
+            duration_ms: 10,
+        });
+        bundle
+    }
+
+    /// The citations field has existed since the dual-router work and the
+    /// evaluator populates it, but no renderer read it — a sourced verdict
+    /// reached the reader looking exactly like an unsourced one.
+    #[test]
+    fn markdown_renders_the_sources_behind_a_rag_verdict() {
+        let output = render(&bundle_with_citations(), ReportFormat::Markdown).expect("markdown");
+        assert!(output.contains("## Sources"), "{output}");
+        assert!(
+            output.contains("1.1.1"),
+            "référentiel test id missing: {output}"
+        );
+        assert!(
+            output.contains("2024.1"),
+            "référentiel version missing — a verdict is only valid against the version it was checked against: {output}"
+        );
+        assert!(
+            output.contains("sha256:abc"),
+            "evidence hash missing — the crawl index is purged, the hash is what survives: {output}"
+        );
+    }
+
+    /// An unsourced verdict must not be padded with a fabricated source.
+    #[test]
+    fn markdown_sources_section_omits_unsourced_criteria() {
+        let output = render(&bundle_with_citations(), ReportFormat::Markdown).expect("markdown");
+        let sources = output
+            .split("## Sources")
+            .nth(1)
+            .expect("sources section")
+            .split("## Findings")
+            .next()
+            .unwrap_or("");
+        assert!(sources.contains("1.1"), "{sources}");
+        assert!(
+            !sources.contains("Document valide"),
+            "deterministic pass leaked into Sources: {sources}"
+        );
+    }
+
+    /// No citations anywhere means no section at all, rather than an empty
+    /// heading that reads as missing evidence.
+    #[test]
+    fn markdown_omits_the_sources_section_when_nothing_is_sourced() {
+        let output = render(&sample_bundle(), ReportFormat::Markdown).expect("markdown");
+        assert!(!output.contains("## Sources"), "{output}");
+    }
+
+    #[test]
+    fn html_criteria_table_carries_a_sources_column() {
+        let output = render(&bundle_with_citations(), ReportFormat::Html).expect("html");
+        assert!(output.contains("<th>Sources</th>"), "{output}");
+        assert!(output.contains("2024.1"), "{output}");
+        assert!(output.contains("sha256:abc"), "{output}");
+    }
+
+    /// Every criteria row must have as many cells as that table's header has
+    /// columns. Adding a column to the header and not the rows (or the
+    /// reverse) shifts every value one cell left and is invisible in a diff:
+    /// the table still renders, it just attributes each criterion's detail
+    /// to the wrong column.
+    #[test]
+    fn html_criteria_rows_match_the_header_width() {
+        let output = render(&bundle_with_citations(), ReportFormat::Html).expect("html");
+
+        // Anchor on the criteria table specifically — the report also
+        // renders a findings table with a different width.
+        let table = output
+            .split("Détail complet des critères")
+            .nth(1)
+            .expect("criteria table");
+        let header = table.split("<tbody>").next().expect("criteria thead");
+        let columns = header.matches("<th>").count();
+        assert_eq!(columns, 6, "criteria header is {columns} columns wide");
+
+        let body = table
+            .split("<tbody>")
+            .nth(1)
+            .expect("criteria tbody")
+            .split("</tbody>")
+            .next()
+            .expect("tbody close");
+        let rows = body.matches("<tr>").count();
+        let cells = body.matches("<td>").count();
+        assert_eq!(rows, 106, "the table promises all 106 criteria, got {rows}");
+        assert_eq!(
+            cells,
+            rows * columns,
+            "{cells} cells across {rows} rows is not {columns} per row"
+        );
     }
 
     #[test]

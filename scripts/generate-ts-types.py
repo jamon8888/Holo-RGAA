@@ -61,16 +61,33 @@ class Emitter:
         self.defs = defs
         self.emitted: dict[str, str] = {}
 
-    def resolve(self, schema: dict) -> dict:
+    def resolve(self, schema) -> dict:
+        if not isinstance(schema, dict):
+            return {}
         ref = schema.get("$ref")
         if not ref:
             return schema
         name = ref.rsplit("/", 1)[-1]
         return self.defs.get(name, {})
 
-    def type_of(self, schema: dict, hint: str = "") -> str:
+    def type_of(self, schema, hint: str = "") -> str:
+        # JSON Schema allows a subschema to be a bare boolean: `true` accepts
+        # any value, `false` accepts none. schemars emits `true` for a field
+        # typed as an arbitrary JSON value (GuidedStepDto's `expected`).
+        # Treating that as an object crashes; treating it as `unknown` is the
+        # honest reading.
+        if schema is True:
+            return "unknown"
+        if schema is False:
+            return "never"
         if not isinstance(schema, dict) or not schema:
             return "unknown"
+
+        # `const: X` is a single-value type. schemars uses it for the tag of
+        # an internally-tagged enum, so without this every variant collapses
+        # to `string` and the discriminated union stops discriminating.
+        if "const" in schema:
+            return json.dumps(schema["const"])
 
         if "$ref" in schema:
             name = schema["$ref"].rsplit("/", 1)[-1]
@@ -117,7 +134,9 @@ class Emitter:
             return self.object_literal(schema, hint)
         return "unknown"
 
-    def object_literal(self, schema: dict, hint: str, indent: str = "  ") -> str:
+    def object_literal(self, schema, hint: str, indent: str = "  ") -> str:
+        if not isinstance(schema, dict):
+            return self.type_of(schema, hint)
         props = schema.get("properties") or {}
         if not props:
             extra = schema.get("additionalProperties")
@@ -127,7 +146,7 @@ class Emitter:
         required = set(schema.get("required") or [])
         lines = ["{"]
         for key, sub in props.items():
-            doc = (sub.get("description") or "").strip()
+            doc = (sub.get("description") or "").strip() if isinstance(sub, dict) else ""
             if doc:
                 for line in doc.splitlines():
                     lines.append(f"{indent}/** {line.strip()} */" if line.strip() else f"{indent}/** */")
@@ -136,11 +155,17 @@ class Emitter:
         lines.append(indent[:-2] + "}")
         return "\n".join(lines)
 
-    def emit_named(self, name: str, schema: dict) -> None:
+    def emit_named(self, name: str, schema) -> None:
         if name in self.emitted:
             return
         self.emitted[name] = ""  # reserve first: schemars types can be cyclic
-        body = self.type_of({**schema, "$ref": None} if "$ref" in schema else schema, name)
+        inner = schema
+        if isinstance(schema, dict) and "$ref" in schema:
+            # Drop the key rather than blanking it: `"$ref" in schema` is
+            # true for a None value too, so blanking it re-enters the $ref
+            # branch and recurses forever.
+            inner = {k: v for k, v in schema.items() if k != "$ref"}
+        body = self.type_of(inner, name)
         doc = (schema.get("description") or "").strip()
         prefix = f"/** {doc} */\n" if doc else ""
         self.emitted[name] = f"{prefix}export type {name} = {body};\n"

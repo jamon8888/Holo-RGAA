@@ -75,7 +75,7 @@ jobs:
           node-version: "20"
       - name: Type-check the published declarations
         working-directory: types
-        run: npx --yes typescript@5.6 tsc --noEmit --strict src/index.d.ts
+        run: npx --yes -p typescript@5.6 tsc --noEmit --strict src/index.d.ts
       - name: Example client parses
         run: node --check examples/codex-client/client.mjs
 

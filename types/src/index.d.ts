@@ -9,6 +9,4 @@
 
 export * from "./protocol";
 export * from "./rest";
-// ./tools is generated — see scripts/generate-ts-types.py. Uncomment once
-// the generator has been run and tools.d.ts is committed.
-// export * from "./tools";
+export * from "./tools";

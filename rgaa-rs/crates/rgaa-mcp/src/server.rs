@@ -647,7 +647,7 @@ pub struct ToolServer {
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 6] {
+    pub const fn tool_names() -> [&'static str; 7] {
         [
             "analyze",
             "remediate",
@@ -655,6 +655,7 @@ impl ToolServer {
             "audit_url",
             "get_audit_result",
             "list_criteria",
+            "source_map",
         ]
     }
 
@@ -781,6 +782,23 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(
             result.map(AuditResultDto::from),
         ))
+    }
+
+    #[tool(
+        name = "source_map",
+        description = "Relocate browser findings to the template that produced them. Takes a source_root directory and findings carrying a CSS selector and/or the element's outerHTML, and returns a source_location (file, line, column, snippet) per mapped finding. Matching is a best-effort literal search — the browser reports the rendered DOM while the repository holds templates, so there is no exact inverse. Supports React JSX, Vue SFC, Angular and vanilla HTML. Findings that stay ambiguous are returned in `unmappable` with a reason instead of a guessed location; always check `confidence` and `matched_on` before editing."
+    )]
+    pub fn source_map(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<SourceMapRequest>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<SourceMapResponse>, ErrorData> {
+        let request = request.0;
+        SourceMapRequest::validate_finding_count(request.findings.len())
+            .map_err(McpFailure::into_error_data)?;
+        let response =
+            crate::tools::source_map::map_findings(&request.source_root, &request.findings)
+                .map_err(McpFailure::into_error_data)?;
+        Ok(rmcp::handler::server::wrapper::Json(response))
     }
 
     #[tool(

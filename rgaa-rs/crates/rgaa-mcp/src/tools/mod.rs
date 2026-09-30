@@ -1,10 +1,12 @@
 pub mod analyze;
 pub mod igt;
 pub mod remediate;
+pub mod source_map;
 
 pub use analyze::*;
 pub use igt::*;
 pub use remediate::*;
+pub use source_map::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {

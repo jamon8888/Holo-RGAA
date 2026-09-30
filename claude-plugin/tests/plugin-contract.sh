@@ -101,37 +101,77 @@ done
 # `rgaa_analyze` / `rgaa_remediate` / `rgaa_igt` — three names no server has
 # ever registered. Both read as correct to anyone not holding server.rs open,
 # so the drift is invisible without comparing the two.
+#
+# Both directions are derived, never hardcoded. A hardcoded phantom list only
+# catches the names already known to be wrong, so the next invented tool name
+# would pass; and a free-text search for a registered name matches incidental
+# prose, so a tool "documented" only by being mentioned in a sentence would
+# pass too. Both sides therefore read the structured lists:
+#
+#   README.md                  | `tool` | ... |   (the tool table)
+#   docs/rgaa-plugin-install.md - `tool` - ...    (the tool bullet list)
 SERVER_RS="$PLUGIN_ROOT/../rgaa-rs/crates/rgaa-mcp/src/server.rs"
+INSTALL_DOC="$PLUGIN_ROOT/../docs/rgaa-plugin-install.md"
+
+# Tool names from a markdown table's first column: | `name` | ... |
+table_tools() {
+  grep -oE '^\| *`[a-z_]+` *\|' "$1" 2>/dev/null | tr -d '|` ' | sort -u
+}
+
+# Tool names from a markdown bullet list: - `name` - description
+bullet_tools() {
+  grep -oE '^- *`[a-z_]+` +-' "$1" 2>/dev/null | sed -E 's/^- *`([a-z_]+)` +-/\1/' | sort -u
+}
+
 if [[ -f "$SERVER_RS" ]]; then
   registered=$(grep -oE 'name = "[a-z_]+"' "$SERVER_RS" | sed 's/name = "//; s/"//' | sort -u)
   if [[ -z "$registered" ]]; then
     echo "❌ TOOL CONTRACT: found no registered tools in server.rs (parser drifted?)"
     FAILURES=$((FAILURES + 1))
   fi
+
+  readme_tools=$(table_tools "$PLUGIN_ROOT/README.md")
+  if [[ -z "$readme_tools" ]]; then
+    echo "❌ TOOL CONTRACT: README.md has no tool table (expected rows like '| \`analyze\` | ... |')"
+    FAILURES=$((FAILURES + 1))
+  fi
+  install_tools=$(bullet_tools "$INSTALL_DOC")
+
+  # Forward: every registered tool must appear in the README tool table.
   undocumented=0
   for tool in $registered; do
-    # Word-boundary match, so `analyze` counts whether the README writes it
-    # bare, as `analyze`, or as `analyze(AnalyzeRequest) -> AnalyzeResponse`.
-    if ! grep -qE "\\b${tool}\\b" "$PLUGIN_ROOT/README.md"; then
-      echo "❌ UNDOCUMENTED TOOL: server registers '$tool' but README.md does not mention it"
+    if ! grep -qx "$tool" <<< "$readme_tools"; then
+      echo "❌ UNDOCUMENTED TOOL: server registers '$tool' but the README tool table does not list it"
       FAILURES=$((FAILURES + 1))
       undocumented=$((undocumented + 1))
     fi
   done
-  if [[ $undocumented -eq 0 ]]; then
-    echo "✅ TOOL CONTRACT: README documents all $(echo "$registered" | wc -w) registered tools"
+  if [[ $undocumented -eq 0 && -n "$registered" && -n "$readme_tools" ]]; then
+    echo "✅ TOOL CONTRACT: README table documents all $(echo "$registered" | wc -w) registered tools"
   fi
 
-  # Phantom names: documented tools the server does not register.
-  for doc in "$PLUGIN_ROOT/README.md" "$PLUGIN_ROOT/../docs/rgaa-plugin-install.md"; do
-    [[ -f "$doc" ]] || continue
-    for phantom in rgaa_analyze rgaa_remediate rgaa_igt rgaa_audit_url; do
-      if grep -q "$phantom" "$doc"; then
-        echo "❌ PHANTOM TOOL: $(basename "$doc") documents '$phantom', which no server registers"
+  # Reverse: every documented name must be a registered tool. Derived from
+  # the same structured lists, so an invented name fails whatever it is
+  # called — not only the three that were wrong when this check was written.
+  phantoms=0
+  check_phantoms() {
+    local label="$1"
+    shift
+    for name in "$@"; do
+      if ! grep -qx "$name" <<< "$registered"; then
+        echo "❌ PHANTOM TOOL: $label documents '$name', which no server registers"
         FAILURES=$((FAILURES + 1))
+        phantoms=$((phantoms + 1))
       fi
     done
-  done
+  }
+  # shellcheck disable=SC2086
+  check_phantoms "README.md" $readme_tools
+  # shellcheck disable=SC2086
+  check_phantoms "$(basename "$INSTALL_DOC")" $install_tools
+  if [[ $phantoms -eq 0 ]]; then
+    echo "✅ TOOL CONTRACT: no phantom tool names in README.md or $(basename "$INSTALL_DOC")"
+  fi
 else
   echo "⚠️  SKIP TOOL CONTRACT: $SERVER_RS not found (plugin checked out standalone)"
 fi

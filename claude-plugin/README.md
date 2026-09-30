@@ -9,7 +9,7 @@ Production-grade accessibility audit workflow for the RGAA (Référentiel Géné
 - **Guided Tests** — Bounded, reproducible interactive tests with PNG evidence and accessibility tree refs.
 - **Remediation** — Framework-aware (React, Next, Vue, Angular) source fixes with approval gating.
 - **Verification** — Objective re-audit with evidence to confirm fixes.
-- **Reports** — JSON (schema "1.0"), Markdown, SARIF 2.1.0, JUnit XML for CI.
+- **Reports** — JSON (schema "1.0"), Markdown, HTML, SARIF 2.1.0, JUnit XML for CI.
 - **Local-First** — Works offline; remote bundle sync optional.
 
 ## Installation
@@ -94,10 +94,39 @@ evidence_dir: .rgaa/evidence
 
 ## MCP Server
 
-The plugin bundles `rgaa-mcp` (stdio transport) exposing three tools:
-- `analyze(AnalyzeRequest) -> AnalyzeResponse`
-- `remediate(RemediationRequest) -> RemediationResponse`
-- `igt(GuidedTestRequest) -> GuidedTestResponse`
+The plugin bundles `rgaa-mcp` (stdio transport) exposing **six** tools. Every
+skill reaches for these first; the `rgaa` CLI is a fallback for when no MCP
+session is available, not the primary path.
+
+| Tool | Signature | Use it for |
+|------|-----------|------------|
+| `analyze` | `AnalyzeRequest -> AnalyzeResponse` | Per-criterion findings for one page, with evidence and justification. |
+| `audit_url` | `AuditUrlInput -> AuditUrlResult` | Whole-site audit through the orchestrator. Returns a **summary only** (`taux_global`, `etat_conformite`, `sampled_page_urls`). |
+| `get_audit_result` | `GetAuditInput -> Option<AuditResultDto>` | Retrieve a previously run audit by `audit_id`. |
+| `list_criteria` | `() -> ListCriteriaResponse` | The 106 RGAA criteria with id, title, classification. |
+| `remediate` | `RemediationRequest -> RemediationResponse` | Approval-gated fix proposals for a batch of issues. |
+| `igt` | `GuidedTestRequest -> GuidedTestResponse` | **Deprecated** — prefer `analyze` with `config.igt_tools: ["keyboard"]`. |
+
+### MCP-first flow
+
+`audit_url` gives the site-level verdict but no per-criterion detail. To get
+both, chain the tools rather than re-running the audit:
+
+1. `list_criteria` — once, to resolve criterion ids and classifications.
+2. `audit_url` — site-level summary plus `sampled_page_urls`.
+3. `analyze` — per page from `sampled_page_urls`, for findings and evidence.
+4. `get_audit_result` — to re-read a completed audit instead of auditing again.
+5. `remediate` — on the findings worth fixing.
+
+Both `Manuel` and `PartiellementAutomatable` criteria surface as the single
+`NeedsReview` status: watch that one status for everything needing a human.
+
+### HTTP transport
+
+`rgaa-mcp-http` serves the same six tools as JSON-RPC over `POST /mcp`, with
+audit progress on `GET /mcp/events` (SSE). Cross-origin access is **denied by
+default** and must be opened explicitly with `RGAA_CORS_ORIGINS`
+(comma-separated origins) or `--cors-origin`.
 
 ## Exit Codes
 

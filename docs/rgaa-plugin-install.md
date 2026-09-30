@@ -71,11 +71,24 @@ rgaa-cli policy --baseline baseline.json --current current.json
 
 ### MCP Server (Claude Code)
 
-The MCP server provides three tools for Claude Code:
+The MCP server provides six tools for Claude Code. These are the names the
+server actually registers — call them exactly as written:
 
-- `rgaa_analyze` - Analyze a page for accessibility issues
-- `rgaa_remediate` - Generate remediation proposals
-- `rgaa_igt` - Run guided tests
+- `analyze` - Per-criterion findings for one page, with evidence and justification
+- `audit_url` - Full site audit through the orchestrator; returns a summary (`taux_global`, `etat_conformite`) plus `sampled_page_urls`
+- `get_audit_result` - Retrieve a previously run audit by `audit_id`
+- `list_criteria` - The 106 RGAA criteria with id, title, and classification
+- `remediate` - Approval-gated remediation proposals
+- `igt` - Guided keyboard test (**deprecated**: use `analyze` with `config.igt_tools: ["keyboard"]`)
+
+`audit_url` returns a summary only. For per-criterion detail, call `analyze`
+on the URLs it reports in `sampled_page_urls`.
+
+#### HTTP transport
+
+`rgaa-mcp-http` exposes the same six tools as JSON-RPC over `POST /mcp`, with
+progress events on `GET /mcp/events` (SSE). Cross-origin requests are denied
+unless `RGAA_CORS_ORIGINS` names the allowed origins.
 
 ### API Server (Remote)
 

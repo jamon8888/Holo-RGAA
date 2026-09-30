@@ -1,8 +1,8 @@
 {
   "total_criteria": 106,
-  "fully_automatable": 41,
+  "fully_automatable": 45,
   "partially_automatable": 45,
-  "not_automatable": 20,
+  "not_automatable": 16,
   "criteria": [
     {
       "criterion_id": "1.1",
@@ -297,7 +297,7 @@
     {
       "criterion_id": "4.9",
       "title": "Pour chaque [média non temporel](#media-non-temporel) ayant une alternative, cette alternative est-elle pertinente ?",
-      "classification": "NotAutomatable",
+      "classification": "FullyAutomatable",
       "automatable_test_count": 1,
       "total_test_count": 1,
       "test_keys": [
@@ -391,7 +391,7 @@
     {
       "criterion_id": "5.5",
       "title": "Pour chaque [tableau de données ayant un titre](#tableau-de-donnees-ayant-un-titre), celui-ci est-il pertinent ?",
-      "classification": "NotAutomatable",
+      "classification": "FullyAutomatable",
       "automatable_test_count": 1,
       "total_test_count": 1,
       "test_keys": [
@@ -678,7 +678,7 @@
     {
       "criterion_id": "10.2",
       "title": "Dans chaque page web, le [contenu visible](#contenu-visible) porteur d’information reste-t-il présent lorsque les [feuilles de styles](#feuille-de-style) sont désactivées ?",
-      "classification": "NotAutomatable",
+      "classification": "FullyAutomatable",
       "automatable_test_count": 1,
       "total_test_count": 1,
       "test_keys": [
@@ -810,7 +810,7 @@
     {
       "criterion_id": "10.14",
       "title": "Dans chaque page web, les contenus additionnels apparaissant via les styles CSS uniquement peuvent-ils être rendus visibles au clavier et par tout dispositif de pointage ?",
-      "classification": "NotAutomatable",
+      "classification": "FullyAutomatable",
       "automatable_test_count": 8,
       "total_test_count": 8,
       "test_keys": [

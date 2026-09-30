@@ -159,6 +159,7 @@ mod tests {
             source: source.into(),
             citations: vec![],
             considered_sources: vec![],
+            tests: vec![],
         }
     }
 

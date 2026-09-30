@@ -793,6 +793,7 @@ async fn audit_one(
                     source: "manual".into(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 });
         } else if !all_results.contains_key(criterion.id) {
             let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
@@ -825,6 +826,7 @@ async fn audit_one(
                     source,
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 });
         }
     }

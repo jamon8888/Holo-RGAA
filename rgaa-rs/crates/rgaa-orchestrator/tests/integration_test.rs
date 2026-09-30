@@ -22,6 +22,7 @@ fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> Criteri
         source: "test".to_string(),
         citations: vec![],
         considered_sources: vec![],
+        tests: vec![],
     }
 }
 

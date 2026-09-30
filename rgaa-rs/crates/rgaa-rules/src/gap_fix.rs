@@ -416,6 +416,7 @@ impl GapFixRules {
                     source: "gap-fix".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 },
             );
         }

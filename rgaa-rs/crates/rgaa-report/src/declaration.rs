@@ -122,14 +122,23 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
     let _ = writeln!(out, "<h2>2. État de conformité</h2>");
     let _ = writeln!(
         out,
-        "<p><strong>{}</strong> est <strong>{}</strong> avec le Référentiel Général d'Amélioration de l'Accessibilité (RGAA), version 4.1.2. Le taux de conformité s'élève à <strong>{:.1} %</strong> ({} critères conformes, {} non conformes, {} non applicables, {} non testés).</p>",
+        // #203 recommendation 4: the rate never appears without the coverage it rests on.
+        // This sentence used to publish `taux_global` alone, which is exactly how a rate
+        // of 81.08 % went out over an audit that had never tested 48 criteria.
+        "<p><strong>{}</strong> est <strong>{}</strong> avec le Référentiel Général d'Amélioration de l'Accessibilité (RGAA), version 4.1.2. Le taux de conformité s'élève à <strong>{:.1} %</strong>, établi sur <strong>{:.1} %</strong> de la surface testable ({} critères conformes, {} non conformes, {} non applicables, {} non testés).{}</p>",
         echappe(input.service),
         etat_fr(&input.metrics.etat_conformite),
         input.metrics.taux_global,
+        input.metrics.coverage_percent,
         input.metrics.conformes,
         input.metrics.non_conformes,
         input.metrics.non_applicables,
-        input.metrics.non_testes
+        input.metrics.non_testes,
+        if input.metrics.rate_is_a_conformance_claim() {
+            ""
+        } else {
+            " <strong>Audit incomplet : ce taux est une mesure, pas une déclaration de conformité.</strong>"
+        }
     );
 
     let _ = writeln!(
@@ -275,6 +284,20 @@ mod tests {
         }
     }
 
+    /// A rendered declaration built from the same fixtures the other tests use.
+    fn render_for_test() -> String {
+        let metrics = metrics_80();
+        let ncs: Vec<NcEntry> = Vec::new();
+        let contact = Contact {
+            canal: "email".into(),
+            email: Some("aide@example.test".into()),
+            telephone: None,
+            formulaire: None,
+            delai_reponse: None,
+        };
+        render_declaration_fr(&input(&metrics, &ncs, &contact)).expect("rendu")
+    }
+
     fn metrics_80() -> SiteMetrics {
         crate::compute_metrics(
             &[
@@ -289,6 +312,7 @@ mod tests {
                     source: "t".into(),
                     citations: Vec::new(),
                     considered_sources: vec![],
+                    tests: vec![],
                 },
                 rgaa_core::CriterionResult {
                     criterion_id: "1.2".into(),
@@ -301,6 +325,7 @@ mod tests {
                     source: "t".into(),
                     citations: Vec::new(),
                     considered_sources: vec![],
+                    tests: vec![],
                 },
             ],
             &RGAA_41,
@@ -356,5 +381,56 @@ mod tests {
         };
         let ncs: [NcEntry; 0] = [];
         assert!(render_declaration_fr(&input(&metrics, &ncs, &contact)).is_err());
+    }
+
+    /// #203 recommendation 4, at the surface that matters: the published declaration is
+    /// the document a client is handed, and it used to state the rate with no coverage
+    /// beside it. Sourcery flagged on #209 that the new helpers were never wired in.
+    #[test]
+    fn the_declaration_never_publishes_a_rate_without_its_coverage() {
+        let html = render_for_test();
+        assert!(
+            html.contains("surface testable"),
+            "the coverage must appear beside the rate: {html}"
+        );
+        let rate_pos = html.find("taux de conformité").expect("the rate is stated");
+        let coverage_pos = html
+            .find("surface testable")
+            .expect("the coverage is stated");
+        assert!(
+            coverage_pos > rate_pos,
+            "the coverage must qualify the rate in the same sentence"
+        );
+    }
+
+    /// An incomplete audit must say so in the document, not only in the status word —
+    /// and a complete one must not carry the caveat.
+    #[test]
+    fn only_an_incomplete_audit_is_labelled_in_the_declaration() {
+        let complete = render_for_test();
+        assert!(
+            !complete.contains("Audit incomplet"),
+            "a complete audit must not be labelled incomplete: {complete}"
+        );
+
+        let mut metrics = metrics_80();
+        metrics.non_testes = 7;
+        let ncs: Vec<NcEntry> = Vec::new();
+        let contact = Contact {
+            canal: "email".into(),
+            email: Some("aide@example.test".into()),
+            telephone: None,
+            formulaire: None,
+            delai_reponse: None,
+        };
+        let incomplete = render_declaration_fr(&input(&metrics, &ncs, &contact)).expect("rendu");
+        assert!(
+            incomplete.contains("Audit incomplet"),
+            "7 criteria nobody closed must not read as a conformance declaration: {incomplete}"
+        );
+        assert!(
+            incomplete.contains("mesure, pas une déclaration de conformité"),
+            "the caveat must say what the number is: {incomplete}"
+        );
     }
 }

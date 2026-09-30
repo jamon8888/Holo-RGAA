@@ -287,6 +287,7 @@ impl RgaaAgent {
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
                 considered_sources: vec![],
+                tests: vec![],
             };
         }
 
@@ -315,6 +316,7 @@ impl RgaaAgent {
                     source: "agent".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 }
             }
             Err(e) => {
@@ -337,6 +339,7 @@ impl RgaaAgent {
                     source: "agent-error".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 }
             }
         }
@@ -501,6 +504,7 @@ impl RgaaAgent {
                     source: "agent-batch".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 },
             );
         }
@@ -604,6 +608,7 @@ impl RgaaAgent {
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
                 considered_sources: vec![],
+                tests: vec![],
             };
         }
 
@@ -632,6 +637,7 @@ impl RgaaAgent {
                     source: "agent".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 }
             }
             Err(e) => {
@@ -654,6 +660,7 @@ impl RgaaAgent {
                     source: "agent-error".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
+                    tests: vec![],
                 }
             }
         }

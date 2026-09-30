@@ -274,6 +274,7 @@ mod tests {
             source: "agent".into(),
             citations: vec![],
             considered_sources: vec![],
+            tests: vec![],
         }
     }
 

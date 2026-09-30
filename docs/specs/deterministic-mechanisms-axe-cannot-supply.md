@@ -15,8 +15,10 @@ one judging completion, but only on the candidates detection leaves standing. Ei
 the audit has no mechanism for them today, so they reach the report as `NeedsReview` or
 `NotTested` on every page.
 
-Nine such mechanisms are worth building. They share one justification: cheap, no
-completion, and each closes a gap a client can name.
+Nine such mechanisms are worth building. Six need no completion at all. The other three
+— mechanisms 7, 8 and 9 — make **candidate detection** deterministic and leave a judgement
+only for the candidates that survive it, which removes completions rather than adding
+them. All nine are cheap, and each closes a gap a client can name.
 
 ## The rule every mechanism obeys
 

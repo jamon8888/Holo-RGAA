@@ -113,12 +113,21 @@ pub fn build_app(state: AppState) -> Router {
         .route("/health", get(routes::health))
         .route("/criteria", get(routes::list_criteria));
 
+    // Path captures are `:id`, not `{id}`. This crate is on axum 0.7, where
+    // braces are a *literal* path segment — the brace syntax only became
+    // captures in 0.8. Every route here used braces and so matched nothing:
+    // `GET /v1/audit-bundles/<uuid>` and `GET /audit/<id>` always 404'd.
+    //
+    // It survived because it reads correctly and because the only test
+    // touching it asserted that an unknown id returns 404 — which passed for
+    // the wrong reason, since every id returned 404. Do not "modernise" these
+    // back to braces without bumping axum first.
     let protected_routes = Router::new()
         .route("/v1/audit-bundles", post(routes::create_audit_bundle))
-        .route("/v1/audit-bundles/{id}", get(routes::get_audit_bundle))
+        .route("/v1/audit-bundles/:id", get(routes::get_audit_bundle))
         .route("/v1/audit-bundles", get(routes::list_audit_bundles))
         .route(
-            "/v1/audit-bundles/{id}",
+            "/v1/audit-bundles/:id",
             axum::routing::delete(routes::delete_audit_bundle),
         )
         .route("/v1/findings", get(routes::list_findings))
@@ -134,7 +143,7 @@ pub fn build_app(state: AppState) -> Router {
     // static lookup.
     let legacy_routes = Router::new()
         .route("/audit", post(routes::run_audit))
-        .route("/audit/{id}", get(routes::get_audit));
+        .route("/audit/:id", get(routes::get_audit));
     let legacy_routes = apply_resilience(legacy_routes, max_concurrent_audits(), request_timeout());
 
     // Same Bearer-key gate as `/v1/audit-bundles`: a batch fans out up to

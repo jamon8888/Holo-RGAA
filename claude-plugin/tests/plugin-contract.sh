@@ -163,6 +163,10 @@ count_words() {
     awk '{print tolower($1)}' | sort -u
 }
 
+# Normalise a count token to a number, so "nine" and "9" compare equal.
+# These docs spell the count out in prose far more often than they write a
+# digit, so a numeric-only comparison would skip almost every claim it is
+# meant to check.
 word_to_num() {
   case "$1" in
     one) echo 1 ;; two) echo 2 ;; three) echo 3 ;; four) echo 4 ;;
@@ -202,15 +206,17 @@ if [[ -f "$SERVER_RS" ]]; then
     FAILURES=$((FAILURES + 1))
   }
 
-  # Forward: every registered tool must appear in EVERY doc that enumerates
-  # the tool surface — not only the README.
-  #
-  # Checking the README alone is how `lint_static` and `source_map` reached
-  # master documented in one place and absent from two others: the install
-  # guide listed seven tools and the integration guide six, and both passed.
-  # A reader follows whichever file they opened, so a tool missing from one
-  # of them is missing, full stop.
   undocumented=0
+
+  # Report every registered tool absent from one doc's list ($2), named by
+  # $label.
+  #
+  # Called for EVERY doc that enumerates the tool surface, not just the
+  # README. Checking the README alone is how `lint_static` and `source_map`
+  # reached master documented in one place and absent from two others: the
+  # install guide listed seven tools and the integration guide six, and both
+  # passed. A reader follows whichever file they opened, so a tool missing
+  # from one of them is missing, full stop.
   check_documented() {
     local label="$1" documented="$2"
     [[ -z $documented ]] && return 0

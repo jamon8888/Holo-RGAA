@@ -40,14 +40,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
-      # The published tool types are DERIVED from the server, not written
-      # alongside it. A stale type is worse than a stale doc because it
-      # compiles: this repo already shipped plugin docs describing three
-      # tools for a six-tool server, three of them under names no server has
-      # ever registered (#161). Regenerating here and failing on any diff is
-      # what keeps the types a consequence of the server rather than a
-      # promise about it.
-      - name: Regenerate tool schemas and types
+      # What must never drift is the TOOL NAME SET: a published type naming a
+      # tool the server does not register, or missing one it does, is a lie
+      # that compiles at the consumer. That is the failure this repo already
+      # shipped in its docs (#161), and it is checked strictly below.
+      #
+      # The argument-type *detail* is not checked for byte-staleness, and
+      # deliberately so. It used to be, and the cost was serialisation: every
+      # PR adding a tool had to regenerate, and merging one made every other
+      # open PR fail on an artifact neither of them had touched. The strong
+      # guarantee now lives in `release.yml`, which regenerates from the
+      # binary it is publishing — so consumers get types matching the
+      # released server by construction, not by someone remembering.
+      - name: Generate the tool types
         env:
           RUSTC_WRAPPER: sccache
           CARGO_BUILD_JOBS: "2"
@@ -57,19 +62,30 @@ jobs:
           (cd rgaa-rs && cargo run -p rgaa-mcp --bin dump-tool-schemas) > types/schemas.json
           kill "$heartbeat" 2>/dev/null || true
           python3 scripts/generate-ts-types.py
-      - name: Fail if the committed types are stale
+
+      - name: The published tool names must match the registered ones
         run: |
-          # --porcelain, not `git diff`: the generated tools.d.ts may be
-          # absent rather than stale, and `git diff` says nothing about an
-          # untracked file.
-          if [ -n "$(git status --porcelain -- types/)" ]; then
-            git status --porcelain -- types/
-            git diff -- types/ || true
-            echo "::error::types/ is out of date. Run:"
-            echo "::error::  (cd rgaa-rs \&\& cargo run -p rgaa-mcp --bin dump-tool-schemas) > types/schemas.json"
-            echo "::error::  python3 scripts/generate-ts-types.py"
+          # `|| true` on both: GitHub runs steps with `-eo pipefail`, so a
+          # grep that matches nothing kills the step before the diagnostic
+          # below can explain why. An empty list is a real condition here
+          # (the generator produced nothing, or the attribute shape changed)
+          # and it deserves the message, not a bare exit 1.
+          registered=$(grep -oE 'name = "[a-z_]+"' \
+              rgaa-rs/crates/rgaa-mcp/src/server.rs \
+            | sed 's/name = "//; s/"//' | sort -u || true)
+          declared=$(grep -oE '^  \| "[a-z_]+"' types/src/tools.d.ts \
+            | sed 's/^  | "//; s/"//' | sort -u || true)
+          if [ -z "$registered" ] || [ -z "$declared" ]; then
+            echo "::error::could not read one of the two tool lists (parser drift?)"
             exit 1
           fi
+          if [ "$registered" != "$declared" ]; then
+            echo "::error::published tool names do not match the registered ones"
+            diff <(echo "$registered") <(echo "$declared") || true
+            exit 1
+          fi
+          echo "tool names agree ($(echo "$registered" | wc -w) tools)"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

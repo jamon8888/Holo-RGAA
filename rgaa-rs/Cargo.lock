@@ -6797,6 +6797,7 @@ name = "rgaa-mcp-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "clap",
  "futures",
  "reqwest 0.12.28",
  "rgaa-mcp",
@@ -6950,6 +6951,7 @@ dependencies = [
  "rgaa-agent",
  "rgaa-core",
  "rgaa-holo",
+ "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
  "rgaa-spider",

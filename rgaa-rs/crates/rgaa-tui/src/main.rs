@@ -35,6 +35,8 @@ enum TopCommand {
     },
     /// Run the install wizard
     Install,
+    /// Serve the MCP tool server (HTTP + SSE, or `--stdio`)
+    McpServer(rgaa_mcp_http::McpServerArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -102,6 +104,15 @@ async fn main() {
         }
         Some(TopCommand::Install) => {
             if let Err(e) = rgaa_tui::commands::install().await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Some(TopCommand::McpServer(args)) => {
+            // No `std::process::exit` on the success path: the server only
+            // returns here once its graceful shutdown has drained, and
+            // falling off the end of `main` is what makes SIGTERM exit 0.
+            if let Err(e) = rgaa_mcp_http::run(args).await {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }

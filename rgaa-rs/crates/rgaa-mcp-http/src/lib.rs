@@ -12,6 +12,7 @@ use rmcp::model::{CallToolRequestParams, ErrorCode, Tool};
 use rmcp::ErrorData;
 use serde_json::{json, Value};
 use std::convert::Infallible;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
@@ -23,6 +24,9 @@ pub use rgaa_mcp::ToolServer;
 pub struct AppState {
     server: Arc<ToolServer>,
     events: tokio::sync::broadcast::Sender<ProgressEvent>,
+    /// Flipped to `true` once the process has decided to stop. Only the SSE
+    /// handler reads it; see [`AppState::begin_shutdown`].
+    shutdown: tokio::sync::watch::Sender<bool>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -34,26 +38,63 @@ pub struct ProgressEvent {
 impl AppState {
     pub fn new(server: ToolServer) -> Self {
         let (events, _) = tokio::sync::broadcast::channel(64);
+        let (shutdown, _) = tokio::sync::watch::channel(false);
         Self {
             server: Arc::new(server),
             events,
+            shutdown,
         }
+    }
+
+    /// Ends every open `/mcp/events` stream.
+    ///
+    /// Must be called before the graceful shutdown starts waiting. Axum's
+    /// graceful shutdown drains *connections*, and an SSE response never
+    /// completes on its own: a single attached browser would hold the
+    /// process open past SIGTERM until something killed it, which is exactly
+    /// the hang a drain is supposed to avoid.
+    pub fn begin_shutdown(&self) {
+        // `send_replace`, not `send`: `watch::Sender::send` returns `Err`
+        // when there is no live receiver and — this is the part that bites —
+        // leaves the stored value untouched. `AppState::new` drops the
+        // initial receiver, so with no SSE client attached the flag would
+        // stay `false`, and a request already accepted that subscribes
+        // *after* this call would never see the shutdown. That stream then
+        // holds the drain open: exactly the hang this whole mechanism
+        // exists to prevent, in a narrower window.
+        let _ = self.shutdown.send_replace(true);
     }
 }
 
-/// Build the router for `/mcp` (JSON-RPC) and `/mcp/events` (SSE).
+/// Build the router with the CORS allowlist taken from the environment.
 pub fn app(state: AppState) -> Router {
+    app_with_cors(state, std::env::var("RGAA_CORS_ORIGINS").ok().as_deref())
+}
+
+/// Build the router for `/health`, `/mcp` (JSON-RPC) and `/mcp/events` (SSE)
+/// with an explicit CORS allowlist, so a caller that got the origins from a
+/// command-line flag does not have to write them back into the environment
+/// to be heard.
+pub fn app_with_cors(state: AppState, cors_origins: Option<&str>) -> Router {
     Router::new()
+        .route("/health", get(health))
         .route("/mcp", post(jsonrpc))
         .route("/mcp/events", get(sse_events))
-        .layer(cors_from_env())
+        .layer(cors_from_origins(cors_origins))
         .with_state(state)
 }
 
-/// CORS for the MCP endpoint, driven by `RGAA_CORS_ORIGINS`
-/// (comma-separated origins).
+/// Liveness probe. Supervisors and the plugin front-end poll this to decide
+/// the server is up, so it must answer without touching the tool services:
+/// a health check that can hang behind an audit is not a health check.
+async fn health() -> Json<Value> {
+    Json(json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}))
+}
+
+/// CORS for the MCP endpoint, from a comma-separated allowlist (the
+/// `--cors-origin` flag, defaulting to `RGAA_CORS_ORIGINS`).
 ///
-/// Fails closed: with the variable unset, empty, or holding nothing that
+/// Fails closed: with the allowlist absent, empty, or holding nothing that
 /// parses as an origin, no cross-origin request is allowed. The previous
 /// default allowed any origin, which is not safe for this endpoint even bound
 /// to loopback — a page open in the user's browser can POST to
@@ -64,12 +105,6 @@ pub fn app(state: AppState) -> Router {
 ///
 /// Note this layer is not authentication: anything that can reach the port
 /// directly, rather than through a browser, is unaffected by CORS.
-pub fn cors_from_env() -> CorsLayer {
-    cors_from_origins(std::env::var("RGAA_CORS_ORIGINS").ok().as_deref())
-}
-
-/// The policy behind [`cors_from_env`], taking the raw allowlist directly so
-/// it can be exercised without mutating the process environment.
 pub fn cors_from_origins(raw: Option<&str>) -> CorsLayer {
     let base = CorsLayer::new()
         .allow_methods([
@@ -94,14 +129,14 @@ pub fn cors_from_origins(raw: Option<&str>) -> CorsLayer {
             // policy to "any origin" instead of narrowing it.
             Err(_) => tracing::warn!(
                 origin = candidate,
-                "ignoring unparseable entry in RGAA_CORS_ORIGINS"
+                "ignoring unparseable entry in the CORS allowlist"
             ),
         }
     }
 
     if origins.is_empty() {
         tracing::warn!(
-            "RGAA_CORS_ORIGINS contained no usable origin; denying all cross-origin requests"
+            "CORS allowlist contained no usable origin; denying all cross-origin requests"
         );
         return base;
     }
@@ -283,13 +318,25 @@ async fn sse_events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.events.subscribe();
-    let stream = futures::stream::unfold(rx, |mut rx| async move {
+    let stop = state.shutdown.subscribe();
+    let stream = futures::stream::unfold((rx, stop), |(mut rx, mut stop)| async move {
+        // Checked before awaiting as well as inside the select: a client that
+        // connects after `begin_shutdown` would otherwise never observe the
+        // `changed()` edge and would keep the connection — and the drain —
+        // open.
+        if *stop.borrow_and_update() {
+            return None;
+        }
         loop {
-            match rx.recv().await {
+            let received = tokio::select! {
+                _ = stop.changed() => return None,
+                received = rx.recv() => received,
+            };
+            match received {
                 Ok(ev) => {
                     let data = serde_json::to_string(&ev).unwrap_or_else(|_| "{}".into());
                     let event = Event::default().event(ev.event).data(data);
-                    return Some((Ok(event), rx));
+                    return Some((Ok(event), (rx, stop)));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
@@ -301,6 +348,194 @@ async fn sse_events(
 
 // Re-export for callers that need the tool server type.
 pub use rgaa_mcp::ToolServer as _ToolServerReexportGuard;
+
+/// Listen, CORS and transport flags for the MCP server.
+///
+/// Lives here rather than in either binary because both `rgaa mcp-server`
+/// and the standalone `rgaa-mcp-http` start the same server: two hand-rolled
+/// copies of the flags is how `--cors-origin` ends up meaning two different
+/// things depending on which entry point you used.
+#[derive(Debug, Clone, clap::Args)]
+pub struct McpServerArgs {
+    /// TCP port to listen on.
+    #[arg(long, env = "PORT", default_value_t = 3000)]
+    pub port: u16,
+    /// Address to bind. Defaults to loopback; binding elsewhere exposes the
+    /// tool server to the network, which has no authentication of its own.
+    #[arg(long, env = "HOST", default_value = "127.0.0.1")]
+    pub host: String,
+    /// Comma-separated browser origins allowed to call the server.
+    ///
+    /// Unset means no cross-origin request is allowed. That is deliberate:
+    /// see [`cors_from_origins`].
+    #[arg(long, env = "RGAA_CORS_ORIGINS")]
+    pub cors_origin: Option<String>,
+    /// Serve MCP over stdin/stdout instead of HTTP.
+    ///
+    /// Kept so the MCP client configurations written by `install.sh` before
+    /// the HTTP transport existed keep working unchanged.
+    #[arg(long)]
+    pub stdio: bool,
+}
+
+/// Why the server stopped early. The variants are separate because the
+/// operator's next move differs: a bind failure is a port clash, an HTTP
+/// failure is not.
+#[derive(Debug, thiserror::Error)]
+pub enum ServeError {
+    #[error("cannot bind {addr}: {source}")]
+    Bind {
+        addr: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("HTTP server failed: {0}")]
+    Http(#[source] std::io::Error),
+    #[error("stdio transport failed: {0}")]
+    Stdio(String),
+}
+
+/// The tool server the binaries expose, wired to the real Obscura bridge.
+///
+/// The bridge is lazy so that starting the server does not require a browser
+/// substrate to be installed: tools that need one fail when called, rather
+/// than the process refusing to start and taking `/health` down with it.
+pub fn default_tool_server() -> ToolServer {
+    let bridge = Arc::new(rgaa_mcp::LazyObscuraBridge::new(
+        rgaa_obscura::ObscuraBridge::from_env(),
+    ));
+    ToolServer::new(
+        Arc::new(rgaa_mcp::ObscuraAnalyzeService::new(Arc::clone(&bridge))),
+        Arc::new(rgaa_mcp::RemediationServiceImpl::default()),
+        Arc::new(rgaa_mcp::ObscuraGuidedService::new(bridge)),
+        Arc::new(rgaa_mcp::OrchestrationService::new()),
+        Arc::new(rgaa_mcp::NoOpStorageService),
+    )
+}
+
+/// Run the MCP server as configured by `args`, returning once it has shut
+/// down cleanly.
+pub async fn run(args: McpServerArgs) -> Result<(), ServeError> {
+    if args.stdio {
+        return run_stdio().await;
+    }
+
+    let state = AppState::new(default_tool_server());
+    let app = app_with_cors(state.clone(), args.cors_origin.as_deref());
+    let addr = format!("{}:{}", args.host, args.port);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|source| ServeError::Bind {
+            addr: addr.clone(),
+            source,
+        })?;
+    tracing::info!("rgaa mcp-server listening on http://{addr}");
+
+    serve_until(listener, app, async move {
+        terminate_signal().await;
+        tracing::info!("termination signal received, draining in-flight requests");
+        state.begin_shutdown();
+    })
+    .await
+    .map_err(ServeError::Http)
+}
+
+async fn run_stdio() -> Result<(), ServeError> {
+    use rmcp::ServiceExt;
+    let service = default_tool_server()
+        .serve(rmcp::transport::io::stdio())
+        .await
+        .map_err(|e| ServeError::Stdio(e.to_string()))?;
+    service
+        .waiting()
+        .await
+        .map_err(|e| ServeError::Stdio(e.to_string()))?;
+    Ok(())
+}
+
+/// Serve `app` until `shutdown` resolves, then wait for the requests already
+/// being handled to produce their responses.
+///
+/// Split out from [`run`] so the drain can be driven by something other than
+/// a real signal in tests.
+pub async fn serve_until<F>(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown: F,
+) -> std::io::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
+}
+
+/// Resolves on SIGTERM or SIGINT.
+///
+/// SIGTERM is the one that matters: it is what a container runtime, systemd
+/// and the plugin supervisor send, and the default disposition kills the
+/// process outright, cutting whatever response was mid-flight.
+pub async fn terminate_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, "cannot listen for SIGTERM; falling back to Ctrl-C");
+                let _ = tokio::signal::ctrl_c().await;
+                return;
+            }
+        };
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    /// A stream that subscribes *after* `begin_shutdown` must still see it.
+    ///
+    /// This is the case `watch::Sender::send` gets wrong: with no live
+    /// receiver it returns `Err` and leaves the stored value `false`, so a
+    /// request accepted just before shutdown — then reaching the SSE handler
+    /// and subscribing — would never be told to stop, and would hold the
+    /// drain open indefinitely.
+    ///
+    /// `AppState::new` drops its initial receiver, so "no live receiver" is
+    /// the *normal* state of a server with nobody streaming.
+    #[tokio::test]
+    async fn a_stream_subscribing_after_shutdown_still_sees_it() {
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        let _ = shutdown.send_replace(true);
+        assert!(
+            *shutdown.subscribe().borrow(),
+            "a late subscriber must observe the shutdown flag"
+        );
+    }
+
+    /// Pins the tokio behaviour the fix works around, so the reason for
+    /// `send_replace` survives someone "simplifying" it back to `send`.
+    #[tokio::test]
+    async fn plain_send_loses_the_flag_when_nobody_is_listening() {
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        assert!(
+            shutdown.send(true).is_err(),
+            "send must report the absence of receivers"
+        );
+        assert!(
+            !*shutdown.subscribe().borrow(),
+            "and must leave the stored value untouched — which is the bug"
+        );
+    }
+}
 
 #[cfg(test)]
 mod cors_tests {

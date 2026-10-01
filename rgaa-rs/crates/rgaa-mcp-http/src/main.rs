@@ -1,68 +1,21 @@
-use rgaa_mcp::{
-    LazyObscuraBridge, NoOpStorageService, ObscuraAnalyzeService, ObscuraGuidedService,
-    OrchestrationService, RemediationServiceImpl, ToolServer,
-};
-use std::sync::Arc;
+use clap::Parser;
+use rgaa_mcp_http::McpServerArgs;
+
+/// Standalone entry point for the same server `rgaa mcp-server` starts.
+#[derive(Debug, Parser)]
+#[command(name = "rgaa-mcp-http", version, about = "MCP HTTP/SSE transport")]
+struct Cli {
+    #[command(flatten)]
+    args: McpServerArgs,
+}
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("rgaa-mcp-http: MCP HTTP/SSE transport");
-        println!("Usage: rgaa-mcp-http [--port N] [--host ADDR] [--cors-origin ORIGIN]");
-        println!("Env: PORT, HOST, RGAA_CORS_ORIGINS (comma-separated)");
-        return Ok(());
-    }
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("rgaa-mcp-http {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
-    }
+async fn main() -> Result<(), rgaa_mcp_http::ServeError> {
+    let cli = Cli::parse();
 
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
 
-    let mut port: u16 = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
-    let mut host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".into());
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--port" => {
-                port = args.get(i + 1).and_then(|p| p.parse().ok()).unwrap_or(port);
-                i += 2;
-            }
-            "--host" => {
-                host = args.get(i + 1).cloned().unwrap_or(host);
-                i += 2;
-            }
-            "--cors-origin" => {
-                if let Some(origin) = args.get(i + 1) {
-                    std::env::set_var("RGAA_CORS_ORIGINS", origin);
-                }
-                i += 2;
-            }
-            _ => i += 1,
-        }
-    }
-
-    let bridge = Arc::new(LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::from_env(),
-    ));
-    let server = ToolServer::new(
-        Arc::new(ObscuraAnalyzeService::new(Arc::clone(&bridge))),
-        Arc::new(RemediationServiceImpl::default()),
-        Arc::new(ObscuraGuidedService::new(bridge)),
-        Arc::new(OrchestrationService::new()),
-        Arc::new(NoOpStorageService),
-    );
-    let state = rgaa_mcp_http::AppState::new(server);
-    let app = rgaa_mcp_http::app(state);
-    let addr = format!("{host}:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("rgaa-mcp-http listening on http://{addr}");
-    axum::serve(listener, app).await?;
-    Ok(())
+    rgaa_mcp_http::run(cli.args).await
 }

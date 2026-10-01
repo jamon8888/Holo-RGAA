@@ -17,6 +17,7 @@ pub mod guard;
 pub mod packs;
 pub mod pdf;
 pub mod report;
+pub mod sources;
 pub mod ue;
 
 pub use declaration::{render_declaration_fr, DeclarationFrInput, NcEntry};
@@ -29,6 +30,7 @@ pub use guard::{
 };
 pub use packs::{mention_fr, pack, PackPays, Pays};
 pub use report::render;
+pub use sources::{format_citation, sourced_criteria, sources_line};
 pub use ue::{render_declaration_ue, DeclarationUeInput};
 
 /// Errors from report generation.

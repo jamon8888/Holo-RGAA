@@ -162,6 +162,7 @@ download_and_install() {
     # Make binaries executable
     chmod +x "${INSTALL_DIR}/rgaa" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/rgaa-mcp" 2>/dev/null || true
+    chmod +x "${INSTALL_DIR}/rgaa-mcp-http" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/rgaa-cli" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/rgaa-api" 2>/dev/null || true
     chmod +x "${INSTALL_DIR}/obscura" 2>/dev/null || true
@@ -584,6 +585,7 @@ uninstall() {
 
     rm -f "${INSTALL_DIR}/rgaa" && ok "Removed rgaa (TUI)"
     rm -f "${INSTALL_DIR}/rgaa-mcp" && ok "Removed rgaa-mcp"
+    rm -f "${INSTALL_DIR}/rgaa-mcp-http" && ok "Removed rgaa-mcp-http"
     rm -f "${INSTALL_DIR}/rgaa-cli" && ok "Removed rgaa-cli"
     rm -f "${INSTALL_DIR}/rgaa-api" && ok "Removed rgaa-api"
     rm -f "${INSTALL_DIR}/obscura" && ok "Removed obscura"

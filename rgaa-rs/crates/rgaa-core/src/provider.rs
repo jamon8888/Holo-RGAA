@@ -12,6 +12,7 @@
 //! unconfigured environment fails closed with a message naming the missing
 //! variable.
 
+use crate::completion::{CompletionParams, LlmProvenance, ResponseFormat};
 use crate::error::RgaaError;
 
 /// One OpenAI-compatible provider preset.
@@ -179,7 +180,7 @@ fn config_error(message: impl Into<String>) -> RgaaError {
 /// Build with [`Self::from_env`] (the whole process environment) or
 /// [`Self::from_env_with`] (an explicit lookup, used by tests and by the
 /// fallback route in `rgaa-holo`).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub struct LlmSettings {
     /// Preset this was resolved from; `name` is recorded with verdicts.
     pub provider: &'static Provider,
@@ -195,6 +196,10 @@ pub struct LlmSettings {
     pub model_reasoning: String,
     /// Per-request timeout for this route.
     pub timeout: std::time::Duration,
+    /// Completion parameters every path on this route sends. Resolved here
+    /// so the raw transport and the `rig` agent cannot drift apart — see
+    /// [`CompletionParams`].
+    pub params: CompletionParams,
 }
 
 impl std::fmt::Debug for LlmSettings {
@@ -214,6 +219,7 @@ impl std::fmt::Debug for LlmSettings {
             .field("model_tactical", &self.model_tactical)
             .field("model_reasoning", &self.model_reasoning)
             .field("timeout", &self.timeout)
+            .field("params", &self.params)
             .finish()
     }
 }
@@ -230,6 +236,17 @@ impl LlmSettings {
     ///   `HOLO3_API_KEY`): required unless the provider is local.
     /// - `RGAA_LLM_BASE_URL` (optional, legacy `HOLO3_BASE_URL`): overrides
     ///   the preset; required when the provider is `custom`.
+    /// - `RGAA_LLM_TIMEOUT_SECS` (optional): per-request timeout; defaults to
+    ///   30s remote / 600s local.
+    /// - `RGAA_LLM_TEMPERATURE` (optional, default
+    ///   [`DEFAULT_TEMPERATURE`](crate::completion::DEFAULT_TEMPERATURE)).
+    /// - `RGAA_LLM_MAX_TOKENS` (optional, default
+    ///   [`DEFAULT_MAX_TOKENS`](crate::completion::DEFAULT_MAX_TOKENS)).
+    /// - `RGAA_LLM_ENABLE_THINKING` (optional, `true` / `false` / `auto`;
+    ///   `auto` switches thinking off on a local runtime and says nothing to
+    ///   a hosted API).
+    /// - `RGAA_LLM_RESPONSE_FORMAT` (optional, `none` / `json_object` /
+    ///   `json_schema`; default `none`).
     ///
     /// # Errors
     /// Returns [`RgaaError::Llm`] naming the offending variable when the
@@ -341,6 +358,54 @@ impl LlmSettings {
             )));
         }
 
+        // Completion parameters: one resolution, read by every path.
+        let temperature = match get(&key("TEMPERATURE")) {
+            Some(raw) => raw
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| config_error(format!("{} is not a number", key("TEMPERATURE"))))?,
+            None => crate::completion::DEFAULT_TEMPERATURE,
+        };
+        let max_tokens = match get(&key("MAX_TOKENS")) {
+            Some(raw) => {
+                let n = raw.trim().parse::<u32>().map_err(|_| {
+                    config_error(format!("{} is not a whole number", key("MAX_TOKENS")))
+                })?;
+                if n == 0 {
+                    return Err(config_error(format!(
+                        "{} must be greater than 0",
+                        key("MAX_TOKENS")
+                    )));
+                }
+                n
+            }
+            None => crate::completion::DEFAULT_MAX_TOKENS,
+        };
+        // `auto` (and unset) means: switch thinking off on a local runtime,
+        // where reasoning models are served and their thinking tokens ate the
+        // completion budget, and say nothing to a hosted API, which would
+        // reject the unknown body key outright.
+        let thinking_var = key("ENABLE_THINKING");
+        let enable_thinking = match get(&thinking_var).as_deref().map(str::trim) {
+            None | Some("auto") => provider.local.then_some(false),
+            Some("true" | "1" | "yes" | "on") => Some(true),
+            Some("false" | "0" | "no" | "off") => Some(false),
+            Some(other) => {
+                return Err(config_error(format!(
+                    "{thinking_var} is `{other}` (expected true, false or auto)"
+                )))
+            }
+        };
+        let rf_var = key("RESPONSE_FORMAT");
+        let response_format = match get(&rf_var) {
+            Some(raw) => ResponseFormat::parse(&raw).ok_or_else(|| {
+                config_error(format!(
+                    "unknown {rf_var} `{raw}` (expected none, json_object or json_schema)"
+                ))
+            })?,
+            None => ResponseFormat::None,
+        };
+
         Ok(Self {
             provider,
             // A trailing slash would produce `/v1//chat/completions`.
@@ -350,6 +415,12 @@ impl LlmSettings {
             model_tactical,
             model_reasoning,
             timeout: std::time::Duration::from_secs(timeout_secs),
+            params: CompletionParams {
+                temperature,
+                max_tokens,
+                enable_thinking,
+                response_format,
+            },
         })
     }
 
@@ -365,6 +436,35 @@ impl LlmSettings {
     #[must_use]
     pub fn chat_completions_url(&self) -> String {
         format!("{}/chat/completions", self.base_url)
+    }
+
+    /// What a call on `model` through this route will record as having run
+    /// with — see [`LlmProvenance`].
+    #[must_use]
+    pub fn provenance(&self, model: &str) -> LlmProvenance {
+        LlmProvenance::new(
+            self.provider.name,
+            model,
+            self.chat_completions_url(),
+            &self.params,
+        )
+    }
+
+    /// Requests per minute this route should be held to by default.
+    ///
+    /// A hosted API bills and throttles, so the historical 10/20 rpm stays.
+    /// A self-hosted endpoint is a box the operator already owns: throttling
+    /// it to 10 rpm turned a bake-off into an overnight job for no reason, so
+    /// local routes default to `0` — unlimited, in
+    /// `rgaa_agent::ratelimit::Ratelimiter`'s reading of it. An explicit
+    /// `RGAA_TACTICAL_RPM` / `RGAA_REASONING_RPM` still wins.
+    #[must_use]
+    pub fn default_rpm(&self, hosted_default: u32) -> u32 {
+        if self.provider.local {
+            0
+        } else {
+            hosted_default
+        }
     }
 
     /// `None` when the provider needs no key, so a transport can skip the
@@ -739,5 +839,128 @@ mod tests {
             .unwrap_err();
             assert!(err.to_string().contains(p.key_var), "{}: {err}", p.name);
         }
+    }
+
+    #[test]
+    fn completion_params_default_to_the_shared_constants() {
+        let s = LlmSettings::from_env_with(env(&[("HOLO3_API_KEY", "k"), ("RGAA_LLM_MODEL", "m")]))
+            .unwrap();
+        assert_eq!(s.params.temperature, crate::completion::DEFAULT_TEMPERATURE);
+        assert_eq!(s.params.max_tokens, crate::completion::DEFAULT_MAX_TOKENS);
+        // Hosted: say nothing about thinking, send no response_format.
+        assert_eq!(s.params.enable_thinking, None);
+        assert_eq!(s.params.response_format, ResponseFormat::None);
+        assert!(s.params.extra_body().is_empty());
+    }
+
+    #[test]
+    fn a_local_runtime_switches_thinking_off_by_default() {
+        for name in ["vllm", "ollama", "lmstudio"] {
+            let s = LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", name),
+                ("RGAA_LLM_MODEL", "qwen3:8b"),
+            ]))
+            .unwrap();
+            assert_eq!(s.params.enable_thinking, Some(false), "{name}");
+            assert_eq!(
+                s.params.extra_body()["chat_template_kwargs"],
+                serde_json::json!({"enable_thinking": false}),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn thinking_can_be_forced_either_way_or_back_to_auto() {
+        let with = |v: &str| {
+            LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "vllm"),
+                ("RGAA_LLM_MODEL", "m"),
+                ("RGAA_LLM_ENABLE_THINKING", v),
+            ]))
+        };
+        assert_eq!(with("true").unwrap().params.enable_thinking, Some(true));
+        assert_eq!(with("false").unwrap().params.enable_thinking, Some(false));
+        assert_eq!(with("auto").unwrap().params.enable_thinking, Some(false));
+        let err = with("maybe").unwrap_err();
+        assert!(err.to_string().contains("ENABLE_THINKING"), "{err}");
+    }
+
+    #[test]
+    fn response_format_and_budget_are_configurable() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "vllm"),
+            ("RGAA_LLM_MODEL", "m"),
+            ("RGAA_LLM_RESPONSE_FORMAT", "json_schema"),
+            ("RGAA_LLM_TEMPERATURE", "0.0"),
+            ("RGAA_LLM_MAX_TOKENS", "256"),
+        ]))
+        .unwrap();
+        assert_eq!(s.params.response_format, ResponseFormat::JsonSchema);
+        assert_eq!(s.params.temperature, 0.0);
+        assert_eq!(s.params.max_tokens, 256);
+        assert_eq!(
+            s.params.extra_body()["response_format"]["type"],
+            "json_schema"
+        );
+
+        for (var, value) in [
+            ("RGAA_LLM_RESPONSE_FORMAT", "yaml"),
+            ("RGAA_LLM_MAX_TOKENS", "0"),
+            ("RGAA_LLM_MAX_TOKENS", "lots"),
+            ("RGAA_LLM_TEMPERATURE", "warm"),
+        ] {
+            assert!(
+                LlmSettings::from_env_with(env(&[
+                    ("RGAA_LLM_PROVIDER", "vllm"),
+                    ("RGAA_LLM_MODEL", "m"),
+                    (var, value),
+                ]))
+                .is_err(),
+                "{var}={value} should fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn hosted_rate_limits_are_dropped_for_a_self_hosted_endpoint() {
+        let hosted =
+            LlmSettings::from_env_with(env(&[("HOLO3_API_KEY", "k"), ("RGAA_LLM_MODEL", "m")]))
+                .unwrap();
+        assert_eq!(hosted.default_rpm(10), 10);
+        assert_eq!(hosted.timeout.as_secs(), 30);
+
+        let self_hosted = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "vllm"),
+            ("RGAA_LLM_BASE_URL", "http://gpu-box:8000/v1"),
+            ("RGAA_LLM_MODEL", "m"),
+        ]))
+        .unwrap();
+        assert_eq!(
+            self_hosted.default_rpm(10),
+            0,
+            "local routes are unthrottled"
+        );
+        assert_eq!(self_hosted.default_rpm(20), 0);
+        assert_eq!(self_hosted.timeout.as_secs(), 600);
+    }
+
+    #[test]
+    fn provenance_records_the_effective_route_and_params() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "ollama"),
+            ("RGAA_LLM_BASE_URL", "http://gpu-box:11434/v1"),
+            ("RGAA_LLM_MODEL", "qwen3:8b"),
+        ]))
+        .unwrap();
+        let p = s.provenance(&s.model);
+        assert_eq!(p.provider, "ollama");
+        assert_eq!(p.model, "qwen3:8b");
+        assert_eq!(p.endpoint, "http://gpu-box:11434/v1/chat/completions");
+        assert_eq!(p.temperature, crate::completion::DEFAULT_TEMPERATURE);
+        assert_eq!(p.max_tokens, crate::completion::DEFAULT_MAX_TOKENS);
+        assert_eq!(p.enable_thinking, Some(false));
+        assert_eq!(p.response_format, "none");
+        assert!(p.summary().contains("thinking=off"), "{}", p.summary());
     }
 }

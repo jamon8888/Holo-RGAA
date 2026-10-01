@@ -6,7 +6,7 @@
 
 use base64::Engine;
 use reqwest::Client;
-use rgaa_core::RgaaError;
+use rgaa_core::{CompletionParams, LlmProvenance, RgaaError};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -43,6 +43,12 @@ struct ChatRequest<'a> {
     messages: Vec<ChatMessage>,
     temperature: f64,
     max_tokens: u32,
+    /// `response_format` and the thinking switches, from
+    /// [`CompletionParams::extra_body`]. Flattened, so an OpenAI-compatible
+    /// server sees them as ordinary top-level body keys; empty — and so
+    /// invisible on the wire — unless the route configured them.
+    #[serde(flatten)]
+    extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,6 +73,9 @@ pub(crate) struct ChatTransport {
     pub endpoint: String,
     pub model: String,
     pub api_key: Option<String>,
+    /// The one place completion parameters come from — see
+    /// [`CompletionParams`]. Never re-derived here.
+    pub params: CompletionParams,
     http_client: Client,
 }
 
@@ -77,6 +86,7 @@ impl std::fmt::Debug for ChatTransport {
             .field("endpoint", &self.endpoint)
             .field("model", &self.model)
             .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
+            .field("params", &self.params)
             .finish()
     }
 }
@@ -88,6 +98,7 @@ impl ChatTransport {
         model: impl Into<String>,
         api_key: Option<String>,
         timeout: Duration,
+        params: CompletionParams,
     ) -> Result<Self, RgaaError> {
         let http_client =
             Client::builder()
@@ -102,8 +113,19 @@ impl ChatTransport {
             endpoint: endpoint.into(),
             model: model.into(),
             api_key,
+            params,
             http_client,
         })
+    }
+
+    /// What a call through this transport will record as having run with.
+    pub(crate) fn provenance(&self) -> LlmProvenance {
+        LlmProvenance::new(
+            self.label.to_string(),
+            self.model.clone(),
+            self.endpoint.clone(),
+            &self.params,
+        )
     }
 
     pub(crate) fn text_messages(prompt: &str) -> Vec<ChatMessage> {
@@ -153,6 +175,7 @@ impl ChatTransport {
 
     /// Sends the messages as a chat completion, retrying with exponential backoff
     /// on HTTP 429 and network errors, up to [`MAX_RETRIES`].
+    #[tracing::instrument(name = "chat_complete", skip_all, fields(backend = self.label, model = %self.model))]
     pub(crate) async fn complete(
         &self,
         messages: Vec<ChatMessage>,
@@ -160,10 +183,23 @@ impl ChatTransport {
         let request = ChatRequest {
             model: &self.model,
             messages,
-            temperature: 0.1,
-            max_tokens: 512,
+            temperature: self.params.temperature,
+            max_tokens: self.params.max_tokens,
+            extra: self.params.extra_body(),
         };
         let label = self.label;
+        // Logged once per call rather than per attempt: this is the
+        // provenance a bake-off is read back against.
+        info!(
+            backend = label,
+            model = %self.model,
+            endpoint = %self.endpoint,
+            temperature = self.params.temperature,
+            max_tokens = self.params.max_tokens,
+            enable_thinking = ?self.params.enable_thinking,
+            response_format = self.params.response_format.as_str(),
+            "Effective completion parameters"
+        );
 
         let mut last_error = RgaaError::Llm {
             message: format!("{label}: no attempt made"),

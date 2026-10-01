@@ -66,17 +66,35 @@ pub fn compare(
         }
     }
 
-    // Check for expired suppressions
+    // A baseline finding with no counterpart in the current bundle.
+    //
+    // This is the ordinary shape of a successful fix: the scanners report
+    // violations, so a corrected page stops reporting the finding rather than
+    // re-reporting it as `Pass`. The loop above only ever sees current
+    // findings, so without this pass a fixed finding fell into no category at
+    // all and `resolved_findings` stayed empty for every real remediation.
     for prev in prev_findings {
         let fp = fingerprint(prev);
-        if !curr_map.contains_key(&fp) && is_suppressed(prev) {
+        if curr_map.contains_key(&fp) {
+            continue;
+        }
+        if is_suppressed(prev) {
             let expires_at = extract_expiry(prev);
             diff.expired_suppressions.push(ExpiredSuppression {
                 finding_id: prev.id.clone(),
-                fingerprint: fingerprint(prev),
+                fingerprint: fp,
                 reason: prev.details.clone().unwrap_or_default(),
                 expires_at,
             });
+            continue;
+        }
+        // A disappeared `Pass` says nothing was fixed — the criterion simply
+        // is not reported any more — so only previously-open findings count.
+        if matches!(
+            prev.status,
+            CriterionStatus::Fail | CriterionStatus::NeedsReview
+        ) {
+            diff.resolved_findings.push(prev.clone());
         }
     }
 
@@ -92,40 +110,16 @@ pub fn compare(
     diff
 }
 
-/// Generate fingerprint for a finding (mirrors FindingFingerprint::from_finding).
+/// Fingerprint a finding, delegating to the single canonical implementation.
+///
+/// This used to be a hand-copied duplicate of
+/// [`rgaa_core::FindingFingerprint::from_finding`] that dropped every
+/// `hash_field` return value, so the "hash" never moved off its seed and
+/// every finding fingerprinted identically. Both maps below then collapsed
+/// to one entry and the diff was meaningless. Calling the original removes
+/// the copy that drifted rather than re-fixing it here.
 fn fingerprint(finding: &Finding) -> String {
-    let hash = 0xcbf29ce484222325_u64;
-    hash_field(hash, Some(&finding.rule));
-    hash_field(hash, Some(&finding.url));
-    hash_field(hash, Some(&finding.target));
-    hash_field(hash, finding.component_path.as_deref());
-    hash_field(hash, Some(&finding.evidence.len().to_string()));
-    for evidence in &finding.evidence {
-        hash_field(hash, Some(&evidence.kind));
-        hash_field(hash, Some(&evidence.hash));
-        hash_field(hash, evidence.location.as_deref());
-    }
-    format!("rgaa-fp-v1-{hash:016x}")
-}
-
-fn hash_field(mut hash: u64, field: Option<&str>) -> u64 {
-    match field {
-        None => fnv_byte(hash, 0),
-        Some(value) => {
-            hash = fnv_byte(hash, 1);
-            for byte in (value.len() as u64).to_le_bytes() {
-                hash = fnv_byte(hash, byte);
-            }
-            for &byte in value.as_bytes() {
-                hash = fnv_byte(hash, byte);
-            }
-            hash
-        }
-    }
-}
-
-fn fnv_byte(hash: u64, byte: u8) -> u64 {
-    (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    rgaa_core::FindingFingerprint::from_finding(finding)
 }
 
 fn collect_findings(bundle: &rgaa_core::AuditBundle) -> Vec<&Finding> {
@@ -212,6 +206,46 @@ mod tests {
             .push(make_finding("f1", CriterionStatus::Fail, "a"));
         let diff = compare(&prev, &curr);
         assert_eq!(diff.unchanged.len(), 1);
+    }
+
+    fn targeted(id: &str, status: CriterionStatus, target: &str) -> Finding {
+        let mut f = make_finding(id, status, "t");
+        f.target = target.into();
+        f
+    }
+
+    #[test]
+    fn a_finding_that_disappears_from_the_rescan_counts_as_resolved() {
+        let mut prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        prev.findings
+            .push(make_finding("f1", CriterionStatus::Fail, "a"));
+        let curr = rgaa_core::AuditBundle::new("c", "u", Default::default());
+        let diff = compare(&prev, &curr);
+        assert_eq!(diff.resolved_findings.len(), 1, "{diff:?}");
+        assert_eq!(diff.new_findings.len(), 0);
+    }
+
+    #[test]
+    fn a_disappeared_passing_finding_is_not_claimed_as_a_fix() {
+        let mut prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        prev.findings
+            .push(make_finding("f1", CriterionStatus::Pass, "a"));
+        let curr = rgaa_core::AuditBundle::new("c", "u", Default::default());
+        assert!(compare(&prev, &curr).resolved_findings.is_empty());
+    }
+
+    #[test]
+    fn findings_differing_only_by_target_are_told_apart() {
+        let mut prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        prev.findings
+            .push(targeted("f1", CriterionStatus::Fail, "#first"));
+        let mut curr = rgaa_core::AuditBundle::new("c", "u", Default::default());
+        curr.findings
+            .push(targeted("f2", CriterionStatus::Fail, "#second"));
+        let diff = compare(&prev, &curr);
+        assert_eq!(diff.new_findings.len(), 1, "{diff:?}");
+        assert_eq!(diff.resolved_findings.len(), 1, "{diff:?}");
+        assert!(diff.unchanged.is_empty());
     }
 
     #[test]

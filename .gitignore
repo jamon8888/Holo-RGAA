@@ -22,3 +22,6 @@ AGENTS.local.md
 # open PR's copy. See the `ts-types` job in ci.yml.
 types/schemas.json
 types/src/tools.d.ts
+
+# Subagent worktrees: live checkouts, never repository content.
+.claude/worktrees/

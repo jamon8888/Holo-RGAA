@@ -14,3 +14,11 @@ AGENTS.local.md
 
 # Local environment / secrets
 .env
+
+# Generated from the server's own schemars output by
+# scripts/generate-ts-types.py. Not committed: `release.yml` regenerates from
+# the binary it publishes, so a committed copy would only add a second thing
+# to keep in step — and every PR adding a tool would invalidate every other
+# open PR's copy. See the `ts-types` job in ci.yml.
+types/schemas.json
+types/src/tools.d.ts

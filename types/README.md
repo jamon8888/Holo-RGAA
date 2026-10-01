@@ -27,8 +27,22 @@ registered (#161).
 python3 scripts/generate-ts-types.py
 ```
 
-CI regenerates and fails if the committed output differs, so the types
-cannot drift from the server without someone noticing.
+`src/tools.d.ts` and `schemas.json` are **not committed** — they are
+gitignored and produced on demand.
+
+That is a deliberate trade. Committing them made the package only as correct
+as the last person to remember to regenerate, and it serialised development:
+every PR adding a tool invalidated every other open PR's copy of an artifact
+neither had touched.
+
+The guarantee now lives where it has teeth:
+
+- **`release.yml`** regenerates from the binary it is publishing, so the
+  published package matches the released server by construction.
+- **`ci.yml`** regenerates on every PR and fails if the generated **tool
+  names** disagree with the server's `#[tool(name = ...)]` registrations.
+  That is the drift that lies to a consumer; the argument-type detail is a
+  mechanical consequence of Rust structs that are themselves reviewed.
 
 ## Versioning
 

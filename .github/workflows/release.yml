@@ -465,6 +465,43 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rgaa-rs
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+
+      # Generate the tool declarations from the binary being released, rather
+      # than publishing whatever happens to be committed.
+      #
+      # This is where the guarantee belongs. Publishing a committed copy makes
+      # the package only as correct as the last person to remember to
+      # regenerate — and a stale *type* is worse than a stale doc, because it
+      # compiles at the consumer. Generating here means the published types
+      # match the released server by construction, which is also what lets
+      # `ci.yml` stop failing on byte-staleness (see the `ts-types` job).
+      - name: Generate the tool types from this release's source
+        env:
+          RUSTC_WRAPPER: sccache
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          (cd rgaa-rs && cargo run -p rgaa-mcp --bin dump-tool-schemas) > types/schemas.json
+          kill "$heartbeat" 2>/dev/null || true
+          python3 scripts/generate-ts-types.py
+          node -e "
+            const s = require('fs').readFileSync('types/src/tools.d.ts', 'utf8');
+            const n = (s.match(/^  \\| \"/gm) || []).length;
+            if (n === 0) { console.error('no tool names in generated types'); process.exit(1); }
+            console.log('generated types for ' + n + ' tools');
+          "
+
       # Two reasons a release run reaches here and should NOT publish, and
       # both are a clean skip rather than a red job:
       #

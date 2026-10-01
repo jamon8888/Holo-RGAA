@@ -247,8 +247,13 @@ python3 scripts/generate-ts-types.py
 Hand-written client types rot silently, and a wrong type is worse than a
 wrong doc because it compiles. This repo has already had that failure: the
 plugin docs described three tools for a six-tool server and named three
-that no server has ever registered (#161). CI regenerates and fails on any
-diff.
+that no server has ever registered (#161).
+
+CI regenerates on every PR and fails if the **tool names** disagree with the
+server's `#[tool(name = ...)]` registrations — that is the drift that would
+lie to a consumer. The generated files are not committed: `release.yml`
+regenerates from the binary it publishes, so the package always matches the
+released server.
 
 ---
 

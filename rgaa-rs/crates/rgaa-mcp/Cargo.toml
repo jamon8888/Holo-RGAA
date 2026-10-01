@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 dotenvy = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }
+rgaa-linter = { path = "../rgaa-linter" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-orchestrator = { path = "../rgaa-orchestrator" }
 rgaa-remediation = { path = "../rgaa-remediation" }

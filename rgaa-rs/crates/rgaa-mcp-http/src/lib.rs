@@ -293,6 +293,13 @@ async fn call_tool(server: &ToolServer, params: CallToolRequestParams) -> Result
                 ErrorData::internal_error(format!("serialize list_criteria response: {e}"), None)
             })?
         }
+        "lint_static" => {
+            let req: rgaa_mcp::LintStaticRequest = parse_args(name, arguments)?;
+            let McpJson(resp) = server.lint_static(Parameters(req))?;
+            serde_json::to_value(resp).map_err(|e| {
+                ErrorData::internal_error(format!("serialize lint_static response: {e}"), None)
+            })?
+        }
         other => {
             return Err(ErrorData::invalid_params(
                 format!("unknown tool: {other}"),

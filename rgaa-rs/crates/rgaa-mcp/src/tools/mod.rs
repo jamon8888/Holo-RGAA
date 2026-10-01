@@ -1,11 +1,13 @@
 pub mod analyze;
 pub mod igt;
+pub mod lint;
 pub mod remediate;
 pub mod source_map;
 pub mod verify_fix;
 
 pub use analyze::*;
 pub use igt::*;
+pub use lint::*;
 pub use remediate::*;
 pub use source_map::*;
 pub use verify_fix::*;

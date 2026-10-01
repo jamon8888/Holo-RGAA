@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Contact</title>
+    <style>
+      .logo { content: "<img>"; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/"><img src="/logo.svg" alt="Accueil"></a>
+      <a href="/recherche"><img src="/icons/search.svg"></a>
+    </header>
+
+    <!-- <img src="ignored.png"> inside a comment must not be reported -->
+
+    <main>
+      <h1>Nous contacter</h1>
+      <form action="/contact" method="post">
+        <label for="objet">Objet</label>
+        <input id="objet" name="objet" type="text">
+
+        <input name="societe" type="text" placeholder="Société">
+
+        <label>
+          Message
+          <textarea name="message"></textarea>
+        </label>
+
+        <select name="service"></select>
+
+        <input type="submit" value="Envoyer">
+        <button></button>
+        <button aria-label="Réinitialiser"></button>
+      </form>
+
+      <figure>
+        <img src="/photos/bureau.jpg">
+        <figcaption>Nos bureaux</figcaption>
+      </figure>
+      <img src="/pixel.gif" alt="" aria-hidden="true">
+    </main>
+
+    <footer>
+      <a href="/plan"></a>
+      <a href="/legal" title="Mentions légales"></a>
+    </footer>
+    <script>
+      var markup = "<img src=x>";
+      if (a < b) { console.log("<button></button>"); }
+    </script>
+  </body>
+</html>

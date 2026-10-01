@@ -94,7 +94,7 @@ evidence_dir: .rgaa/evidence
 
 ## MCP Server
 
-The plugin bundles `rgaa-mcp` (stdio transport) exposing **seven** tools. Every
+The plugin bundles `rgaa-mcp` (stdio transport) exposing **nine** tools. Every
 skill reaches for these first; the `rgaa` CLI is a fallback for when no MCP
 session is available, not the primary path.
 
@@ -103,8 +103,10 @@ session is available, not the primary path.
 | `analyze` | `AnalyzeRequest -> AnalyzeResponse` | Per-criterion findings for one page, with evidence and justification. |
 | `audit_url` | `AuditUrlInput -> AuditUrlResult` | Whole-site audit through the orchestrator. Returns a **summary only** (`taux_global`, `etat_conformite`, `sampled_page_urls`). |
 | `get_audit_result` | `GetAuditInput -> Option<AuditResultDto>` | Retrieve a previously run audit by `audit_id`. |
+| `lint_static` | `LintStaticRequest -> LintStaticResponse` | Lint HTML, JSX/TSX or Vue **source** for missing `alt`, unlabelled form controls and nameless buttons/links — no browser, no build. Sub-millisecond per file, so it suits an edit loop. A first pass over source, **not** a conformance verdict: use `analyze` on a rendered page for that. |
 | `list_criteria` | `() -> ListCriteriaResponse` | The 106 RGAA criteria with id, title, classification. |
 | `remediate` | `RemediationRequest -> RemediationResponse` | Approval-gated fix proposals for a batch of issues. |
+| `source_map` | `SourceMapRequest -> SourceMapResponse` | Relocate browser findings to the template that produced them: `source_location` (file, line, column, snippet) per finding. Best-effort literal match over React JSX, Vue SFC, Angular and vanilla HTML — the browser reports rendered DOM, the repository holds templates, so there is no exact inverse. Ambiguous findings come back in `unmappable` with a reason rather than a guessed location; check `confidence` and `matched_on` before editing. |
 | `verify_fix` | `VerifyFixRequest -> VerifyFixResponse` | Re-verify corrected files against a reference audit: `fixed` / `remaining` / `new`, plus `unverified` for pages that could not be re-analysed. |
 | `igt` | `GuidedTestRequest -> GuidedTestResponse` | **Deprecated** — prefer `analyze` with `config.igt_tools: ["keyboard"]`. |
 

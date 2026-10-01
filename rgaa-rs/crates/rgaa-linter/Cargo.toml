@@ -1,0 +1,14 @@
+[package]
+description = "Static accessibility linting of HTML, JSX/TSX and Vue sources, without a browser"
+license = "MIT"
+name = "rgaa-linter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }

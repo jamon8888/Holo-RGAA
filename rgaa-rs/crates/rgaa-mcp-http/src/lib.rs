@@ -54,7 +54,15 @@ impl AppState {
     /// process open past SIGTERM until something killed it, which is exactly
     /// the hang a drain is supposed to avoid.
     pub fn begin_shutdown(&self) {
-        let _ = self.shutdown.send(true);
+        // `send_replace`, not `send`: `watch::Sender::send` returns `Err`
+        // when there is no live receiver and — this is the part that bites —
+        // leaves the stored value untouched. `AppState::new` drops the
+        // initial receiver, so with no SSE client attached the flag would
+        // stay `false`, and a request already accepted that subscribes
+        // *after* this call would never see the shutdown. That stream then
+        // holds the drain open: exactly the hang this whole mechanism
+        // exists to prevent, in a narrower window.
+        let _ = self.shutdown.send_replace(true);
     }
 }
 
@@ -471,6 +479,44 @@ pub async fn terminate_signal() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    /// A stream that subscribes *after* `begin_shutdown` must still see it.
+    ///
+    /// This is the case `watch::Sender::send` gets wrong: with no live
+    /// receiver it returns `Err` and leaves the stored value `false`, so a
+    /// request accepted just before shutdown — then reaching the SSE handler
+    /// and subscribing — would never be told to stop, and would hold the
+    /// drain open indefinitely.
+    ///
+    /// `AppState::new` drops its initial receiver, so "no live receiver" is
+    /// the *normal* state of a server with nobody streaming.
+    #[tokio::test]
+    async fn a_stream_subscribing_after_shutdown_still_sees_it() {
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        let _ = shutdown.send_replace(true);
+        assert!(
+            *shutdown.subscribe().borrow(),
+            "a late subscriber must observe the shutdown flag"
+        );
+    }
+
+    /// Pins the tokio behaviour the fix works around, so the reason for
+    /// `send_replace` survives someone "simplifying" it back to `send`.
+    #[tokio::test]
+    async fn plain_send_loses_the_flag_when_nobody_is_listening() {
+        let (shutdown, _) = tokio::sync::watch::channel(false);
+        assert!(
+            shutdown.send(true).is_err(),
+            "send must report the absence of receivers"
+        );
+        assert!(
+            !*shutdown.subscribe().borrow(),
+            "and must leave the stored value untouched — which is the bug"
+        );
     }
 }
 

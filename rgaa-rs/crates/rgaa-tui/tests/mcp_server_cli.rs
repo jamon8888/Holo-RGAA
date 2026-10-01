@@ -77,10 +77,29 @@ async fn mcp_server_serves_health_and_tools_then_exits_zero_on_sigterm() {
         .expect("send SIGTERM");
     assert!(killed.success(), "could not signal the server");
 
-    let status = tokio::task::spawn_blocking(move || child.wait())
-        .await
-        .expect("join wait")
-        .expect("wait for exit");
+    // Bounded poll, not `child.wait()`.
+    //
+    // The regression this test guards against is a shutdown that never
+    // completes. An unbounded wait turns that regression into a job that
+    // hangs until the CI limit — hours of a runner, and a timeout message
+    // that says nothing about the cause — instead of a test failure that
+    // names it. A guard against a hang must not hang.
+    //
+    // Ownership of `child` stays here so the process can be killed and
+    // reaped on timeout; `spawn_blocking` could not be cancelled once
+    // started, and would leak the child into the rest of the run.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        match child.try_wait().expect("poll the server process") {
+            Some(status) => break status,
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("the server did not exit within 20s of SIGTERM; the drain hung");
+            }
+            None => tokio::time::sleep(Duration::from_millis(50)).await,
+        }
+    };
     assert_eq!(
         status.code(),
         Some(0),

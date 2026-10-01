@@ -100,17 +100,27 @@ pub fn app_with_cors(state: AppState, cors_origins: Option<&str>) -> Router {
 /// attacking page. [`guard`] therefore rejects the request before dispatch.
 pub fn app_with_auth(state: AppState, cors_origins: Option<&str>, token: Option<&str>) -> Router {
     let policy = Arc::new(AuthPolicy::new(cors_origins, token));
+
+    // The guarded routes live in their own router behind `route_layer`, not
+    // on the whole tree behind `layer`. `layer` wraps *every* route the
+    // router ends up holding, `/health` included, which turned the liveness
+    // probe into a 401 the moment a token was configured — a supervisor
+    // would then restart a perfectly healthy server in a loop. `route_layer`
+    // runs only for requests that match a route in this sub-router.
+    let guarded = Router::new()
+        .route("/mcp", post(jsonrpc))
+        .route("/mcp/events", get(sse_events))
+        .route_layer(axum::middleware::from_fn(move |req, next| {
+            let policy = Arc::clone(&policy);
+            async move { guard(policy, req, next).await }
+        }));
+
     Router::new()
         // `/health` stays outside the guard: a liveness probe that needs a
         // credential is one more thing to misconfigure, and it discloses
         // nothing but the version a supervisor already knows.
         .route("/health", get(health))
-        .route("/mcp", post(jsonrpc))
-        .route("/mcp/events", get(sse_events))
-        .layer(axum::middleware::from_fn(move |req, next| {
-            let policy = Arc::clone(&policy);
-            async move { guard(policy, req, next).await }
-        }))
+        .merge(guarded)
         .layer(cors_from_origins(cors_origins))
         .with_state(state)
 }

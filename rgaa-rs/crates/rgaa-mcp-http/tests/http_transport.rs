@@ -1,12 +1,13 @@
-//! HTTP transport seams for rgaa-mcp-http (ticket #159):
-//! POST /mcp JSON-RPC, GET /mcp/events SSE, CORS.
+//! HTTP transport seams for rgaa-mcp-http (tickets #159, #160):
+//! POST /mcp JSON-RPC, GET /mcp/events SSE, CORS, GET /health, and the
+//! SIGTERM drain.
 
 use futures::StreamExt;
 use rgaa_mcp::{
     AnalyzeService, GuidedService, McpFailure, NoOpStorageService, OrchestrationService,
     RemediationServiceImpl, ToolServer,
 };
-use rgaa_mcp_http::{app, AppState};
+use rgaa_mcp_http::{app, app_with_cors, serve_until, AppState};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -253,4 +254,111 @@ async fn sse_emits_progress_during_analyze() {
         resp["result"]["structuredContent"]["url"],
         serde_json::json!("https://example.test")
     );
+}
+
+#[tokio::test]
+async fn health_reports_a_status_and_the_server_version() {
+    let (addr, _h) = spawn(Duration::ZERO).await;
+    let resp = reqwest::get(format!("http://{addr}/health"))
+        .await
+        .expect("get /health");
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: serde_json::Value = resp.json().await.expect("json");
+    assert_eq!(body["status"], serde_json::json!("ok"));
+    assert_eq!(
+        body["version"],
+        serde_json::json!(env!("CARGO_PKG_VERSION")),
+        "version must be the built binary's, not a hardcoded string"
+    );
+}
+
+/// Starts the server with a caller-triggered shutdown instead of a signal.
+/// Returns the address, the trigger, and the join handle for the serve loop.
+async fn spawn_with_shutdown(
+    delay: Duration,
+) -> (
+    SocketAddr,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<std::io::Result<()>>,
+) {
+    let state = AppState::new(test_server(delay));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let (trigger, wait) = tokio::sync::oneshot::channel::<()>();
+    let stopping = state.clone();
+    let router = app_with_cors(state, None);
+    let handle = tokio::spawn(async move {
+        serve_until(listener, router, async move {
+            let _ = wait.await;
+            stopping.begin_shutdown();
+        })
+        .await
+    });
+    (addr, trigger, handle)
+}
+
+/// The drain is the whole point of handling SIGTERM: a plain exit would cut
+/// the connection of whoever is mid-audit and lose the result.
+#[tokio::test]
+async fn shutdown_waits_for_an_in_flight_tool_call_to_answer() {
+    let (addr, trigger, server) = spawn_with_shutdown(Duration::from_millis(800)).await;
+
+    let call = tokio::spawn(async move {
+        rpc(
+            addr,
+            serde_json::json!({
+                "jsonrpc":"2.0","id":11,"method":"tools/call",
+                "params":{"name":"analyze","arguments":{"url":"https://inflight.test"}}
+            }),
+        )
+        .await
+    });
+
+    // Long enough for the request to have reached the handler and be sitting
+    // in the stubbed 800 ms analyze.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    trigger.send(()).expect("trigger shutdown");
+    assert!(
+        !server.is_finished(),
+        "server returned before the in-flight call could answer"
+    );
+
+    let resp = call.await.expect("join call");
+    assert_eq!(
+        resp["result"]["structuredContent"]["url"],
+        serde_json::json!("https://inflight.test"),
+        "the in-flight call was cut off by shutdown"
+    );
+
+    let served = tokio::time::timeout(Duration::from_secs(5), server)
+        .await
+        .expect("server did not return after the drain")
+        .expect("join server");
+    assert!(served.is_ok(), "serve loop errored: {served:?}");
+}
+
+/// An open SSE stream never completes on its own, so before the streams were
+/// wired to the shutdown flag a single attached client held the drain — and
+/// the process — open indefinitely.
+#[tokio::test]
+async fn an_attached_sse_client_does_not_block_the_drain() {
+    let (addr, trigger, server) = spawn_with_shutdown(Duration::ZERO).await;
+
+    let sse = reqwest::Client::new()
+        .get(format!("http://{addr}/mcp/events"))
+        .header("accept", "text/event-stream")
+        .send()
+        .await
+        .expect("sse connect");
+    assert_eq!(sse.status().as_u16(), 200);
+    let _stream = sse.bytes_stream();
+
+    trigger.send(()).expect("trigger shutdown");
+    let served = tokio::time::timeout(Duration::from_secs(5), server)
+        .await
+        .expect("an open SSE stream kept the server from shutting down")
+        .expect("join server");
+    assert!(served.is_ok(), "serve loop errored: {served:?}");
 }

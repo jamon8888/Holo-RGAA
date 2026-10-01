@@ -18,6 +18,7 @@ rgaa-holo = { path = "../rgaa-holo" }
 rgaa-storage = { path = "../rgaa-storage" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-spider = { path = "../rgaa-spider" }
+rgaa-mcp-http = { path = "../rgaa-mcp-http" }
 
 clap = { workspace = true }
 tokio = { workspace = true }

@@ -341,3 +341,88 @@ impl GuidedService for PanickingGuided {
         Box::pin(async { Err(McpFailure::execution("unexpected guided call")) })
     }
 }
+
+/// Issue #32: the substrate version is recorded on `AnalyzePageResult` but
+/// used to stop at the MCP boundary, so a client could not tell which
+/// Obscura produced a finding. These tests pin that it now crosses, and that
+/// it crosses *additively*.
+mod substrate_version {
+    use rgaa_mcp::AnalyzeResponse;
+    use rgaa_obscura::{AnalyzePageResult, IgtResult, IgtResults};
+
+    fn result(version: Option<&str>, igt: bool) -> AnalyzePageResult {
+        AnalyzePageResult {
+            url: "https://example.test".into(),
+            findings: Vec::new(),
+            evidence: Vec::new(),
+            errors: Vec::new(),
+            completed: true,
+            duration_ms: 7,
+            igt: igt.then(|| IgtResults {
+                keyboard: IgtResult {
+                    status: "pass".into(),
+                    issues: Vec::new(),
+                    igt_elements: Vec::new(),
+                    terminated_reason: None,
+                },
+            }),
+            obscura_version: version.map(ToOwned::to_owned),
+        }
+    }
+
+    fn json(version: Option<&str>, igt: bool) -> serde_json::Value {
+        serde_json::to_value(AnalyzeResponse::from_result(result(version, igt))).expect("serialize")
+    }
+
+    #[test]
+    fn the_flat_shape_carries_the_version_the_bridge_reported() {
+        assert_eq!(
+            json(Some("obscura 0.2.2"), false)["obscura_version"],
+            "obscura 0.2.2"
+        );
+    }
+
+    /// The nested shape is a different struct, so it needs its own proof —
+    /// this is exactly the pair that drifted apart in the first place.
+    #[test]
+    fn the_nested_shape_carries_it_too() {
+        let payload = json(Some("obscura 0.2.2"), true);
+        assert!(payload.get("data").is_some(), "expected the nested shape");
+        assert_eq!(payload["obscura_version"], "obscura 0.2.2");
+    }
+
+    /// Backward compatibility, and the reason the field is skipped rather
+    /// than serialized as `null`: a bridge that reports no version must
+    /// produce the payload clients already parse, key for key.
+    #[test]
+    fn an_absent_version_leaves_the_old_payload_untouched() {
+        for igt in [false, true] {
+            let payload = json(None, igt);
+            assert!(
+                payload.get("obscura_version").is_none(),
+                "an absent version must not appear as a key (igt: {igt})"
+            );
+        }
+    }
+
+    /// The schema is what an MCP client generates its types from, so the
+    /// field has to be registered there as well as serialized.
+    #[test]
+    fn the_output_schema_registers_the_field_as_optional() {
+        let schema = serde_json::to_value(schemars::schema_for!(AnalyzeResponse)).expect("schema");
+        let text = schema.to_string();
+        assert!(
+            text.contains("obscura_version"),
+            "the analyze output schema must declare obscura_version: {text}"
+        );
+        // Optional: it must never be listed as required, or a client's
+        // generated type turns an old payload into a parse error.
+        assert!(
+            !schema
+                .pointer("/required")
+                .and_then(|r| r.as_array())
+                .is_some_and(|r| r.iter().any(|v| v == "obscura_version")),
+            "obscura_version must stay optional"
+        );
+    }
+}

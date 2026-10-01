@@ -126,10 +126,16 @@ Both `Manuel` and `PartiellementAutomatable` criteria surface as the single
 
 ### HTTP transport
 
-`rgaa-mcp-http` serves the same nine tools as JSON-RPC over `POST /mcp`, with
-audit progress on `GET /mcp/events` (SSE). Cross-origin access is **denied by
-default** and must be opened explicitly with `RGAA_CORS_ORIGINS`
-(comma-separated origins) or `--cors-origin`.
+`rgaa-mcp-http` — equivalently `rgaa mcp-server` — serves the same nine tools
+as JSON-RPC over `POST /mcp`, with audit progress on `GET /mcp/events` (SSE).
+
+Both are authorized **before** a tool runs. Cross-origin access is **denied
+by default** and must be opened explicitly with `RGAA_CORS_ORIGINS`
+(comma-separated origins) or `--cors-origin`; an origin outside that list
+gets `403` even on a `text/plain` POST that triggers no CORS preflight.
+Setting `RGAA_MCP_TOKEN` (or `--auth-token`) additionally requires
+`Authorization: Bearer <token>` on every request — do set it whenever the
+server is not bound to loopback. `GET /health` stays open.
 
 ## Exit Codes
 

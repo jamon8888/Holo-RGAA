@@ -16,7 +16,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowHeaders, CorsLayer};
 
 pub use rgaa_mcp::ToolServer;
 
@@ -261,7 +261,16 @@ pub fn cors_from_origins(raw: Option<&str>) -> CorsLayer {
             axum::http::Method::POST,
             axum::http::Method::OPTIONS,
         ])
-        .allow_headers(Any);
+        // `mirror_request`, not `Any`. `Any` emits
+        // `Access-Control-Allow-Headers: *`, and under the Fetch spec that
+        // wildcard deliberately does NOT cover `Authorization`. With a token
+        // configured, an allowlisted browser origin would therefore fail its
+        // preflight and never send the POST at all — the one case the docs
+        // promise works. Mirroring echoes back exactly the headers the
+        // preflight asked for, which covers `Authorization` and keeps the
+        // previous "any header" latitude for everything else. The origin
+        // allowlist, not this, is what decides who gets a usable preflight.
+        .allow_headers(AllowHeaders::mirror_request());
 
     let origins = parse_origins(raw);
     if origins.is_empty() {
@@ -787,6 +796,47 @@ mod cors_tests {
         assert_eq!(
             allow_origin_for(Some("https://plugin.example"), "https://evil.example").await,
             None
+        );
+    }
+
+    /// Returns the `access-control-allow-headers` a preflight is answered
+    /// with, for a preflight that asks to send `authorization`.
+    async fn preflight_allow_headers(raw: Option<&str>, origin: &str) -> Option<String> {
+        let svc = cors_from_origins(raw).layer(tower::service_fn(
+            |_req: Request<axum::body::Body>| async move {
+                Ok::<_, std::convert::Infallible>(axum::response::Response::new(
+                    axum::body::Body::empty(),
+                ))
+            },
+        ));
+        let req = Request::builder()
+            .method(Method::OPTIONS)
+            .uri("/mcp")
+            .header("origin", HeaderValue::from_str(origin).unwrap())
+            .header("access-control-request-method", "POST")
+            .header("access-control-request-headers", "authorization")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = svc.oneshot(req).await.unwrap();
+        resp.headers()
+            .get("access-control-allow-headers")
+            .map(|v| v.to_str().unwrap().to_lowercase())
+    }
+
+    /// The bug a `*` wildcard hides: under the Fetch spec
+    /// `Access-Control-Allow-Headers: *` does **not** cover `Authorization`,
+    /// so with a token configured an allowlisted browser origin would fail
+    /// its preflight and never send the request. The header has to be named.
+    #[tokio::test]
+    async fn a_preflight_asking_for_authorization_is_granted_it_by_name() {
+        let allowed =
+            preflight_allow_headers(Some("https://plugin.example"), "https://plugin.example")
+                .await
+                .expect("an allowlisted preflight must be answered");
+        assert!(
+            allowed.contains("authorization"),
+            "a wildcard does not cover Authorization under the Fetch spec, so it \
+             must be named explicitly; got {allowed:?}"
         );
     }
 

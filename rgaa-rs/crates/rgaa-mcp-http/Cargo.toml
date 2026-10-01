@@ -9,6 +9,7 @@ edition = "2021"
 rgaa-mcp = { path = "../rgaa-mcp" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 axum = { version = "0.7", features = ["json"] }
+clap = { workspace = true, features = ["env"] }
 futures = { workspace = true }
 rmcp = { workspace = true }
 serde = { workspace = true }

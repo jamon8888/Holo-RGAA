@@ -1,3 +1,4 @@
+use rgaa_api::batch::{system_clock, BatchService, OrchestratorRunner, PostgresBatchStore};
 use rgaa_api::{build_app, AppState};
 use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::PostgresStorage;
@@ -59,9 +60,19 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(PostgresStorage::new(&database_url).await?);
     let orchestrator = Arc::new(Orchestrator::with_storage(storage.clone()));
 
+    // Postgres-backed, not in-memory: a batch is readable for 24h and the
+    // API process is restarted far more often than that, so in-memory state
+    // would hand clients a batch id that stops resolving after a deploy.
+    let batches = BatchService::new(
+        Arc::new(PostgresBatchStore::new(storage.pool().clone())),
+        Arc::new(OrchestratorRunner::new(orchestrator.clone())),
+        system_clock(),
+    );
+
     let state = AppState {
         orchestrator,
         storage,
+        batches,
     };
 
     let app = build_app(state);

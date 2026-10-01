@@ -2,11 +2,13 @@ pub mod analyze;
 pub mod igt;
 pub mod lint;
 pub mod remediate;
+pub mod verify_fix;
 
 pub use analyze::*;
 pub use igt::*;
 pub use lint::*;
 pub use remediate::*;
+pub use verify_fix::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {

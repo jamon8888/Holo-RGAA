@@ -1,4 +1,6 @@
+pub mod batch;
 pub mod routes;
+pub mod webhook;
 
 use axum::{
     error_handling::HandleErrorLayer,
@@ -17,10 +19,16 @@ use tower_http::timeout::TimeoutLayer;
 use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::Storage;
 
+use crate::batch::BatchService;
+
 #[derive(Clone)]
 pub struct AppState {
     pub orchestrator: Arc<Orchestrator>,
     pub storage: Arc<dyn Storage>,
+    /// Batch endpoints carry their own store/runner/clock rather than
+    /// reading them off `AppState`, so [`batch::batch_router`] can be
+    /// served standalone in tests without a database or a live browser.
+    pub batches: BatchService,
 }
 
 /// Request timeout, in seconds, for every route. A long audit call cannot
@@ -129,10 +137,27 @@ pub fn build_app(state: AppState) -> Router {
         .route("/audit/{id}", get(routes::get_audit));
     let legacy_routes = apply_resilience(legacy_routes, max_concurrent_audits(), request_timeout());
 
+    // Same Bearer-key gate as `/v1/audit-bundles`: a batch fans out up to
+    // `MAX_BATCH_URLS` full audits from one unauthenticated POST, which is
+    // by far the most expensive thing this server can be asked to do.
+    // Deliberately outside `apply_resilience`: creation returns immediately
+    // and the audits themselves run under the orchestrator's own
+    // concurrency bound, so shedding polls of an accepted batch would only
+    // hide progress a client already paid for.
+    let batch_routes = batch::batch_router(state.batches.clone()).route_layer(
+        middleware::from_fn_with_state(state.storage.clone(), routes::auth_middleware),
+    );
+
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
         .merge(legacy_routes)
-        .layer(cors)
+        // `with_state` before merging the batch routes, not after: those
+        // carry their own `BatchService` state and are already
+        // `Router<()>`, so merging them into a router still generic over
+        // `AppState` does not typecheck. CORS goes on last so it covers
+        // every route rather than only the ones declared above it.
         .with_state(state)
+        .merge(batch_routes)
+        .layer(cors)
 }

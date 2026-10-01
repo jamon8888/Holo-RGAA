@@ -26,7 +26,7 @@ function Write-Step([string]$msg) {
 
 function Uninstall-Rgaa {
     Write-Step "Uninstalling rgaa-rs..."
-    foreach ($bin in @("rgaa.exe", "rgaa-cli.exe", "rgaa-api.exe", "rgaa-mcp.exe", "obscura.exe", "obscura-worker.exe")) {
+    foreach ($bin in @("rgaa.exe", "rgaa-cli.exe", "rgaa-api.exe", "rgaa-mcp.exe", "rgaa-mcp-http.exe", "obscura.exe", "obscura-worker.exe")) {
         $p = Join-Path $InstallDir $bin
         if (Test-Path $p) { Remove-Item $p -Force; Write-Host "  Removed $bin" }
     }

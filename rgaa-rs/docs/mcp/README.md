@@ -43,6 +43,7 @@ Add to your `mcp.json`:
 | `audit_url` | Run a full RGAA audit on a URL |
 | `get_audit_result` | Retrieve a stored audit by ID |
 | `list_criteria` | List all 106 RGAA criteria |
+| `verify_fix` | Re-verify corrected files against a reference audit |
 
 ---
 
@@ -267,6 +268,42 @@ List all 106 RGAA criteria.
 | `Deterministe` | Automatically testable (axe-core + gap-fix) |
 | `IaAssiste` | Requires LLM-assisted evaluation |
 | `Manuel` | Manual testing required |
+
+---
+
+### `verify_fix`
+
+Re-verify corrected files against the audit they were fixed against. The tool
+re-runs the same analysis `analyze` uses on each corrected file's page and
+diffs the result against the reference with the shared baseline comparison
+(`rgaa_remediation::compare`) — there is no second re-audit engine.
+
+**Parameters:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reference_audit` | object | The `AuditBundle` the fixes were written against, as `audit_url` / `get_audit_result` emit one |
+| `files` | array | 1–25 `{ "path", "url" }` entries; `url` is the page re-analysed for that file |
+| `per_file_timeout_ms` | number | Optional, clamped to 30000 |
+
+**Response:**
+
+```json
+{
+  "fixed": [{ "finding": { "id": "f-alt", "...": "..." }, "citations": [] }],
+  "remaining": [],
+  "new": [],
+  "unverified": [],
+  "files": [{ "path": "src/Hero.tsx", "url": "https://example.test", "status": "verified", "message": null }]
+}
+```
+
+`citations` carries the sources behind the reference verdict for that
+finding's criterion, so a RAG-backed verdict keeps its evidence.
+
+`unverified` holds reference findings on a page that could not be
+re-analysed (`timed_out` / `failed`). They are kept out of `fixed` on
+purpose: a page nobody re-scanned has not been shown to be remediated.
 
 ---
 

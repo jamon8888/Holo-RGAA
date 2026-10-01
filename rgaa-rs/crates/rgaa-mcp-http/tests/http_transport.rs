@@ -99,7 +99,7 @@ async fn rpc(addr: SocketAddr, body: serde_json::Value) -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn tools_list_returns_seven_tools() {
+async fn tools_list_returns_every_registered_tool() {
     let (addr, _h) = spawn(Duration::ZERO).await;
     let resp = rpc(
         addr,
@@ -118,7 +118,8 @@ async fn tools_list_returns_seven_tools() {
             "igt",
             "lint_static",
             "list_criteria",
-            "remediate"
+            "remediate",
+            "verify_fix"
         ]
     );
     assert!(tools[0]["inputSchema"].is_object());
@@ -298,4 +299,60 @@ async fn sse_emits_progress_during_analyze() {
         resp["result"]["structuredContent"]["url"],
         serde_json::json!("https://example.test")
     );
+}
+
+/// A tool that is only registered on the stdio router is invisible here: the
+/// HTTP transport dispatches `tools/call` through its own hand-written
+/// `match`, so a new arm is what actually makes it reachable.
+#[tokio::test]
+async fn verify_fix_is_reachable_over_the_http_transport() {
+    let (addr, _h) = spawn(Duration::ZERO).await;
+    let reference = serde_json::json!({
+        "schema_version": "1.0",
+        "audit_id": "audit-ref",
+        "url": "https://example.test",
+        "config": {"max_pages": 50, "max_depth": 5, "respect_robots": true, "sample_mode": false},
+        "pages": [],
+        "findings": [{
+            "id": "f-alt",
+            "rule": "image-alt",
+            "criterion_id": "1.1",
+            "url": "https://example.test",
+            "target": "#hero img",
+            "component_path": null,
+            "evidence": [],
+            "status": "fail",
+            "severity": null,
+            "description": null,
+            "remediation": null
+        }],
+        "checkpoints": [],
+        "summary": {"total_pages": 0, "completed_pages": 0, "total_findings": 1,
+                    "passed": 0, "failed": 1, "needs_review": 0, "na": 0, "errors": 0}
+    });
+    let resp = rpc(
+        addr,
+        serde_json::json!({
+            "jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name":"verify_fix","arguments":{
+                "reference_audit": reference,
+                "files": [{"path": "src/Hero.tsx", "url": "https://example.test"}]
+            }}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"]["isError"],
+        serde_json::json!(false),
+        "{resp}"
+    );
+    let content = &resp["result"]["structuredContent"];
+    // The stub analyzer reports nothing, so the reference finding is gone.
+    assert_eq!(
+        content["fixed"][0]["finding"]["id"],
+        serde_json::json!("f-alt"),
+        "{content}"
+    );
+    assert!(content["remaining"].as_array().unwrap().is_empty());
+    assert!(content["new"].as_array().unwrap().is_empty());
 }

@@ -91,6 +91,10 @@ rgaa-api
 # GET /v1/audit-bundles - List bundles (requires API key)
 # GET /v1/findings - List findings (requires API key)
 # POST /v1/policy/evaluate - Evaluate policy (requires API key)
+# POST /v1/batches - Start a multi-URL batch audit (requires API key)
+# GET /v1/batches/:id - Batch status, per-URL progress (requires API key)
+# GET /v1/batches/:id/results - Final aggregated batch results (requires API key)
+#   Batches expire 24h after creation; reads return 410 afterwards.
 ```
 
 ## Workflow

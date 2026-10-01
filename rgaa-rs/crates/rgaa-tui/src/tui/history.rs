@@ -400,11 +400,21 @@ mod tests {
         assert!(entry.counts.is_none());
     }
 
+    /// The id is cut to 8 characters and the url to 40, so a long audit id
+    /// and a long path still leave the rate and the date visible.
+    ///
+    /// Asserted whole with `assert_eq!` rather than as a `starts_with`: the
+    /// first version of this test used a hand-counted prefix, got the count
+    /// wrong, and then failed with nothing but the expected string — the
+    /// actual row was never printed, so the mismatch took a CI round trip to
+    /// diagnose. Comparing the whole string makes the failure say what it got.
     #[test]
     fn row_shortens_id_and_url() {
         let row = HistoryEntry::from_summary(&summary("0123456789abcdef")).row();
-        assert!(row.starts_with("01234567 | https://example.com/a-fairly-long-pa | 61.4% | "));
-        assert!(row.ends_with("2026-01-02 03:04"));
+        assert_eq!(
+            row,
+            "01234567 | https://example.com/a-fairly-long-path-t | 61.4% | 2026-01-02 03:04"
+        );
     }
 
     #[test]

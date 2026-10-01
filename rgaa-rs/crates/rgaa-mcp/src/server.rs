@@ -647,7 +647,7 @@ pub struct ToolServer {
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 7] {
+    pub const fn tool_names() -> [&'static str; 8] {
         [
             "analyze",
             "remediate",
@@ -655,6 +655,7 @@ impl ToolServer {
             "audit_url",
             "get_audit_result",
             "list_criteria",
+            "source_map",
             "verify_fix",
         ]
     }
@@ -819,6 +820,33 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(
             result.map(AuditResultDto::from),
         ))
+    }
+
+    #[tool(
+        name = "source_map",
+        description = "Relocate browser findings to the template that produced them. Takes a source_root directory and findings carrying a CSS selector and/or the element's outerHTML, and returns a source_location (file, line, column, snippet) per mapped finding. Matching is a best-effort literal search — the browser reports the rendered DOM while the repository holds templates, so there is no exact inverse. Supports React JSX, Vue SFC, Angular and vanilla HTML. Findings that stay ambiguous are returned in `unmappable` with a reason instead of a guessed location; always check `confidence` and `matched_on` before editing."
+    )]
+    pub async fn source_map(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<SourceMapRequest>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<SourceMapResponse>, ErrorData> {
+        let request = request.0;
+        SourceMapRequest::validate_finding_count(request.findings.len())
+            .map_err(McpFailure::into_error_data)?;
+
+        // The scan walks directories and reads files synchronously. Run
+        // directly, it occupies a Tokio worker for its whole duration without
+        // ever yielding, so a scan on a slow filesystem stalls unrelated
+        // requests and the SSE progress stream on the same worker.
+        let response = tokio::task::spawn_blocking(move || {
+            crate::tools::source_map::map_findings(&request.source_root, &request.findings)
+        })
+        .await
+        .map_err(|error| {
+            McpFailure::execution(format!("source_map scan task failed: {error}")).into_error_data()
+        })?
+        .map_err(McpFailure::into_error_data)?;
+        Ok(rmcp::handler::server::wrapper::Json(response))
     }
 
     #[tool(

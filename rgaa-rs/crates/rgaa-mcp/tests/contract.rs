@@ -13,7 +13,7 @@ use schemars::schema_for;
 use std::sync::Arc;
 
 #[test]
-fn exposes_exactly_seven_agent_tools() {
+fn exposes_every_registered_agent_tool() {
     assert_eq!(
         ToolServer::tool_names(),
         [
@@ -23,7 +23,8 @@ fn exposes_exactly_seven_agent_tools() {
             "audit_url",
             "get_audit_result",
             "list_criteria",
-            "verify_fix"
+            "source_map",
+            "verify_fix",
         ]
     );
 }

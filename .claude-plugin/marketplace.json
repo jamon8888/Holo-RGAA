@@ -1,0 +1,21 @@
+{
+  "name": "holo-rgaa",
+  "owner": {
+    "name": "RGAA Team",
+    "url": "https://github.com/jamon8888/Holo-RGAA"
+  },
+  "metadata": {
+    "description": "RGAA 4.1.2 accessibility tooling for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "rgaa-accessibility",
+      "source": "./rgaa-rs/plugins/rgaa-consultant",
+      "description": "RGAA 4.1.2 accessibility auditing for French compliance: audits, triage, approval-gated remediation, keyboard IGT, fix verification and compliance reports over all 106 criteria.",
+      "version": "2.0.0",
+      "category": "accessibility",
+      "keywords": ["accessibility", "rgaa", "wcag", "audit"]
+    }
+  ]
+}

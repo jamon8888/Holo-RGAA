@@ -318,6 +318,56 @@ else
   echo "⚠️  SKIP TOOL CONTRACT: $SERVER_RS not found (plugin checked out standalone)"
 fi
 
+# The Claude Code CLI ships the authoritative validator for the manifest, the
+# hooks file and the skill/agent/command front matter. It knows things this
+# script cannot: `author` must be an object and `repository` a string (the
+# manifest had them the other way round and passed every check above), and an
+# unquoted ${CLAUDE_PLUGIN_ROOT} in a hook command splits on a path with a
+# space. Run it when the CLI is on PATH; skip, loudly, when it is not, since a
+# CI image without `claude` must not silently drop the strongest check here.
+if command -v claude >/dev/null 2>&1; then
+  for target in "$PLUGIN_ROOT" "$PLUGIN_ROOT/skills" "$PLUGIN_ROOT/agents" \
+                "$PLUGIN_ROOT/commands" "$REPO_ROOT/.claude-plugin/marketplace.json"; do
+    if claude plugin validate --strict "$target" >/tmp/rgaa-validate.$$ 2>&1; then
+      echo "✅ CLAUDE VALIDATE: $(basename "$target")"
+    else
+      echo "❌ CLAUDE VALIDATE failed for $(basename "$target"):"
+      sed 's/^/    /' /tmp/rgaa-validate.$$
+      FAILURES=$((FAILURES + 1))
+    fi
+    rm -f /tmp/rgaa-validate.$$
+  done
+else
+  echo "⚠️  SKIP CLAUDE VALIDATE: the claude CLI is not on PATH"
+fi
+
+# The marketplace entry and the plugin manifest must agree on name and version,
+# or `claude plugin install` resolves a plugin whose manifest says something
+# else — and `claude plugin tag` refuses to cut a release at all.
+MARKETPLACE="$REPO_ROOT/.claude-plugin/marketplace.json"
+if [[ -f $MARKETPLACE ]] && command -v jq >/dev/null 2>&1; then
+  plugin_name=$(jq -r '.name' "$PLUGIN_ROOT/.claude-plugin/plugin.json")
+  plugin_version=$(jq -r '.version' "$PLUGIN_ROOT/.claude-plugin/plugin.json")
+  entry=$(jq -r --arg src "./${PLUGIN_ROOT#"$REPO_ROOT"/}" \
+    '.plugins[] | select(.source == $src)' "$MARKETPLACE")
+  if [[ -z $entry ]]; then
+    echo "❌ MARKETPLACE: no entry in marketplace.json points at this plugin"
+    FAILURES=$((FAILURES + 1))
+  else
+    for field in name version; do
+      declare -n want="plugin_$field"
+      got=$(jq -r ".$field // empty" <<< "$entry")
+      if [[ $got != "$want" ]]; then
+        echo "❌ MARKETPLACE: entry $field is '$got' but plugin.json says '$want'"
+        FAILURES=$((FAILURES + 1))
+      fi
+    done
+    [[ $FAILURES -eq 0 ]] && echo "✅ MARKETPLACE: entry agrees with plugin.json ($plugin_name $plugin_version)"
+  fi
+else
+  echo "⚠️  SKIP MARKETPLACE CHECK: marketplace.json or jq missing"
+fi
+
 echo
 if [[ $FAILURES -eq 0 ]]; then
   echo "✅ ALL CONTRACT CHECKS PASSED"

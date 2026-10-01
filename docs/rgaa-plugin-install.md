@@ -32,12 +32,17 @@ tree. The top-level `claude-plugin/` directory this guide used to install from i
 a deprecated pointer: it carries no manifest, and installing it gave you the
 stale `rgaa-audit` 0.1.0 fork instead of `rgaa-accessibility` 2.0.0.
 
-```bash
-# From the repository root
-cp -r rgaa-rs/plugins/rgaa-consultant ~/.claude/plugins/rgaa-accessibility
+The repository carries a marketplace manifest (`.claude-plugin/marketplace.json`),
+so the plugin installs through the normal plugin commands:
 
-# Or symlink for development
-ln -s "$(pwd)/rgaa-rs/plugins/rgaa-consultant" ~/.claude/plugins/rgaa-accessibility
+```bash
+# From GitHub
+claude plugin marketplace add jamon8888/Holo-RGAA
+claude plugin install rgaa-accessibility@holo-rgaa
+
+# Or from this clone, for development
+claude plugin marketplace add ./
+claude plugin install rgaa-accessibility@holo-rgaa
 
 # Or let the installer do it (also removes a stale ~/.claude/plugins/rgaa-audit)
 ./install.sh
@@ -50,8 +55,11 @@ loads two manifests for the same tools:
 rm -rf ~/.claude/plugins/rgaa-audit
 ```
 
-Check it loaded with `/plugin` in Claude Code: `rgaa-accessibility` should be
-listed, with the `/audit-site`, `/audit-project` and `/generate-report` commands.
+Check it loaded with `claude plugin details rgaa-accessibility`, or `/plugin`
+inside Claude Code: `rgaa-accessibility` should be listed, with the
+`/audit-site`, `/audit-project` and `/generate-report` commands, four agents and
+two hooks. `claude plugin validate rgaa-rs/plugins/rgaa-consultant` validates the
+tree without installing it.
 
 ### 3. Configure environment
 

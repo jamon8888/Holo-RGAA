@@ -27,14 +27,21 @@ tree. There is no other: the former top-level `claude-plugin/` is a deprecated
 pointer to this one.
 
 ```bash
-# From a clone of the repository
-ln -s "$(pwd)/rgaa-rs/plugins/rgaa-consultant" ~/.claude/plugins/rgaa-accessibility
+# From the marketplace manifest in this repository
+claude plugin marketplace add jamon8888/Holo-RGAA
+claude plugin install rgaa-accessibility@holo-rgaa
 
-# Or let install.sh place it for you
+# Or from a local clone, for development
+claude plugin marketplace add ./
+claude plugin install rgaa-accessibility@holo-rgaa
+
+# Or let install.sh place it, alongside the binaries
 ./install.sh
 ```
 
-Then `/plugin` in Claude Code to confirm `rgaa-accessibility` is loaded.
+Check it with `claude plugin details rgaa-accessibility`, or `/plugin` inside
+Claude Code. `claude plugin validate rgaa-rs/plugins/rgaa-consultant` checks the
+manifest, the hooks file and every skill, agent and command before you install.
 
 ### 2. Connect Your Tools
 

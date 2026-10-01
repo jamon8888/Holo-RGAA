@@ -30,6 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # `claude plugin validate --strict` is the authoritative check on the
+      # plugin manifest, the hooks file and the skill/agent/command front
+      # matter — it is what caught `author` as a string and an unquoted
+      # ${CLAUDE_PLUGIN_ROOT} in a hook command, both of which the contract
+      # script's own checks passed. It runs offline and needs no credentials.
+      # Without the CLI the script skips that section, so install it here.
+      - run: npm install -g @anthropic-ai/claude-code
       - run: bash -n rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
       # Never ran in CI before, which is how the plugin README came to
       # advertise "three tools" for a six-tool server and the install guide

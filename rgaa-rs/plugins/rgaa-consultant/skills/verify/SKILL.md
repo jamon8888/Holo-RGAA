@@ -1,17 +1,13 @@
 ---
 name: verify
-description: "Verify remediation effectiveness by re-running audit"
-version: 0.1.0
-author: RGAA Team
-requires:
-  - remediate
-  - audit
-mode-default: suggest
+description: Re-audit a page after fixes to confirm findings are resolved, with objective evidence, approval-token validation and a before/after compliance delta. Use when the user asks to verify fixes, re-check a corrected page, or confirm a remediation worked.
 ---
 
 # verify — Remediation Verification
 
 ## Overview
+
+Runs after `remediate` and `audit`; proposes rather than applies (`mode-default: suggest`).
 This skill verifies that applied remediations actually resolve the original accessibility findings. It re-runs the audit (or targeted guided tests) and confirms findings are resolved with objective evidence.
 
 ## Inputs

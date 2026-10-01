@@ -94,7 +94,7 @@ evidence_dir: .rgaa/evidence
 
 ## MCP Server
 
-The plugin bundles `rgaa-mcp` (stdio transport) exposing **six** tools. Every
+The plugin bundles `rgaa-mcp` (stdio transport) exposing **seven** tools. Every
 skill reaches for these first; the `rgaa` CLI is a fallback for when no MCP
 session is available, not the primary path.
 
@@ -105,6 +105,7 @@ session is available, not the primary path.
 | `get_audit_result` | `GetAuditInput -> Option<AuditResultDto>` | Retrieve a previously run audit by `audit_id`. |
 | `list_criteria` | `() -> ListCriteriaResponse` | The 106 RGAA criteria with id, title, classification. |
 | `remediate` | `RemediationRequest -> RemediationResponse` | Approval-gated fix proposals for a batch of issues. |
+| `verify_fix` | `VerifyFixRequest -> VerifyFixResponse` | Re-verify corrected files against a reference audit: `fixed` / `remaining` / `new`, plus `unverified` for pages that could not be re-analysed. |
 | `igt` | `GuidedTestRequest -> GuidedTestResponse` | **Deprecated** — prefer `analyze` with `config.igt_tools: ["keyboard"]`. |
 
 ### MCP-first flow

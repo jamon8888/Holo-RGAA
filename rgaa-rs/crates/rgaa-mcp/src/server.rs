@@ -647,7 +647,7 @@ pub struct ToolServer {
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 6] {
+    pub const fn tool_names() -> [&'static str; 7] {
         [
             "analyze",
             "remediate",
@@ -655,6 +655,7 @@ impl ToolServer {
             "audit_url",
             "get_audit_result",
             "list_criteria",
+            "verify_fix",
         ]
     }
 
@@ -671,6 +672,43 @@ impl ToolServer {
             guided_service: guided,
             audit_service: audit,
             storage_service: storage,
+        }
+    }
+}
+
+/// Why a corrected file's page did not make it into the diff.
+enum FileFailure {
+    TimedOut,
+    Failed(String),
+}
+
+impl ToolServer {
+    /// Re-analyse one page through the injected [`AnalyzeService`] under a
+    /// hard time budget.
+    ///
+    /// The timeout is applied here, around the service call, rather than
+    /// being passed to the analyzer as a config value: an analyzer that
+    /// hangs before it reads its own config would ignore the latter, which
+    /// is exactly the case the budget exists for.
+    async fn verify_one_page(
+        &self,
+        url: &str,
+        budget: std::time::Duration,
+    ) -> Result<Vec<rgaa_core::Finding>, FileFailure> {
+        let request = AnalyzeRequest {
+            url: url.to_string(),
+            config: Default::default(),
+            viewport_width: None,
+            viewport_height: None,
+        };
+        let domain = match request.to_domain() {
+            Ok(domain) => domain,
+            Err(failure) => return Err(FileFailure::Failed(failure.message)),
+        };
+        match tokio::time::timeout(budget, self.analyze_service.analyze(domain)).await {
+            Err(_) => Err(FileFailure::TimedOut),
+            Ok(Err(failure)) => Err(FileFailure::Failed(failure.message)),
+            Ok(Ok(result)) => Ok(result.findings),
         }
     }
 }
@@ -781,6 +819,102 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(
             result.map(AuditResultDto::from),
         ))
+    }
+
+    #[tool(
+        name = "verify_fix",
+        description = "Re-verify corrected files against a reference audit bundle. Re-runs the same analysis used by `analyze` on each corrected file's page and diffs the result against the reference with the shared baseline comparison, returning findings as fixed / remaining / new, plus `unverified` for pages that could not be re-analysed. Citations from the reference audit's criterion verdicts travel with each finding. Each page gets at most 30s."
+    )]
+    pub async fn verify_fix(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<VerifyFixRequest>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<VerifyFixResponse>, ErrorData> {
+        let input = request.0;
+        if input.files.is_empty() || input.files.len() > MAX_FILES {
+            return Err(McpFailure::invalid(format!(
+                "files must contain between 1 and {MAX_FILES} items"
+            ))
+            .into_error_data());
+        }
+        let reference: rgaa_core::AuditBundle = serde_json::from_value(input.reference_audit)
+            .map_err(|error| {
+                McpFailure::invalid(format!("reference_audit is not an AuditBundle: {error}"))
+                    .into_error_data()
+            })?;
+
+        // Clamp rather than reject: the ceiling is a safety property of this
+        // server, not a caller preference, and a caller asking for longer
+        // should still get an answer.
+        let budget = std::time::Duration::from_millis(
+            input
+                .per_file_timeout_ms
+                .unwrap_or(MAX_PER_FILE_TIMEOUT_MS)
+                .clamp(1, MAX_PER_FILE_TIMEOUT_MS),
+        );
+
+        // Several corrected files routinely live behind one page. Analysing
+        // per distinct URL keeps one browser run per page and, more
+        // importantly, stops the same page's findings entering the diff
+        // twice — duplicates would inflate every category.
+        let mut outcomes: Vec<(String, Result<Vec<rgaa_core::Finding>, FileFailure>)> = Vec::new();
+        for file in &input.files {
+            if outcomes.iter().any(|(url, _)| url == &file.url) {
+                continue;
+            }
+            let outcome = self.verify_one_page(&file.url, budget).await;
+            outcomes.push((file.url.clone(), outcome));
+        }
+
+        let mut scope = VerificationScope {
+            verified_urls: std::collections::HashSet::new(),
+            unverified_urls: std::collections::HashSet::new(),
+        };
+        let mut current_findings = Vec::new();
+        for (url, outcome) in &outcomes {
+            match outcome {
+                Ok(findings) => {
+                    scope.verified_urls.insert(url.clone());
+                    current_findings.extend(findings.iter().cloned());
+                }
+                Err(_) => {
+                    scope.unverified_urls.insert(url.clone());
+                }
+            }
+        }
+
+        let files = input
+            .files
+            .iter()
+            .map(|file| {
+                let outcome = outcomes
+                    .iter()
+                    .find(|(url, _)| url == &file.url)
+                    .map(|(_, outcome)| outcome);
+                let (status, message) = match outcome {
+                    Some(Ok(_)) | None => (FileVerificationStatus::Verified, None),
+                    Some(Err(FileFailure::TimedOut)) => (
+                        FileVerificationStatus::TimedOut,
+                        Some(format!("re-analysis exceeded {} ms", budget.as_millis())),
+                    ),
+                    Some(Err(FileFailure::Failed(message))) => {
+                        (FileVerificationStatus::Failed, Some(redact(message)))
+                    }
+                };
+                FileVerificationDto {
+                    path: file.path.clone(),
+                    url: file.url.clone(),
+                    status,
+                    message,
+                }
+            })
+            .collect();
+
+        Ok(rmcp::handler::server::wrapper::Json(categorize(
+            &reference,
+            &scope,
+            current_findings,
+            files,
+        )))
     }
 
     #[tool(

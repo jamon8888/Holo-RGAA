@@ -235,6 +235,7 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <th>Classification</th>
                     <th>Statut</th>
                     <th>Détail</th>
+                    <th>Sources</th>
                 </tr>
             </thead>
             <tbody>"#,
@@ -264,17 +265,33 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <td>{}</td>
                     <td><span class="status-badge {}">{}</span></td>
                     <td>{}</td>
+                    <td>{}</td>
                 </tr>"#,
                 escape_html(&criterion.criterion_id),
                 escape_html(title),
                 classification_label(criterion),
                 badge_class,
                 status_label,
-                escape_html(&criterion_detail(criterion))
+                escape_html(&criterion_detail(criterion)),
+                sources_cell(criterion)
             );
         }
 
         let _ = writeln!(html, "            </tbody>\n        </table>");
+    }
+}
+
+/// The `Sources` cell: the RAG evidence behind this verdict, or an em dash.
+///
+/// The em dash is not "no data" — it is "this verdict did not rely on
+/// retrieval", which is the normal and correct state for a deterministic
+/// rule, a manual review, or an untested criterion. Rendering it the same
+/// as a missing citation would be the more misleading choice, so the
+/// distinction is carried in the title attribute.
+fn sources_cell(criterion: &CriterionResult) -> String {
+    match crate::sources::sources_line(criterion) {
+        Some(line) => escape_html(&line),
+        None => r#"<span title="verdict reached without retrieval">&mdash;</span>"#.to_string(),
     }
 }
 

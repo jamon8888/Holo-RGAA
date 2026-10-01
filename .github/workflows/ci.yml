@@ -38,6 +38,59 @@ jobs:
       # documented tool names against the ones `rgaa-mcp` registers, so that
       # drift fails here instead of reaching a plugin user.
       - run: bash claude-plugin/tests/plugin-contract.sh
+  ts-types:
+    name: TypeScript types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rgaa-rs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      # The published tool types are DERIVED from the server, not written
+      # alongside it. A stale type is worse than a stale doc because it
+      # compiles: this repo already shipped plugin docs describing three
+      # tools for a six-tool server, three of them under names no server has
+      # ever registered (#161). Regenerating here and failing on any diff is
+      # what keeps the types a consequence of the server rather than a
+      # promise about it.
+      - name: Regenerate tool schemas and types
+        env:
+          RUSTC_WRAPPER: sccache
+          CARGO_BUILD_JOBS: "2"
+        run: |
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          (cd rgaa-rs && cargo run -p rgaa-mcp --bin dump-tool-schemas) > types/schemas.json
+          kill "$heartbeat" 2>/dev/null || true
+          python3 scripts/generate-ts-types.py
+      - name: Fail if the committed types are stale
+        run: |
+          # --porcelain, not `git diff`: the generated tools.d.ts may be
+          # absent rather than stale, and `git diff` says nothing about an
+          # untracked file.
+          if [ -n "$(git status --porcelain -- types/)" ]; then
+            git status --porcelain -- types/
+            git diff -- types/ || true
+            echo "::error::types/ is out of date. Run:"
+            echo "::error::  (cd rgaa-rs \&\& cargo run -p rgaa-mcp --bin dump-tool-schemas) > types/schemas.json"
+            echo "::error::  python3 scripts/generate-ts-types.py"
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Type-check the published declarations
+        working-directory: types
+        run: npx --yes -p typescript@5.6 tsc --noEmit --strict src/index.d.ts
+      - name: Example client parses
+        run: node --check examples/codex-client/client.mjs
 
   fmt:
     name: Format
@@ -82,7 +135,7 @@ jobs:
           df -h /
       - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rgaa-rs
+          workspaces: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
       - uses: mozilla-actions/sccache-action@v0.0.7
       - uses: rui314/setup-mold@v1
@@ -184,7 +237,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          working-directory: rgaa-rs
+          workspaces: rgaa-rs
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

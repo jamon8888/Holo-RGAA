@@ -71,7 +71,7 @@ rgaa-cli policy --baseline baseline.json --current current.json
 
 ### MCP Server (Claude Code)
 
-The MCP server provides six tools for Claude Code. These are the names the
+The MCP server provides seven tools for Claude Code. These are the names the
 server actually registers — call them exactly as written:
 
 - `analyze` - Per-criterion findings for one page, with evidence and justification
@@ -79,6 +79,7 @@ server actually registers — call them exactly as written:
 - `get_audit_result` - Retrieve a previously run audit by `audit_id`
 - `list_criteria` - The 106 RGAA criteria with id, title, and classification
 - `remediate` - Approval-gated remediation proposals
+- `verify_fix` - Re-verify corrected files against a reference audit (`fixed` / `remaining` / `new` / `unverified`)
 - `igt` - Guided keyboard test (**deprecated**: use `analyze` with `config.igt_tools: ["keyboard"]`)
 
 `audit_url` returns a summary only. For per-criterion detail, call `analyze`
@@ -104,6 +105,10 @@ rgaa-api
 # GET /v1/audit-bundles - List bundles (requires API key)
 # GET /v1/findings - List findings (requires API key)
 # POST /v1/policy/evaluate - Evaluate policy (requires API key)
+# POST /v1/batches - Start a multi-URL batch audit (requires API key)
+# GET /v1/batches/:id - Batch status, per-URL progress (requires API key)
+# GET /v1/batches/:id/results - Final aggregated batch results (requires API key)
+#   Batches expire 24h after creation; reads return 410 afterwards.
 ```
 
 ## Workflow

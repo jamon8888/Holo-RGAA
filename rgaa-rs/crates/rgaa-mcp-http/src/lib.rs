@@ -235,6 +235,13 @@ async fn call_tool(server: &ToolServer, params: CallToolRequestParams) -> Result
                 ErrorData::internal_error(format!("serialize get_audit_result response: {e}"), None)
             })?
         }
+        "verify_fix" => {
+            let req: rgaa_mcp::VerifyFixRequest = parse_args(name, arguments)?;
+            let McpJson(resp) = server.verify_fix(Parameters(req)).await?;
+            serde_json::to_value(resp).map_err(|e| {
+                ErrorData::internal_error(format!("serialize verify_fix response: {e}"), None)
+            })?
+        }
         "list_criteria" => {
             let McpJson(resp) = server.list_criteria()?;
             serde_json::to_value(resp).map_err(|e| {

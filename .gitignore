@@ -22,3 +22,11 @@ AGENTS.local.md
 # open PR's copy. See the `ts-types` job in ci.yml.
 types/schemas.json
 types/src/tools.d.ts
+
+# Hook output: `scripts/check-runtime.sh` writes RGAA_FRAMEWORK to .rgaa/env on
+# SessionStart and drops a stale marker per edited file under .rgaa/state/.
+# Both are per-checkout runtime state, unlike the tracked .rgaa/config.yaml.
+# The hook only started firing once it was fixed to read its payload from
+# stdin, which is when these files first appeared in `git status`.
+.rgaa/env
+.rgaa/state/

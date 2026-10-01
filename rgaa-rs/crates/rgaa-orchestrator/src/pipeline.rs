@@ -20,6 +20,10 @@ use tracing::info;
 
 use rgaa_obscura::ObscuraBridge;
 
+/// Notified once per URL as a batch progresses, with that URL and its
+/// outcome. Shared across every in-flight audit task, hence `Arc`.
+pub type BatchObserver = Arc<dyn Fn(&str, Result<&AuditResult, &str>) + Send + Sync>;
+
 /// At most this many audits run concurrently in a batch — the operating
 /// point #42 locks in (1000-audit batches, 8 concurrent).
 const MAX_CONCURRENT_AUDITS: usize = 8;
@@ -166,6 +170,27 @@ impl Orchestrator {
         urls: &[String],
         config: &CrawlConfig,
     ) -> Result<HashMap<String, AuditResult>, String> {
+        self.run_batch_observed(urls, config, Arc::new(|_, _| {}))
+            .await
+    }
+
+    /// [`Orchestrator::run_batch`], plus a callback fired the moment each
+    /// individual URL finishes (before the batch as a whole returns).
+    ///
+    /// Exists because `run_batch` only ever hands back the whole map at the
+    /// end: a caller tracking per-URL progress — the REST batch endpoints
+    /// (#167) — otherwise had no way to observe anything between "batch
+    /// started" and "batch finished", and would have had to fan URLs out
+    /// itself, duplicating this concurrency control. The observer runs on
+    /// the audit's own task while its semaphore permit is still held, so a
+    /// slow observer throttles the fan-out rather than racing ahead of it;
+    /// keep it cheap (a store write, not an audit).
+    pub async fn run_batch_observed(
+        &self,
+        urls: &[String],
+        config: &CrawlConfig,
+        observer: BatchObserver,
+    ) -> Result<HashMap<String, AuditResult>, String> {
         use futures::stream::{self, StreamExt};
 
         let bridge = {
@@ -192,6 +217,7 @@ impl Orchestrator {
                 let semaphore = Arc::clone(&semaphore);
                 let storage = storage.clone();
                 let config = config.clone();
+                let observer = Arc::clone(&observer);
                 async move {
                     let _permit = semaphore
                         .acquire()
@@ -208,6 +234,11 @@ impl Orchestrator {
                             }
                         }
                     }
+
+                    // Fired after the persist attempt, so an observer that
+                    // marks the URL done can never advertise a result that
+                    // is not yet readable from storage.
+                    observer(&url, outcome.as_ref().map_err(String::as_str));
 
                     (url, outcome)
                 }

@@ -71,14 +71,16 @@ rgaa-cli policy --baseline baseline.json --current current.json
 
 ### MCP Server (Claude Code)
 
-The MCP server provides seven tools for Claude Code. These are the names the
+The MCP server provides nine tools for Claude Code. These are the names the
 server actually registers — call them exactly as written:
 
 - `analyze` - Per-criterion findings for one page, with evidence and justification
 - `audit_url` - Full site audit through the orchestrator; returns a summary (`taux_global`, `etat_conformite`) plus `sampled_page_urls`
 - `get_audit_result` - Retrieve a previously run audit by `audit_id`
+- `lint_static` - Static accessibility lint of HTML/JSX/TSX/Vue source: rule, severity, line/column and a fix hint, against a selectable profile (`rgaa-4.1`, `wcag-2.1-aa`, `section-508`). No browser and no build, so it suits an edit loop — a first pass over source, not a conformance verdict
 - `list_criteria` - The 106 RGAA criteria with id, title, and classification
 - `remediate` - Approval-gated remediation proposals
+- `source_map` - Map a browser finding back to the template that produced it: `source_location` (file, line, column, snippet) per finding. Best-effort literal match over React JSX, Vue SFC, Angular and vanilla HTML; ambiguous findings return in `unmappable` rather than guessed
 - `verify_fix` - Re-verify corrected files against a reference audit (`fixed` / `remaining` / `new` / `unverified`)
 - `igt` - Guided keyboard test (**deprecated**: use `analyze` with `config.igt_tools: ["keyboard"]`)
 
@@ -87,7 +89,7 @@ on the URLs it reports in `sampled_page_urls`.
 
 #### HTTP transport
 
-`rgaa-mcp-http` exposes the same six tools as JSON-RPC over `POST /mcp`, with
+`rgaa-mcp-http` exposes the same nine tools as JSON-RPC over `POST /mcp`, with
 progress events on `GET /mcp/events` (SSE). Cross-origin requests are denied
 unless `RGAA_CORS_ORIGINS` names the allowed origins.
 

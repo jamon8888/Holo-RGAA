@@ -126,7 +126,7 @@ Both `Manuel` and `PartiellementAutomatable` criteria surface as the single
 
 ### HTTP transport
 
-`rgaa-mcp-http` serves the same six tools as JSON-RPC over `POST /mcp`, with
+`rgaa-mcp-http` serves the same nine tools as JSON-RPC over `POST /mcp`, with
 audit progress on `GET /mcp/events` (SSE). Cross-origin access is **denied by
 default** and must be opened explicitly with `RGAA_CORS_ORIGINS`
 (comma-separated origins) or `--cors-origin`.

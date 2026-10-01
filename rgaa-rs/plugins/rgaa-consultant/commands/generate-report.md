@@ -1,3 +1,8 @@
+---
+description: Generate a compliance report from an audit bundle
+argument-hint: [format]
+---
+
 # `/generate-report` — Generate Compliance Report
 
 ## Description

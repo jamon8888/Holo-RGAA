@@ -1,3 +1,8 @@
+---
+name: guided-test
+description: Run bounded, reproducible manual accessibility tests — keyboard navigation, focus management, contrast, touch targets, reading order — and capture screenshots and AXTree evidence. Use when criteria classified Manuel or IaAssiste need human verification, or the user asks for a keyboard, focus or contrast test.
+---
+
 # guided-test — RGAA Manual Testing Protocol
 
 ## Purpose

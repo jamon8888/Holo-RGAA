@@ -1,3 +1,8 @@
+---
+name: triage
+description: Deduplicate, prioritize and group RGAA audit findings by root cause, severity and fix complexity. Use when an audit returns many findings and the user asks what to fix first, to prioritize, or to triage the results.
+---
+
 # triage — RGAA Findings Triage
 
 ## Purpose

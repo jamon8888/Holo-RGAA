@@ -49,8 +49,14 @@ check_file "scripts/check-runtime.sh" "Runtime check script"
 check_file "hooks/hooks.json" "Hooks config"
 
 # Skills
-for skill in audit triage remediate verify report guided-test; do
+for skill in audit triage remediate verify report guided-test criteria; do
   check_file "skills/$skill/SKILL.md" "Skill: $skill"
+done
+
+# Commands — only the canonical tree has them, and a missing command file is a
+# slash command that silently does not exist.
+for command in audit-site audit-project generate-report; do
+  check_file "commands/$command.md" "Command: $command"
 done
 
 # Agents
@@ -83,7 +89,7 @@ else
 fi
 
 # Skill files have required front matter
-for skill in audit triage remediate verify report guided-test; do
+for skill in audit triage remediate verify report guided-test criteria; do
   if ! grep -q "^name:" "$PLUGIN_ROOT/skills/$skill/SKILL.md" 2>/dev/null; then
     echo "❌ MISSING FRONT MATTER 'name' in skills/$skill/SKILL.md"
     FAILURES=$((FAILURES + 1))
@@ -92,6 +98,25 @@ for skill in audit triage remediate verify report guided-test; do
     echo "❌ MISSING FRONT MATTER 'description' in skills/$skill/SKILL.md"
     FAILURES=$((FAILURES + 1))
   fi
+done
+
+# Command and agent files have front matter too: a command with no
+# `description` shows up unlabelled in `/plugin`, and an agent with no `name`
+# cannot be addressed.
+for command in audit-site audit-project generate-report; do
+  if ! grep -q "^description:" "$PLUGIN_ROOT/commands/$command.md" 2>/dev/null; then
+    echo "❌ MISSING FRONT MATTER 'description' in commands/$command.md"
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+
+for agent in scanner remediation-planner verification-reviewer compliance-report-writer; do
+  for field in name description; do
+    if ! grep -q "^$field:" "$PLUGIN_ROOT/agents/$agent.md" 2>/dev/null; then
+      echo "❌ MISSING FRONT MATTER '$field' in agents/$agent.md"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
 done
 
 # Documented MCP tools must match the ones the server actually registers.
@@ -110,9 +135,13 @@ done
 #
 #   README.md                  | `tool` | ... |   (the tool table)
 #   docs/rgaa-plugin-install.md - `tool` - ...    (the tool bullet list)
-SERVER_RS="$PLUGIN_ROOT/../rgaa-rs/crates/rgaa-mcp/src/server.rs"
-INSTALL_DOC="$PLUGIN_ROOT/../docs/rgaa-plugin-install.md"
-INTEGRATION_DOC="$PLUGIN_ROOT/../docs/plugin-integration.md"
+# Paths are relative to the plugin root, which is now
+# rgaa-rs/plugins/rgaa-consultant/ — two levels under rgaa-rs/, three under the
+# repository root.
+REPO_ROOT="$(cd "$PLUGIN_ROOT/../../.." && pwd)"
+SERVER_RS="$REPO_ROOT/rgaa-rs/crates/rgaa-mcp/src/server.rs"
+INSTALL_DOC="$REPO_ROOT/docs/rgaa-plugin-install.md"
+INTEGRATION_DOC="$REPO_ROOT/docs/plugin-integration.md"
 
 # Print a markdown file from the heading matching $2 up to the next heading of
 # the same or higher level.
@@ -287,6 +316,56 @@ if [[ -f "$SERVER_RS" ]]; then
   fi
 else
   echo "⚠️  SKIP TOOL CONTRACT: $SERVER_RS not found (plugin checked out standalone)"
+fi
+
+# The Claude Code CLI ships the authoritative validator for the manifest, the
+# hooks file and the skill/agent/command front matter. It knows things this
+# script cannot: `author` must be an object and `repository` a string (the
+# manifest had them the other way round and passed every check above), and an
+# unquoted ${CLAUDE_PLUGIN_ROOT} in a hook command splits on a path with a
+# space. Run it when the CLI is on PATH; skip, loudly, when it is not, since a
+# CI image without `claude` must not silently drop the strongest check here.
+if command -v claude >/dev/null 2>&1; then
+  for target in "$PLUGIN_ROOT" "$PLUGIN_ROOT/skills" "$PLUGIN_ROOT/agents" \
+                "$PLUGIN_ROOT/commands" "$REPO_ROOT/.claude-plugin/marketplace.json"; do
+    if claude plugin validate --strict "$target" >/tmp/rgaa-validate.$$ 2>&1; then
+      echo "✅ CLAUDE VALIDATE: $(basename "$target")"
+    else
+      echo "❌ CLAUDE VALIDATE failed for $(basename "$target"):"
+      sed 's/^/    /' /tmp/rgaa-validate.$$
+      FAILURES=$((FAILURES + 1))
+    fi
+    rm -f /tmp/rgaa-validate.$$
+  done
+else
+  echo "⚠️  SKIP CLAUDE VALIDATE: the claude CLI is not on PATH"
+fi
+
+# The marketplace entry and the plugin manifest must agree on name and version,
+# or `claude plugin install` resolves a plugin whose manifest says something
+# else — and `claude plugin tag` refuses to cut a release at all.
+MARKETPLACE="$REPO_ROOT/.claude-plugin/marketplace.json"
+if [[ -f $MARKETPLACE ]] && command -v jq >/dev/null 2>&1; then
+  plugin_name=$(jq -r '.name' "$PLUGIN_ROOT/.claude-plugin/plugin.json")
+  plugin_version=$(jq -r '.version' "$PLUGIN_ROOT/.claude-plugin/plugin.json")
+  entry=$(jq -r --arg src "./${PLUGIN_ROOT#"$REPO_ROOT"/}" \
+    '.plugins[] | select(.source == $src)' "$MARKETPLACE")
+  if [[ -z $entry ]]; then
+    echo "❌ MARKETPLACE: no entry in marketplace.json points at this plugin"
+    FAILURES=$((FAILURES + 1))
+  else
+    for field in name version; do
+      declare -n want="plugin_$field"
+      got=$(jq -r ".$field // empty" <<< "$entry")
+      if [[ $got != "$want" ]]; then
+        echo "❌ MARKETPLACE: entry $field is '$got' but plugin.json says '$want'"
+        FAILURES=$((FAILURES + 1))
+      fi
+    done
+    [[ $FAILURES -eq 0 ]] && echo "✅ MARKETPLACE: entry agrees with plugin.json ($plugin_name $plugin_version)"
+  fi
+else
+  echo "⚠️  SKIP MARKETPLACE CHECK: marketplace.json or jq missing"
 fi
 
 echo

@@ -8,8 +8,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RGAA_ROOT="$(cd "$PLUGIN_ROOT/.." && pwd)"
-RGAA_RS_ROOT="$RGAA_ROOT/rgaa-rs"
+# The plugin lives at rgaa-rs/plugins/rgaa-consultant/, so the cargo workspace
+# root is two levels up.
+RGAA_RS_ROOT="$(cd "$PLUGIN_ROOT/../.." && pwd)"
 FAILURES=0
 
 section() {

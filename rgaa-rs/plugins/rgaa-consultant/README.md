@@ -22,9 +22,26 @@ An AI-powered accessibility auditing plugin for Claude Cowork and Claude Code. R
 
 ### 1. Install the Plugin
 
+This directory — `rgaa-rs/plugins/rgaa-consultant/` — is the canonical plugin
+tree. There is no other: the former top-level `claude-plugin/` is a deprecated
+pointer to this one.
+
+```bash
+# From the marketplace manifest in this repository
+claude plugin marketplace add jamon8888/Holo-RGAA
+claude plugin install rgaa-accessibility@holo-rgaa
+
+# Or from a local clone, for development
+claude plugin marketplace add ./
+claude plugin install rgaa-accessibility@holo-rgaa
+
+# Or let install.sh place it, alongside the binaries
+./install.sh
 ```
-claude plugins add rgaa-accessibility
-```
+
+Check it with `claude plugin details rgaa-accessibility`, or `/plugin` inside
+Claude Code. `claude plugin validate rgaa-rs/plugins/rgaa-consultant` checks the
+manifest, the hooks file and every skill, agent and command before you install.
 
 ### 2. Connect Your Tools
 
@@ -80,6 +97,66 @@ Skills activate automatically when relevant — no need to invoke them directly.
 | `verify` | Post-fix validation or re-audit requested |
 | `report` | Compliance documentation or export needed |
 | `guided-test` | Manual accessibility testing (keyboard, focus, contrast) |
+| `criteria` | A specific RGAA criterion needs looking up or explaining |
+
+## MCP Server
+
+The plugin bundles `rgaa-mcp` (stdio transport) exposing **nine** tools. Every
+skill reaches for these first; the `rgaa` CLI is a fallback for when no MCP
+session is available, not the primary path.
+
+| Tool | Signature | Use it for |
+|------|-----------|------------|
+| `analyze` | `AnalyzeRequest -> AnalyzeResponse` | Per-criterion findings for one page, with evidence and justification. |
+| `audit_url` | `AuditUrlInput -> AuditUrlResult` | Whole-site audit through the orchestrator. Returns a **summary only** (`taux_global`, `etat_conformite`, `sampled_page_urls`). |
+| `get_audit_result` | `GetAuditInput -> Option<AuditResultDto>` | Retrieve a previously run audit by `audit_id`. |
+| `lint_static` | `LintStaticRequest -> LintStaticResponse` | Lint HTML, JSX/TSX or Vue **source** for missing `alt`, unlabelled form controls and nameless buttons/links — no browser, no build. Sub-millisecond per file, so it suits an edit loop. A first pass over source, **not** a conformance verdict: use `analyze` on a rendered page for that. |
+| `list_criteria` | `() -> ListCriteriaResponse` | The 106 RGAA criteria with id, title, classification. |
+| `remediate` | `RemediationRequest -> RemediationResponse` | Approval-gated fix proposals for a batch of issues. |
+| `source_map` | `SourceMapRequest -> SourceMapResponse` | Relocate browser findings to the template that produced them: `source_location` (file, line, column, snippet) per finding. Best-effort literal match over React JSX, Vue SFC, Angular and vanilla HTML — the browser reports rendered DOM, the repository holds templates, so there is no exact inverse. Ambiguous findings come back in `unmappable` with a reason rather than a guessed location; check `confidence` and `matched_on` before editing. |
+| `verify_fix` | `VerifyFixRequest -> VerifyFixResponse` | Re-verify corrected files against a reference audit: `fixed` / `remaining` / `new`, plus `unverified` for pages that could not be re-analysed. |
+| `igt` | `GuidedTestRequest -> GuidedTestResponse` | **Deprecated** — prefer `analyze` with `config.igt_tools: ["keyboard"]`. |
+
+### MCP-first flow
+
+`audit_url` gives the site-level verdict but no per-criterion detail. To get
+both, chain the tools rather than re-running the audit:
+
+1. `list_criteria` — once, to resolve criterion ids and classifications.
+2. `audit_url` — site-level summary plus `sampled_page_urls`.
+3. `analyze` — per page from `sampled_page_urls`, for findings and evidence.
+4. `get_audit_result` — to re-read a completed audit instead of auditing again.
+5. `remediate` — on the findings worth fixing.
+
+Both `Manuel` and `PartiellementAutomatable` criteria surface as the single
+`NeedsReview` status: watch that one status for everything needing a human.
+
+### HTTP transport
+
+`rgaa-mcp-http` serves the same nine tools as JSON-RPC over `POST /mcp`, with
+audit progress on `GET /mcp/events` (SSE). Cross-origin access is **denied by
+default** and must be opened explicitly with `RGAA_CORS_ORIGINS`
+(comma-separated origins) or `--cors-origin`.
+
+## Agents
+
+Subagents the skills delegate to for bounded, single-purpose work.
+
+| Agent | Used by | Purpose |
+|-------|---------|---------|
+| `scanner` | `audit` | Run the accessibility scan and collect evidence |
+| `remediation-planner` | `remediate` | Draft approval-gated source patches |
+| `verification-reviewer` | `verify` | Re-audit and confirm fixes against the baseline |
+| `compliance-report-writer` | `report` | Assemble the compliance report |
+
+## Hooks
+
+`hooks/hooks.json` registers `scripts/check-runtime.sh` on two events:
+
+- **SessionStart** — detect the project framework (Next, React, Vue, Angular) and
+  write `RGAA_FRAMEWORK` to `.rgaa/env` for the skills to read.
+- **PostToolUse** on `Edit|Write|MultiEdit` — mark audit state stale for the
+  edited file, so a later verify knows the baseline no longer matches the source.
 
 ## RGAA Compliance Tiers
 
@@ -149,10 +226,21 @@ rgaa-consultant/
 ├── .mcp.json
 ├── README.md
 ├── CONNECTORS.md
+├── SPEC.md
+├── agents/
+│   ├── scanner.md
+│   ├── remediation-planner.md
+│   ├── verification-reviewer.md
+│   └── compliance-report-writer.md
 ├── commands/
 │   ├── audit-site.md
 │   ├── audit-project.md
 │   └── generate-report.md
+├── hooks/hooks.json
+├── scripts/check-runtime.sh
+├── tests/
+│   ├── plugin-contract.sh
+│   └── e2e-local.sh
 └── skills/
     ├── audit/
     ├── triage/

@@ -4,6 +4,7 @@ members = [
     "crates/rgaa-core",
     "crates/rgaa-rules",
     "crates/rgaa-holo",
+    "crates/rgaa-exa",
     "crates/rgaa-obscura",
     "crates/rgaa-storage",
     "crates/rgaa-orchestrator",

@@ -14,3 +14,12 @@ AGENTS.local.md
 
 # Local environment / secrets
 .env
+
+# Session and run artifacts, never source.
+# `.claude/` holds this app's session worktrees and caches — it was 24 GB on
+# the machine this line was written on.
+.claude/
+rgaa-rs/logs/
+.rgaa_audit_*.log
+.rgaa_cli_build.log
+rgaa_*_final_report.json

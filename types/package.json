@@ -14,7 +14,8 @@
     "directory": "types"
   },
   "scripts": {
-    "check": "tsc --noEmit --strict src/index.d.ts"
+    "check": "tsc --noEmit --strict src/index.d.ts",
+    "generate": "cd ../rgaa-rs && cargo run -p rgaa-mcp --bin dump-tool-schemas > ../types/schemas.json && cd .. && python3 scripts/generate-ts-types.py"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

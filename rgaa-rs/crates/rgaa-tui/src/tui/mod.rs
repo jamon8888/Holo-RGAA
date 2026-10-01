@@ -42,7 +42,7 @@ pub async fn run() {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         show_menu = false;
                         drop(terminal);
-                        crate::tui::run_audit_wizard();
+                        let _ = crate::tui::run_audit_wizard();
                         terminal = ratatui::init();
                         terminal.clear().unwrap();
                     }
@@ -83,7 +83,7 @@ pub async fn run() {
                         MainMenuSelection::Audit => {
                             show_menu = false;
                             drop(terminal);
-                            crate::tui::run_audit_wizard();
+                            let _ = crate::tui::run_audit_wizard();
                             terminal = ratatui::init();
                             terminal.clear().unwrap();
                         }

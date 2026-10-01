@@ -1,14 +1,44 @@
-use ratatui::crossterm::event::{self, Event, KeyCode};
+use crate::storage::{AuditSummary, Storage, StorageError};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
-use ratatui::widgets::{
-    Block, Borders, List, ListItem, ListState, Paragraph, ScrollbarState, Wrap,
-};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
-use rgaa_storage::{AuditSummary, PostgresStorage, Storage};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+
+/// How many audits the view loads at a time. Matches the default of
+/// `rgaa history` closely enough that the two show the same recent work.
+const PAGE_SIZE: usize = 50;
+
+/// Status counts for one audit, read from the stored result on demand.
+///
+/// The list only needs the summary row; counting criteria means
+/// deserializing the whole audit, so it happens when a row is selected,
+/// not for every row up front.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CriterionCounts {
+    pub passed: usize,
+    pub failed: usize,
+    pub needs_review: usize,
+    pub errors: usize,
+}
+
+impl CriterionCounts {
+    fn from_audit(audit: &rgaa_core::AuditResult) -> Self {
+        let mut counts = Self::default();
+        for result in audit.pages.iter().flat_map(|page| &page.criteria) {
+            match result.status {
+                rgaa_core::CriterionStatus::Pass => counts.passed += 1,
+                rgaa_core::CriterionStatus::Fail => counts.failed += 1,
+                rgaa_core::CriterionStatus::NeedsReview => counts.needs_review += 1,
+                rgaa_core::CriterionStatus::Error => counts.errors += 1,
+                rgaa_core::CriterionStatus::NotTested
+                | rgaa_core::CriterionStatus::NotApplicable => {}
+            }
+        }
+        counts
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -17,10 +47,8 @@ pub struct HistoryEntry {
     pub taux_global: f64,
     pub etat_conformite: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub passed: usize,
-    pub failed: usize,
-    pub needs_review: usize,
-    pub errors: usize,
+    /// Filled the first time the entry is opened; `None` until then.
+    pub counts: Option<CriterionCounts>,
 }
 
 impl HistoryEntry {
@@ -31,10 +59,7 @@ impl HistoryEntry {
             taux_global: summary.taux_global,
             etat_conformite: summary.etat_conformite.clone(),
             created_at: summary.created_at,
-            passed: 0,
-            failed: 0,
-            needs_review: 0,
-            errors: 0,
+            counts: None,
         }
     }
 
@@ -45,14 +70,24 @@ impl HistoryEntry {
             _ => Color::Red,
         }
     }
+
+    /// One row of the list: short id, URL, score, date.
+    fn row(&self) -> String {
+        format!(
+            "{} | {} | {:.1}% | {}",
+            self.audit_id.chars().take(8).collect::<String>(),
+            self.url.chars().take(40).collect::<String>(),
+            self.taux_global,
+            self.created_at.format("%Y-%m-%d %H:%M")
+        )
+    }
 }
 
 struct HistoryState {
     entries: Vec<HistoryEntry>,
     list_state: ListState,
-    detail_scroll: usize,
-    detail_scroll_state: ScrollbarState,
-    loading: bool,
+    /// Set when a load or a detail read fails, shown instead of the detail.
+    message: Option<String>,
 }
 
 impl HistoryState {
@@ -60,10 +95,13 @@ impl HistoryState {
         Self {
             entries: Vec::new(),
             list_state: ListState::default(),
-            detail_scroll: 0,
-            detail_scroll_state: ScrollbarState::default(),
-            loading: false,
+            message: None,
         }
+    }
+
+    fn select_first(&mut self) {
+        self.list_state
+            .select((!self.entries.is_empty()).then_some(0));
     }
 
     fn next(&mut self) {
@@ -71,13 +109,8 @@ impl HistoryState {
             return;
         }
         let i = match self.list_state.selected() {
-            Some(i) => {
-                if i >= self.entries.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
+            Some(i) if i >= self.entries.len() - 1 => 0,
+            Some(i) => i + 1,
             None => 0,
         };
         self.list_state.select(Some(i));
@@ -88,82 +121,89 @@ impl HistoryState {
             return;
         }
         let i = match self.list_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.entries.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
+            Some(0) | None => self.entries.len() - 1,
+            Some(i) => i - 1,
         };
         self.list_state.select(Some(i));
     }
 
-    fn scroll_detail_down(&mut self) {
-        self.detail_scroll = self.detail_scroll.saturating_add(1);
-        self.detail_scroll_state = self.detail_scroll_state.position(self.detail_scroll);
+    fn reload(&mut self, storage: &Storage) {
+        match load_entries(storage) {
+            Ok(entries) => {
+                self.entries = entries;
+                self.message = None;
+                self.select_first();
+            }
+            Err(e) => self.message = Some(format!("failed to read audit history: {e}")),
+        }
     }
 
-    fn scroll_detail_up(&mut self) {
-        self.detail_scroll = self.detail_scroll.saturating_sub(1);
-        self.detail_scroll_state = self.detail_scroll_state.position(self.detail_scroll);
+    /// Read the stored result for the selected row and cache its counts.
+    fn load_detail(&mut self, storage: &Storage) {
+        let Some(entry) = self
+            .list_state
+            .selected()
+            .and_then(|i| self.entries.get_mut(i))
+        else {
+            return;
+        };
+        if entry.counts.is_some() {
+            return;
+        }
+        match storage.get_audit(&entry.audit_id) {
+            Ok(Some(audit)) => entry.counts = Some(CriterionCounts::from_audit(&audit)),
+            Ok(None) => self.message = Some("this audit is no longer in the database".to_string()),
+            Err(e) => self.message = Some(format!("failed to read audit: {e}")),
+        }
     }
 }
 
+fn load_entries(storage: &Storage) -> Result<Vec<HistoryEntry>, StorageError> {
+    Ok(storage
+        .list_audits(PAGE_SIZE)?
+        .iter()
+        .map(HistoryEntry::from_summary)
+        .collect())
+}
+
+/// Past audits, read from the same local database `rgaa history` prints from.
 pub async fn run_history_view() -> Result<(), Box<dyn std::error::Error>> {
+    // Open the database before taking over the screen: a failure here is a
+    // plain error, not a half-initialised terminal.
+    let storage = crate::storage::storage().await?;
+
     let mut terminal = ratatui::init();
-    terminal.clear()?;
+    let result = history_loop(&mut terminal, &storage);
+    ratatui::restore();
+    result.map_err(Into::into)
+}
 
+fn history_loop(
+    terminal: &mut ratatui::DefaultTerminal,
+    storage: &Storage,
+) -> Result<(), std::io::Error> {
     let mut state = HistoryState::new();
-    state.loading = true;
-
-    // Load history
-    let storage = PostgresStorage::new("postgres://localhost/rgaa").await?;
-    if let Ok(summaries) = storage.list_audits(50, 0).await {
-        for summary in summaries {
-            state.entries.push(HistoryEntry::from_summary(&summary));
-        }
-    }
-    state.loading = false;
-
-    let storage = Arc::new(Mutex::new(storage));
+    state.reload(storage);
+    terminal.clear()?;
 
     loop {
         terminal.draw(|frame| render_history_view(frame, &mut state))?;
 
         if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
             match key.code {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => break,
                 KeyCode::Down | KeyCode::Char('j') => state.next(),
                 KeyCode::Up | KeyCode::Char('k') => state.previous(),
-                KeyCode::PageDown => state.scroll_detail_down(),
-                KeyCode::PageUp => state.scroll_detail_up(),
-                KeyCode::Enter => {
-                    if let Some(idx) = state.list_state.selected() {
-                        if let Some(entry) = state.entries.get(idx) {
-                            show_detail(entry).await;
-                        }
-                    }
-                }
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    // Reload
-                    state.loading = true;
-                    let storage_guard = storage.lock().await;
-                    if let Ok(summaries) = storage_guard.list_audits(50, 0).await {
-                        state.entries.clear();
-                        for summary in summaries {
-                            state.entries.push(HistoryEntry::from_summary(&summary));
-                        }
-                    }
-                    state.loading = false;
-                }
+                KeyCode::Enter => state.load_detail(storage),
+                KeyCode::Char('r') | KeyCode::Char('R') => state.reload(storage),
                 _ => {}
             }
         }
     }
 
-    ratatui::restore();
     Ok(())
 }
 
@@ -179,31 +219,32 @@ fn render_history_view(frame: &mut Frame, state: &mut HistoryState) {
 }
 
 fn render_history_list(frame: &mut Frame, state: &mut HistoryState, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Audit History (r: reload, q: back)");
+
+    if state.entries.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No audits yet. Run an audit from the main menu.")
+                .block(block)
+                .alignment(Alignment::Center)
+                .fg(Color::DarkGray),
+            area,
+        );
+        return;
+    }
+
     let items: Vec<ListItem> = state
         .entries
         .iter()
         .map(|entry| {
-            let status = format!("{:.1}%", entry.taux_global);
-            let status_color = entry.status_color();
-            let date = entry.created_at.format("%Y-%m-%d %H:%M").to_string();
-            let audit_id_short = &entry.audit_id[..8.min(entry.audit_id.len())];
-            let content = format!(
-                "{} | {} | {} | {}",
-                audit_id_short,
-                entry.url.chars().take(40).collect::<String>(),
-                status,
-                date
-            );
-            ListItem::new(content).style(ratatui::style::Style::default().fg(status_color))
+            ListItem::new(entry.row())
+                .style(ratatui::style::Style::default().fg(entry.status_color()))
         })
         .collect();
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Audit History"),
-        )
+        .block(block)
         .highlight_style(ratatui::style::Style::default().fg(Color::Yellow).bold())
         .highlight_symbol("▶ ");
 
@@ -211,48 +252,182 @@ fn render_history_list(frame: &mut Frame, state: &mut HistoryState, area: Rect) 
 }
 
 fn render_history_detail(frame: &mut Frame, state: &mut HistoryState, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Audit Details");
+
+    if let Some(message) = &state.message {
+        frame.render_widget(
+            Paragraph::new(message.as_str())
+                .block(block)
+                .wrap(Wrap { trim: true })
+                .fg(Color::Red),
+            area,
+        );
+        return;
+    }
+
     let selected = state
         .list_state
         .selected()
         .and_then(|i| state.entries.get(i));
 
-    let (content, _scroll_state) = if let Some(entry) = selected {
-        let detail = format!(
-            "Audit ID: {}\nURL: {}\nTaux Global: {:.1}%\nStatus: {}\nDate: {}\nPassed: {}\nFailed: {}\nNeeds Review: {}\nErrors: {}",
-            entry.audit_id,
-            entry.url,
-            entry.taux_global,
-            entry.etat_conformite,
-            entry.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
-            entry.passed,
-            entry.failed,
-            entry.needs_review,
-            entry.errors
+    let Some(entry) = selected else {
+        frame.render_widget(
+            Paragraph::new("Select an audit to view details")
+                .block(block)
+                .alignment(Alignment::Center),
+            area,
         );
-        let paragraph = Paragraph::new(detail)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Audit Details"),
-            )
-            .wrap(Wrap { trim: true })
-            .scroll((state.detail_scroll as u16, 0));
-        (paragraph, state.detail_scroll_state)
-    } else {
-        let paragraph = Paragraph::new("Select an audit to view details")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Audit Details"),
-            )
-            .alignment(Alignment::Center);
-        (paragraph, state.detail_scroll_state)
+        return;
     };
 
-    frame.render_widget(content, area);
+    let counts = match &entry.counts {
+        Some(counts) => format!(
+            "Passed: {}\nFailed: {}\nNeeds Review: {}\nErrors: {}",
+            counts.passed, counts.failed, counts.needs_review, counts.errors
+        ),
+        None => "Press ENTER to load the criteria breakdown".to_string(),
+    };
+
+    let detail = format!(
+        "Audit ID: {}\nURL: {}\nTaux Global: {:.1}%\nStatus: {}\nDate: {}\n\n{}",
+        entry.audit_id,
+        entry.url,
+        entry.taux_global,
+        entry.etat_conformite,
+        entry.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
+        counts
+    );
+
+    frame.render_widget(
+        Paragraph::new(detail)
+            .block(block)
+            .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
-async fn show_detail(_entry: &HistoryEntry) {
-    // In a real implementation, this would show a modal or push a detail view
-    // For now, just a placeholder
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn criterion(id: &str, status: rgaa_core::CriterionStatus) -> rgaa_core::CriterionResult {
+        rgaa_core::CriterionResult {
+            criterion_id: id.to_string(),
+            title: "t".to_string(),
+            classification: rgaa_core::Classification::Deterministe,
+            status,
+            violations: Vec::new(),
+            confidence: None,
+            justification: None,
+            source: "test".to_string(),
+            citations: Vec::new(),
+            considered_sources: Vec::new(),
+            tests: Vec::new(),
+        }
+    }
+
+    fn audit(statuses: &[rgaa_core::CriterionStatus]) -> rgaa_core::AuditResult {
+        rgaa_core::AuditResult {
+            audit_id: "a".to_string(),
+            url: "https://example.com".to_string(),
+            pages: vec![rgaa_core::PageResult {
+                url: "https://example.com".to_string(),
+                title: None,
+                criteria: statuses
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| criterion(&format!("1.{i}"), s.clone()))
+                    .collect(),
+                compliance_rate: 0.0,
+                crawl_depth: 0,
+            }],
+            total_criteria: statuses.len(),
+            passed: 0,
+            failed: 0,
+            na: 0,
+            overall_compliance: 0.0,
+            taux_global: 0.0,
+            coverage_percent: 0.0,
+            etat_conformite: "non".to_string(),
+            duration_ms: 0,
+        }
+    }
+
+    fn summary(id: &str) -> AuditSummary {
+        AuditSummary {
+            id: id.to_string(),
+            url: "https://example.com/a-fairly-long-path-that-gets-truncated".to_string(),
+            taux_global: 61.4,
+            etat_conformite: "partielle".to_string(),
+            created_at: chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
+                .expect("static timestamp parses")
+                .with_timezone(&chrono::Utc),
+        }
+    }
+
+    #[test]
+    fn counts_every_status_bucket() {
+        use rgaa_core::CriterionStatus::*;
+        let counts = CriterionCounts::from_audit(&audit(&[
+            Pass,
+            Pass,
+            Fail,
+            NeedsReview,
+            Error,
+            NotTested,
+            NotApplicable,
+        ]));
+        assert_eq!(
+            counts,
+            CriterionCounts {
+                passed: 2,
+                failed: 1,
+                needs_review: 1,
+                errors: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn entry_mirrors_the_stored_summary() {
+        let entry = HistoryEntry::from_summary(&summary("0123456789abcdef"));
+        assert_eq!(entry.audit_id, "0123456789abcdef");
+        assert_eq!(entry.taux_global, 61.4);
+        assert_eq!(entry.status_color(), Color::Yellow);
+        // Counts are not known until the full audit is read.
+        assert!(entry.counts.is_none());
+    }
+
+    #[test]
+    fn row_shortens_id_and_url() {
+        let row = HistoryEntry::from_summary(&summary("0123456789abcdef")).row();
+        assert!(row.starts_with("01234567 | https://example.com/a-fairly-long-pa | 61.4% | "));
+        assert!(row.ends_with("2026-01-02 03:04"));
+    }
+
+    #[test]
+    fn selection_wraps_in_both_directions() {
+        let mut state = HistoryState::new();
+        state.entries = vec![
+            HistoryEntry::from_summary(&summary("a")),
+            HistoryEntry::from_summary(&summary("b")),
+        ];
+        state.select_first();
+        assert_eq!(state.list_state.selected(), Some(0));
+        state.previous();
+        assert_eq!(state.list_state.selected(), Some(1));
+        state.next();
+        assert_eq!(state.list_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn empty_history_has_no_selection() {
+        let mut state = HistoryState::new();
+        state.select_first();
+        state.next();
+        state.previous();
+        assert_eq!(state.list_state.selected(), None);
+    }
 }

@@ -112,10 +112,104 @@ impl Storage {
     }
 }
 
+/// Record a finished audit in the local database that the TUI History view
+/// and `rgaa history` both read.
+///
+/// Failures are logged, never propagated: the audit itself succeeded, and
+/// losing the bookkeeping must not lose the result the caller is holding.
+pub async fn record_audit(audit: &rgaa_core::AuditResult) {
+    match storage().await {
+        Ok(storage) => {
+            if let Err(e) = storage.save_audit(audit) {
+                tracing::warn!(error = %e, "failed to record audit in local history");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "failed to open the local audit database"),
+    }
+}
+
 pub async fn storage() -> Result<Storage, StorageError> {
     let db_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".rgaa")
         .join("audits.db");
     Storage::new(&db_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A database of its own per test, so the suite never touches
+    /// `~/.rgaa/audits.db`.
+    fn temp_db() -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join("rgaa-tui-tests")
+            .join(format!("{}.db", uuid::Uuid::new_v4()))
+    }
+
+    fn audit(url: &str, taux: f64) -> rgaa_core::AuditResult {
+        rgaa_core::AuditResult {
+            audit_id: "pipeline-id".to_string(),
+            url: url.to_string(),
+            pages: Vec::new(),
+            total_criteria: 0,
+            passed: 0,
+            failed: 0,
+            na: 0,
+            overall_compliance: taux,
+            taux_global: taux,
+            coverage_percent: 0.0,
+            etat_conformite: "partielle".to_string(),
+            duration_ms: 12,
+        }
+    }
+
+    #[test]
+    fn saved_audits_round_trip() {
+        let path = temp_db();
+        let storage = Storage::new(&path).expect("open database");
+
+        let first = storage
+            .save_audit(&audit("https://example.com/one", 40.0))
+            .expect("save first");
+        let second = storage
+            .save_audit(&audit("https://example.com/two", 90.0))
+            .expect("save second");
+        assert_ne!(first, second, "each audit gets its own id");
+
+        let listed = storage.list_audits(10).expect("list audits");
+        assert_eq!(listed.len(), 2);
+        let urls: Vec<&str> = listed.iter().map(|a| a.url.as_str()).collect();
+        assert!(urls.contains(&"https://example.com/one"));
+        assert!(urls.contains(&"https://example.com/two"));
+
+        let stored = storage.get_audit(&second).expect("get audit");
+        assert_eq!(
+            stored.map(|a| a.taux_global),
+            Some(90.0),
+            "the full result round-trips, not just the summary"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn list_honours_the_limit_and_delete_reports_a_miss() {
+        let path = temp_db();
+        let storage = Storage::new(&path).expect("open database");
+        for i in 0..3 {
+            storage
+                .save_audit(&audit(&format!("https://example.com/{i}"), 50.0))
+                .expect("save");
+        }
+
+        assert_eq!(storage.list_audits(2).expect("list").len(), 2);
+        assert!(matches!(
+            storage.delete_audit("no-such-id"),
+            Err(StorageError::NotFound(_))
+        ));
+
+        let _ = std::fs::remove_file(&path);
+    }
 }

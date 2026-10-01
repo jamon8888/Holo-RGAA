@@ -112,15 +112,68 @@ done
 #   docs/rgaa-plugin-install.md - `tool` - ...    (the tool bullet list)
 SERVER_RS="$PLUGIN_ROOT/../rgaa-rs/crates/rgaa-mcp/src/server.rs"
 INSTALL_DOC="$PLUGIN_ROOT/../docs/rgaa-plugin-install.md"
+INTEGRATION_DOC="$PLUGIN_ROOT/../docs/plugin-integration.md"
+
+# Print a markdown file from the heading matching $2 up to the next heading of
+# the same or higher level.
+#
+# Every check below reads a slice, never the whole file, because each of these
+# docs says true things elsewhere that a whole-file reading misreports:
+# plugin-integration.md has a binaries table whose first column is `rgaa`
+# (read as a phantom tool), and a paragraph recounting the drift this script
+# exists to stop — "described three tools for a six-tool server" (read as a
+# stale count). Both are correct text. A check that fails on correct text gets
+# switched off, and then it guards nothing.
+doc_section() {
+  local file="$1" heading_re="$2"
+  [[ -f $file ]] || return 0
+  awk -v re="$heading_re" '
+    !started && $0 ~ re {
+      started = 1
+      h = $0; sub(/[^#].*$/, "", h); lvl = length(h)
+      next
+    }
+    started {
+      if ($0 ~ /^#+[ \t]/) {
+        h = $0; sub(/[^#].*$/, "", h)
+        if (length(h) <= lvl) exit
+      }
+      print
+    }
+  ' "$file"
+}
 
 # Tool names from a markdown table's first column: | `name` | ... |
 table_tools() {
-  grep -oE '^\| *`[a-z_]+` *\|' "$1" 2>/dev/null | tr -d '|` ' | sort -u
+  grep -oE '^\| *`[a-z_]+` *\|' 2>/dev/null | tr -d '|` ' | sort -u
 }
 
 # Tool names from a markdown bullet list: - `name` - description
 bullet_tools() {
-  grep -oE '^- *`[a-z_]+` +-' "$1" 2>/dev/null | sed -E 's/^- *`([a-z_]+)` +-/\1/' | sort -u
+  grep -oE '^- *`[a-z_]+` +-' 2>/dev/null | sed -E 's/^- *`([a-z_]+)` +-/\1/' | sort -u
+}
+
+# Counts claimed in prose: "nine tools", "the same six tools". Markdown
+# emphasis is stripped first, because the claim is as often written
+# `**nine** tools` as plainly, and a checker that reads only one of the two
+# forms is a checker that passes the drifted half.
+count_words() {
+  sed -E 's/[*_]//g' |
+    grep -oiE '\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[0-9]+) tools?\b' |
+    awk '{print tolower($1)}' | sort -u
+}
+
+# Normalise a count token to a number, so "nine" and "9" compare equal.
+# These docs spell the count out in prose far more often than they write a
+# digit, so a numeric-only comparison would skip almost every claim it is
+# meant to check.
+word_to_num() {
+  case "$1" in
+    one) echo 1 ;; two) echo 2 ;; three) echo 3 ;; four) echo 4 ;;
+    five) echo 5 ;; six) echo 6 ;; seven) echo 7 ;; eight) echo 8 ;;
+    nine) echo 9 ;; ten) echo 10 ;; eleven) echo 11 ;; twelve) echo 12 ;;
+    *) echo "$1" ;;
+  esac
 }
 
 if [[ -f "$SERVER_RS" ]]; then
@@ -130,24 +183,82 @@ if [[ -f "$SERVER_RS" ]]; then
     FAILURES=$((FAILURES + 1))
   fi
 
-  readme_tools=$(table_tools "$PLUGIN_ROOT/README.md")
-  if [[ -z "$readme_tools" ]]; then
-    echo "❌ TOOL CONTRACT: README.md has no tool table (expected rows like '| \`analyze\` | ... |')"
-    FAILURES=$((FAILURES + 1))
-  fi
-  install_tools=$(bullet_tools "$INSTALL_DOC")
+  README_DOC="$PLUGIN_ROOT/README.md"
+  TOOL_SECTION_RE='^#+ .*(MCP Server|MCP tools)'
 
-  # Forward: every registered tool must appear in the README tool table.
+  readme_tools=$(doc_section "$README_DOC" "$TOOL_SECTION_RE" | table_tools)
+  install_tools=$(doc_section "$INSTALL_DOC" "$TOOL_SECTION_RE" | bullet_tools)
+  integration_tools=$(doc_section "$INTEGRATION_DOC" "$TOOL_SECTION_RE" | table_tools)
+
+  # An empty list means the section was renamed or the list reshaped, not that
+  # there is nothing to check. Reported, because silently skipping is how a
+  # check stops guarding anything without anyone noticing.
+  [[ -n $readme_tools ]] || {
+    echo "❌ TOOL CONTRACT: no tool table found under the MCP section of README.md"
+    FAILURES=$((FAILURES + 1))
+  }
+  [[ -n $install_tools ]] || {
+    echo "❌ TOOL CONTRACT: no tool bullet list found under the MCP section of $(basename "$INSTALL_DOC")"
+    FAILURES=$((FAILURES + 1))
+  }
+  [[ -n $integration_tools ]] || {
+    echo "❌ TOOL CONTRACT: no tool table found under the MCP section of $(basename "$INTEGRATION_DOC")"
+    FAILURES=$((FAILURES + 1))
+  }
+
   undocumented=0
-  for tool in $registered; do
-    if ! grep -qx "$tool" <<< "$readme_tools"; then
-      echo "❌ UNDOCUMENTED TOOL: server registers '$tool' but the README tool table does not list it"
-      FAILURES=$((FAILURES + 1))
-      undocumented=$((undocumented + 1))
-    fi
-  done
+
+  # Report every registered tool absent from one doc's list ($2), named by
+  # $label.
+  #
+  # Called for EVERY doc that enumerates the tool surface, not just the
+  # README. Checking the README alone is how `lint_static` and `source_map`
+  # reached master documented in one place and absent from two others: the
+  # install guide listed seven tools and the integration guide six, and both
+  # passed. A reader follows whichever file they opened, so a tool missing
+  # from one of them is missing, full stop.
+  check_documented() {
+    local label="$1" documented="$2"
+    [[ -z $documented ]] && return 0
+    for tool in $registered; do
+      if ! grep -qx "$tool" <<< "$documented"; then
+        echo "❌ UNDOCUMENTED TOOL: server registers '$tool' but $label does not list it"
+        FAILURES=$((FAILURES + 1))
+        undocumented=$((undocumented + 1))
+      fi
+    done
+  }
+  check_documented "the README tool table" "$readme_tools"
+  check_documented "$(basename "$INSTALL_DOC")" "$install_tools"
+  check_documented "$(basename "$INTEGRATION_DOC")" "$integration_tools"
   if [[ $undocumented -eq 0 && -n "$registered" && -n "$readme_tools" ]]; then
-    echo "✅ TOOL CONTRACT: README table documents all $(echo "$registered" | wc -w) registered tools"
+    echo "✅ TOOL CONTRACT: all $(echo "$registered" | wc -w | tr -d ' ') registered tools documented in README, install and integration docs"
+  fi
+
+  # The count claimed in prose must match reality too. Every drift above was
+  # accompanied by a stale number in the sentence introducing the list
+  # ("seven tools", "the same six tools") that no check looked at, so the
+  # docs contradicted both the server and each other while passing.
+  n_registered=$(echo "$registered" | wc -w | tr -d ' ')
+  miscounts=0
+  for pair in \
+    "README.md:$README_DOC" \
+    "$(basename "$INSTALL_DOC"):$INSTALL_DOC" \
+    "$(basename "$INTEGRATION_DOC"):$INTEGRATION_DOC"; do
+    label=${pair%%:*}
+    path=${pair#*:}
+    [[ -f $path ]] || continue
+    for w in $(doc_section "$path" "$TOOL_SECTION_RE" | count_words); do
+      n=$(word_to_num "$w")
+      if [[ $n != "$n_registered" ]]; then
+        echo "❌ STALE TOOL COUNT: $label says '$w tools' but the server registers $n_registered"
+        FAILURES=$((FAILURES + 1))
+        miscounts=$((miscounts + 1))
+      fi
+    done
+  done
+  if [[ $miscounts -eq 0 && -n $registered ]]; then
+    echo "✅ TOOL CONTRACT: prose tool counts agree with the $n_registered registered tools"
   fi
 
   # Reverse: every documented name must be a registered tool. Derived from
@@ -169,8 +280,10 @@ if [[ -f "$SERVER_RS" ]]; then
   check_phantoms "README.md" $readme_tools
   # shellcheck disable=SC2086
   check_phantoms "$(basename "$INSTALL_DOC")" $install_tools
+  # shellcheck disable=SC2086
+  check_phantoms "$(basename "$INTEGRATION_DOC")" $integration_tools
   if [[ $phantoms -eq 0 ]]; then
-    echo "✅ TOOL CONTRACT: no phantom tool names in README.md or $(basename "$INSTALL_DOC")"
+    echo "✅ TOOL CONTRACT: no phantom tool names in README.md, $(basename "$INSTALL_DOC") or $(basename "$INTEGRATION_DOC")"
   fi
 else
   echo "⚠️  SKIP TOOL CONTRACT: $SERVER_RS not found (plugin checked out standalone)"

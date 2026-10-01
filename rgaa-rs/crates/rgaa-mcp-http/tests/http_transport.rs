@@ -661,3 +661,50 @@ mod request_side_authorization {
         assert_eq!(resp.status(), reqwest::StatusCode::OK);
     }
 }
+
+/// The HTTP tool dispatch is hand-written while `tools/list` comes from the
+/// `#[tool_router]` macro, so the two can drift: a tool added to `rgaa-mcp`
+/// is advertised over HTTP and then fails when called, with the mismatch
+/// visible only to whoever calls it. All nine line up today; this keeps it
+/// that way.
+#[tokio::test]
+async fn every_advertised_tool_has_a_dispatch_arm() {
+    let (addr, _h) = spawn(Duration::ZERO).await;
+
+    let listed = rpc(
+        addr,
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+    )
+    .await;
+    let names: Vec<String> = listed["result"]["tools"]
+        .as_array()
+        .expect("tools/list must return an array")
+        .iter()
+        .map(|t| t["name"].as_str().expect("tool name").to_string())
+        .collect();
+    assert!(!names.is_empty(), "tools/list returned nothing to check");
+
+    for name in names {
+        // Empty arguments: most tools reject them, and that is fine. What
+        // this asserts is only that the dispatch *recognises* the name —
+        // "invalid arguments for X" means the arm exists and ran, whereas
+        // "unknown tool: X" means it was advertised and never wired.
+        let response = rpc(
+            addr,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": {}}
+            }),
+        )
+        .await;
+
+        let message = response["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            !message.contains("unknown tool"),
+            "`{name}` is advertised by tools/list but has no arm in call_tool, \
+             so every HTTP caller that believes the tool list gets an error: {message}"
+        );
+    }
+}

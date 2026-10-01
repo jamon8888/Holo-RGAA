@@ -83,8 +83,16 @@ supervisor can probe liveness without a credential.
 
 A request with **no** `Origin` header (the CLI, curl, another service) is
 not constrained by check 1 — CORS never constrained it either. The token is
-what constrains it, so **set `--auth-token` whenever `--host` is anything
-but a loopback address**; the server logs a warning if you do not.
+what constrains it, so **set a token whenever `--host` is anything but a
+loopback address**; the server logs a warning if you do not.
+
+**Pass the token through `RGAA_MCP_TOKEN`, not `--auth-token`.** A command
+line is world-readable on most systems — any local user can read it out of
+`ps` or `/proc/<pid>/cmdline` — and it lands in shell history and in
+process listings captured by monitoring agents. The flag exists for
+symmetry with the other options and for throwaway local runs; anything
+long-lived should set the environment variable instead (systemd
+`EnvironmentFile=`, a Docker secret, your orchestrator's secret store).
 
 ---
 

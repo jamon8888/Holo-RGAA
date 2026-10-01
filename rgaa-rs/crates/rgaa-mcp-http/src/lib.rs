@@ -532,6 +532,11 @@ pub struct McpServerArgs {
     /// is bound to loopback and no untrusted process shares the machine: the
     /// Origin check stops browser pages, nothing else stops a local process.
     /// Set it whenever `--host` is anything but a loopback address.
+    ///
+    /// Prefer the `RGAA_MCP_TOKEN` environment variable over this flag: a
+    /// command line is world-readable through `ps` and
+    /// `/proc/<pid>/cmdline`, so passing the secret as an argument hands it
+    /// to every local user and to anything sampling process listings.
     #[arg(long, env = "RGAA_MCP_TOKEN")]
     pub auth_token: Option<String>,
     /// Serve MCP over stdin/stdout instead of HTTP.

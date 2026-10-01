@@ -12,8 +12,10 @@ use rmcp::handler::server::wrapper::Parameters;
 use schemars::schema_for;
 use std::sync::Arc;
 
+/// The tool surface is a contract with every agent already wired to this
+/// server, so growing it is a deliberate act: #166 adds `lint_static`.
 #[test]
-fn exposes_exactly_six_agent_tools() {
+fn exposes_exactly_seven_agent_tools() {
     assert_eq!(
         ToolServer::tool_names(),
         [
@@ -22,7 +24,8 @@ fn exposes_exactly_six_agent_tools() {
             "igt",
             "audit_url",
             "get_audit_result",
-            "list_criteria"
+            "list_criteria",
+            "lint_static"
         ]
     );
 }

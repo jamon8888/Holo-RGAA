@@ -1,9 +1,11 @@
 pub mod analyze;
 pub mod igt;
+pub mod lint;
 pub mod remediate;
 
 pub use analyze::*;
 pub use igt::*;
+pub use lint::*;
 pub use remediate::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -647,7 +647,7 @@ pub struct ToolServer {
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 6] {
+    pub const fn tool_names() -> [&'static str; 7] {
         [
             "analyze",
             "remediate",
@@ -655,6 +655,7 @@ impl ToolServer {
             "audit_url",
             "get_audit_result",
             "list_criteria",
+            "lint_static",
         ]
     }
 
@@ -801,6 +802,18 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
             criteria,
         }))
+    }
+
+    #[tool(
+        name = "lint_static",
+        description = "Lint HTML, JSX/TSX or Vue source for accessibility defects without a browser: missing img alt, unlabelled form controls, nameless buttons and links. Returns line/column, rule, severity and a fix hint per finding, against a selectable profile (rgaa-4.1, wcag-2.1-aa, section-508). Sub-millisecond per file, so it suits an edit loop — it is a first pass over source, NOT a conformance verdict: use `analyze` on a rendered page for that. Pass `source_files` to have the files read from disk and findings mapped onto their real paths."
+    )]
+    pub fn lint_static(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<LintStaticRequest>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<LintStaticResponse>, ErrorData> {
+        let report = request.0.run().map_err(McpFailure::into_error_data)?;
+        Ok(rmcp::handler::server::wrapper::Json(report))
     }
 }
 

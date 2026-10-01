@@ -99,7 +99,7 @@ async fn rpc(addr: SocketAddr, body: serde_json::Value) -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn tools_list_returns_six_tools() {
+async fn tools_list_returns_seven_tools() {
     let (addr, _h) = spawn(Duration::ZERO).await;
     let resp = rpc(
         addr,
@@ -116,11 +116,56 @@ async fn tools_list_returns_six_tools() {
             "audit_url",
             "get_audit_result",
             "igt",
+            "lint_static",
             "list_criteria",
             "remediate"
         ]
     );
     assert!(tools[0]["inputSchema"].is_object());
+}
+
+/// The HTTP transport dispatches tools through a hand-written match, so a tool
+/// registered on `ToolServer` is still unreachable here until an arm is added.
+/// `tools/list` advertising it is not evidence that calling it works — this test
+/// is.
+#[tokio::test]
+async fn lint_static_is_callable_over_http_and_not_only_listed() {
+    let (addr, _h) = spawn(Duration::ZERO).await;
+    let resp = rpc(
+        addr,
+        serde_json::json!({
+            "jsonrpc":"2.0","id":7,"method":"tools/call",
+            "params":{"name":"lint_static","arguments":{
+                "profile":"wcag-2.1-aa",
+                "sources":[{"path":"widget.tsx","content":"<div><img src={u} /></div>"}]
+            }}
+        }),
+    )
+    .await;
+    let structured = &resp["result"]["structuredContent"];
+    assert_eq!(structured["error_count"], 1);
+    let finding = &structured["findings"][0];
+    assert_eq!(finding["rule"], "img-alt");
+    assert_eq!(finding["file"], "widget.tsx");
+    assert_eq!(finding["line"], 1);
+    assert_eq!(finding["references"][0]["framework"], "WCAG 2.1 AA");
+    assert!(finding["fix_hint"]["suggestion"].is_string());
+}
+
+/// An unusable request must come back as a JSON-RPC error, not as an empty
+/// report that reads like a clean file.
+#[tokio::test]
+async fn lint_static_rejects_a_request_with_no_sources() {
+    let (addr, _h) = spawn(Duration::ZERO).await;
+    let resp = rpc(
+        addr,
+        serde_json::json!({
+            "jsonrpc":"2.0","id":8,"method":"tools/call",
+            "params":{"name":"lint_static","arguments":{}}
+        }),
+    )
+    .await;
+    assert!(resp["error"].is_object(), "{resp}");
 }
 
 #[tokio::test]

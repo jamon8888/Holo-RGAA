@@ -1,10 +1,13 @@
 {
-  "name": "@rgaa/types",
-  "version": "0.1.0",
+  "name": "@holo-rgaa/mcp-types",
+  "version": "0.0.0",
   "description": "TypeScript types for the RGAA MCP tools and REST API",
   "license": "MIT",
   "types": "src/index.d.ts",
-  "files": ["src"],
+  "files": [
+    "src",
+    "README.md"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jamon8888/Holo-RGAA.git",
@@ -15,5 +18,14 @@
   },
   "devDependencies": {
     "typescript": "^5.6.0"
-  }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "rgaa",
+    "accessibility",
+    "mcp",
+    "model-context-protocol"
+  ]
 }

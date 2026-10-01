@@ -30,6 +30,15 @@ const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 /// of an unbounded one.
 const MAX_FILES: usize = 4_000;
 
+/// Cumulative budget across the whole scan.
+///
+/// The per-file cap alone bounds nothing useful: `MAX_FILES` files of
+/// `MAX_FILE_BYTES` each is about 8 GB held at once, and the tool is reachable
+/// over an unauthenticated HTTP transport. One request must not be able to
+/// exhaust the server's memory, so the scan stops accepting files once it has
+/// read this much and reports the rest as skipped.
+const MAX_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Directory nesting limit; cheap insurance against a pathological tree.
 const MAX_DEPTH: usize = 32;
 
@@ -215,7 +224,10 @@ fn flavor_for(name: &str) -> Option<SourceFlavor> {
 struct SourceFile {
     relative: String,
     flavor: SourceFlavor,
-    text: String,
+    /// Split once, at collection time. `find_candidates` runs per literal per
+    /// finding, so re-splitting there made the cost
+    /// `files x lines x literals x findings` for no benefit.
+    lines: Vec<String>,
 }
 
 struct SourceTree {
@@ -231,6 +243,7 @@ struct SourceTree {
 fn collect_sources(root: &Path) -> std::io::Result<SourceTree> {
     let mut files = Vec::new();
     let mut skipped = Vec::new();
+    let mut total_bytes = 0u64;
     let mut stack = vec![(root.to_path_buf(), 0usize)];
 
     while let Some((dir, depth)) = stack.pop() {
@@ -294,12 +307,22 @@ fn collect_sources(root: &Path) -> std::io::Result<SourceTree> {
                 });
                 continue;
             }
+            if total_bytes + meta.len() > MAX_TOTAL_BYTES {
+                skipped.push(SkippedFile {
+                    file: relative_to(root, &path),
+                    reason: format!("cumulative scan budget of {MAX_TOTAL_BYTES} bytes reached"),
+                });
+                continue;
+            }
             match std::fs::read_to_string(&path) {
-                Ok(text) => files.push(SourceFile {
-                    relative: relative_to(root, &path),
-                    flavor,
-                    text,
-                }),
+                Ok(text) => {
+                    total_bytes += meta.len();
+                    files.push(SourceFile {
+                        relative: relative_to(root, &path),
+                        flavor,
+                        lines: text.lines().map(str::to_owned).collect(),
+                    });
+                }
                 // Non-UTF-8 lands here; there is nothing to match line-wise.
                 Err(error) => skipped.push(SkippedFile {
                     file: relative_to(root, &path),
@@ -473,11 +496,7 @@ impl ElementQuery {
     /// element; the ancestors in `main > ul li#x` belong to other elements and
     /// matching on them would point at the wrong line.
     fn absorb_selector(&mut self, selector: &str) {
-        let compound = selector
-            .rsplit([' ', '>', '+', '~'])
-            .find(|part| !part.trim().is_empty())
-            .unwrap_or(selector)
-            .trim();
+        let compound = rightmost_compound(selector);
         let mut rest = compound;
         // Leading element name, if any.
         let tag_len = rest
@@ -623,13 +642,12 @@ fn find_candidates(tree: &SourceTree, value: &str, tag: Option<&str>) -> (usize,
     let mut raw = 0usize;
     let mut corroborated = Vec::new();
     for (file_index, file) in tree.files.iter().enumerate() {
-        let lines: Vec<&str> = file.text.lines().collect();
-        for (index, line) in lines.iter().enumerate() {
+        for (index, line) in file.lines.iter().enumerate() {
             let mut from = 0usize;
             while let Some(offset) = line[from..].find(value) {
                 let column_byte = from + offset;
                 raw += 1;
-                if tag_is_nearby(&lines, index, tag) {
+                if tag_is_nearby(&file.lines, index, column_byte, tag) {
                     corroborated.push(Candidate {
                         file_index,
                         line: index,
@@ -643,17 +661,72 @@ fn find_candidates(tree: &SourceTree, value: &str, tag: Option<&str>) -> (usize,
     (raw, corroborated)
 }
 
-fn tag_is_nearby(lines: &[&str], line: usize, tag: Option<&str>) -> bool {
+/// Is the element's opening tag above the occurrence at `column_byte`?
+///
+/// Bound to the occurrence, not to the line. Searching the whole line accepts
+/// a tag that opens *after* the literal, so
+/// `<img alt="Fermer"> <button>` would corroborate a `button` query against
+/// the image's `alt` and point the developer at the wrong element. Only text
+/// preceding the match on its own line can be the tag that opens it.
+fn tag_is_nearby(lines: &[String], line: usize, column_byte: usize, tag: Option<&str>) -> bool {
     // Without a tag there is nothing to corroborate against; the literal alone
     // has to carry the match, which only the strong literal kinds do.
     let Some(tag) = tag else {
         return true;
     };
     let needle = format!("<{tag}");
+    if contains_ignore_ascii_case(&lines[line][..column_byte], &needle) {
+        return true;
+    }
     let start = line.saturating_sub(TAG_LOOKBACK_LINES);
-    lines[start..=line]
+    lines[start..line]
         .iter()
         .any(|candidate| contains_ignore_ascii_case(candidate, &needle))
+}
+
+/// The right-most compound of a selector, splitting only on combinators that
+/// are not inside an attribute selector or a quoted value.
+///
+/// A plain `rsplit([' ', '>', '+', '~'])` also splits inside `[...]`, which
+/// matters here more than it might elsewhere: RGAA work is French, so
+/// `button[aria-label="Fermer la fenêtre"]` is an ordinary selector. Splitting
+/// it on the spaces inside the quoted label leaves `fenêtre"]`, from which the
+/// tag is read as `fen` and no label is extracted — the finding then comes
+/// back as `NoDistinguishingLiteral` or `ElementNotCorroborated` for a
+/// selector that was perfectly mappable.
+fn rightmost_compound(selector: &str) -> &str {
+    let bytes = selector.as_bytes();
+    let mut depth = 0i32;
+    let mut quote: Option<u8> = None;
+    let mut split_at = 0usize;
+
+    for (i, &b) in bytes.iter().enumerate() {
+        match quote {
+            Some(q) => {
+                // No escape handling: CSS attribute values may contain `\"`,
+                // but a selector carrying one is far rarer than one carrying a
+                // space, and treating it as a close only ends the quote early
+                // rather than corrupting the tag.
+                if b == q {
+                    quote = None;
+                }
+            }
+            None => match b {
+                b'"' | b'\'' => quote = Some(b),
+                b'[' => depth += 1,
+                b']' => depth = depth.saturating_sub(1),
+                b' ' | b'>' | b'+' | b'~' if depth == 0 => split_at = i + 1,
+                _ => {}
+            },
+        }
+    }
+
+    let tail = selector[split_at..].trim();
+    if tail.is_empty() {
+        selector.trim()
+    } else {
+        tail
+    }
 }
 
 fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
@@ -688,7 +761,7 @@ fn map_one(
             1 => {
                 let candidate = &candidates[0];
                 let file = &tree.files[candidate.file_index];
-                let text = file.text.lines().nth(candidate.line).unwrap_or_default();
+                let text = file.lines.get(candidate.line).map_or("", String::as_str);
                 return Ok(MappedFinding {
                     finding_id: finding.id.clone(),
                     source_location: SourceLocationDto {
@@ -755,13 +828,48 @@ fn map_one(
     Err(best_failure.expect("literals is non-empty, so the loop produced a failure"))
 }
 
-/// Entry point used by the `source_map` tool.
-pub fn map_findings(
+/// Environment variable naming the directories `source_root` may live under,
+/// separated by the platform path separator.
+pub const ALLOWED_ROOTS_ENV: &str = "RGAA_SOURCE_MAP_ROOTS";
+
+/// Directories a `source_root` is allowed to resolve inside.
+///
+/// Defaults to the working directory: the server is normally started from the
+/// project being audited, and that is the only tree a caller has any business
+/// reading.
+fn allowed_roots() -> Vec<PathBuf> {
+    match std::env::var_os(ALLOWED_ROOTS_ENV) {
+        Some(raw) if !raw.is_empty() => std::env::split_paths(&raw)
+            .filter(|p| !p.as_os_str().is_empty())
+            .filter_map(|p| p.canonicalize().ok())
+            .collect(),
+        _ => std::env::current_dir()
+            .and_then(|cwd| cwd.canonicalize())
+            .map(|cwd| vec![cwd])
+            .unwrap_or_default(),
+    }
+}
+
+/// Confines a caller-supplied `source_root` to [`allowed_roots`].
+///
+/// `source_root` arrives from the caller, and the HTTP transport has no
+/// authentication of any kind (#87). Without this, `source_map` is an
+/// arbitrary-file-read primitive: `{"source_root": "/home/user/.ssh"}` returns
+/// matching lines and their content. CWE-22.
+///
+/// Canonicalising first is what makes it hold: `../` and symlinked parents are
+/// resolved before the prefix check, so neither can walk out.
+///
+/// Takes the allowlist rather than reading it, so the confinement can be
+/// exercised without mutating the process environment — `set_var` is global,
+/// and parallel tests setting it would race each other into flakes. Same
+/// reason `cors_from_origins` exists alongside `cors_from_env` in
+/// `rgaa-mcp-http`.
+fn confine_root_within(
     source_root: &str,
-    findings: &[SourceMapFindingInput],
-) -> Result<SourceMapResponse, crate::server::McpFailure> {
-    let root = PathBuf::from(source_root);
-    let root = root.canonicalize().map_err(|error| {
+    allowed: &[PathBuf],
+) -> Result<PathBuf, crate::server::McpFailure> {
+    let root = PathBuf::from(source_root).canonicalize().map_err(|error| {
         crate::server::McpFailure::invalid(format!("source_root {source_root:?}: {error}"))
     })?;
     if !root.is_dir() {
@@ -769,6 +877,40 @@ pub fn map_findings(
             "source_root {source_root:?} is not a directory"
         )));
     }
+
+    if allowed.is_empty() {
+        return Err(crate::server::McpFailure::invalid(format!(
+            "no source root is allowed: set {ALLOWED_ROOTS_ENV} to the project directories \
+             source_map may read"
+        )));
+    }
+    if !allowed.iter().any(|base| root.starts_with(base)) {
+        // The allowed list is named but the resolved path is not, so a caller
+        // probing the filesystem learns only that their path is out of bounds.
+        return Err(crate::server::McpFailure::invalid(format!(
+            "source_root {source_root:?} resolves outside the allowed roots; \
+             set {ALLOWED_ROOTS_ENV} to permit it"
+        )));
+    }
+    Ok(root)
+}
+
+/// Entry point used by the `source_map` tool.
+pub fn map_findings(
+    source_root: &str,
+    findings: &[SourceMapFindingInput],
+) -> Result<SourceMapResponse, crate::server::McpFailure> {
+    map_findings_within(source_root, findings, &allowed_roots())
+}
+
+/// [`map_findings`] with an explicit allowlist, for tests that scan a
+/// temporary directory rather than the project tree.
+pub fn map_findings_within(
+    source_root: &str,
+    findings: &[SourceMapFindingInput],
+    allowed: &[PathBuf],
+) -> Result<SourceMapResponse, crate::server::McpFailure> {
+    let root = confine_root_within(source_root, allowed)?;
     let tree = collect_sources(&root).map_err(|error| {
         crate::server::McpFailure::execution(format!("scanning {source_root:?}: {error}"))
     })?;

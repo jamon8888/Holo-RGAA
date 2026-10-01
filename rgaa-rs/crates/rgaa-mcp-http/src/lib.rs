@@ -240,7 +240,7 @@ async fn call_tool(server: &ToolServer, params: CallToolRequestParams) -> Result
         // router, so a missing arm advertises a tool that then 404s.
         "source_map" => {
             let req: rgaa_mcp::SourceMapRequest = parse_args(name, arguments)?;
-            let McpJson(resp) = server.source_map(Parameters(req))?;
+            let McpJson(resp) = server.source_map(Parameters(req)).await?;
             serde_json::to_value(resp).map_err(|e| {
                 ErrorData::internal_error(format!("serialize source_map response: {e}"), None)
             })?

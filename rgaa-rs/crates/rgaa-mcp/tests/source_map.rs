@@ -6,8 +6,8 @@
 //! assertions pin down both what the matcher resolves and what it refuses to.
 
 use rgaa_mcp::{
-    map_findings, MatchConfidence, SourceFlavorDto, SourceMapFindingInput, SourceMapResponse,
-    ToolServer, UnmappableReason,
+    map_findings, map_findings_within, MatchConfidence, SourceFlavorDto, SourceMapFindingInput,
+    SourceMapResponse, ToolServer, UnmappableReason,
 };
 
 fn fixture(name: &str) -> String {
@@ -231,9 +231,13 @@ fn a_symlink_out_of_the_source_root_is_skipped_not_followed() {
     .expect("write outside file");
     std::os::unix::fs::symlink(&outside, root.join("linked")).expect("symlink");
 
-    let response = map_findings(
+    // The temporary tree is outside the default allowed root (the working
+    // directory), so the allowlist is passed explicitly rather than mutating
+    // the process environment, which parallel tests would race on.
+    let response = map_findings_within(
         root.to_str().expect("utf-8 path"),
         &[finding("s1", r#"<img alt="Marqueur hors racine">"#)],
+        &[root.canonicalize().expect("canonical root")],
     )
     .expect("scan");
 
@@ -253,4 +257,126 @@ fn a_symlink_out_of_the_source_root_is_skipped_not_followed() {
 
     let _ = std::fs::remove_dir_all(&outside);
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// CodeRabbit on #224 (CWE-22): `source_root` arrives from the caller and the
+/// HTTP transport has no authentication, so without confinement `source_map`
+/// is an arbitrary-file-read primitive — point it at `~/.ssh` and it returns
+/// matching lines with their content.
+#[test]
+fn a_source_root_outside_the_allowed_bases_is_refused() {
+    let base = std::env::temp_dir().join(format!("rgaa-confine-{}", std::process::id()));
+    let allowed = base.join("project");
+    let secret = base.join("elsewhere");
+    std::fs::create_dir_all(&allowed).expect("allowed dir");
+    std::fs::create_dir_all(&secret).expect("secret dir");
+    std::fs::write(secret.join("id_rsa.html"), "<img alt=\"private\" />\n").expect("write");
+
+    let roots = vec![allowed.canonicalize().expect("canonical")];
+    let error = map_findings_within(
+        secret.to_str().expect("utf-8 path"),
+        &[finding("s1", r#"<img alt="private">"#)],
+        &roots,
+    )
+    .expect_err("a root outside the allowlist must be refused");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("outside the allowed roots"), "{rendered}");
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// `../` must be resolved before the prefix check, not after: comparing the
+/// raw string would let `<allowed>/../elsewhere` through.
+#[test]
+fn a_traversal_out_of_an_allowed_base_is_refused_after_canonicalisation() {
+    let base = std::env::temp_dir().join(format!("rgaa-traverse-{}", std::process::id()));
+    let allowed = base.join("project");
+    let secret = base.join("elsewhere");
+    std::fs::create_dir_all(&allowed).expect("allowed dir");
+    std::fs::create_dir_all(&secret).expect("secret dir");
+
+    let escape = allowed.join("..").join("elsewhere");
+    let roots = vec![allowed.canonicalize().expect("canonical")];
+    let error = map_findings_within(
+        escape.to_str().expect("utf-8 path"),
+        &[finding("s1", r#"<img alt="private">"#)],
+        &roots,
+    )
+    .expect_err("a traversal out of the allowed base must be refused");
+    let rendered = format!("{error:?}");
+    assert!(rendered.contains("outside the allowed roots"), "{rendered}");
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// CodeRabbit on #224: a plain `rsplit([' ', '>', '+', '~'])` also splits
+/// inside `[...]`. RGAA work is French, so a quoted label containing spaces is
+/// the ordinary case, not an edge case — `button[aria-label="Fermer la
+/// fenêtre"]` used to leave `fenêtre"]`, read the tag as `fen`, and extract no
+/// label at all.
+#[test]
+fn an_attribute_selector_with_a_spaced_value_is_not_split_on_its_spaces() {
+    let base = std::env::temp_dir().join(format!("rgaa-selector-{}", std::process::id()));
+    std::fs::create_dir_all(&base).expect("dir");
+    std::fs::write(
+        base.join("Modal.html"),
+        "<div>\n  <button aria-label=\"Fermer la fenêtre\"></button>\n</div>\n",
+    )
+    .expect("write");
+
+    let roots = vec![base.canonicalize().expect("canonical")];
+    let response = map_findings_within(
+        base.to_str().expect("utf-8 path"),
+        &[SourceMapFindingInput {
+            id: "s1".into(),
+            selector: Some(r#"div > button[aria-label="Fermer la fenêtre"]"#.into()),
+            html: None,
+        }],
+        &roots,
+    )
+    .expect("scan");
+
+    assert_eq!(
+        response.mapped.len(),
+        1,
+        "unmappable: {:?}",
+        response.unmappable
+    );
+    assert_eq!(response.mapped[0].source_location.line, 2);
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// CodeRabbit on #224: corroboration searched the whole line, so a tag opening
+/// *after* the literal counted. `<img alt="…"> <button>` would then send a
+/// `button` query to the image's line.
+#[test]
+fn a_tag_opening_after_the_literal_does_not_corroborate_it() {
+    let base = std::env::temp_dir().join(format!("rgaa-corrob-{}", std::process::id()));
+    std::fs::create_dir_all(&base).expect("dir");
+    std::fs::write(
+        base.join("Row.html"),
+        "<img alt=\"Marqueur\" /> <button>ok</button>\n",
+    )
+    .expect("write");
+
+    let roots = vec![base.canonicalize().expect("canonical")];
+    let response = map_findings_within(
+        base.to_str().expect("utf-8 path"),
+        &[SourceMapFindingInput {
+            id: "s1".into(),
+            selector: Some(r#"button[aria-label="Marqueur"]"#.into()),
+            html: None,
+        }],
+        &roots,
+    )
+    .expect("scan");
+
+    assert!(
+        response.mapped.is_empty(),
+        "the button opens after the literal, so it must not corroborate it: {:?}",
+        response.mapped
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
 }

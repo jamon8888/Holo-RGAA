@@ -266,6 +266,13 @@ async fn call_source_map_maps_a_finding_over_http() {
         "{}/../rgaa-mcp/tests/fixtures/source_map/vanilla-site",
         env!("CARGO_MANIFEST_DIR")
     );
+    // `source_root` is confined to RGAA_SOURCE_MAP_ROOTS, defaulting to the
+    // working directory — which for this test binary is the mcp-http crate,
+    // not the sibling crate holding the fixtures. An operator running the
+    // server from somewhere other than the project they are auditing has to
+    // set this too, so the test configures it the way a deployment would
+    // rather than widening the default.
+    std::env::set_var("RGAA_SOURCE_MAP_ROOTS", &root);
     let resp = rpc(
         addr,
         serde_json::json!({

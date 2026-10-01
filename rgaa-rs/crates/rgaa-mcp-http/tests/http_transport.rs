@@ -523,6 +523,9 @@ mod request_side_authorization {
     use rgaa_mcp_http::{app_with_auth, AppState};
     use std::net::SocketAddr;
 
+    /// Starts a server with an explicit allowlist and token, rather than the
+    /// environment-derived ones `spawn` uses, so each case states its own
+    /// configuration instead of depending on ambient variables.
     async fn spawn_guarded(
         origins: Option<&str>,
         token: Option<&str>,
@@ -539,6 +542,9 @@ mod request_side_authorization {
         (addr, handle)
     }
 
+    /// A `tools/call` for `list_criteria` — the cheapest tool that needs no
+    /// arguments, so a refused request is refused by the guard and not by
+    /// argument validation.
     fn tools_call() -> serde_json::Value {
         serde_json::json!({
             "jsonrpc": "2.0",

@@ -147,6 +147,9 @@ pub enum Denied {
 }
 
 impl AuthPolicy {
+    /// Build the policy from the same allowlist string the CORS layer gets
+    /// and an optional shared token. A blank or whitespace-only token counts
+    /// as no token at all.
     pub fn new(cors_origins: Option<&str>, token: Option<&str>) -> Self {
         Self {
             allowed_origins: parse_origins(cors_origins),
@@ -857,6 +860,8 @@ mod cors_tests {
 mod auth_tests {
     use super::*;
 
+    /// Builds a `HeaderMap` from name/value pairs, so each case below reads
+    /// as the request it stands for.
     fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
         let mut h = HeaderMap::new();
         for (k, v) in pairs {

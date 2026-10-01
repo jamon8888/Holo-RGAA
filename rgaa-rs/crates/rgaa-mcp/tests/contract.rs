@@ -350,6 +350,9 @@ mod substrate_version {
     use rgaa_mcp::AnalyzeResponse;
     use rgaa_obscura::{AnalyzePageResult, IgtResult, IgtResults};
 
+    /// A bridge result with or without a substrate version, and with or
+    /// without IGT data — the latter is what selects the nested response
+    /// shape over the flat one.
     fn result(version: Option<&str>, igt: bool) -> AnalyzePageResult {
         AnalyzePageResult {
             url: "https://example.test".into(),
@@ -370,6 +373,8 @@ mod substrate_version {
         }
     }
 
+    /// The serialized analyze response for that result, which is what a
+    /// client actually receives and therefore what these tests assert on.
     fn json(version: Option<&str>, igt: bool) -> serde_json::Value {
         serde_json::to_value(AnalyzeResponse::from_result(result(version, igt))).expect("serialize")
     }

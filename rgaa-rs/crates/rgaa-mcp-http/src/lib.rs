@@ -235,6 +235,16 @@ async fn call_tool(server: &ToolServer, params: CallToolRequestParams) -> Result
                 ErrorData::internal_error(format!("serialize get_audit_result response: {e}"), None)
             })?
         }
+        // A tool is only reachable over HTTP once it has an arm here: this
+        // dispatch is hand-written, while `tools/list` comes from the macro
+        // router, so a missing arm advertises a tool that then 404s.
+        "source_map" => {
+            let req: rgaa_mcp::SourceMapRequest = parse_args(name, arguments)?;
+            let McpJson(resp) = server.source_map(Parameters(req)).await?;
+            serde_json::to_value(resp).map_err(|e| {
+                ErrorData::internal_error(format!("serialize source_map response: {e}"), None)
+            })?
+        }
         "verify_fix" => {
             let req: rgaa_mcp::VerifyFixRequest = parse_args(name, arguments)?;
             let McpJson(resp) = server.verify_fix(Parameters(req)).await?;

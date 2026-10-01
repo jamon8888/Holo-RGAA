@@ -49,8 +49,14 @@ check_file "scripts/check-runtime.sh" "Runtime check script"
 check_file "hooks/hooks.json" "Hooks config"
 
 # Skills
-for skill in audit triage remediate verify report guided-test; do
+for skill in audit triage remediate verify report guided-test criteria; do
   check_file "skills/$skill/SKILL.md" "Skill: $skill"
+done
+
+# Commands — only the canonical tree has them, and a missing command file is a
+# slash command that silently does not exist.
+for command in audit-site audit-project generate-report; do
+  check_file "commands/$command.md" "Command: $command"
 done
 
 # Agents
@@ -83,7 +89,7 @@ else
 fi
 
 # Skill files have required front matter
-for skill in audit triage remediate verify report guided-test; do
+for skill in audit triage remediate verify report guided-test criteria; do
   if ! grep -q "^name:" "$PLUGIN_ROOT/skills/$skill/SKILL.md" 2>/dev/null; then
     echo "❌ MISSING FRONT MATTER 'name' in skills/$skill/SKILL.md"
     FAILURES=$((FAILURES + 1))
@@ -92,6 +98,25 @@ for skill in audit triage remediate verify report guided-test; do
     echo "❌ MISSING FRONT MATTER 'description' in skills/$skill/SKILL.md"
     FAILURES=$((FAILURES + 1))
   fi
+done
+
+# Command and agent files have front matter too: a command with no
+# `description` shows up unlabelled in `/plugin`, and an agent with no `name`
+# cannot be addressed.
+for command in audit-site audit-project generate-report; do
+  if ! grep -q "^description:" "$PLUGIN_ROOT/commands/$command.md" 2>/dev/null; then
+    echo "❌ MISSING FRONT MATTER 'description' in commands/$command.md"
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+
+for agent in scanner remediation-planner verification-reviewer compliance-report-writer; do
+  for field in name description; do
+    if ! grep -q "^$field:" "$PLUGIN_ROOT/agents/$agent.md" 2>/dev/null; then
+      echo "❌ MISSING FRONT MATTER '$field' in agents/$agent.md"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
 done
 
 # Documented MCP tools must match the ones the server actually registers.
@@ -110,9 +135,13 @@ done
 #
 #   README.md                  | `tool` | ... |   (the tool table)
 #   docs/rgaa-plugin-install.md - `tool` - ...    (the tool bullet list)
-SERVER_RS="$PLUGIN_ROOT/../rgaa-rs/crates/rgaa-mcp/src/server.rs"
-INSTALL_DOC="$PLUGIN_ROOT/../docs/rgaa-plugin-install.md"
-INTEGRATION_DOC="$PLUGIN_ROOT/../docs/plugin-integration.md"
+# Paths are relative to the plugin root, which is now
+# rgaa-rs/plugins/rgaa-consultant/ — two levels under rgaa-rs/, three under the
+# repository root.
+REPO_ROOT="$(cd "$PLUGIN_ROOT/../../.." && pwd)"
+SERVER_RS="$REPO_ROOT/rgaa-rs/crates/rgaa-mcp/src/server.rs"
+INSTALL_DOC="$REPO_ROOT/docs/rgaa-plugin-install.md"
+INTEGRATION_DOC="$REPO_ROOT/docs/plugin-integration.md"
 
 # Print a markdown file from the heading matching $2 up to the next heading of
 # the same or higher level.

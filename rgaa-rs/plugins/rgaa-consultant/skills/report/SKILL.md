@@ -1,3 +1,8 @@
+---
+name: report
+description: Produce an RGAA compliance report from an audit bundle in JSON, Markdown, HTML, SARIF or JUnit. Use when the user asks for a report, compliance documentation, an export for a client or regulator, or CI-consumable output.
+---
+
 # report — RGAA Compliance Reporting
 
 ## Purpose

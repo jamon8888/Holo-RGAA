@@ -15,7 +15,11 @@ set -euo pipefail
 REPO="jamon8888/Holo-RGAA"
 RELEASE_TAG="${RGAA_VERSION:-latest}"
 INSTALL_DIR="${RGAA_INSTALL_DIR:-$HOME/.local/bin}"
-PLUGIN_DIR="${HOME}/.claude/plugins/rgaa-audit"
+PLUGIN_DIR="${HOME}/.claude/plugins/rgaa-accessibility"
+# Installs before the plugin trees were deduplicated put the old `rgaa-audit`
+# copy here. Both would then load, with two manifests for the same tools.
+LEGACY_PLUGIN_DIR="${HOME}/.claude/plugins/rgaa-audit"
+CANON_PLUGIN_SUBDIR="rgaa-rs/plugins/rgaa-consultant"
 CONFIG_DIR=".rgaa"
 MCP_CONFIG="${HOME}/.claude/mcp.json"
 
@@ -295,14 +299,26 @@ install_plugin() {
         rm -rf "$PLUGIN_DIR"
     fi
 
-    # Find the claude-plugin directory
+    # Drop a pre-dedup install of the same plugin, so Claude Code does not load
+    # the stale `rgaa-audit` copy alongside the canonical one.
+    if [[ -L "$LEGACY_PLUGIN_DIR" ]]; then
+        rm "$LEGACY_PLUGIN_DIR" && info "Removed superseded plugin: ${LEGACY_PLUGIN_DIR}"
+    elif [[ -d "$LEGACY_PLUGIN_DIR" ]]; then
+        rm -rf "$LEGACY_PLUGIN_DIR" && info "Removed superseded plugin: ${LEGACY_PLUGIN_DIR}"
+    fi
+
+    # Find the canonical plugin directory. `claude-plugin/` is a deprecated
+    # pointer in this repository and no longer holds a manifest; it stays in the
+    # search only so an older tag, fetched below, still installs something.
     local plugin_source=""
-    if [[ -d "${script_dir}/claude-plugin" ]]; then
-        plugin_source="${script_dir}/claude-plugin"
-    elif [[ -d "claude-plugin" ]]; then
-        plugin_source="$(pwd)/claude-plugin"
+    if [[ -d "${script_dir}/${CANON_PLUGIN_SUBDIR}" ]]; then
+        plugin_source="${script_dir}/${CANON_PLUGIN_SUBDIR}"
+    elif [[ -d "$CANON_PLUGIN_SUBDIR" ]]; then
+        plugin_source="$(pwd)/${CANON_PLUGIN_SUBDIR}"
     elif [[ -d "${script_dir}/.claude-plugin" ]]; then
         plugin_source="${script_dir}"
+    elif [[ -f "${script_dir}/claude-plugin/.claude-plugin/plugin.json" ]]; then
+        plugin_source="${script_dir}/claude-plugin"
     fi
 
     local fetched_root=""
@@ -317,11 +333,19 @@ install_plugin() {
         fi
         tar -xzf "${plugtmp}/repo.tar.gz" -C "$plugtmp"
         fetched_root="$(find "$plugtmp" -maxdepth 1 -mindepth 1 -type d -name "Holo-RGAA-*" | head -1)"
-        if [[ -z "$fetched_root" ]] || [[ ! -d "${fetched_root}/claude-plugin" ]]; then
+        if [[ -z "$fetched_root" ]]; then
             warn "plugin not in tarball; continuing without plugin."
             return
         fi
-        plugin_source="${fetched_root}/claude-plugin"
+        if [[ -d "${fetched_root}/${CANON_PLUGIN_SUBDIR}" ]]; then
+            plugin_source="${fetched_root}/${CANON_PLUGIN_SUBDIR}"
+        elif [[ -f "${fetched_root}/claude-plugin/.claude-plugin/plugin.json" ]]; then
+            # A tag from before the dedup: its claude-plugin/ is still a plugin.
+            plugin_source="${fetched_root}/claude-plugin"
+        else
+            warn "plugin not in tarball; continuing without plugin."
+            return
+        fi
     fi
 
     # Copy (not symlink): a fetched tree lives in a tmpdir that gets removed.
@@ -329,12 +353,6 @@ install_plugin() {
     if [[ -n "$fetched_root" ]]; then
         cp -R "$plugin_source" "$PLUGIN_DIR"
         ok "Plugin installed: ${PLUGIN_DIR}"
-        if [[ -d "${fetched_root}/rgaa-rs/plugins/rgaa-consultant" ]]; then
-            local consultant_dir="${HOME}/.claude/plugins/rgaa-consultant"
-            rm -rf "$consultant_dir"
-            cp -R "${fetched_root}/rgaa-rs/plugins/rgaa-consultant" "$consultant_dir"
-            ok "Plugin installed: ${consultant_dir}"
-        fi
     else
         ln -sf "$plugin_source" "$PLUGIN_DIR"
         ok "Plugin symlinked: ${PLUGIN_DIR} -> ${plugin_source}"
@@ -590,7 +608,15 @@ uninstall() {
     rm -f "${INSTALL_DIR}/rgaa-api" && ok "Removed rgaa-api"
     rm -f "${INSTALL_DIR}/obscura" && ok "Removed obscura"
     rm -f "${INSTALL_DIR}/obscura-worker" && ok "Removed obscura-worker"
-    rm -f "$PLUGIN_DIR" && ok "Removed Claude Code plugin"
+    # `rm -f` alone left a copied (non-symlink) plugin tree behind: install.sh
+    # copies rather than symlinks whenever it fetched the tree from GitHub.
+    for dir in "$PLUGIN_DIR" "$LEGACY_PLUGIN_DIR"; do
+        if [[ -L "$dir" ]]; then
+            rm -f "$dir" && ok "Removed Claude Code plugin ($(basename "$dir"))"
+        elif [[ -d "$dir" ]]; then
+            rm -rf "$dir" && ok "Removed Claude Code plugin ($(basename "$dir"))"
+        fi
+    done
 
     # Remove MCP config entry
     if [[ -f "$MCP_CONFIG" ]] && command -v jq &>/dev/null; then

@@ -30,14 +30,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash -n claude-plugin/tests/plugin-contract.sh
+      - run: bash -n rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
       # Never ran in CI before, which is how the plugin README came to
       # advertise "three tools" for a six-tool server and the install guide
       # came to name `rgaa_analyze` / `rgaa_remediate` / `rgaa_igt` — three
       # tools no server has ever registered. The script now diffs the
       # documented tool names against the ones `rgaa-mcp` registers, so that
       # drift fails here instead of reaching a plugin user.
-      - run: bash claude-plugin/tests/plugin-contract.sh
+      - run: bash rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
   ts-types:
     name: TypeScript types
     runs-on: ubuntu-latest

@@ -27,13 +27,31 @@ The binaries will be in `target/release/`:
 
 ### 2. Install the Claude Code plugin
 
+The plugin lives at `rgaa-rs/plugins/rgaa-consultant/` — that is the only plugin
+tree. The top-level `claude-plugin/` directory this guide used to install from is
+a deprecated pointer: it carries no manifest, and installing it gave you the
+stale `rgaa-audit` 0.1.0 fork instead of `rgaa-accessibility` 2.0.0.
+
 ```bash
-# Copy the plugin to Claude Code's plugin directory
-cp -r claude-plugin ~/.claude/plugins/rgaa-accessibility
+# From the repository root
+cp -r rgaa-rs/plugins/rgaa-consultant ~/.claude/plugins/rgaa-accessibility
 
 # Or symlink for development
-ln -s $(pwd)/claude-plugin ~/.claude/plugins/rgaa-accessibility
+ln -s "$(pwd)/rgaa-rs/plugins/rgaa-consultant" ~/.claude/plugins/rgaa-accessibility
+
+# Or let the installer do it (also removes a stale ~/.claude/plugins/rgaa-audit)
+./install.sh
 ```
+
+If you installed before this change, remove the old copy — otherwise Claude Code
+loads two manifests for the same tools:
+
+```bash
+rm -rf ~/.claude/plugins/rgaa-audit
+```
+
+Check it loaded with `/plugin` in Claude Code: `rgaa-accessibility` should be
+listed, with the `/audit-site`, `/audit-project` and `/generate-report` commands.
 
 ### 3. Configure environment
 

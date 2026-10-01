@@ -1,3 +1,8 @@
+---
+name: criteria
+description: Reference for all 106 RGAA 4.1.2 criteria: id, title, classification, test method, WCAG 2.2 and EN 301 549 cross-references, and common failure patterns. Use when the user asks what a criterion requires, how it is tested, or which criteria cover a topic.
+---
+
 # criteria — RGAA 4.1.2 Knowledge Base
 
 ## Overview

@@ -1,3 +1,8 @@
+---
+name: remediate
+description: Generate approval-gated, framework-specific source patches (React, Vue, Angular, Next) for accessibility findings, with diffs, rationale, risk and validation commands. Use when the user asks how to fix a finding or wants remediation proposed for selected findings.
+---
+
 # remediate — RGAA Remediation Proposals
 
 ## Purpose

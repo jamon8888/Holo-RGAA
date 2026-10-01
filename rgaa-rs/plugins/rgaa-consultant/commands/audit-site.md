@@ -1,3 +1,8 @@
+---
+description: Run a full RGAA 4.1.2 audit against a live URL
+argument-hint: [url]
+---
+
 # `/audit-site` — Audit a Live URL
 
 ## Description

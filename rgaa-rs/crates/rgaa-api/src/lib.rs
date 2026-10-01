@@ -1,5 +1,6 @@
 pub mod batch;
 pub mod routes;
+pub mod webhook;
 
 use axum::{
     error_handling::HandleErrorLayer,

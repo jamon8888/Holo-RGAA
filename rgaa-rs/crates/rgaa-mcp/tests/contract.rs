@@ -26,6 +26,7 @@ fn exposes_every_registered_agent_tool() {
             "get_audit_result",
             "list_criteria",
             "lint_static",
+            "source_map",
             "verify_fix",
         ]
     );

@@ -30,3 +30,4 @@ types/src/tools.d.ts
 # stdin, which is when these files first appeared in `git status`.
 .rgaa/env
 .rgaa/state/
+rgaa-rs/logs/

@@ -72,7 +72,12 @@ async fn main() {
     }
 
     match cli.command {
-        None | Some(TopCommand::Tui) => rgaa_tui::tui::run().await,
+        None | Some(TopCommand::Tui) => {
+            if let Err(e) = rgaa_tui::tui::run().await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Some(TopCommand::Audit { url, export }) => {
             if let Err(e) = rgaa_tui::commands::audit(url, export).await {
                 eprintln!("Error: {e}");

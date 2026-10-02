@@ -69,16 +69,22 @@ fn detect_platform() -> (String, String) {
     )
 }
 
-pub fn run_install_wizard() -> bool {
+/// Returns whether the wizard finished on a successful step.
+///
+/// `ratatui::init()` is `try_init().expect(..)`: with no terminal — a pipe, a
+/// CI step, a non-interactive SSH — it aborts the process instead of telling
+/// the caller. `rgaa install` is the command the installer's own closing
+/// message suggests, so that path is reachable by following the docs.
+pub fn run_install_wizard() -> std::io::Result<bool> {
     let mut wizard = InstallWizard::default();
 
-    let mut terminal = ratatui::init();
-    terminal.clear().unwrap();
+    let mut terminal = ratatui::try_init()?;
+    terminal.clear()?;
 
     loop {
-        terminal.draw(|frame| render(&wizard, frame)).unwrap();
+        terminal.draw(|frame| render(&wizard, frame))?;
 
-        if let Event::Key(key) = event::read().unwrap() {
+        if let Event::Key(key) = event::read()? {
             match &wizard.step {
                 InstallStep::Welcome => {
                     if key.code == KeyCode::Enter {
@@ -108,7 +114,10 @@ pub fn run_install_wizard() -> bool {
 
     ratatui::restore();
 
-    matches!(wizard.step, InstallStep::Done { success: true, .. })
+    Ok(matches!(
+        wizard.step,
+        InstallStep::Done { success: true, .. }
+    ))
 }
 
 fn render(wizard: &InstallWizard, frame: &mut Frame) {

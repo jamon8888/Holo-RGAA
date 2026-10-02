@@ -32,19 +32,21 @@ impl Default for SetupWizard {
     }
 }
 
-pub fn run_setup_wizard() -> bool {
+/// Returns whether the wizard finished on `Done`.
+///
+/// Fallible for the same reason as the install wizard: `ratatui::init()`
+/// aborts the process when there is no terminal to take.
+pub fn run_setup_wizard() -> std::io::Result<bool> {
     let mut wizard = SetupWizard::default();
     let mut input_buffer = String::new();
 
-    let mut terminal = ratatui::init();
-    terminal.clear().unwrap();
+    let mut terminal = ratatui::try_init()?;
+    terminal.clear()?;
 
     loop {
-        terminal
-            .draw(|frame| render(&wizard, frame, &input_buffer))
-            .unwrap();
+        terminal.draw(|frame| render(&wizard, frame, &input_buffer))?;
 
-        if let Event::Key(key) = event::read().unwrap() {
+        if let Event::Key(key) = event::read()? {
             match &wizard.step {
                 SetupStep::Welcome => {
                     if key.code == KeyCode::Enter {
@@ -135,7 +137,7 @@ pub fn run_setup_wizard() -> bool {
 
     ratatui::restore();
 
-    matches!(wizard.step, SetupStep::Done)
+    Ok(matches!(wizard.step, SetupStep::Done))
 }
 
 fn masked_key(key: &str) -> String {

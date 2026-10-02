@@ -32,48 +32,46 @@ enum MainMenuSelection {
 /// the menu's terminal is dropped before the sub-view starts and the sub-view
 /// restores its own before returning, so stderr is not fighting a raw-mode
 /// screen.
-fn report<E: std::fmt::Display>(result: Result<(), E>, what: &str) {
+fn report<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) {
     if let Err(error) = result {
         eprintln!("{what} failed: {error}");
     }
 }
 
-pub async fn run() {
-    let mut terminal = ratatui::init();
-    terminal.clear().unwrap();
+pub async fn run() -> std::io::Result<()> {
+    let mut terminal = ratatui::try_init()?;
+    terminal.clear()?;
     let mut selected = MainMenuSelection::Audit;
     let mut show_menu = true;
 
     loop {
         if show_menu {
-            terminal
-                .draw(|frame| render_main_menu(frame, &selected))
-                .unwrap();
+            terminal.draw(|frame| render_main_menu(frame, &selected))?;
         }
 
-        if let Event::Key(key) = event::read().unwrap() {
+        if let Event::Key(key) = event::read()? {
             if show_menu {
                 match key.code {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         show_menu = false;
                         drop(terminal);
                         report(crate::tui::run_audit_wizard(), "audit wizard");
-                        terminal = ratatui::init();
-                        terminal.clear().unwrap();
+                        terminal = ratatui::try_init()?;
+                        terminal.clear()?;
                     }
                     KeyCode::Char('h') | KeyCode::Char('H') => {
                         show_menu = false;
                         drop(terminal);
                         report(crate::tui::run_history_view().await, "history view");
-                        terminal = ratatui::init();
-                        terminal.clear().unwrap();
+                        terminal = ratatui::try_init()?;
+                        terminal.clear()?;
                     }
                     KeyCode::Char('s') | KeyCode::Char('S') => {
                         show_menu = false;
                         drop(terminal);
-                        crate::tui::run_setup_wizard();
-                        terminal = ratatui::init();
-                        terminal.clear().unwrap();
+                        report(crate::tui::run_setup_wizard(), "setup wizard");
+                        terminal = ratatui::try_init()?;
+                        terminal.clear()?;
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
                         break;
@@ -99,22 +97,22 @@ pub async fn run() {
                             show_menu = false;
                             drop(terminal);
                             report(crate::tui::run_audit_wizard(), "audit wizard");
-                            terminal = ratatui::init();
-                            terminal.clear().unwrap();
+                            terminal = ratatui::try_init()?;
+                            terminal.clear()?;
                         }
                         MainMenuSelection::History => {
                             show_menu = false;
                             drop(terminal);
                             report(crate::tui::run_history_view().await, "history view");
-                            terminal = ratatui::init();
-                            terminal.clear().unwrap();
+                            terminal = ratatui::try_init()?;
+                            terminal.clear()?;
                         }
                         MainMenuSelection::Settings => {
                             show_menu = false;
                             drop(terminal);
-                            crate::tui::run_setup_wizard();
-                            terminal = ratatui::init();
-                            terminal.clear().unwrap();
+                            report(crate::tui::run_setup_wizard(), "setup wizard");
+                            terminal = ratatui::try_init()?;
+                            terminal.clear()?;
                         }
                         MainMenuSelection::Exit => {
                             break;
@@ -130,6 +128,7 @@ pub async fn run() {
     }
 
     ratatui::restore();
+    Ok(())
 }
 
 fn render_main_menu(frame: &mut Frame, selected: &MainMenuSelection) {

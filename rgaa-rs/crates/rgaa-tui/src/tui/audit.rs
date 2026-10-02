@@ -57,7 +57,7 @@ impl Default for AuditWizard {
 const TICK: Duration = Duration::from_millis(100);
 
 pub fn run_audit_wizard() -> std::io::Result<()> {
-    let mut terminal = ratatui::init();
+    let mut terminal = ratatui::try_init()?;
     let result = audit_loop(&mut terminal);
     // Restore either way: a terminal left in raw mode is worse than the error
     // that caused it.

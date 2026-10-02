@@ -183,7 +183,7 @@ pub async fn run_history_view() -> Result<(), Box<dyn std::error::Error>> {
     // plain error, not a half-initialised terminal.
     let storage = crate::storage::storage().await?;
 
-    let mut terminal = ratatui::init();
+    let mut terminal = ratatui::try_init()?;
     let result = history_loop(&mut terminal, &storage);
     ratatui::restore();
     result.map_err(Into::into)

@@ -1,7 +1,7 @@
 use crate::backend::LlmBackend;
 use crate::transport::{ChatTransport, HoloResponse};
 use async_trait::async_trait;
-use rgaa_core::RgaaError;
+use rgaa_core::{CompletionParams, LlmProvenance, RgaaError};
 use std::time::Duration;
 
 /// Local Ollama backend through its OpenAI-compatible endpoint. No API key,
@@ -24,14 +24,42 @@ impl OllamaClient {
     ///
     /// Returns `Err(RgaaError::Llm)` if the HTTP client cannot be built.
     pub fn new(model: impl Into<String>) -> Result<Self, RgaaError> {
+        // Ollama is a local runtime, so the same rule the provider table
+        // applies holds here: thinking off, because its tokens are billed
+        // against `max_tokens` and truncate the verdict JSON.
+        Self::with_params(
+            model,
+            CompletionParams {
+                enable_thinking: Some(false),
+                ..CompletionParams::default()
+            },
+        )
+    }
+
+    /// As [`Self::new`], on explicit completion parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(RgaaError::Llm)` if the HTTP client cannot be built.
+    pub fn with_params(
+        model: impl Into<String>,
+        params: CompletionParams,
+    ) -> Result<Self, RgaaError> {
         let transport = ChatTransport::new(
             "ollama",
             Self::DEFAULT_ENDPOINT,
             model,
             None,
             Self::DEFAULT_TIMEOUT,
+            params,
         )?;
         Ok(Self { transport })
+    }
+
+    /// The parameters a call through this client runs with.
+    #[must_use]
+    pub fn provenance(&self) -> LlmProvenance {
+        self.transport.provenance()
     }
 
     /// Full chat-completions URL of the Ollama server (default: localhost).

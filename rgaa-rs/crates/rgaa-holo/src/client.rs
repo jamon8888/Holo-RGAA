@@ -2,7 +2,7 @@ use crate::backend::LlmBackend;
 use crate::transport::ChatTransport;
 pub use crate::transport::HoloResponse;
 use async_trait::async_trait;
-use rgaa_core::RgaaError;
+use rgaa_core::{CompletionParams, LlmProvenance, RgaaError};
 use std::time::Duration;
 
 const API_URL: &str = "https://api.hcompany.ai/v1/chat/completions";
@@ -23,9 +23,28 @@ impl HoloClient {
     /// Returns `Err(RgaaError::Holo3)` if the HTTP client cannot be built
     /// (e.g., TLS initialization failure).
     pub fn new(api_key: String) -> Result<Self, RgaaError> {
-        let transport = ChatTransport::new("holo3", API_URL, MODEL, Some(api_key), TIMEOUT)
+        Self::with_params(api_key, CompletionParams::default())
+    }
+
+    /// As [`Self::new`], on explicit completion parameters rather than the
+    /// workspace defaults ([`CompletionParams::default`]). The hosted API is
+    /// not a self-hosted endpoint, so the defaults send nothing beyond
+    /// `temperature`/`max_tokens`; a caller pointing [`Self::with_base_url`]
+    /// at a compatible server can opt into the rest.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(RgaaError::Holo3)` if the HTTP client cannot be built.
+    pub fn with_params(api_key: String, params: CompletionParams) -> Result<Self, RgaaError> {
+        let transport = ChatTransport::new("holo3", API_URL, MODEL, Some(api_key), TIMEOUT, params)
             .map_err(|e| RgaaError::Holo3(e.to_string()))?;
         Ok(Self { transport })
+    }
+
+    /// The parameters a call through this client runs with.
+    #[must_use]
+    pub fn provenance(&self) -> LlmProvenance {
+        self.transport.provenance()
     }
 
     /// Override the API base URL. Primarily used by tests against a mock server.

@@ -29,9 +29,7 @@ async fn http_server_starts_and_health_check_works() {
     let addr = listener.local_addr().expect("no local addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server failed");
+        axum::serve(listener, app).await.expect("server failed");
     });
 
     // Give the server a moment to start
@@ -59,9 +57,7 @@ async fn jsonrpc_initialize_handshake_works() {
     let addr = listener.local_addr().expect("no addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server failed");
+        axum::serve(listener, app).await.expect("server failed");
     });
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -80,7 +76,10 @@ async fn jsonrpc_initialize_handshake_works() {
 
     // MCP 2.0 initialize response
     assert_eq!(body.get("jsonrpc").and_then(Value::as_str), Some("2.0"));
-    assert!(body.get("result").is_some(), "initialize should return result");
+    assert!(
+        body.get("result").is_some(),
+        "initialize should return result"
+    );
     assert_eq!(body.get("id").and_then(Value::as_u64), Some(1));
 }
 
@@ -94,9 +93,7 @@ async fn tools_list_announces_all_tools() {
     let addr = listener.local_addr().expect("no addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server failed");
+        axum::serve(listener, app).await.expect("server failed");
     });
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -124,13 +121,25 @@ async fn tools_list_announces_all_tools() {
         .collect();
 
     // Phase 1 tools must be in the list
-    assert!(tool_names.contains(&"lint_static"), "lint_static not in tools/list");
-    assert!(tool_names.contains(&"verify_fix"), "verify_fix not in tools/list");
-    assert!(tool_names.contains(&"source_map"), "source_map not in tools/list");
+    assert!(
+        tool_names.contains(&"lint_static"),
+        "lint_static not in tools/list"
+    );
+    assert!(
+        tool_names.contains(&"verify_fix"),
+        "verify_fix not in tools/list"
+    );
+    assert!(
+        tool_names.contains(&"source_map"),
+        "source_map not in tools/list"
+    );
 
     // Existing tools must still be there
     assert!(tool_names.contains(&"analyze"), "analyze not in tools/list");
-    assert!(tool_names.contains(&"remediate"), "remediate not in tools/list");
+    assert!(
+        tool_names.contains(&"remediate"),
+        "remediate not in tools/list"
+    );
 }
 
 #[tokio::test]
@@ -143,9 +152,7 @@ async fn tools_call_lint_static_with_no_args_returns_error() {
     let addr = listener.local_addr().expect("no addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server failed");
+        axum::serve(listener, app).await.expect("server failed");
     });
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -162,7 +169,10 @@ async fn tools_call_lint_static_with_no_args_returns_error() {
     let body: Value = resp.json().await.expect("invalid JSON");
 
     // lint_static requires sources or source_files, so it should error
-    assert!(body.get("error").is_some(), "lint_static should error without sources");
+    assert!(
+        body.get("error").is_some(),
+        "lint_static should error without sources"
+    );
     assert_eq!(body.get("id").and_then(Value::as_u64), Some(2));
 }
 
@@ -176,9 +186,7 @@ async fn tools_call_returns_json_rpc_error_for_unknown_tool() {
     let addr = listener.local_addr().expect("no addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server failed");
+        axum::serve(listener, app).await.expect("server failed");
     });
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -209,9 +217,7 @@ async fn parse_error_returns_json_rpc_parse_error() {
     let addr = listener.local_addr().expect("no addr");
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server failed");
+        axum::serve(listener, app).await.expect("server failed");
     });
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -231,5 +237,9 @@ async fn parse_error_returns_json_rpc_parse_error() {
     let error_code = body
         .get("error")
         .and_then(|e| e.get("code").and_then(Value::as_i64));
-    assert_eq!(error_code, Some(-32700), "expected JSON-RPC parse error code");
+    assert_eq!(
+        error_code,
+        Some(-32700),
+        "expected JSON-RPC parse error code"
+    );
 }

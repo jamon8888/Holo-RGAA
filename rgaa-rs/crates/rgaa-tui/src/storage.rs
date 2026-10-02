@@ -21,6 +21,8 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("cannot locate a home directory to store audits in; set HOME")]
+    NoHomeDirectory,
 }
 
 pub struct Storage {
@@ -28,11 +30,21 @@ pub struct Storage {
 }
 
 impl Storage {
+    /// Opens (creating if needed) the audit database at `db_path`.
+    ///
+    /// The directory and the file are restricted to the owner on Unix.
+    /// `create_dir_all` and SQLite both apply the process umask, which is
+    /// commonly 022 — leaving `~/.rgaa` world-readable. A stored audit holds
+    /// every URL crawled, page titles and the full evaluation, so on a shared
+    /// host that is a real disclosure. Nothing wrote to this database before,
+    /// so the permissions never mattered; now they do.
     pub fn new(db_path: &Path) -> Result<Self, StorageError> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
+            restrict_to_owner(parent, 0o700)?;
         }
         let conn = Connection::open(db_path)?;
+        restrict_to_owner(db_path, 0o600)?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS audits (
                 id TEXT PRIMARY KEY,
@@ -128,9 +140,34 @@ pub async fn record_audit(audit: &rgaa_core::AuditResult) {
     }
 }
 
+/// Applies `mode` to `path` on Unix; a no-op elsewhere.
+///
+/// Set after creation rather than via the open call because neither
+/// `create_dir_all` nor SQLite takes a mode, and both are subject to the
+/// umask. The window between creation and this call is not closed, but it
+/// narrows the exposure from permanent to momentary.
+#[cfg(unix)]
+fn restrict_to_owner(path: &Path, mode: u32) -> Result<(), StorageError> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_path: &Path, _mode: u32) -> Result<(), StorageError> {
+    Ok(())
+}
+
+/// The audit database under the user's home directory.
+///
+/// Fails rather than falling back to the current directory. The old fallback
+/// wrote `./.rgaa/audits.db` wherever the process happened to be started —
+/// a checkout, a shared temp directory, a web root — which is a surprising
+/// place to leave full audit results. Callers treat this as non-fatal: an
+/// audit that cannot be recorded is still a completed audit.
 pub async fn storage() -> Result<Storage, StorageError> {
     let db_path = dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .ok_or(StorageError::NoHomeDirectory)?
         .join(".rgaa")
         .join("audits.db");
     Storage::new(&db_path)
@@ -146,6 +183,39 @@ mod tests {
         std::env::temp_dir()
             .join("rgaa-tui-tests")
             .join(format!("{}.db", uuid::Uuid::new_v4()))
+    }
+
+    /// A stored audit holds every crawled URL, page titles and the full
+    /// evaluation, so the database must not be readable by other local users.
+    /// `create_dir_all` and SQLite both honour the umask, which is commonly
+    /// 022, so without an explicit chmod this lands world-readable.
+    #[cfg(unix)]
+    #[test]
+    fn the_database_and_its_directory_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_db();
+        let _storage = Storage::new(&path).expect("open");
+
+        let dir_mode = std::fs::metadata(path.parent().expect("parent"))
+            .expect("dir metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        let file_mode = std::fs::metadata(&path)
+            .expect("file metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(
+            dir_mode, 0o700,
+            "directory must not be group/world readable"
+        );
+        assert_eq!(
+            file_mode, 0o600,
+            "database must not be group/world readable"
+        );
     }
 
     fn audit(url: &str, taux: f64) -> rgaa_core::AuditResult {

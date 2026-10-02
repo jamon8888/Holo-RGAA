@@ -360,10 +360,25 @@ impl LlmSettings {
 
         // Completion parameters: one resolution, read by every path.
         let temperature = match get(&key("TEMPERATURE")) {
-            Some(raw) => raw
-                .trim()
-                .parse::<f64>()
-                .map_err(|_| config_error(format!("{} is not a number", key("TEMPERATURE"))))?,
+            Some(raw) => {
+                let parsed = raw
+                    .trim()
+                    .parse::<f64>()
+                    .map_err(|_| config_error(format!("{} is not a number", key("TEMPERATURE"))))?;
+                // `parse::<f64>` happily accepts `NaN`, `inf` and `-1`.
+                // `serde_json` writes a non-finite float as `null`, so
+                // `temperature: null` would go on the wire and the provenance
+                // line would read `NaN`; a negative value earns a 400 on every
+                // single call. MAX_TOKENS and TIMEOUT_SECS are already checked
+                // here, so this one was the gap.
+                if !parsed.is_finite() || parsed < 0.0 {
+                    return Err(config_error(format!(
+                        "{} is `{raw}` (expected a finite number >= 0)",
+                        key("TEMPERATURE")
+                    )));
+                }
+                parsed
+            }
             None => crate::completion::DEFAULT_TEMPERATURE,
         };
         let max_tokens = match get(&key("MAX_TOKENS")) {
@@ -386,7 +401,11 @@ impl LlmSettings {
         // completion budget, and say nothing to a hosted API, which would
         // reject the unknown body key outright.
         let thinking_var = key("ENABLE_THINKING");
-        let enable_thinking = match get(&thinking_var).as_deref().map(str::trim) {
+        // Lowercased before matching: `RESPONSE_FORMAT` next door already does,
+        // and two neighbouring variables that disagree about whether `Auto` is
+        // valid is a trap rather than a policy.
+        let thinking_raw = get(&thinking_var).map(|v| v.trim().to_ascii_lowercase());
+        let enable_thinking = match thinking_raw.as_deref() {
             None | Some("auto") => provider.local.then_some(false),
             Some("true" | "1" | "yes" | "on") => Some(true),
             Some("false" | "0" | "no" | "off") => Some(false),
@@ -884,6 +903,50 @@ mod tests {
         assert_eq!(with("auto").unwrap().params.enable_thinking, Some(false));
         let err = with("maybe").unwrap_err();
         assert!(err.to_string().contains("ENABLE_THINKING"), "{err}");
+    }
+
+    /// `parse::<f64>` takes `NaN`, `inf` and negatives without complaint.
+    /// A non-finite float serializes to `null`, so `temperature: null` would
+    /// reach the provider and the provenance line would read `NaN`; a
+    /// negative earns a 400 on every call. Rejected at configuration time,
+    /// like the other numeric settings beside it.
+    #[test]
+    fn a_temperature_that_cannot_go_on_the_wire_is_refused() {
+        let with = |v: &str| {
+            LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "vllm"),
+                ("RGAA_LLM_MODEL", "m"),
+                ("RGAA_LLM_TEMPERATURE", v),
+            ]))
+        };
+        for bad in ["NaN", "nan", "inf", "-inf", "-0.5", "-1"] {
+            let err = with(bad).unwrap_err();
+            assert!(
+                err.to_string().contains("TEMPERATURE"),
+                "{bad} should be refused, got {err}"
+            );
+        }
+        for good in ["0", "0.0", "0.7", "2"] {
+            assert!(with(good).is_ok(), "{good} should be accepted");
+        }
+    }
+
+    /// `RESPONSE_FORMAT` lowercases its input, so `ENABLE_THINKING` beside it
+    /// must too — otherwise `TRUE` and `Auto` fail startup while `JSON_OBJECT`
+    /// works, and the difference is invisible until someone capitalises one.
+    #[test]
+    fn the_thinking_flag_ignores_case() {
+        let with = |v: &str| {
+            LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "vllm"),
+                ("RGAA_LLM_MODEL", "m"),
+                ("RGAA_LLM_ENABLE_THINKING", v),
+            ]))
+        };
+        assert_eq!(with("TRUE").unwrap().params.enable_thinking, Some(true));
+        assert_eq!(with("False").unwrap().params.enable_thinking, Some(false));
+        assert_eq!(with("Auto").unwrap().params.enable_thinking, Some(false));
+        assert_eq!(with("  On  ").unwrap().params.enable_thinking, Some(true));
     }
 
     #[test]

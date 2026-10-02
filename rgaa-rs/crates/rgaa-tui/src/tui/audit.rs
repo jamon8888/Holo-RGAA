@@ -1,4 +1,4 @@
-use ratatui::crossterm::event::{self, Event, KeyCode};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Row, Table, TableState};
 use ratatui::Frame;
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum AuditStep {
@@ -51,113 +52,124 @@ impl Default for AuditWizard {
     }
 }
 
-pub fn run_audit_wizard() {
+/// Tick between redraws while the wizard waits for input. Short enough that
+/// audit progress reads as live, long enough not to spin the CPU.
+const TICK: Duration = Duration::from_millis(100);
+
+pub fn run_audit_wizard() -> std::io::Result<()> {
+    let mut terminal = ratatui::init();
+    let result = audit_loop(&mut terminal);
+    // Restore either way: a terminal left in raw mode is worse than the error
+    // that caused it.
+    ratatui::restore();
+    result
+}
+
+fn audit_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<()> {
     let mut wizard = AuditWizard::default();
     let mut input_buffer = String::new();
-    let mut terminal = ratatui::init();
-    terminal.clear().unwrap();
+    terminal.clear()?;
 
     loop {
-        terminal
-            .draw(|frame| render_audit(&wizard, frame, &input_buffer))
-            .unwrap();
+        terminal.draw(|frame| render_audit(&mut wizard, frame, &input_buffer))?;
 
-        if let Event::Key(key) = event::read().unwrap() {
-            match &wizard.step {
-                AuditStep::UrlInput => match key.code {
-                    KeyCode::Enter => {
-                        if !input_buffer.is_empty() {
-                            wizard.url = input_buffer.clone();
-                            input_buffer.clear();
+        // Poll instead of blocking on `event::read`: the audit runs on its own
+        // thread, so the progress screen has to repaint — and reach
+        // `ResultsSummary` — without the user touching the keyboard.
+        if event::poll(TICK)? {
+            if let Event::Key(key) = event::read()? {
+                // Windows reports press *and* release; only act on the press.
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                match &wizard.step {
+                    AuditStep::UrlInput => match key.code {
+                        KeyCode::Enter => {
+                            if !input_buffer.is_empty() {
+                                wizard.url = input_buffer.clone();
+                                input_buffer.clear();
 
-                            let (tx, rx) = mpsc::channel();
-                            let url = wizard.url.clone();
-                            let tx_done = tx.clone();
-                            thread::spawn(move || {
-                                let orchestrator = rgaa_orchestrator::Orchestrator::new();
-                                let rt = tokio::runtime::Runtime::new().unwrap();
-                                rt.block_on(async {
-                                    let config = rgaa_core::CrawlConfig::default();
-                                    let result = orchestrator
-                                        .run_with_progress(&url, &config, move |phase| {
-                                            let _ = tx
-                                                .send(rgaa_orchestrator::AuditEvent::Phase(phase));
-                                        })
-                                        .await;
-                                    let _ =
-                                        tx_done.send(rgaa_orchestrator::AuditEvent::Done(result));
+                                let (tx, rx) = mpsc::channel();
+                                let url = wizard.url.clone();
+                                let tx_done = tx.clone();
+                                thread::spawn(move || run_audit_thread(url, tx, tx_done));
+
+                                wizard.pending = Some(PendingAudit {
+                                    rx,
+                                    phases: Vec::new(),
+                                    done: None,
                                 });
-                            });
-
-                            wizard.pending = Some(PendingAudit {
-                                rx,
-                                phases: Vec::new(),
-                                done: None,
-                            });
-                            wizard.step = AuditStep::Running {
-                                phase: "Starting audit...".to_string(),
-                                progress: 0.0,
-                            };
+                                wizard.step = AuditStep::Running {
+                                    phase: "Starting audit...".to_string(),
+                                    progress: 0.0,
+                                };
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            input_buffer.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            input_buffer.pop();
+                        }
+                        KeyCode::Esc => {
+                            break;
+                        }
+                        _ => {}
+                    },
+                    AuditStep::Running { .. } => {
+                        if key.code == KeyCode::Char('q') {
+                            break;
                         }
                     }
-                    KeyCode::Char(c) => {
-                        input_buffer.push(c);
-                    }
-                    KeyCode::Backspace => {
-                        input_buffer.pop();
-                    }
-                    KeyCode::Esc => {
-                        break;
-                    }
-                    _ => {}
-                },
-                AuditStep::Running { .. } => {
-                    if key.code == KeyCode::Char('q') {
-                        break;
-                    }
-                }
-                AuditStep::ResultsSummary { .. } => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => {
-                        break;
-                    }
-                    KeyCode::Down => {
-                        let max = rgaa_core::RgaaCriteria::all().len();
-                        let new_idx = (wizard.table_state.selected().unwrap_or(0) + 1)
-                            .min(max.saturating_sub(1));
-                        wizard.table_state.select(Some(new_idx));
-                    }
-                    KeyCode::Up => {
-                        let new_idx = wizard.table_state.selected().unwrap_or(0).saturating_sub(1);
-                        wizard.table_state.select(Some(new_idx));
-                    }
-                    KeyCode::Enter => {
-                        if let Some(idx) = wizard.table_state.selected() {
-                            let criteria = rgaa_core::RgaaCriteria::all();
-                            if idx < criteria.len() {
-                                let criterion = &criteria[idx];
-                                if let AuditStep::ResultsSummary { audit, .. } = &wizard.step {
+                    AuditStep::ResultsSummary { .. } => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            break;
+                        }
+                        KeyCode::Down => {
+                            let max = visible_criteria_count(&wizard.step);
+                            let new_idx = (wizard.table_state.selected().unwrap_or(0) + 1)
+                                .min(max.saturating_sub(1));
+                            wizard.table_state.select(Some(new_idx));
+                        }
+                        KeyCode::Up => {
+                            let new_idx =
+                                wizard.table_state.selected().unwrap_or(0).saturating_sub(1);
+                            wizard.table_state.select(Some(new_idx));
+                        }
+                        KeyCode::Enter => {
+                            // Drill into the row the table actually shows — an
+                            // audited criterion, not the n-th catalog entry.
+                            if let AuditStep::ResultsSummary { audit } = &wizard.step {
+                                let selected = wizard
+                                    .table_state
+                                    .selected()
+                                    .and_then(|idx| {
+                                        audit.pages.first().and_then(|p| p.criteria.get(idx))
+                                    })
+                                    .map(|r| r.criterion_id.clone());
+                                if let Some(criterion_id) = selected {
                                     wizard.step = AuditStep::DrillDown {
                                         audit: audit.clone(),
-                                        criterion_id: criterion.id.to_string(),
+                                        criterion_id,
                                     };
                                 }
                             }
                         }
-                    }
-                    _ => {}
-                },
-                AuditStep::DrillDown { .. } => {
-                    if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
-                        if let AuditStep::DrillDown { audit, .. } = &wizard.step {
-                            wizard.step = AuditStep::ResultsSummary {
-                                audit: audit.clone(),
-                            };
+                        _ => {}
+                    },
+                    AuditStep::DrillDown { .. } => {
+                        if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
+                            if let AuditStep::DrillDown { audit, .. } = &wizard.step {
+                                wizard.step = AuditStep::ResultsSummary {
+                                    audit: audit.clone(),
+                                };
+                            }
                         }
                     }
-                }
-                AuditStep::Error(_) => {
-                    if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
-                        break;
+                    AuditStep::Error(_) => {
+                        if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
+                            break;
+                        }
                     }
                 }
             }
@@ -191,6 +203,7 @@ pub fn run_audit_wizard() {
             if let Some(done) = pending.done.take() {
                 match done {
                     Ok(audit) => {
+                        wizard.table_state.select(Some(0));
                         wizard.step = AuditStep::ResultsSummary { audit };
                     }
                     Err(e) => {
@@ -202,7 +215,57 @@ pub fn run_audit_wizard() {
         }
     }
 
-    ratatui::restore();
+    Ok(())
+}
+
+/// Number of rows the results table renders, which bounds the selection.
+fn visible_criteria_count(step: &AuditStep) -> usize {
+    match step {
+        AuditStep::ResultsSummary { audit } | AuditStep::DrillDown { audit, .. } => audit
+            .pages
+            .first()
+            .map(|p| p.criteria.len())
+            .unwrap_or_default(),
+        _ => 0,
+    }
+}
+
+/// Body of the worker thread that runs one audit.
+///
+/// The wizard owns the terminal on the calling thread, so the audit gets a
+/// runtime of its own and reports back over `tx`. The work itself goes
+/// through the same [`rgaa_orchestrator::Orchestrator`] the headless
+/// `rgaa audit` path uses — the TUI adds no second pipeline.
+fn run_audit_thread(
+    url: String,
+    tx: mpsc::Sender<rgaa_orchestrator::AuditEvent>,
+    tx_done: mpsc::Sender<rgaa_orchestrator::AuditEvent>,
+) {
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Err(format!(
+                "failed to start the audit runtime: {e}"
+            ))));
+            return;
+        }
+    };
+
+    rt.block_on(async move {
+        let orchestrator = rgaa_orchestrator::Orchestrator::new();
+        let config = rgaa_core::CrawlConfig::default();
+        let result = orchestrator
+            .run_with_progress(&url, &config, move |phase| {
+                let _ = tx.send(rgaa_orchestrator::AuditEvent::Phase(phase));
+            })
+            .await;
+
+        if let Ok(audit) = &result {
+            crate::storage::record_audit(audit).await;
+        }
+
+        let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(result));
+    });
 }
 
 fn status_color(status: &rgaa_core::CriterionStatus) -> Color {
@@ -227,7 +290,12 @@ fn status_label(status: &rgaa_core::CriterionStatus) -> &'static str {
     }
 }
 
-fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
+fn render_audit(wizard: &mut AuditWizard, frame: &mut Frame, input: &str) {
+    // Split the borrow up front: the results table needs the step to read
+    // from and the table state to render into, at the same time.
+    let AuditWizard {
+        step, table_state, ..
+    } = wizard;
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -245,7 +313,7 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
         chunks[0],
     );
 
-    match &wizard.step {
+    match &*step {
         AuditStep::UrlInput => {
             let display = if input.is_empty() {
                 "https://example.com".to_string()
@@ -343,10 +411,14 @@ fn render_audit(wizard: &AuditWizard, frame: &mut Frame, input: &str) {
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
-                            .title("Criteria")
+                            .title("Criteria (↑/↓: select, ENTER: detail, q: back)")
                             .style(ratatui::style::Style::default()),
-                    );
-                frame.render_widget(table, chunks[1]);
+                    )
+                    .highlight_style(ratatui::style::Style::default().fg(Color::Yellow).bold())
+                    .highlight_symbol("▶ ");
+                // Stateful so the row the user is about to drill into is the
+                // row they can see highlighted.
+                frame.render_stateful_widget(table, chunks[1], table_state);
             }
         }
         AuditStep::DrillDown {

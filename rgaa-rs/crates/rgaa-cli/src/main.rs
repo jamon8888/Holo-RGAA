@@ -13,6 +13,13 @@ struct Cli {
 enum TopCommand {
     #[command(about = "Audit commands")]
     Audit(AuditArgs),
+    /// Serve the RGAA tools over MCP (HTTP + SSE, or stdio).
+    ///
+    /// The flags live in `rgaa_mcp_http::McpServerArgs` rather than here so
+    /// that `rgaa mcp-server` and the standalone `rgaa-mcp-http` binary
+    /// cannot disagree about what `--cors-origin` means (issue #93).
+    #[command(name = "mcp-server", about = "Run the MCP tool server")]
+    McpServer(rgaa_mcp_http::McpServerArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -31,7 +38,22 @@ async fn main() {
     let _ = dotenvy::dotenv();
 
     let cli = Cli::parse();
-    let TopCommand::Audit(args) = cli.command;
+    let args = match cli.command {
+        TopCommand::Audit(args) => args,
+        // Served before the audit monitoring is initialised: the MCP server
+        // logs to stderr for its supervisor, and opening the audit JSON-lines
+        // file for a long-lived server would leave a log nothing ever writes.
+        TopCommand::McpServer(args) => {
+            tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .init();
+            if let Err(error) = rgaa_mcp_http::run(args).await {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+    };
 
     let (log_path, monitoring_guard) =
         match rgaa_cli::monitoring::init(args.command.common().log_file.as_deref()) {

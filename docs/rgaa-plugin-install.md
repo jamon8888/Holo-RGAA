@@ -115,9 +115,13 @@ on the URLs it reports in `sampled_page_urls`.
 
 #### HTTP transport
 
-`rgaa-mcp-http` exposes the same nine tools as JSON-RPC over `POST /mcp`, with
-progress events on `GET /mcp/events` (SSE). Cross-origin requests are denied
-unless `RGAA_CORS_ORIGINS` names the allowed origins.
+`rgaa-mcp-http` — equivalently `rgaa mcp-server` — exposes the same nine
+tools as JSON-RPC over `POST /mcp`, with progress events on `GET /mcp/events`
+(SSE). Both endpoints are authorized before a tool runs: a browser origin is
+refused unless `RGAA_CORS_ORIGINS` (or `--cors-origin`) names it, and when
+`RGAA_MCP_TOKEN` (or `--auth-token`) is set every request must present
+`Authorization: Bearer <token>`. `GET /health` stays open. See
+[plugin-integration.md](plugin-integration.md#http-transport).
 
 ### API Server (Remote)
 

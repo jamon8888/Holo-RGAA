@@ -511,3 +511,206 @@ async fn shutdown_waits_for_an_in_flight_tool_call_to_answer() {
         .expect("join server");
     assert!(served.is_ok(), "serve loop errored: {served:?}");
 }
+
+/// Issue #198: request-side authorization.
+///
+/// CORS decides what a browser may *read*; it does not decide what the
+/// server *runs*. A simple cross-origin `text/plain` POST skips preflight
+/// entirely, so before this guard an attacking page could make the server
+/// run `analyze` against a URL of its choosing and only lose the response.
+mod request_side_authorization {
+    use super::{test_server, Duration};
+    use rgaa_mcp_http::{app_with_auth, AppState};
+    use std::net::SocketAddr;
+
+    /// Starts a server with an explicit allowlist and token, rather than the
+    /// environment-derived ones `spawn` uses, so each case states its own
+    /// configuration instead of depending on ambient variables.
+    async fn spawn_guarded(
+        origins: Option<&str>,
+        token: Option<&str>,
+    ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let state = AppState::new(test_server(Duration::ZERO));
+        let app = app_with_auth(state, origins, token);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let handle = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (addr, handle)
+    }
+
+    /// A `tools/call` for `list_criteria` — the cheapest tool that needs no
+    /// arguments, so a refused request is refused by the guard and not by
+    /// argument validation.
+    fn tools_call() -> serde_json::Value {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "list_criteria", "arguments": {}}
+        })
+    }
+
+    /// The attack from the issue, verbatim: a browser-simple POST that needs
+    /// no preflight. It must be refused *before* the tool runs.
+    #[tokio::test]
+    async fn a_simple_text_plain_post_from_an_unknown_origin_does_not_run_the_tool() {
+        let (addr, _h) = spawn_guarded(Some("https://plugin.example"), None).await;
+        let resp = reqwest::Client::new()
+            .post(format!("http://{addr}/mcp"))
+            .header("origin", "https://evil.example")
+            .header("content-type", "text/plain;charset=UTF-8")
+            .body(tools_call().to_string())
+            .send()
+            .await
+            .expect("post");
+        assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+        let body: serde_json::Value = resp.json().await.expect("json body");
+        assert!(
+            body.get("error").is_some(),
+            "a refusal must still be readable as JSON-RPC: {body}"
+        );
+        assert!(
+            body.get("result").is_none(),
+            "the tool must not have run: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_allowlisted_origin_still_reaches_its_tool() {
+        let (addr, _h) = spawn_guarded(Some("https://plugin.example"), None).await;
+        let resp = reqwest::Client::new()
+            .post(format!("http://{addr}/mcp"))
+            .header("origin", "https://plugin.example")
+            .json(&tools_call())
+            .send()
+            .await
+            .expect("post");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        let body: serde_json::Value = resp.json().await.expect("json body");
+        assert!(body["result"]["structuredContent"]["criteria"].is_array());
+    }
+
+    /// A direct client (CLI, curl, another service) sends no `Origin`. It
+    /// was never constrained by CORS and must keep working when no token is
+    /// configured, or this change breaks every existing deployment.
+    #[tokio::test]
+    async fn a_direct_client_with_no_origin_keeps_working() {
+        let (addr, _h) = spawn_guarded(None, None).await;
+        let resp = reqwest::Client::new()
+            .post(format!("http://{addr}/mcp"))
+            .json(&tools_call())
+            .send()
+            .await
+            .expect("post");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_configured_token_is_required_and_sufficient() {
+        let (addr, _h) = spawn_guarded(None, Some("s3cret")).await;
+        let client = reqwest::Client::new();
+
+        let refused = client
+            .post(format!("http://{addr}/mcp"))
+            .json(&tools_call())
+            .send()
+            .await
+            .expect("post");
+        assert_eq!(refused.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let wrong = client
+            .post(format!("http://{addr}/mcp"))
+            .header("authorization", "Bearer nope")
+            .json(&tools_call())
+            .send()
+            .await
+            .expect("post");
+        assert_eq!(wrong.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let accepted = client
+            .post(format!("http://{addr}/mcp"))
+            .header("authorization", "Bearer s3cret")
+            .json(&tools_call())
+            .send()
+            .await
+            .expect("post");
+        assert_eq!(accepted.status(), reqwest::StatusCode::OK);
+    }
+
+    /// The SSE stream leaks audit progress, so it is behind the same guard
+    /// as the JSON-RPC endpoint rather than open beside it.
+    #[tokio::test]
+    async fn the_event_stream_is_guarded_too() {
+        let (addr, _h) = spawn_guarded(None, Some("s3cret")).await;
+        let resp = reqwest::Client::new()
+            .get(format!("http://{addr}/mcp/events"))
+            .send()
+            .await
+            .expect("get");
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+    }
+
+    /// `/health` stays open: a supervisor must be able to tell the process
+    /// is alive without being handed a credential.
+    #[tokio::test]
+    async fn health_stays_reachable_without_a_credential() {
+        let (addr, _h) = spawn_guarded(Some("https://plugin.example"), Some("s3cret")).await;
+        let resp = reqwest::Client::new()
+            .get(format!("http://{addr}/health"))
+            .send()
+            .await
+            .expect("get");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    }
+}
+
+/// The HTTP tool dispatch is hand-written while `tools/list` comes from the
+/// `#[tool_router]` macro, so the two can drift: a tool added to `rgaa-mcp`
+/// is advertised over HTTP and then fails when called, with the mismatch
+/// visible only to whoever calls it. All nine line up today; this keeps it
+/// that way.
+#[tokio::test]
+async fn every_advertised_tool_has_a_dispatch_arm() {
+    let (addr, _h) = spawn(Duration::ZERO).await;
+
+    let listed = rpc(
+        addr,
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+    )
+    .await;
+    let names: Vec<String> = listed["result"]["tools"]
+        .as_array()
+        .expect("tools/list must return an array")
+        .iter()
+        .map(|t| t["name"].as_str().expect("tool name").to_string())
+        .collect();
+    assert!(!names.is_empty(), "tools/list returned nothing to check");
+
+    for name in names {
+        // Empty arguments: most tools reject them, and that is fine. What
+        // this asserts is only that the dispatch *recognises* the name —
+        // "invalid arguments for X" means the arm exists and ran, whereas
+        // "unknown tool: X" means it was advertised and never wired.
+        let response = rpc(
+            addr,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": {}}
+            }),
+        )
+        .await;
+
+        let message = response["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            !message.contains("unknown tool"),
+            "`{name}` is advertised by tools/list but has no arm in call_tool, \
+             so every HTTP caller that believes the tool list gets an error: {message}"
+        );
+    }
+}

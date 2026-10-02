@@ -6707,6 +6707,7 @@ dependencies = [
  "futures",
  "reqwest 0.12.28",
  "rgaa-core",
+ "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
  "rgaa-remediation",

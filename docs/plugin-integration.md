@@ -46,6 +46,10 @@ plugin does this):
 
 ```bash
 rgaa-mcp-http --host 127.0.0.1 --port 3000 --cors-origin https://your-plugin.example
+
+# Identical server, via the main CLI:
+rgaa mcp-server --host 127.0.0.1 --port 3000 --cors-origin https://your-plugin.example
+rgaa mcp-server --stdio   # same tools over stdin/stdout
 ```
 
 | Flag | Env | Default |
@@ -53,29 +57,59 @@ rgaa-mcp-http --host 127.0.0.1 --port 3000 --cors-origin https://your-plugin.exa
 | `--host` | `HOST` | `127.0.0.1` |
 | `--port` | `PORT` | `3000` |
 | `--cors-origin` | `RGAA_CORS_ORIGINS` (comma-separated) | *(none — see below)* |
+| `--auth-token` | `RGAA_MCP_TOKEN` | *(none — see below)* |
+| `--stdio` | — | off |
 
-**CORS fails closed.** With no allowlist, no cross-origin request is
-granted. This is deliberate and must not be "fixed" by allowing any origin:
-the endpoint is unauthenticated, `POST /mcp` reads the body as a string
-without requiring a JSON content type, and a `text/plain` POST triggers no
-preflight — so a page open in the user's browser could reach `tools/call`,
-and `analyze` / `audit_url` would then fetch attacker-chosen URLs and return
-the results (CWE-942). Name your origins explicitly.
+**Requests are authorized before a tool runs.** CORS alone was not enough:
+it governs what a browser may *read*, not what the server will *run*. A
+simple cross-origin `text/plain` POST triggers no preflight, so a page open
+in the user's browser could reach `tools/call` and have `analyze` /
+`audit_url` fetch attacker-chosen URLs — the page merely lost the response
+(CWE-942). `POST /mcp` and `GET /mcp/events` therefore apply two checks
+before dispatch:
 
-CORS is not authentication. Anything that can reach the port directly,
-rather than through a browser, is unaffected by it. Bind to loopback unless
-you have put real authentication in front.
+1. **Origin.** A request carrying an `Origin` header — which is every
+   cross-origin browser request — is refused with `403` unless that origin
+   is on the `--cors-origin` allowlist. With no allowlist configured, every
+   browser origin is refused: it fails closed.
+2. **Bearer token.** When `--auth-token` / `RGAA_MCP_TOKEN` is set, every
+   request must send `Authorization: Bearer <token>` or get `401`. A blank
+   value counts as unset, so exporting the variable empty does not make
+   `Bearer ` a valid credential.
+
+Refusals come back as a JSON-RPC error envelope, so an RPC client can read
+them with the parser it already has. `GET /health` stays open so a
+supervisor can probe liveness without a credential.
+
+A request with **no** `Origin` header (the CLI, curl, another service) is
+not constrained by check 1 — CORS never constrained it either. The token is
+what constrains it, so **set a token whenever `--host` is anything but a
+loopback address**; the server logs a warning if you do not.
+
+**Pass the token through `RGAA_MCP_TOKEN`, not `--auth-token`.** A command
+line is world-readable on most systems — any local user can read it out of
+`ps` or `/proc/<pid>/cmdline` — and it lands in shell history and in
+process listings captured by monitoring agents. The flag exists for
+symmetry with the other options and for throwaway local runs; anything
+long-lived should set the environment variable instead (systemd
+`EnvironmentFile=`, a Docker secret, your orchestrator's secret store).
 
 ---
 
 ## 2. Authentication
 
-**The MCP transports have no authentication today.** Not a token, not a
-licence check — `rgaa-mcp` and `rgaa-mcp-http` accept any caller that can
-reach them. Treat the port as privileged: bind to loopback, or put a
-reverse proxy that authenticates in front of it.
+`rgaa-mcp-http` (and `rgaa mcp-server`) accepts a shared bearer token via
+`--auth-token` / `RGAA_MCP_TOKEN`, plus the Origin check described above —
+see [HTTP transport](#http-transport). Both are off by default, which is
+only safe while the server is bound to loopback and no untrusted process
+shares the machine.
 
-A licence/auth middleware is tracked in #87 and is not implemented.
+`rgaa-mcp` (stdio) has no authentication and needs none: it talks to the
+process that spawned it.
+
+Neither is a **licence** check, and the token is a single shared secret, not
+a per-caller identity. Per-caller auth and licence enforcement are tracked
+in #87 and are not implemented.
 
 The **REST API** is split:
 

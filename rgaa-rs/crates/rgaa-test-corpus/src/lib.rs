@@ -29,10 +29,7 @@ impl TestPage {
     /// (`rgaa_core::RgaaCriteria`), when `criterion_id` matches a known
     /// criterion.
     pub fn classification(&self) -> Option<Classification> {
-        rgaa_core::RgaaCriteria::all()
-            .iter()
-            .find(|c| c.id == self.criterion_id)
-            .map(|c| c.classification)
+        rgaa_core::RgaaCriteria::find(&self.criterion_id).map(|c| c.classification)
     }
 }
 

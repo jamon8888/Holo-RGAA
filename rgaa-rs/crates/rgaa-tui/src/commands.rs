@@ -85,7 +85,7 @@ pub async fn config_set_base_url(url: String) -> anyhow::Result<()> {
 }
 
 pub async fn install() -> anyhow::Result<()> {
-    crate::tui::run_install_wizard();
+    crate::tui::run_install_wizard()?;
     Ok(())
 }
 

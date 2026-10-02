@@ -32,19 +32,32 @@ impl Default for SetupWizard {
     }
 }
 
-pub fn run_setup_wizard() -> bool {
+/// Returns whether the wizard finished on `Done`.
+///
+/// Fallible for the same reason as the install wizard: `ratatui::init()`
+/// aborts the process when there is no terminal to take.
+///
+/// Split into a wrapper and a loop for the same reason as the install wizard:
+/// the restore must run on every exit, and `try_init` can fail with raw mode
+/// already enabled.
+pub fn run_setup_wizard() -> std::io::Result<bool> {
+    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
+    let outcome = setup_loop(&mut terminal);
+    ratatui::restore();
+    outcome
+}
+
+/// Drives the setup wizard to its end state, returning whether it reached
+/// `Done`. Terminal I/O errors are returned; the caller restores.
+fn setup_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<bool> {
     let mut wizard = SetupWizard::default();
     let mut input_buffer = String::new();
-
-    let mut terminal = ratatui::init();
-    terminal.clear().unwrap();
+    terminal.clear()?;
 
     loop {
-        terminal
-            .draw(|frame| render(&wizard, frame, &input_buffer))
-            .unwrap();
+        terminal.draw(|frame| render(&wizard, frame, &input_buffer))?;
 
-        if let Event::Key(key) = event::read().unwrap() {
+        if let Event::Key(key) = event::read()? {
             match &wizard.step {
                 SetupStep::Welcome => {
                     if key.code == KeyCode::Enter {
@@ -133,9 +146,7 @@ pub fn run_setup_wizard() -> bool {
         }
     }
 
-    ratatui::restore();
-
-    matches!(wizard.step, SetupStep::Done)
+    Ok(matches!(wizard.step, SetupStep::Done))
 }
 
 fn masked_key(key: &str) -> String {

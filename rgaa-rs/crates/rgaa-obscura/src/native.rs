@@ -12,7 +12,10 @@ use crate::evidence::{EvidenceArtifact, EvidenceStore};
 use crate::guided::{GuidedAction, GuidedExecutor, GuidedObservation, GuidedRunResult, GuidedTest};
 use crate::results::{AnalyzePageResult, ObscuraError};
 
-const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
+fn get_axe_core_url() -> String {
+    std::env::var("RGAA_AXE_CORE_URL")
+        .unwrap_or_else(|_| "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js".to_string())
+}
 
 #[derive(Debug, Deserialize)]
 struct AxeViolationPayload {
@@ -519,9 +522,10 @@ impl ObscuraNative {
             .build()
             .map_err(|e| ObscuraError::ProcessStartup(format!("failed to create browser: {e}")))?;
 
-        let axe_source = reqwest::get(AXE_CORE_CDN)
+        let url = get_axe_core_url();
+        let axe_source = reqwest::get(&url)
             .await
-            .map_err(|e| ObscuraError::ProcessStartup(format!("failed to fetch axe-core: {e}")))?
+            .map_err(|e| ObscuraError::ProcessStartup(format!("failed to fetch axe-core from {}: {e}", url)))?
             .text()
             .await
             .map_err(|e| ObscuraError::ProcessStartup(format!("failed to read axe-core: {e}")))?;

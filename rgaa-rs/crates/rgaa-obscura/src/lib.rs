@@ -36,7 +36,10 @@ use rgaa_rules::AxeMapper;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const AXE_CORE_CDN: &str = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js";
+fn get_axe_core_url() -> String {
+    std::env::var("RGAA_AXE_CORE_URL")
+        .unwrap_or_else(|_| "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.9.1/axe.min.js".to_string())
+}
 
 /// Cached axe-core source to avoid repeated CDN downloads
 static AXE_CORE_CACHE: OnceLock<String> = OnceLock::new();
@@ -935,9 +938,10 @@ impl ObscuraBridge {
         if let Some(cached) = AXE_CORE_CACHE.get() {
             return Ok(cached.clone());
         }
-        let source = reqwest::get(AXE_CORE_CDN)
+        let url = get_axe_core_url();
+        let source = reqwest::get(&url)
             .await
-            .map_err(|e| format!("Failed to fetch axe-core: {e}"))?
+            .map_err(|e| format!("Failed to fetch axe-core from {}: {e}", url))?
             .text()
             .await
             .map_err(|e| format!("Failed to read axe-core: {e}"))?;

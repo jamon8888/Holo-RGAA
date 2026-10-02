@@ -4,16 +4,20 @@
 //! of the MCP tools over HTTP POST /mcp and SSE streaming.
 
 use rgaa_mcp::ToolServer;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::Arc;
 
 /// A minimal tool server for testing, reusing the real tools.
 fn test_tool_server() -> ToolServer {
+    // For testing, use the production service implementations.
+    // The analyze and guided services use a lazy bridge that doesn't require active browser.
+    let bridge = Arc::new(rgaa_mcp::LazyObscuraBridge::new(
+        rgaa_obscura::ObscuraBridge::default(),
+    ));
     ToolServer::new(
-        // Use stub services for testing; the real ones need browser substrate
-        Arc::new(rgaa_mcp::NoOpAnalyzeService),
+        Arc::new(rgaa_mcp::ObscuraAnalyzeService::new(bridge.clone())),
         Arc::new(rgaa_mcp::RemediationServiceImpl::default()),
-        Arc::new(rgaa_mcp::NoOpGuidedService),
+        Arc::new(rgaa_mcp::ObscuraGuidedService::new(bridge)),
         Arc::new(rgaa_mcp::OrchestrationService::new()),
         Arc::new(rgaa_mcp::NoOpStorageService),
     )

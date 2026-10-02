@@ -33,7 +33,7 @@ enum TopCommand {
         #[command(subcommand)]
         sub: Option<ConfigCommand>,
     },
-    /// Run the install wizard
+    /// Show how to install rgaa (delegates to install.sh)
     Install,
     /// Serve the MCP tool server (HTTP + SSE, or `--stdio`)
     McpServer(rgaa_mcp_http::McpServerArgs),

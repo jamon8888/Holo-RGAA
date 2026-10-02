@@ -1,12 +1,10 @@
 pub mod audit;
 pub mod export;
 pub mod history;
-pub mod install;
 pub mod setup;
 
 pub use audit::run_audit_wizard;
 pub use history::run_history_view;
-pub use install::run_install_wizard;
 pub use setup::run_setup_wizard;
 
 use ratatui::crossterm::event::{self, Event, KeyCode};

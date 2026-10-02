@@ -85,7 +85,15 @@ pub async fn config_set_base_url(url: String) -> anyhow::Result<()> {
 }
 
 pub async fn install() -> anyhow::Result<()> {
-    crate::tui::run_install_wizard()?;
+    println!("`rgaa install` does not install anything itself.");
+    println!("Installation is handled by install.sh, which sets up the binaries,");
+    println!("the Obscura browser, the Claude Code plugin and the MCP config:");
+    println!();
+    println!(
+        "  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash"
+    );
+    println!();
+    println!("Add `-s -- --build` to build from source, or `-s -- --uninstall` to remove it.");
     Ok(())
 }
 

@@ -104,10 +104,13 @@ impl HistoryState {
             .select((!self.entries.is_empty()).then_some(0));
     }
 
+    /// Moving the selection also drops any message: it described the previous
+    /// row's read, and leaving it up would attach it to the new one.
     fn next(&mut self) {
         if self.entries.is_empty() {
             return;
         }
+        self.message = None;
         let i = match self.list_state.selected() {
             Some(i) if i >= self.entries.len() - 1 => 0,
             Some(i) => i + 1,
@@ -116,10 +119,12 @@ impl HistoryState {
         self.list_state.select(Some(i));
     }
 
+    /// See [`Self::next`].
     fn previous(&mut self) {
         if self.entries.is_empty() {
             return;
         }
+        self.message = None;
         let i = match self.list_state.selected() {
             Some(0) | None => self.entries.len() - 1,
             Some(i) => i - 1,
@@ -139,7 +144,13 @@ impl HistoryState {
     }
 
     /// Read the stored result for the selected row and cache its counts.
+    ///
+    /// Clears `message` first. The renderer draws it above everything else and
+    /// only a successful `reload` used to clear it, so one unreadable row left
+    /// its error on screen for every row selected afterwards — including rows
+    /// whose details loaded perfectly well.
     fn load_detail(&mut self, storage: &Storage) {
+        self.message = None;
         let Some(entry) = self
             .list_state
             .selected()

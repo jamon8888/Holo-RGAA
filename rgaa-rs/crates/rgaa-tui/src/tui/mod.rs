@@ -23,6 +23,21 @@ enum MainMenuSelection {
     Exit,
 }
 
+/// Print a sub-view's error to stderr before the main menu takes the screen back.
+///
+/// These four call sites used to discard the result with `let _ =`. The error
+/// was reachable only through `tracing::warn!`, which this binary installs a
+/// subscriber for only under `--debug`, so a wizard that failed looked to the
+/// user like a menu that had simply blinked. Printing is terminal-safe here:
+/// the menu's terminal is dropped before the sub-view starts and the sub-view
+/// restores its own before returning, so stderr is not fighting a raw-mode
+/// screen.
+fn report<E: std::fmt::Display>(result: Result<(), E>, what: &str) {
+    if let Err(error) = result {
+        eprintln!("{what} failed: {error}");
+    }
+}
+
 pub async fn run() {
     let mut terminal = ratatui::init();
     terminal.clear().unwrap();
@@ -42,14 +57,14 @@ pub async fn run() {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         show_menu = false;
                         drop(terminal);
-                        let _ = crate::tui::run_audit_wizard();
+                        report(crate::tui::run_audit_wizard(), "audit wizard");
                         terminal = ratatui::init();
                         terminal.clear().unwrap();
                     }
                     KeyCode::Char('h') | KeyCode::Char('H') => {
                         show_menu = false;
                         drop(terminal);
-                        let _ = crate::tui::run_history_view().await;
+                        report(crate::tui::run_history_view().await, "history view");
                         terminal = ratatui::init();
                         terminal.clear().unwrap();
                     }
@@ -83,14 +98,14 @@ pub async fn run() {
                         MainMenuSelection::Audit => {
                             show_menu = false;
                             drop(terminal);
-                            let _ = crate::tui::run_audit_wizard();
+                            report(crate::tui::run_audit_wizard(), "audit wizard");
                             terminal = ratatui::init();
                             terminal.clear().unwrap();
                         }
                         MainMenuSelection::History => {
                             show_menu = false;
                             drop(terminal);
-                            let _ = crate::tui::run_history_view().await;
+                            report(crate::tui::run_history_view().await, "history view");
                             terminal = ratatui::init();
                             terminal.clear().unwrap();
                         }

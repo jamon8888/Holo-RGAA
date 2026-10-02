@@ -20,10 +20,6 @@ pub async fn audit(url: Option<String>, output: Option<PathBuf>) -> anyhow::Resu
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    // Same local database the TUI History view reads, so an audit run
-    // either way shows up in `rgaa history`.
-    crate::storage::record_audit(&result).await;
-
     if let Some(path) = output {
         crate::tui::export::export(&result, &path)
             .map_err(|e| anyhow::anyhow!("export failed: {e}"))?;

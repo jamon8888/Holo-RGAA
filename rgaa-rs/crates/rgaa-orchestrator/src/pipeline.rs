@@ -759,9 +759,11 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
+    // The list itself is built once per process; `run_ia_assiste` consumes an
+    // owned `Vec`, so only that hand-off copies it.
     let agent_results = agent
         .clone()
-        .run_ia_assiste(ia_criteria, page_context.clone())
+        .run_ia_assiste(ia_criteria.to_vec(), page_context.clone())
         .await;
 
     let mut holo_results = HashMap::new();
@@ -779,7 +781,7 @@ async fn audit_one(
 
     let partial_results = agent
         .clone()
-        .run_partially_automatable(partial_criteria, page_context.clone())
+        .run_partially_automatable(partial_criteria.to_vec(), page_context.clone())
         .await;
     for (criterion_id, result) in partial_results {
         holo_results.insert(criterion_id, result);
@@ -865,7 +867,7 @@ async fn audit_one(
     // 7. Apply NA detection
     let mut criteria: Vec<CriterionResult> = all_results.into_values().collect();
     for criterion in &mut criteria {
-        if let Some(&false) = na_map.get(&criterion.criterion_id) {
+        if let Some(&false) = na_map.get(criterion.criterion_id.as_str()) {
             criterion.status = CriterionStatus::NotApplicable;
         }
     }

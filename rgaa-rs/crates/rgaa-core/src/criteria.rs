@@ -1,5 +1,6 @@
 use crate::catalog::{Automatable, RgaaCatalog};
 use crate::types::Classification;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
@@ -144,43 +145,61 @@ impl RgaaCriteria {
         })
     }
 
-    pub fn deterministe() -> Vec<Criterion> {
-        Self::all()
-            .iter()
-            .filter(|c| c.classification == Classification::Deterministe)
-            .cloned()
-            .collect()
+    /// Filtered once per process, in `all()`'s order, and shared read-only.
+    pub fn deterministe() -> &'static [Criterion] {
+        static SUBSET: OnceLock<Vec<Criterion>> = OnceLock::new();
+        SUBSET.get_or_init(|| Self::subset(|c| c.classification == Classification::Deterministe))
     }
 
-    pub fn ia_assiste() -> Vec<Criterion> {
-        Self::all()
-            .iter()
-            .filter(|c| c.classification == Classification::IaAssiste)
-            .cloned()
-            .collect()
+    /// Filtered once per process, in `all()`'s order, and shared read-only.
+    pub fn ia_assiste() -> &'static [Criterion] {
+        static SUBSET: OnceLock<Vec<Criterion>> = OnceLock::new();
+        SUBSET.get_or_init(|| Self::subset(|c| c.classification == Classification::IaAssiste))
     }
 
-    pub fn partiellement_automatique() -> Vec<Criterion> {
-        Self::all()
-            .iter()
-            .filter(|c| {
+    /// Filtered once per process, in `all()`'s order, and shared read-only — the
+    /// catalog lookup behind the filter no longer runs 106 times per audit.
+    pub fn partiellement_automatique() -> &'static [Criterion] {
+        static SUBSET: OnceLock<Vec<Criterion>> = OnceLock::new();
+        SUBSET.get_or_init(|| {
+            Self::subset(|c| {
                 RgaaCatalog::by_id(c.id)
                     .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable)
             })
-            .cloned()
-            .collect()
+        })
+    }
+
+    fn subset(keep: impl Fn(&Criterion) -> bool) -> Vec<Criterion> {
+        Self::all().iter().filter(|c| keep(c)).cloned().collect()
     }
 
     pub fn count() -> usize {
         CLASSIFICATION.len()
     }
 
+    /// Criterion id → its index in [`Self::all`], built once per process so a lookup
+    /// by id is a single hash probe instead of a linear scan of the 106 criteria.
+    fn id_index() -> &'static HashMap<&'static str, usize> {
+        static INDEX: OnceLock<HashMap<&'static str, usize>> = OnceLock::new();
+        INDEX.get_or_init(|| {
+            Self::all()
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (c.id, i))
+                .collect()
+        })
+    }
+
+    /// The criterion with this exact id, or `None`. Matches on the literal id, as a
+    /// scan of [`Self::all`] did: unlike [`RgaaCatalog::by_id`], `"01.1"` is not `"1.1"`.
+    #[must_use]
+    pub fn find(id: &str) -> Option<&'static Criterion> {
+        Self::id_index().get(id).map(|&i| &Self::all()[i])
+    }
+
     /// Returns the classification for a given criterion ID, or None if not found.
     pub fn classification_for(id: &str) -> Option<Classification> {
-        CLASSIFICATION
-            .iter()
-            .find(|(criterion_id, _, _)| *criterion_id == id)
-            .map(|(_, classification, _)| *classification)
+        Self::find(id).map(|c| c.classification)
     }
 }
 
@@ -230,5 +249,46 @@ mod tests {
                 c.id
             );
         }
+    }
+
+    /// The index must answer exactly what the linear scan it replaced answered,
+    /// for every criterion and for ids the catalog does not hold (#43).
+    #[test]
+    fn find_agrees_with_a_linear_scan() {
+        for probe in RgaaCriteria::all()
+            .iter()
+            .map(|c| c.id)
+            .chain(["01.1", "1.01", "99.99", "", "1", "abc"])
+        {
+            let scanned = RgaaCriteria::all().iter().find(|c| c.id == probe);
+            let found = RgaaCriteria::find(probe);
+            assert_eq!(scanned.map(|c| c.id), found.map(|c| c.id), "id {probe}");
+            assert_eq!(
+                RgaaCriteria::classification_for(probe),
+                scanned.map(|c| c.classification),
+                "classification for {probe}"
+            );
+        }
+    }
+
+    /// Repeated calls hand out the same build, not a fresh one per call, and the
+    /// shared list still converts to the owned `Vec` the agent's API consumes.
+    #[test]
+    fn lists_are_built_once_and_shared() {
+        let owned: Vec<Criterion> = RgaaCriteria::ia_assiste().to_vec();
+        assert_eq!(owned.len(), RgaaCriteria::ia_assiste().len());
+        assert!(std::ptr::eq(RgaaCriteria::all(), RgaaCriteria::all()));
+        assert!(std::ptr::eq(
+            RgaaCriteria::ia_assiste(),
+            RgaaCriteria::ia_assiste()
+        ));
+        assert!(std::ptr::eq(
+            RgaaCriteria::deterministe(),
+            RgaaCriteria::deterministe()
+        ));
+        assert!(std::ptr::eq(
+            RgaaCriteria::partiellement_automatique(),
+            RgaaCriteria::partiellement_automatique()
+        ));
     }
 }

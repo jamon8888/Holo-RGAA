@@ -52,7 +52,7 @@ impl Profile {
     /// a finding with no reference is a finding no one can act on.
     pub fn references(self, rule: RuleId) -> Vec<Reference> {
         let criterion_id = rule.rgaa_criterion();
-        let Some(criterion) = RgaaCriteria::all().iter().find(|c| c.id == criterion_id) else {
+        let Some(criterion) = RgaaCriteria::find(criterion_id) else {
             // Unreachable while `rgaa_criterion()` returns a catalog id, which a
             // test pins. Degrading to an empty list rather than panicking keeps a
             // catalog edit from taking the MCP server down.

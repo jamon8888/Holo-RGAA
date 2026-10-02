@@ -183,12 +183,16 @@ pub async fn run_history_view() -> Result<(), Box<dyn std::error::Error>> {
     // plain error, not a half-initialised terminal.
     let storage = crate::storage::storage().await?;
 
-    let mut terminal = ratatui::try_init()?;
+    // `try_init` enables raw mode and enters the alternate screen before it
+    // can still fail; on that path the restore below is never reached.
+    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
     let result = history_loop(&mut terminal, &storage);
     ratatui::restore();
     result.map_err(Into::into)
 }
 
+/// Renders stored audits and loads a selected entry's criteria on demand.
+/// Terminal I/O errors are returned; the caller restores.
 fn history_loop(
     terminal: &mut ratatui::DefaultTerminal,
     storage: &Storage,

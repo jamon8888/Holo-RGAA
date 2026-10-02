@@ -57,7 +57,9 @@ impl Default for AuditWizard {
 const TICK: Duration = Duration::from_millis(100);
 
 pub fn run_audit_wizard() -> std::io::Result<()> {
-    let mut terminal = ratatui::try_init()?;
+    // `try_init` enables raw mode and enters the alternate screen before it
+    // can still fail; on that path the restore below is never reached.
+    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
     let result = audit_loop(&mut terminal);
     // Restore either way: a terminal left in raw mode is worse than the error
     // that caused it.
@@ -65,6 +67,8 @@ pub fn run_audit_wizard() -> std::io::Result<()> {
     result
 }
 
+/// Polls for input on a tick so orchestrator progress repaints without a
+/// keypress. Terminal I/O errors are returned; the caller restores.
 fn audit_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<()> {
     let mut wizard = AuditWizard::default();
     let mut input_buffer = String::new();

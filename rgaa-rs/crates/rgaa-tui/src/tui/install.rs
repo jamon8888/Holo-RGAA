@@ -75,10 +75,22 @@ fn detect_platform() -> (String, String) {
 /// CI step, a non-interactive SSH — it aborts the process instead of telling
 /// the caller. `rgaa install` is the command the installer's own closing
 /// message suggests, so that path is reachable by following the docs.
+///
+/// The loop lives in its own function so the restore below runs on every exit,
+/// including an early `?`. `try_init` can also fail *after* enabling raw mode
+/// or entering the alternate screen, so that path restores too: a terminal
+/// left in raw mode is worse than the error that caused it.
 pub fn run_install_wizard() -> std::io::Result<bool> {
-    let mut wizard = InstallWizard::default();
+    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
+    let outcome = install_loop(&mut terminal);
+    ratatui::restore();
+    outcome
+}
 
-    let mut terminal = ratatui::try_init()?;
+/// Drives the install wizard to its end state, returning whether it finished
+/// successfully. Terminal I/O errors are returned; the caller restores.
+fn install_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<bool> {
+    let mut wizard = InstallWizard::default();
     terminal.clear()?;
 
     loop {
@@ -111,8 +123,6 @@ pub fn run_install_wizard() -> std::io::Result<bool> {
             }
         }
     }
-
-    ratatui::restore();
 
     Ok(matches!(
         wizard.step,

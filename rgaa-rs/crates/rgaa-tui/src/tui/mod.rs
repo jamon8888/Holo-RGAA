@@ -38,8 +38,23 @@ fn report<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) {
     }
 }
 
+/// The loop is a separate function that owns the terminal, so the restore here
+/// runs on every exit including an early `?`. Without that, an I/O error would
+/// return straight past the restore and hand the user back a shell still in raw
+/// mode on the alternate screen — the failure mode #73 fixed for the history
+/// view, in a new disguise. `try_init` enables raw mode before it can still
+/// fail, so that path restores too.
 pub async fn run() -> std::io::Result<()> {
-    let mut terminal = ratatui::try_init()?;
+    let terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
+    let result = menu_loop(terminal).await;
+    ratatui::restore();
+    result
+}
+
+/// Owns the terminal for the lifetime of the main menu, releasing it around
+/// each sub-view (which takes the screen itself) and retaking it afterwards.
+/// Returns the first terminal I/O error; the caller restores.
+async fn menu_loop(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()> {
     terminal.clear()?;
     let mut selected = MainMenuSelection::Audit;
     let mut show_menu = true;
@@ -127,7 +142,6 @@ pub async fn run() -> std::io::Result<()> {
         }
     }
 
-    ratatui::restore();
     Ok(())
 }
 

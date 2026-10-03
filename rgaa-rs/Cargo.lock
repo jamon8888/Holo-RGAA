@@ -6821,6 +6821,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "futures-util",
+ "libc",
  "obscura",
  "reqwest 0.12.28",
  "rgaa-core",

@@ -2,7 +2,7 @@
 # install.sh — One-command installer for rgaa-rs
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
 #   curl -sSL .../install.sh | bash -s -- --build    # build from source
 #   curl -sSL .../install.sh | bash -s -- --uninstall    # uninstall
 #

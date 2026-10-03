@@ -90,7 +90,7 @@ pub async fn install() -> anyhow::Result<()> {
     println!("the Obscura browser, the Claude Code plugin and the MCP config:");
     println!();
     println!(
-        "  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash"
+        "  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash"
     );
     println!();
     println!("Add `-s -- --build` to build from source, or `-s -- --uninstall` to remove it.");

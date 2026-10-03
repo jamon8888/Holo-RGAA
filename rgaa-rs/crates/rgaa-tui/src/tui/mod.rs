@@ -1,12 +1,10 @@
 pub mod audit;
 pub mod export;
 pub mod history;
-pub mod install;
 pub mod setup;
 
 pub use audit::run_audit_wizard;
 pub use history::run_history_view;
-pub use install::run_install_wizard;
 pub use setup::run_setup_wizard;
 
 use ratatui::crossterm::event::{self, Event, KeyCode};
@@ -69,21 +67,21 @@ async fn menu_loop(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()
                 match key.code {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         show_menu = false;
-                        drop(terminal);
+                        ratatui::restore();
                         report(crate::tui::run_audit_wizard(), "audit wizard");
                         terminal = ratatui::try_init()?;
                         terminal.clear()?;
                     }
                     KeyCode::Char('h') | KeyCode::Char('H') => {
                         show_menu = false;
-                        drop(terminal);
+                        ratatui::restore();
                         report(crate::tui::run_history_view().await, "history view");
                         terminal = ratatui::try_init()?;
                         terminal.clear()?;
                     }
                     KeyCode::Char('s') | KeyCode::Char('S') => {
                         show_menu = false;
-                        drop(terminal);
+                        ratatui::restore();
                         report(crate::tui::run_setup_wizard(), "setup wizard");
                         terminal = ratatui::try_init()?;
                         terminal.clear()?;
@@ -110,21 +108,21 @@ async fn menu_loop(mut terminal: ratatui::DefaultTerminal) -> std::io::Result<()
                     KeyCode::Enter => match selected {
                         MainMenuSelection::Audit => {
                             show_menu = false;
-                            drop(terminal);
+                            ratatui::restore();
                             report(crate::tui::run_audit_wizard(), "audit wizard");
                             terminal = ratatui::try_init()?;
                             terminal.clear()?;
                         }
                         MainMenuSelection::History => {
                             show_menu = false;
-                            drop(terminal);
+                            ratatui::restore();
                             report(crate::tui::run_history_view().await, "history view");
                             terminal = ratatui::try_init()?;
                             terminal.clear()?;
                         }
                         MainMenuSelection::Settings => {
                             show_menu = false;
-                            drop(terminal);
+                            ratatui::restore();
                             report(crate::tui::run_setup_wizard(), "setup wizard");
                             terminal = ratatui::try_init()?;
                             terminal.clear()?;

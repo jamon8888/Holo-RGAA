@@ -2,9 +2,9 @@
 # install.sh — One-command installer for rgaa-rs
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
 #   curl -sSL .../install.sh | bash -s -- --build    # build from source
-#   curl -sSL .../install.sh | bash -s -- --卸载      # uninstall
+#   curl -sSL .../install.sh | bash -s -- --uninstall    # uninstall
 #
 # Installs: rgaa-mcp, rgaa-cli, obscura browser binary, Claude Code plugin
 

@@ -863,6 +863,13 @@ impl ObscuraBridge {
             Stdio::null()
         });
 
+        // `obscura serve --workers N` forks N worker processes. Put the whole
+        // tree in its own process group so `Drop` can stop every worker; killing
+        // only the parent (SIGKILL) leaves the workers running as orphans that
+        // keep their ports bound.
+        #[cfg(unix)]
+        cmd.process_group(0);
+
         let child = cmd
             .spawn()
             .map_err(|e| format!("Failed to start obscura serve: {e}"))?;
@@ -2301,6 +2308,14 @@ impl ObscuraBridge {
 impl Drop for ObscuraBridge {
     fn drop(&mut self) {
         if let Some(mut child) = self.server_process.lock().unwrap().take() {
+            // Kill the whole process group (parent + workers), not just the parent.
+            #[cfg(unix)]
+            if let Some(pid) = child.id().and_then(|p| i32::try_from(p).ok()) {
+                // SAFETY: plain kill(2) on the group we created with process_group(0).
+                unsafe {
+                    libc::kill(-pid, libc::SIGKILL);
+                }
+            }
             let _ = child.start_kill();
         }
     }
@@ -2458,6 +2473,45 @@ mod tests {
     async fn binary_version_fails_for_missing_binary() {
         let bridge = ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into());
         assert!(bridge.binary_version().await.is_err());
+    }
+
+    /// Regression: dropping the bridge must stop the server *and* its forked
+    /// workers. Killing only the parent used to leave the workers orphaned.
+    #[cfg(target_os = "linux")]
+    #[ignore = "needs the pinned obscura binary and port 9222"]
+    #[tokio::test]
+    async fn drop_stops_server_and_worker_processes() {
+        fn children_of(pid: u32) -> Vec<u32> {
+            std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter_map(|p| p.parse().ok())
+                .collect()
+        }
+
+        let mut bridge = ObscuraBridge::new().with_port(9340);
+        bridge.start_server().await.expect("server starts");
+        let parent = bridge
+            .server_process
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|c| c.id())
+            .expect("server pid");
+        let workers = children_of(parent);
+        assert!(!workers.is_empty(), "expected obscura to fork workers");
+
+        drop(bridge);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        for pid in std::iter::once(parent).chain(workers) {
+            assert!(
+                !std::path::Path::new(&format!("/proc/{pid}")).exists()
+                    || std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                        .is_ok_and(|s| s.contains(") Z")),
+                "process {pid} survived Drop"
+            );
+        }
     }
 
     #[ignore]

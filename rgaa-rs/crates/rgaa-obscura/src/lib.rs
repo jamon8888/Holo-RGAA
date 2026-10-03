@@ -912,6 +912,9 @@ impl ObscuraBridge {
         // await point — a `std::sync::MutexGuard` is !Send and cannot cross it.
         let child = self.server_process.lock().unwrap().take();
         if let Some(mut child) = child {
+            // Workers share the parent's process group: stop them too.
+            #[cfg(unix)]
+            kill_process_group(&child);
             let _ = child.kill().await;
             info!("Obscura CDP server stopped");
         }
@@ -2305,17 +2308,25 @@ impl ObscuraBridge {
     }
 }
 
+/// SIGKILLs the whole process group of `child` (the obscura parent and the
+/// workers it forked). The server is spawned with `process_group(0)`, so the
+/// group id equals the parent's pid.
+#[cfg(unix)]
+fn kill_process_group(child: &Child) {
+    if let Some(pid) = child.id().and_then(|p| i32::try_from(p).ok()) {
+        // SAFETY: plain kill(2) on the group we created with process_group(0).
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+}
+
 impl Drop for ObscuraBridge {
     fn drop(&mut self) {
         if let Some(mut child) = self.server_process.lock().unwrap().take() {
             // Kill the whole process group (parent + workers), not just the parent.
             #[cfg(unix)]
-            if let Some(pid) = child.id().and_then(|p| i32::try_from(p).ok()) {
-                // SAFETY: plain kill(2) on the group we created with process_group(0).
-                unsafe {
-                    libc::kill(-pid, libc::SIGKILL);
-                }
-            }
+            kill_process_group(&child);
             let _ = child.start_kill();
         }
     }
@@ -2478,7 +2489,7 @@ mod tests {
     /// Regression: dropping the bridge must stop the server *and* its forked
     /// workers. Killing only the parent used to leave the workers orphaned.
     #[cfg(target_os = "linux")]
-    #[ignore = "needs the pinned obscura binary and port 9222"]
+    #[ignore = "needs the pinned obscura binary and port 9340"]
     #[tokio::test]
     async fn drop_stops_server_and_worker_processes() {
         fn children_of(pid: u32) -> Vec<u32> {
@@ -2506,10 +2517,47 @@ mod tests {
 
         for pid in std::iter::once(parent).chain(workers) {
             assert!(
-                !std::path::Path::new(&format!("/proc/{pid}")).exists()
-                    || std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                        .is_ok_and(|s| s.contains(") Z")),
+                match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                    Ok(stat) => stat.contains(") Z"),
+                    Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+                },
                 "process {pid} survived Drop"
+            );
+        }
+    }
+
+    /// Same guarantee through the public async API.
+    #[cfg(target_os = "linux")]
+    #[ignore = "needs the pinned obscura binary and port 9341"]
+    #[tokio::test]
+    async fn stop_server_stops_server_and_worker_processes() {
+        let mut bridge = ObscuraBridge::new().with_port(9341);
+        bridge.start_server().await.expect("server starts");
+        let parent = bridge
+            .server_process
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|c| c.id())
+            .expect("server pid");
+        let workers: Vec<u32> =
+            std::fs::read_to_string(format!("/proc/{parent}/task/{parent}/children"))
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter_map(|p| p.parse().ok())
+                .collect();
+        assert!(!workers.is_empty(), "expected obscura to fork workers");
+
+        bridge.stop_server().await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        for pid in std::iter::once(parent).chain(workers) {
+            assert!(
+                match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                    Ok(stat) => stat.contains(") Z"),
+                    Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+                },
+                "process {pid} survived stop_server"
             );
         }
     }

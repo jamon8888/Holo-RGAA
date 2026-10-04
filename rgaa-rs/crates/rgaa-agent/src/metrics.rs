@@ -9,9 +9,10 @@
 //! Nothing here exports anywhere. A subscriber (a JSON log layer today, an
 //! OpenTelemetry layer later) picks the events up by target.
 
-use rig_agent::agent::PromptResponse;
+use rig_agent::agent::{Agent, PromptResponse};
+use rig_agent::completion::{Prompt, PromptError};
 use rig_core::message::{AssistantContent, Message};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// `tracing` target every cost event is emitted on; filter on it to route or
 /// drop them, e.g. `RUST_LOG=rgaa_agent::metrics=info`.
@@ -112,6 +113,31 @@ pub fn emit_error(criteria: &str, tier: &str, elapsed: Duration) {
         latency_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
         "model call cost"
     );
+}
+
+/// Runs one prompt on `agent` and emits its cost event.
+///
+/// Behaves exactly like `agent.prompt(..)`: same loop, same reply, same error.
+/// Every model call in the crate goes through here so none escapes the
+/// counters; `criteria` names what the call evaluated (comma-separated for a
+/// batch) and `tier` is a label such as `"tactical"` or `"reasoning"`.
+pub async fn measured_prompt(
+    agent: &Agent,
+    tier: &str,
+    prompt: &str,
+    criteria: &str,
+) -> Result<String, PromptError> {
+    let started = Instant::now();
+    match agent.prompt(prompt).extended_details().await {
+        Ok(response) => {
+            CallMetrics::from_response(&response, started.elapsed()).emit_ok(criteria, tier);
+            Ok(response.output)
+        }
+        Err(e) => {
+            emit_error(criteria, tier, started.elapsed());
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]

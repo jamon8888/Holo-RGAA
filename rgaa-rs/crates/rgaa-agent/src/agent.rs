@@ -1,7 +1,6 @@
 use crate::config::AgentConfig;
 use crate::criteria_defs::VISUAL_CRITERIA;
 use crate::error::AgentError;
-use crate::metrics::CallMetrics;
 use crate::prompts::{page_discovery_preamble, PromptBuilder};
 use crate::ratelimit::{ModelTier, Ratelimiter};
 use crate::verify::map_verdict;
@@ -12,7 +11,6 @@ use rgaa_holo::{HoloClient, HoloResponse, PageContext};
 use rgaa_spider::SpiderTool;
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
-use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -256,11 +254,8 @@ impl RgaaAgent {
     }
 
     /// Runs one prompt on `tier`'s agent and emits its cost event (#122).
-    ///
-    /// Behaves exactly like `agent.prompt(..)`: same loop, same reply, same
-    /// error. `criteria` names what the call evaluated, comma-separated; a
-    /// batch call cannot be split per criterion, so it is recorded once for
-    /// the whole batch rather than with an invented per-criterion share.
+    /// `criteria` names what the call evaluated, comma-separated; a batch
+    /// call is recorded once for the whole batch, not split per criterion.
     async fn prompt_measured(
         &self,
         tier: ModelTier,
@@ -271,18 +266,7 @@ impl RgaaAgent {
             ModelTier::Tactical => "tactical",
             ModelTier::Reasoning => "reasoning",
         };
-        let started = Instant::now();
-        match self.agent_for(tier).prompt(prompt).extended_details().await {
-            Ok(response) => {
-                CallMetrics::from_response(&response, started.elapsed())
-                    .emit_ok(criteria, tier_name);
-                Ok(response.output)
-            }
-            Err(e) => {
-                crate::metrics::emit_error(criteria, tier_name, started.elapsed());
-                Err(e)
-            }
-        }
+        crate::metrics::measured_prompt(self.agent_for(tier), tier_name, prompt, criteria).await
     }
 
     /// The agent bound to `tier`'s model.

@@ -359,9 +359,10 @@ mod tests {
         assert_eq!(three_two.axe_coverage, AxeCoverage::Complete);
 
         // 3.3 and 5.6 were declared complete although color-contrast measures text only
-        // and td-headers-attr does not decide 5.6's four tests: axe's silence passed
-        // them with nothing measured (#256).
-        for id in ["3.3", "5.6"] {
+        // and td-headers-attr does not decide 5.6's four tests; 12.1 and 12.4 are
+        // whole-set-of-pages criteria carried by single-page rules. axe's silence passed
+        // them with nothing established (#256).
+        for id in ["3.3", "5.6", "12.1", "12.4"] {
             let (_, criterion) = RgaaCatalog::by_id(id).expect("criterion is in the catalog");
             assert_eq!(
                 criterion.axe_coverage,

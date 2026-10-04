@@ -1,0 +1,4 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>trap-refocus</title></head><body>
+<a href="#a">Accueil</a> <button id="t">Piege</button> <a href="#c">Suite</a>
+<script>const t=document.getElementById("t");t.focus();t.addEventListener("blur",()=>setTimeout(()=>t.focus(),0));</script>
+</body></html>

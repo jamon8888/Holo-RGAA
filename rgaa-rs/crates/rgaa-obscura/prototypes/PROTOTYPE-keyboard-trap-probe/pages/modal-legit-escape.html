@@ -1,0 +1,8 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>modal-legit-escape</title></head><body>
+<button id="o">Ouvrir</button>
+<div role="dialog" aria-modal="true" id="d"><a href="#1" id="f">Premier</a> <a href="#2">Deuxieme</a> <button id="x">Fermer</button></div>
+<script>const d=document.getElementById("d"),els=[...d.querySelectorAll("a,button")];els[0].focus();
+d.addEventListener("keydown",e=>{if(e.key==="Escape"){d.remove();document.getElementById("o").focus();return}
+if(e.key!=="Tab")return;const i=els.indexOf(document.activeElement);e.preventDefault();
+els[(i+(e.shiftKey?els.length-1:1))%els.length].focus();});</script>
+</body></html>

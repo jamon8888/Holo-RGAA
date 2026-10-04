@@ -1,0 +1,4 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>trap-escapable</title></head><body>
+<a href="#a">Accueil</a> <input id="t" aria-label="Piege avec sortie"> <a href="#c">Suite</a>
+<script>const t=document.getElementById("t");t.focus();t.addEventListener("keydown",e=>{if(e.key==="Tab")e.preventDefault();if(e.key==="Escape")t.blur();});</script>
+</body></html>

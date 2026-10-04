@@ -322,7 +322,7 @@ mod tests {
     /// conformance: axe may fail them, never pass them.
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
         "3.3", "4.10", "5.4", "5.6", "7.1", "7.3", "8.2", "8.4", "8.8", "10.4", "10.11", "11.2",
-        "11.13", "13.1", "13.8", "13.9",
+        "11.13", "12.8", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -401,7 +401,8 @@ mod tests {
         ("label-content-name-mismatch", "11.2"),
         ("scrollable-region-focusable", "7.3"),
         ("server-side-image-map", "7.3"),
-        ("focus-order-semantics", "7.3"),
+        ("focus-order-semantics", "12.8"),
+        ("tabindex", "12.8"),
         ("blink", "13.8"),
         ("marquee", "13.8"),
         ("meta-refresh", "13.1"),
@@ -509,13 +510,13 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            43,
-            "29 criteria carried axe rules before #201, 43 after"
+            44,
+            "29 criteria carried axe rules before #201, 43 after, 44 with 12.8 (#263)"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 96,
-            "expected 96 criterion/rule pairs after the harvest"
+            rule_refs, 97,
+            "expected 97 criterion/rule pairs (96 after the harvest, +tabindex on 12.8)"
         );
     }
 }

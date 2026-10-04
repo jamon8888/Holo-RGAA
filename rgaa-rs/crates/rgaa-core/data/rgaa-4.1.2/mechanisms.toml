@@ -217,8 +217,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
-axe_rules = ["scrollable-region-focusable", "server-side-image-map", "focus-order-semantics"]
-provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: covers scrollable regions, server-side image maps and focusable semantics, not keyboard control of every script." }
+axe_rules = ["scrollable-region-focusable", "server-side-image-map"]
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: covers scrollable regions, server-side image maps and not keyboard control of every script. focus-order-semantics moved to 12.8 (lot B1-L0, #263)." }
 
 [[mechanism]]
 id        = "axe-8-2"
@@ -442,6 +442,23 @@ axe_rules = ["autocomplete-valid"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: autocomplete-valid checks an autocomplete value, not whether a field needing one has it." }
 
 [[mechanism]]
+id        = "axe-12-8"
+criterion = "12.8"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+# Spec §7.1: verdict ceiling is "review" (suspect), never a firm fail on the semantic order.
+# NOTE: AxeMapper still turns any violation of a mapped rule into Fail; the downgrade to
+# Review is not implemented yet. And focus-order-semantics is axe-experimental (disabled in a
+# plain `axe.run()`, verified on axe 4.9.1), so today only `tabindex` can actually fire.
+outcomes  = ["fail", "review"]
+fixtures  = ["12.8-focus-order-pass", "12.8-focus-order-fail"]
+legacy    = false
+axe_rules = ["focus-order-semantics", "tabindex"]
+provenance = { source = "axe-core 4.9.1 source (cdnjs): focus-order-semantics carries tag RGAA-12.8.1 in axe_rules.json (catalogue 4.13); tabindex is best-practice", validated_by = "both rule ids present in axe 4.9.1; behaviour checked with axe 4.9.1 under jsdom", validated_at = "2026-10-04", notes = "Partial: neither rule observes the real Tab traversal. focus-order-semantics is experimental, hence silent unless enabled; tabindex fires on tabindex > 0 only." }
+
+[[mechanism]]
 id        = "axe-12-1"
 criterion = "12.1"
 kind      = "axe-native"
@@ -501,7 +518,11 @@ engine    = "obscura"
 coverage  = "partial"
 tests     = []
 outcomes  = ["fail"]
-fixtures  = []
+# meta-refresh-no-exceptions (spec §7.2) is deliberately NOT mapped (#263): it exists in axe 4.9.1
+# but is `enabled: false` (wcag2aaa), so a plain `axe.run()` never runs it, and its 4.9.1
+# behaviour is inverted vs RGAA (fails only for delays > 72000 s; passes a 5 s refresh).
+# Mapping it would claim coverage that cannot fire. Fixtures below exercise `meta-refresh`.
+fixtures  = ["13.1-meta-refresh-pass", "13.1-meta-refresh-fail"]
 legacy    = true
 axe_rules = ["meta-refresh"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-refresh catches one mechanism out of the criterion's 15 tests on time limits." }

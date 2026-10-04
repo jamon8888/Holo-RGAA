@@ -24,7 +24,6 @@ use crate::ratelimit::{ModelTier, Ratelimiter};
 use rgaa_core::{Citation, Criterion, CriterionResult};
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
-use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -151,11 +150,14 @@ impl Verifier {
         // the tactical bucket and leave the reasoning limit unenforced.
         self.rate_limiter.acquire(ModelTier::Reasoning).await;
 
-        let text = self
-            .agent
-            .prompt(prompt.as_str())
-            .await
-            .map_err(|e| VerifierError::Model(e.to_string()))?;
+        let text = crate::metrics::measured_prompt(
+            &self.agent,
+            "reasoning",
+            prompt.as_str(),
+            criterion.id,
+        )
+        .await
+        .map_err(|e| VerifierError::Model(e.to_string()))?;
         let response = extract_verifier_json(&text).ok_or(VerifierError::ParseFailed)?;
 
         let citations = references

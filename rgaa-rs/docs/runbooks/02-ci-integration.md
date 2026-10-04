@@ -24,7 +24,7 @@ jobs:
 
       - name: Install rgaa-cli
         run: |
-          curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Run RGAA audit
@@ -63,7 +63,7 @@ jobs:
 
       - name: Setup rgaa-cli
         run: |
-          curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Run RGAA audit
@@ -119,7 +119,7 @@ rgaa_audit:
   stage: accessibility
   image: curlimages/curl:latest
   before_script:
-    - curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+    - curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - rgaa audit analyze --url "$AUDIT_URL" --format sarif --output results.sarif
@@ -148,7 +148,7 @@ pipeline {
         stage('Accessibility Audit') {
             steps {
                 sh '''
-                    curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+                    curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
                     export PATH="$HOME/.local/bin:$PATH"
                     
                     rgaa audit analyze \
@@ -193,7 +193,7 @@ jobs:
 
       - name: Install rgaa-cli
         run: |
-          curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Get base audit
@@ -246,7 +246,7 @@ jobs:
       - run:
           name: Install rgaa-cli
           command: |
-            curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+            curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       - run:
           name: Run RGAA audit

@@ -11,7 +11,6 @@ use rgaa_holo::{HoloClient, HoloResponse, PageContext};
 use rgaa_spider::SpiderTool;
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
-use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -254,6 +253,22 @@ impl RgaaAgent {
         }
     }
 
+    /// Runs one prompt on `tier`'s agent and emits its cost event (#122).
+    /// `criteria` names what the call evaluated, comma-separated; a batch
+    /// call is recorded once for the whole batch, not split per criterion.
+    async fn prompt_measured(
+        &self,
+        tier: ModelTier,
+        prompt: &str,
+        criteria: &str,
+    ) -> Result<String, rig_agent::completion::PromptError> {
+        let tier_name = match tier {
+            ModelTier::Tactical => "tactical",
+            ModelTier::Reasoning => "reasoning",
+        };
+        crate::metrics::measured_prompt(self.agent_for(tier), tier_name, prompt, criteria).await
+    }
+
     /// The agent bound to `tier`'s model.
     fn agent_for(&self, tier: ModelTier) -> &Agent {
         match tier {
@@ -355,7 +370,10 @@ impl RgaaAgent {
         let tier = tier_for(criterion.id);
         self.rate_limiter.acquire(tier).await;
 
-        match self.agent_for(tier).prompt(prompt.as_str()).await {
+        match self
+            .prompt_measured(tier, prompt.as_str(), criterion.id)
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
@@ -491,7 +509,10 @@ impl RgaaAgent {
         self.rate_limiter.acquire(tier).await;
 
         // Call LLM
-        let response = match self.agent_for(tier).prompt(prompt.as_str()).await {
+        let response = match self
+            .prompt_measured(tier, prompt.as_str(), &criterion_ids.join(","))
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 response
@@ -676,7 +697,10 @@ impl RgaaAgent {
         let tier = tier_for(criterion.id);
         self.rate_limiter.acquire(tier).await;
 
-        match self.agent_for(tier).prompt(prompt.as_str()).await {
+        match self
+            .prompt_measured(tier, prompt.as_str(), criterion.id)
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {

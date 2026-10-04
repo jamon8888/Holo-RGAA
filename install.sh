@@ -647,7 +647,7 @@ Environment variables:
   RGAA_INSTALL_DIR      Install directory (default: ~/.local/bin)
 
 Examples:
-  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+  curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
   curl -sSL .../install.sh | bash -s -- --build
   RGAA_VERSION=v0.1.0 curl -sSL .../install.sh | bash
 EOF

@@ -191,7 +191,7 @@ rgaa-orchestrator (Pipeline)
 
 ```bash
 # Install
-curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/install.sh | bash
 
 # Run
 rgaa audit analyze --url https://example.test

@@ -201,6 +201,27 @@ fn reduire_statuts(statuts: &[CriterionStatus]) -> ConformityStatus {
     }
 }
 
+/// Whether one criterion's per-page statuses amount to a verdict, which is what
+/// `coverage_percent` counts as "executed".
+///
+/// A `Fail` on any page is a verdict: the criterion is non-conforming for the
+/// site whatever the other pages say. Without one, the criterion is decided only
+/// when every page is `Pass` or `NotApplicable`. `NeedsReview`, `NotTested` and
+/// `Error` are not verdicts: counting them (as this used to for everything but
+/// `NotTested`) credited the 45 partially-automatable criteria sent to review in
+/// bulk, and criteria whose evaluation failed, as tested.
+///
+/// The single definition for both the per-page metrics and the site-wide
+/// aggregation in the orchestrator, which had disagreed (`any` page tested versus
+/// no page untested).
+#[must_use]
+pub fn is_validated(statuts: &[CriterionStatus]) -> bool {
+    statuts.contains(&CriterionStatus::Fail)
+        || statuts
+            .iter()
+            .all(|s| matches!(s, CriterionStatus::Pass | CriterionStatus::NotApplicable))
+}
+
 /// Site-wide metrics for `criteria` under `referentiel`.
 ///
 /// Entries are reduced by `criterion_id` first, so concatenating several
@@ -233,7 +254,7 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if !statuts.contains(&CriterionStatus::NotTested) {
+                if is_validated(statuts) {
                     validated_executed += 1;
                 }
             }
@@ -388,6 +409,44 @@ mod tests {
         ];
         let m = compute_metrics(&criteria, &UE);
         assert!((m.coverage_percent - 50.0).abs() < 0.01);
+    }
+
+    /// A criterion that went to review, or whose evaluation errored, has no
+    /// verdict, so it must not count as covered. 1.1 and 1.2 are tracked.
+    #[test]
+    fn review_and_error_are_not_counted_as_covered() {
+        for open in [
+            CriterionStatus::NeedsReview,
+            CriterionStatus::Error,
+            CriterionStatus::NotTested,
+        ] {
+            let criteria = vec![
+                result("1.1", CriterionStatus::Pass),
+                result("1.2", open.clone()),
+            ];
+            let m = compute_metrics(&criteria, &UE);
+            assert!(
+                (m.coverage_percent - 50.0).abs() < 0.01,
+                "{open:?} must not be credited as tested, got {}",
+                m.coverage_percent
+            );
+        }
+    }
+
+    #[test]
+    fn a_verdict_is_a_fail_or_all_pages_pass_or_not_applicable() {
+        use CriterionStatus::{Error, Fail, NeedsReview, NotApplicable, NotTested, Pass};
+        assert!(is_validated(&[Pass, Pass]));
+        assert!(is_validated(&[Pass, NotApplicable]));
+        assert!(is_validated(&[NotApplicable]));
+        // One failing page decides the criterion for the whole site.
+        assert!(is_validated(&[Fail, NotTested]));
+        assert!(is_validated(&[Fail, NeedsReview, Error]));
+        // No verdict: something is still open on a page.
+        assert!(!is_validated(&[Pass, NeedsReview]));
+        assert!(!is_validated(&[Pass, NotTested]));
+        assert!(!is_validated(&[Pass, Error]));
+        assert!(!is_validated(&[NeedsReview]));
     }
 
     /// #203 recommendation 4: the rate never travels without the coverage it rests on.

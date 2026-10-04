@@ -355,8 +355,20 @@ mod tests {
     /// closed rather than claiming a conformance axe cannot establish (#201 AC3).
     #[test]
     fn complete_axe_coverage_is_declared_not_inferred() {
-        let (_, three_three) = RgaaCatalog::by_id("3.3").expect("3.3 is in the catalog");
-        assert_eq!(three_three.axe_coverage, AxeCoverage::Complete);
+        let (_, three_two) = RgaaCatalog::by_id("3.2").expect("3.2 is in the catalog");
+        assert_eq!(three_two.axe_coverage, AxeCoverage::Complete);
+
+        // 3.3 and 5.6 were declared complete although color-contrast measures text only
+        // and td-headers-attr does not decide 5.6's four tests: axe's silence passed
+        // them with nothing measured (#256).
+        for id in ["3.3", "5.6"] {
+            let (_, criterion) = RgaaCatalog::by_id(id).expect("criterion is in the catalog");
+            assert_eq!(
+                criterion.axe_coverage,
+                AxeCoverage::Partial,
+                "{id} must not be Pass-able by axe silence"
+            );
+        }
 
         // 13.1 has fifteen tests and one rule, meta-refresh.
         let (_, thirteen_one) = RgaaCatalog::by_id("13.1").expect("13.1 is in the catalog");

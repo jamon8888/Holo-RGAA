@@ -6892,6 +6892,7 @@ dependencies = [
  "rgaa-core",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

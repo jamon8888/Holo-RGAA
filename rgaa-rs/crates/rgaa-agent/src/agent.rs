@@ -1,6 +1,7 @@
 use crate::config::AgentConfig;
 use crate::criteria_defs::VISUAL_CRITERIA;
 use crate::error::AgentError;
+use crate::metrics::CallMetrics;
 use crate::prompts::{page_discovery_preamble, PromptBuilder};
 use crate::ratelimit::{ModelTier, Ratelimiter};
 use crate::verify::map_verdict;
@@ -254,6 +255,36 @@ impl RgaaAgent {
         }
     }
 
+    /// Runs one prompt on `tier`'s agent and emits its cost event (#122).
+    ///
+    /// Behaves exactly like `agent.prompt(..)`: same loop, same reply, same
+    /// error. `criteria` names what the call evaluated, comma-separated; a
+    /// batch call cannot be split per criterion, so it is recorded once for
+    /// the whole batch rather than with an invented per-criterion share.
+    async fn prompt_measured(
+        &self,
+        tier: ModelTier,
+        prompt: &str,
+        criteria: &str,
+    ) -> Result<String, rig_agent::completion::PromptError> {
+        let tier_name = match tier {
+            ModelTier::Tactical => "tactical",
+            ModelTier::Reasoning => "reasoning",
+        };
+        let started = Instant::now();
+        match self.agent_for(tier).prompt(prompt).extended_details().await {
+            Ok(response) => {
+                CallMetrics::from_response(&response, started.elapsed())
+                    .emit_ok(criteria, tier_name);
+                Ok(response.output)
+            }
+            Err(e) => {
+                crate::metrics::emit_error(criteria, tier_name, started.elapsed());
+                Err(e)
+            }
+        }
+    }
+
     /// The agent bound to `tier`'s model.
     fn agent_for(&self, tier: ModelTier) -> &Agent {
         match tier {
@@ -355,7 +386,10 @@ impl RgaaAgent {
         let tier = tier_for(criterion.id);
         self.rate_limiter.acquire(tier).await;
 
-        match self.agent_for(tier).prompt(prompt.as_str()).await {
+        match self
+            .prompt_measured(tier, prompt.as_str(), criterion.id)
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
@@ -491,7 +525,10 @@ impl RgaaAgent {
         self.rate_limiter.acquire(tier).await;
 
         // Call LLM
-        let response = match self.agent_for(tier).prompt(prompt.as_str()).await {
+        let response = match self
+            .prompt_measured(tier, prompt.as_str(), &criterion_ids.join(","))
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 response
@@ -676,7 +713,10 @@ impl RgaaAgent {
         let tier = tier_for(criterion.id);
         self.rate_limiter.acquire(tier).await;
 
-        match self.agent_for(tier).prompt(prompt.as_str()).await {
+        match self
+            .prompt_measured(tier, prompt.as_str(), criterion.id)
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {

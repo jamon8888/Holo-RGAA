@@ -60,7 +60,7 @@ impl RuleId {
     /// These are catalog ids, not invented ones: a test resolves each against
     /// `RgaaCriteria::all()` so a renumbering cannot leave a rule citing a
     /// criterion that no longer exists. The pairing follows the repository's own
-    /// axe → RGAA mapping (`crates/rgaa-core/data/rgaa-4.1.2/axe_mapping.json`),
+    /// axe → RGAA mapping (`crates/rgaa-core/data/rgaa-4.1.2/mechanisms.toml`),
     /// where `image-alt` → 1.1, `link-name` → 6.1 and both `label` and
     /// `button-name` → 11.1.
     pub const fn rgaa_criterion(self) -> &'static str {

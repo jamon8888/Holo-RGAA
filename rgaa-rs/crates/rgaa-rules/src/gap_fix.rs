@@ -1,4 +1,4 @@
-use rgaa_core::{Classification, CriterionResult, CriterionStatus, Violation};
+use rgaa_core::{Classification, CriterionResult, CriterionStatus, MechanismRegistry, Violation};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -335,26 +335,12 @@ impl GapFixRules {
         m
     }
 
-    /// Criteria whose gap-fix snippet decides every test of the criterion, so a
-    /// `pass: true` from it is evidence of conformance and may stand as a
-    /// criterion-level `Pass`.
-    ///
-    /// These are the thirteen snippets that predate #202. Their coverage is recorded
-    /// as it behaves today rather than as it ought to be: several plainly do not decide
-    /// their whole criterion (11.1 has thirteen tests), but re-assessing them moves
-    /// verdicts in the published report on grounds that belong to the per-test work in
-    /// #203. What #202 fixes is the direction of travel — a *new* mechanism cannot
-    /// widen an unconditional criterion-level `Pass` (AC2, AC3).
-    const COMPLETE_COVERAGE: &[&str] = &[
-        "1.1", "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4", "12.7",
-    ];
-
     /// Whether a `pass: true` from this criterion's snippet is enough to assert the
     /// criterion conforms. Unknown criteria are partial: a mechanism added without
     /// declaring its coverage fails closed rather than claiming conformance.
     #[must_use]
     pub fn covers_whole_criterion(criterion_id: &str) -> bool {
-        Self::COMPLETE_COVERAGE.contains(&criterion_id)
+        MechanismRegistry::builtin().probe_is_complete(criterion_id)
     }
 
     /// Parse JS execution results into `CriterionResult`s.
@@ -551,18 +537,48 @@ mod tests {
         assert_eq!(result.violations[0].nodes_affected, 0);
     }
 
-    /// Every declared complete-coverage criterion must actually have a snippet, or the
-    /// list is asserting conformance for a mechanism that no longer runs.
+    /// Invariant "no active mechanism without a registry entry" (spec §5): every
+    /// snippet that runs has a registry probe, and every registry probe has a snippet,
+    /// so the registry can neither under- nor over-claim what the audit executes.
     #[test]
-    fn every_complete_coverage_criterion_has_a_snippet() {
+    fn snippets_and_registry_probes_are_the_same_set() {
+        let registry = MechanismRegistry::builtin();
         let snippets = GapFixRules::snippets();
-        let orphans: Vec<&&str> = GapFixRules::COMPLETE_COVERAGE
+        let unregistered: Vec<&String> = snippets
+            .keys()
+            .filter(|id| registry.probe_for(id).is_none())
+            .collect();
+        assert!(
+            unregistered.is_empty(),
+            "active gap-fix snippets with no registry entry: {unregistered:?}"
+        );
+        let orphans: Vec<&str> = registry
+            .mechanisms()
             .iter()
-            .filter(|id| !snippets.contains_key(**id))
+            .filter(|m| m.kind != rgaa_core::MechanismKind::AxeNative)
+            .filter(|m| !snippets.contains_key(&m.criterion))
+            .map(|m| m.id.as_str())
             .collect();
         assert!(
             orphans.is_empty(),
-            "declared complete-coverage criteria with no snippet: {orphans:?}"
+            "registry probes with no gap-fix snippet: {orphans:?}"
         );
+    }
+
+    /// The coverage the registry declares is exactly what the pre-registry
+    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves).
+    #[test]
+    fn migrated_probe_coverage_matches_the_former_constant() {
+        const FORMER: &[&str] = &[
+            "1.1", "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
+            "12.7",
+        ];
+        for id in GapFixRules::snippets().keys() {
+            assert_eq!(
+                GapFixRules::covers_whole_criterion(id),
+                FORMER.contains(&id.as_str()),
+                "coverage of probe {id} changed in the migration"
+            );
+        }
     }
 }

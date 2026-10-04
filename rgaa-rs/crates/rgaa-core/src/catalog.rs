@@ -1,10 +1,10 @@
+use crate::registry::MechanismRegistry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 const CRITERES_JSON: &str = include_str!("../data/rgaa-4.1.2/criteres.json");
 const AUTOMATABLE_JSON: &str = include_str!("../data/rgaa-4.1.2/automatable_criteres.json");
-const AXE_MAPPING_JSON: &str = include_str!("../data/rgaa-4.1.2/axe_mapping.json");
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
@@ -23,15 +23,6 @@ struct RawRoot {
 #[derive(Debug, Clone, Deserialize)]
 struct AutomatableRoot {
     criteria: Vec<AutomatableCriterion>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AxeMappingEntry {
-    criterion_id: String,
-    axe_rules: Vec<String>,
-    #[serde(default)]
-    coverage: AxeCoverage,
-    provenance: AxeProvenance,
 }
 
 /// How much of a criterion its mapped axe-core rules actually decide.
@@ -159,8 +150,6 @@ impl RgaaCatalog {
         let raw: RawRoot = serde_json::from_str(CRITERES_JSON).expect("criteres.json must parse");
         let automatable_root: AutomatableRoot =
             serde_json::from_str(AUTOMATABLE_JSON).expect("automatable_criteres.json must parse");
-        let axe_entries: Vec<AxeMappingEntry> =
-            serde_json::from_str(AXE_MAPPING_JSON).expect("axe_mapping.json must parse");
 
         let mut automatable_map: HashMap<String, Automatable> = HashMap::new();
         let mut accounting_map: HashMap<String, TestAccounting> = HashMap::new();
@@ -176,15 +165,6 @@ impl RgaaCatalog {
             );
         }
 
-        let mut axe_rules_map: HashMap<String, Vec<String>> = HashMap::new();
-        let mut axe_coverage_map: HashMap<String, AxeCoverage> = HashMap::new();
-        let mut axe_provenance_map: HashMap<String, AxeProvenance> = HashMap::new();
-        for entry in axe_entries {
-            axe_rules_map.insert(entry.criterion_id.clone(), entry.axe_rules);
-            axe_coverage_map.insert(entry.criterion_id.clone(), entry.coverage);
-            axe_provenance_map.insert(entry.criterion_id, entry.provenance);
-        }
-
         let mut themes = raw.topics;
         for theme in &mut themes {
             for cw in &mut theme.criteria {
@@ -193,10 +173,13 @@ impl RgaaCatalog {
                     automatable_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.test_accounting =
                     accounting_map.remove(&criterion_id).unwrap_or_default();
-                cw.criterium.axe_rules = axe_rules_map.remove(&criterion_id).unwrap_or_default();
-                cw.criterium.axe_coverage =
-                    axe_coverage_map.remove(&criterion_id).unwrap_or_default();
-                cw.criterium.axe_provenance = axe_provenance_map.remove(&criterion_id);
+                // axe assignments come from the single mechanism registry; a criterion
+                // with no axe-native mechanism keeps empty rules and Partial coverage.
+                if let Some(axe) = MechanismRegistry::builtin().axe_for(&criterion_id) {
+                    cw.criterium.axe_rules = axe.axe_rules.clone();
+                    cw.criterium.axe_coverage = axe.coverage;
+                    cw.criterium.axe_provenance = axe.provenance.clone();
+                }
             }
         }
         Self { themes }

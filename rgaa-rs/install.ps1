@@ -2,7 +2,7 @@
 # install.ps1 — One-command installer for rgaa-rs on Windows (x86_64)
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/rgaa-rs/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/rgaa-rs/install.ps1 | iex
 #   .\install.ps1 -Version latest        # bleeding edge (default)
 #   .\install.ps1 -Version v0.1.0        # tagged release
 #   .\install.ps1 -Uninstall             # remove installed files

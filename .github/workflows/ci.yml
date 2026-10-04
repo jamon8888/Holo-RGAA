@@ -373,4 +373,4 @@ jobs:
           HOLO3_BASE_URL: ${{ secrets.HOLO3_BASE_URL }}
           HOLO3_MODEL: ${{ secrets.HOLO3_MODEL }}
           RUSTC_WRAPPER: sccache
-        run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture
+        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification -- --nocapture

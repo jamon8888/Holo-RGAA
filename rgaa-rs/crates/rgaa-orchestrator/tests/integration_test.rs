@@ -740,6 +740,50 @@ mod integration_test {
             );
         }
 
+        /// A criterion awaiting review on one page, or whose evaluation errored,
+        /// has no verdict and must not be credited to `coverage_percent`; and the
+        /// site aggregation must agree with `rgaa_report::compute_metrics` on the
+        /// same results (they used to differ: any page tested vs no page untested).
+        #[test]
+        fn site_coverage_ignores_review_and_error_and_matches_the_report_crate() {
+            for open in [
+                CriterionStatus::NeedsReview,
+                CriterionStatus::Error,
+                CriterionStatus::NotTested,
+            ] {
+                let pages = vec![
+                    build_page_result(
+                        "https://example.com/page1",
+                        vec![
+                            mock_criterion_result("1.1", CriterionStatus::Pass),
+                            mock_criterion_result("1.2", open.clone()),
+                        ],
+                    ),
+                    build_page_result(
+                        "https://example.com/page2",
+                        vec![
+                            mock_criterion_result("1.1", CriterionStatus::Pass),
+                            mock_criterion_result("1.2", CriterionStatus::Pass),
+                        ],
+                    ),
+                ];
+
+                let (_, coverage, _) = aggregate_site_compliance(&pages);
+
+                let flat: Vec<CriterionResult> =
+                    pages.iter().flat_map(|p| p.criteria.clone()).collect();
+                let reference = rgaa_report::compute_metrics(&flat, &rgaa_report::RGAA_41);
+                assert_eq!(
+                    coverage, reference.coverage_percent,
+                    "{open:?}: site aggregation and rgaa-report must count coverage alike"
+                );
+                assert!(
+                    coverage < 100.0,
+                    "{open:?} on one page leaves 1.2 undecided, so coverage cannot be 100%"
+                );
+            }
+        }
+
         #[test]
         fn site_aggregation_conforme_if_all_pages_pass() {
             let page1_criteria = vec![

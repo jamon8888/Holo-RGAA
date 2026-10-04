@@ -606,10 +606,7 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if statuses
-                    .iter()
-                    .any(|s| !matches!(s, CriterionStatus::NotTested))
-                {
+                if rgaa_report::is_validated(&statuses) {
                     validated_executed += 1;
                 }
             }

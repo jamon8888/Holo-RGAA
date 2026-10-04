@@ -798,12 +798,14 @@ async fn audit_one(
             .chain(holo_results),
     );
 
-    // 6. Ensure every criterion has an entry.
+    // 6. Ensure every criterion has an entry, so the result always spans the
+    // full 106-criterion catalog.
     //
-    // Déterministe criteria not flagged by axe-core/gap-fix (and not already
-    // present from Holo3) are conforming for the automated checks -> Pass, so
-    // the compliance rate reflects the full 106-criterion catalog instead of
-    // only the criteria that produced a violation.
+    // Silence is not evidence: a Déterministe criterion that no mechanism
+    // flagged (and that Holo3 did not decide) is `NotTested`, never `Pass`.
+    // Only a mechanism that can actually fail the criterion may pass it (#199,
+    // #201). `NotTested` and `NeedsReview` are both left out of `taux_global`,
+    // so the rate is optimistic by exactly the criteria nobody decided.
     // Manuel criteria always require human review -> NeedsReview.
     // PartiallyAutomatable criteria need human review for un-covered portions
     // -> NeedsReview.

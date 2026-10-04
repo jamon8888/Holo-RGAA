@@ -778,12 +778,12 @@
       "landmark-one-main",
       "region"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "provenance": {
       "source": "axe-core 4.9.1 rule-descriptions.md",
       "validated_by": "automated cross-reference",
       "validated_at": "2026-08-24",
-      "notes": "All 2 axe rules validated"
+      "notes": "All 2 axe rules validated. Coverage corrected complete -> partial (#256): 12.1 is a whole-set-of-pages criterion and landmark-one-main / region are single-page rules, so axe's silence cannot establish it and must not produce a Pass; its verdict belongs to the site level."
     }
   },
   {
@@ -803,12 +803,12 @@
       "landmark-one-main",
       "region"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "provenance": {
       "source": "axe-core 4.9.1 rule-descriptions.md",
       "validated_by": "automated cross-reference",
       "validated_at": "2026-08-24",
-      "notes": "All 2 axe rules validated"
+      "notes": "All 2 axe rules validated. Coverage corrected complete -> partial (#256): 12.4 is a whole-set-of-pages criterion and landmark-one-main / region are single-page rules, so axe's silence cannot establish it and must not produce a Pass; its verdict belongs to the site level."
     }
   },
   {

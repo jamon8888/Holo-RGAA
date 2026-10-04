@@ -132,7 +132,7 @@ Légende. **Mécanisme** : `axe-N` règle axe native non mappée ou ré-attribu�
 | 12.3 | `site` : liens du plan du site en `HEAD` ; test 3 intitulé/titre de cible en `R` ; test 1 humain | Obscura | F,R | partial | B1-L2 | détection de la page plan fragile → `R` si introuvable |
 | 12.4 | `data` (→ `partial`) puis `site` | — | F,R | partial | B1-L0, B1-L2 | « atteignable de manière identique » |
 | 12.5 | `site` : moteur de recherche (`[role=search]`, `input[type=search]`) présence, place et ordre dans le source | Obscura | F,R | partial | B1-L2 | `not_applicable` si aucun moteur sur tout l'échantillon |
-| 12.8 | `data` : `focus-order-semantics` (tag RGAA-12.8.1) rattachée à 12.8, `tabindex` | Obscura | F,R | partial | B1-L0 | verdict max « suspect » (`R`) ; parcours Tab réel reste hors Obscura |
+| 12.8 | `data` : `tabindex` (tabindex positif) rattachée à 12.8 ; `focus-order-semantics` (tag RGAA-12.8.1) y est aussi rattachée mais **inerte** : expérimentale, désactivée par défaut sous axe 4.9.1 | Obscura | R (plafond) | partial | B1-L0 | verdict max « suspect » (`R`), jamais `F` : exige un plafond de verdict par mécanisme dans `AxeMapper` (issue dédiée) ; parcours Tab réel reste hors Obscura |
 | 12.9 | `js-C` : `keydown` Tab annulable sur chaque focusable, puis Échap (prototype) | Obscura | F,R | partial | B1-L1 | détecte les `Fail` seulement ; silence = `needs_review` ; pièges par refocus asynchrone non détectés |
 | 12.10 | `js-S` : listeners clavier globaux (hook `addEventListener`) (v) | Obscura | R | orienté | B1-L3 | conformité non décidable |
 | 12.11 | `js-C` : déclencheurs survol/focus (v : `Input.dispatchMouseEvent`) | Obscura | R | orienté | B1-L3 | « si nécessaire » interdit tout `F` direct |
@@ -141,7 +141,7 @@ Légende. **Mécanisme** : `axe-N` règle axe native non mappée ou ré-attribu�
 
 | Critère | Mécanisme | Moteur | Issues | Couv. | Lot | Remarque |
 |---|---|---|---|---|---|---|
-| 13.1 | `data` : `meta-refresh-no-exceptions` ; tests 1 et 3 en `js-S` (hooks `location.*`, `setTimeout`) (v) ; test 4 humain | Obscura | F,R | partial | B1-L0, B1-L1 | timers légitimes (carrousels) ≠ redirection |
+| 13.1 | existant `meta-refresh` pour le `meta` immédiat ; tests 1 et 3 en `js-S` (hooks `location.*`, `setTimeout`) (v) ; test 4 humain | Obscura | F,R | partial | B1-L1 | `meta-refresh-no-exceptions` **écartée** : désactivée par défaut dans axe 4.9.1 (wcag2aaa) et n'échoue que pour un délai > 72000 s, elle laisse passer un refresh de 5 s ; la détection des délais est portée par la sonde des tests 1 et 3. Timers légitimes (carrousels) ≠ redirection |
 | 13.2 | `js-C` : hook `window.open`, fenêtres ouvertes avant toute interaction (v) | Obscura | F,R | partial | B1-L1 | `target="_blank"` seul n'est pas un déclenchement |
 | 13.6 | `js-S` : détection de contenus cryptiques (ASCII art, émoticônes) | Obscura | R | orienté | B1-L3 | pertinence humaine ; faux positifs élevés |
 | 13.7 | `media` : décodage GIF/APNG/vidéo, luminance, comptage de flashs/s et surface ; CSS/JS animés → `R` avec alerte « animation détectée » | — | F,R | partial | B1-L3 | `partial` définitif : jamais `pass` |
@@ -251,7 +251,7 @@ Les contrôles `review`-seuls (orientés) ne sont construits que s'ils réutilis
 
 | Lot | Thèmes | Livre |
 |---|---|---|
-| **B1** | 12, 13 | L0 : 12.8, 13.1, 12.1/12.4 `partial`, suppression des règles fantômes (12.2, 12.5, 12.9, 12.10, 12.11, 13.2, 13.7, 13.10–13.12). L1 : 12.9, 13.1 (tests 1 et 3), 13.2, 13.8, 13.9. L2 : niveau site (12.1, 12.2, 12.3, 12.4, 12.5). L3 : 12.10, 12.11, 13.6, 13.7, 13.10, 13.11, 13.12. |
+| **B1** | 12, 13 | L0 : 12.8 (`tabindex`), 12.1/12.4 `partial` (#256), suppression des règles fantômes (12.2, 12.5, 12.9, 12.10, 12.11, 13.2, 13.7, 13.10–13.12 ; déjà retirées par la migration du registre). L1 : 12.9, 13.1 (tests 1 et 3), 13.2, 13.8, 13.9. L2 : niveau site (12.1, 12.2, 12.3, 12.4, 12.5). L3 : 12.10, 12.11, 13.6, 13.7, 13.10, 13.11, 13.12. |
 | **B2** | 4 | L0 : suppression des règles fantômes (4.1, 4.5, 4.7, 4.8, 4.11–4.13). L1 : inventaire média (4.1, 4.4, 4.5, 4.7, 4.8), 4.13. L2 : 4.10, 4.11, 4.12. |
 | **B3** | 5, 7, 8, 9 | L0 : 5.2, 7.1, 8.2, 8.4 (`html-lang-valid`), 9.2, 5.6 `partial`, règles fantômes. L1 : 8.1, 8.10, 5.8, 8.9, 5.5, 8.6, 5.3, 5.4, 5.1, 9.2. L2 : détecteur de langue (8.4, 8.7, 8.8). L3 : 7.3, 7.2, 7.4. |
 | **B4** | 10, 11 | L0 : 10.12, 11.9, règles fantômes (10.7, 10.12, 10.13, 11.6, 11.11, 11.12). L1 : 11.6, 11.8, 11.13, 10.1.3, 11.5, 11.2, 11.9, 11.10, 11.12. L2 : 10.11, 10.4, 10.12 niveau 2, 10.7, 10.13. L3 : 11.10.3-4, 11.11.1. |
@@ -290,7 +290,9 @@ Chacune se tranche par une fixture ; si elle échoue, le critère concerné rest
 - comportement réel de `video.play()` et politique d'autoplay (4.10) ;
 - `DOMDebugger.getEventListeners` (7.3).
 
-**Écart de version axe** : l'injection utilise 4.9.1, le catalogue vient de 4.13. Toute règle citée en `axe-N` ou `data` (notamment `duplicate-id`, `duplicate-id-active`, `avoid-inline-spacing`, `meta-refresh-no-exceptions`, `label-content-name-mismatch`) est confirmée dans 4.9.1 par une fixture, faute de quoi elle ne produit rien et la fixture `fail` échoue au plancher (§4).
+**Écart de version axe** : l'injection utilise 4.9.1, le catalogue vient de 4.13. Toute règle citée en `axe-N` ou `data` (notamment `duplicate-id`, `duplicate-id-active`, `avoid-inline-spacing`, `label-content-name-mismatch`) est confirmée dans 4.9.1 par une fixture, faute de quoi elle ne produit rien et la fixture `fail` échoue au plancher (§4).
+
+**Règles axe désactivées par défaut.** `axe.run()` sans option, comme dans le pipeline, n'exécute pas les règles expérimentales ni `enabled: false` (tag `wcag2aaa`). Un mapping n'a de valeur que si la règle s'exécute vraiment : mesuré sous axe 4.9.1, `focus-order-semantics` (expérimentale) ne produit rien et `meta-refresh-no-exceptions` (désactivée) ne s'exécute pas. Elle n'échouerait de toute façon que pour un délai > 72000 s. La fixture `fail` du plancher (§4) doit donc être classée avec les options d'axe réellement utilisées par le pipeline.
 
 **12.9 : câblage.** `rgaa-obscura` contient une sonde Tab (`run_igt_keyboard`) qui n'est convertie en verdict d'aucun critère (déduit de recherches textuelles). La sonde cible de 12.9 est le balayage `keydown` annulable du prototype, pas la règle « 5 Tab sur le même élément » (faux positif sur la sortie par Échap, indistinguable sous Obscura).
 

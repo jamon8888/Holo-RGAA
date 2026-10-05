@@ -100,6 +100,23 @@ async fn registry_fixtures_are_classified_under_obscura() {
     }
     let cases = cases();
     if cases.is_empty() {
+        // Inherited mechanisms are `legacy` and exempt from fixtures (spec §4), so on
+        // today's registry nothing is classified. That must never be silent, and a
+        // non-legacy mechanism with no classifiable fixture must never pass here.
+        let unclassifiable: Vec<&str> = MechanismRegistry::builtin()
+            .mechanisms()
+            .iter()
+            .filter(|m| !m.legacy)
+            .map(|m| m.id.as_str())
+            .collect();
+        assert!(
+            unclassifiable.is_empty(),
+            "non-legacy mechanisms with no `-pass`/`-fail` fixture to classify: {unclassifiable:?}"
+        );
+        eprintln!(
+            "NOTHING CLASSIFIED: every registry mechanism is legacy (exempt from fixtures, \
+             spec §4); this run validates no classification under Obscura"
+        );
         return;
     }
 

@@ -9,6 +9,7 @@ pub mod evidence;
 pub mod findings;
 pub mod na_detection;
 pub mod provider;
+pub mod registry;
 pub mod types;
 
 pub use audit_bundle::*;
@@ -23,4 +24,5 @@ pub use error::{Result, RgaaError};
 pub use evidence::*;
 pub use findings::*;
 pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
+pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
 pub use types::*;

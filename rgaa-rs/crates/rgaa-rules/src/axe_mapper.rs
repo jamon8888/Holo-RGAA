@@ -1,7 +1,8 @@
 use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
 use rgaa_core::{
-    Classification, CriterionResult, CriterionStatus, RgaaCatalog, RgaaError, Violation,
+    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
+    RgaaCatalog, RgaaError, Violation,
 };
 use std::sync::OnceLock;
 
@@ -94,25 +95,31 @@ impl AxeMapper {
         MAPPING.get_or_init(Self::build_rgaa_to_axe_map)
     }
 
-    /// Derived from the catalog's `axe_mapping.json`, which is the single source of
-    /// truth for RGAA → axe-core rule assignments.
+    /// Derived from the single mechanism registry (`mechanisms.toml`), which is the
+    /// source of truth for RGAA → axe-core rule assignments.
     ///
-    /// Criteria whose mapping carries no axe rule are **omitted**: initializing them
-    /// to `Pass` would assert conformance no axe rule could ever contradict. They are
-    /// left to the pipeline's declared fallback instead (#199).
+    /// Criteria with no axe-native mechanism are simply absent from the registry: they
+    /// are never initialised to `Pass`, which no axe rule could ever contradict, and
+    /// are left to the pipeline's declared fallback instead (#199, #261).
     fn build_rgaa_to_axe_map() -> IndexMap<String, CriterionMechanism> {
+        let registry = MechanismRegistry::builtin();
         let mut m: IndexMap<String, CriterionMechanism> = IndexMap::new();
+        // Catalog order (theme, then criterion), not file order, so that the order of
+        // results and violations stays what it was before the registry existed.
         for theme in RgaaCatalog::all() {
             for wrapper in &theme.criteria {
-                let criterion = &wrapper.criterium;
-                if criterion.axe_rules.is_empty() {
+                let id = wrapper.criterium.id_for_theme(theme.number);
+                let Some(mechanism) = registry.axe_for(&id) else {
+                    continue;
+                };
+                if mechanism.kind != MechanismKind::AxeNative || mechanism.axe_rules.is_empty() {
                     continue;
                 }
                 m.insert(
-                    criterion.id_for_theme(theme.number),
+                    id,
                     CriterionMechanism {
-                        rules: criterion.axe_rules.clone(),
-                        coverage: criterion.axe_coverage,
+                        rules: mechanism.axe_rules.clone(),
+                        coverage: mechanism.coverage,
                     },
                 );
             }
@@ -304,7 +311,7 @@ mod tests {
     /// Criteria whose mapped axe rules decide every one of their tests, so axe's
     /// silence is evidence and a criterion-level `Pass` is justified. Listed rather
     /// than derived so that moving a criterion between the two regimes is a visible,
-    /// reviewed change and not a side effect of editing `axe_mapping.json`.
+    /// reviewed change and not a side effect of editing `mechanisms.toml`.
     const COMPLETE_COVERAGE_CRITERIA: &[&str] = &[
         "1.1", "1.2", "1.5", "1.6", "2.1", "3.2", "4.3", "5.7", "6.1", "6.2", "8.3", "9.1", "9.3",
         "10.2", "10.5", "10.6", "10.8", "10.9", "11.1", "11.4", "12.6", "12.7", "13.3", "13.4",
@@ -467,7 +474,7 @@ mod tests {
     }
 
     /// The two regimes must partition the criteria that carry rules — a criterion in
-    /// neither list would mean `axe_mapping.json` gained an entry without anyone
+    /// neither list would mean `mechanisms.toml` gained an entry without anyone
     /// deciding whether axe may pass it.
     #[test]
     fn coverage_lists_account_for_every_criterion_carrying_axe_rules() {

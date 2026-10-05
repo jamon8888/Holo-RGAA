@@ -4,6 +4,7 @@
 //! classification of the fixtures under Obscura lives in the E2E job
 //! (`rgaa-orchestrator/tests/fixture_classification.rs`).
 
+use rgaa_core::catalog::AxeCoverage;
 use rgaa_core::MechanismRegistry;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -50,4 +51,38 @@ fn every_declared_fixture_exists() {
         .map(|(id, f)| format!("{id}: {f}.html"))
         .collect();
     assert!(missing.is_empty(), "missing fixture files: {missing:?}");
+}
+
+/// The 23 formerly untested routes all have an active partial mechanism. This
+/// invariant prevents the report/diagram from drifting back to an uncovered list
+/// and makes sure none of these heuristic probes can claim a criterion-level Pass.
+#[test]
+fn all_formerly_untested_criteria_have_partial_controls() {
+    use rgaa_core::registry::Outcome;
+
+    let expected = [
+        "1.6", "3.3", "4.12", "4.13", "8.7", "10.9", "10.12", "10.13", "11.3", "11.8", "11.11",
+        "12.1", "12.2", "12.4", "12.5", "12.8", "12.9", "12.10", "12.11", "13.3", "13.10", "13.11",
+        "13.12",
+    ];
+    let registry = MechanismRegistry::builtin();
+
+    for criterion in expected {
+        let mechanism = registry
+            .probe_for(criterion)
+            .unwrap_or_else(|| panic!("criterion {criterion} has no registered probe"));
+        assert_eq!(
+            mechanism.coverage,
+            AxeCoverage::Partial,
+            "criterion {criterion} must remain explicitly partial"
+        );
+        assert!(
+            !mechanism.outcomes.contains(&Outcome::Pass),
+            "criterion {criterion} cannot pass from its partial probe"
+        );
+        assert!(
+            !mechanism.legacy,
+            "criterion {criterion} probe must be active"
+        );
+    }
 }

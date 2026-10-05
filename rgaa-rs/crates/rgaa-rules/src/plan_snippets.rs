@@ -221,7 +221,7 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
         (() => {
             let bad = 0;
             document.querySelectorAll('fieldset').forEach(f => {
-                const lg = f.querySelector(':scope > legend');
+                const lg = Array.from(f.children).find(child => child.tagName === 'LEGEND');
                 if (!lg || !(lg.textContent || '').trim()) { if (!f.getAttribute('aria-label') && !f.getAttribute('aria-labelledby')) bad++; }
             });
             document.querySelectorAll('[role=group], [role=radiogroup]').forEach(g => {
@@ -260,6 +260,328 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
                 if (re.test(n.nodeValue)) bad++;
             }
             return JSON.stringify({ pass: bad === 0, details: `${bad} emoticon/ASCII-art text node(s) without text alternative`, nodes: bad });
+        })()
+    "#,
+    ),
+    // 1.6: identify images that may need a long description. Complexity and
+    // sufficiency are semantic; this probe deliberately returns review only.
+    (
+        "1.6",
+        r#"
+        (() => {
+            const candidates = [...document.querySelectorAll('img, svg[role="img"], [role="img"]')]
+                .filter(el => /graph|chart|diagram|map|plan|infograph|sch[eé]ma/i.test(
+                    [el.getAttribute('alt'), el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('src')].join(' ')
+                ));
+            const linked = candidates.filter(el => el.hasAttribute('longdesc') || el.hasAttribute('aria-describedby') || el.closest('a[href]'));
+            return JSON.stringify({
+                pass: false,
+                outcome: 'review',
+                details: `${candidates.length} complex-image candidate(s); ${linked.length} have a description link/target`,
+                nodes: candidates.length,
+                reason: 'La nécessité et la pertinence de la description détaillée demandent une vérification humaine'
+            });
+        })()
+    "#,
+    ),
+    // 3.3: sample solid foreground/background pairs from rendered SVG parts.
+    // Gradients, images, masks and non-RGB colours remain review items.
+    (
+        "3.3",
+        r#"
+        (() => {
+            const parse = value => {
+                const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+                if (hex) {
+                    const digits = hex[1].length === 3
+                        ? hex[1].split('').map(c => c + c).join('')
+                        : hex[1];
+                    return [0, 2, 4].map(i => parseInt(digits.slice(i, i + 2), 16));
+                }
+                const m = value.match(/^rgba?\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)(?:,\s*(\d+(?:\.\d+)?))?/i);
+                if (!m || (m[4] !== undefined && Number(m[4]) < .1)) return null;
+                return m.slice(1, 4).map(Number);
+            };
+            const lum = rgb => {
+                const c = rgb.map(v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+                return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+            };
+            const graphics = [...document.querySelectorAll('svg, canvas, img[usemap], [role="img"]')]
+                .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+            let sampled = 0, low = 0, unknown = 0;
+            for (const graphic of graphics) {
+                if (graphic.tagName.toLowerCase() === 'svg') {
+                    for (const part of graphic.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, line')) {
+                        const style = getComputedStyle(part);
+                        const fg = parse(style.fill) || parse(style.stroke) || parse(part.getAttribute('fill') || '') || parse(part.getAttribute('stroke') || '');
+                        const bg = parse(getComputedStyle(graphic).backgroundColor) || parse(getComputedStyle(graphic.parentElement || graphic).backgroundColor) || parse(graphic.getAttribute('data-rgaa-background') || '');
+                        if (!fg || !bg || style.fill.includes('url(') || style.filter !== 'none') { unknown++; continue; }
+                        const a = lum(fg), b = lum(bg), ratio = (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+                        sampled++;
+                        if (ratio < 3) low++;
+                    }
+                } else { unknown++; }
+            }
+            if (low) return JSON.stringify({ pass: false, outcome: 'review', details: `${low} sampled graphic pair(s) below 3:1; ${sampled} pair(s) measured`, nodes: low,
+                reason: 'Mesure candidate à confirmer dans le rendu réel et selon le rôle informatif du graphique' });
+            return JSON.stringify({ pass: false, outcome: 'review', details: `${sampled} solid graphic pair(s) sampled; ${unknown} pair(s) need visual inspection`, nodes: graphics.length,
+                reason: graphics.length ? 'Les gradients, images, fonds hérités et la fonction informative exigent un contrôle visuel' : 'Aucun élément graphique mesurable; vérifier si la page comporte des éléments graphiques informatifs' });
+        })()
+    "#,
+    ),
+    // 8.7: capture explicit language-change markup and likely foreign text
+    // as review evidence; a browser-side heuristic cannot establish language.
+    (
+        "8.7",
+        r#"
+        (() => {
+            const root = (document.documentElement.lang || '').toLowerCase();
+            const declared = [...document.querySelectorAll('[lang]')]
+                .filter(el => (el.getAttribute('lang') || '').toLowerCase() !== root);
+            const foreignWords = /\b(the|with|for|and|bonjour|merci|gracias|hello|please|welcome)\b/i;
+            const walker = document.createTreeWalker(document.body || document, NodeFilter.SHOW_TEXT);
+            let n, candidates = 0;
+            while ((n = walker.nextNode())) {
+                if (n.parentElement?.closest('[lang], script, style, code, pre')) continue;
+                if (foreignWords.test(n.nodeValue || '')) candidates++;
+            }
+            return JSON.stringify({ pass: false, outcome: 'review', details: `${declared.length} explicit language-change element(s), ${candidates} untagged language candidate(s)`, nodes: declared.length + candidates,
+                reason: 'La langue réelle des passages ne peut pas être déterminée de façon fiable par une sonde statique' });
+        })()
+    "#,
+    ),
+    // 11.3: compare repeated labels only when field purpose has a strong key.
+    // Similar-purpose inference remains review when it cannot be established.
+    (
+        "11.3",
+        r#"
+        (() => {
+            const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+            const groups = new Map();
+            let reviewed = 0;
+            for (const field of document.querySelectorAll('input:not([type=hidden]), select, textarea')) {
+                const purpose = norm(field.getAttribute('autocomplete')) || norm(field.getAttribute('name'));
+                const label = norm([...(field.labels || [])].map(el => el.innerText || el.textContent || '').join(' ') || field.getAttribute('aria-label'));
+                if (!purpose || !label) { reviewed++; continue; }
+                const labels = groups.get(purpose) || new Set();
+                labels.add(label);
+                groups.set(purpose, labels);
+            }
+            const inconsistent = [...groups.values()].filter(labels => labels.size > 1).length;
+            if (inconsistent) return JSON.stringify({ pass: false, outcome: 'fail', details: `${inconsistent} repeated field-purpose group(s) use inconsistent labels`, nodes: inconsistent });
+            return JSON.stringify({ pass: false, outcome: 'review', details: `${groups.size} confidently keyed field-purpose group(s), ${reviewed} unclassified field(s)`, nodes: groups.size + reviewed,
+                reason: 'Confirmer que les champs regroupés ont bien la même fonction et que les libellés restent cohérents dans l’ensemble du site' });
+        })()
+    "#,
+    ),
+    // 11.8: inventory native option groups; semantic grouping needs review.
+    (
+        "11.8",
+        r#"
+        (() => {
+            const lists = [...document.querySelectorAll('select')];
+            const grouped = lists.filter(select => select.querySelector('optgroup'));
+            const candidates = lists.filter(select => select.querySelectorAll('option').length > 5 && !select.querySelector('optgroup'));
+            return JSON.stringify({ pass: false, outcome: 'review', details: `${grouped.length} select list(s) use optgroup; ${candidates.length} larger ungrouped list(s) need review`, nodes: grouped.length + candidates.length,
+                reason: 'La pertinence des regroupements dépend des relations de sens entre les options' });
+        })()
+    "#,
+    ),
+    // 13.3: inventory document downloads from URL extension, download attr or
+    // declared MIME type. Document accessibility itself is not inferred.
+    (
+        "13.3",
+        r#"
+        (() => {
+            const docs = [...document.querySelectorAll('a[href], area[href]')].filter(link => {
+                const href = link.href || '';
+                const type = link.getAttribute('type') || '';
+                return link.hasAttribute('download') || /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp)(?:$|[?#])/i.test(href) || /application\/(pdf|msword|vnd\.|vnd\.oasis)/i.test(type);
+            });
+            return JSON.stringify({ pass: false, outcome: 'review', details: `${docs.length} downloadable document link(s) inventoried`, nodes: docs.length,
+                reason: 'Le balisage HTML ne permet pas de vérifier l’accessibilité du document téléchargé' });
+        })()
+    "#,
+    ),
+    // 4.12: non-time-based interactive graphics without keyboard semantics.
+    (
+        "4.12",
+        r#"
+        (() => {
+            const candidates = [...document.querySelectorAll('canvas, map area, svg [onclick], [onclick], [onpointerdown], [onmousedown]')];
+            const unusable = candidates.filter(el => el.hasAttribute('onclick') || el.hasAttribute('onpointerdown') || el.hasAttribute('onmousedown'))
+                .filter(el => el.tabIndex < 0 && !el.hasAttribute('onkeydown') && !el.hasAttribute('onkeyup'));
+            if (unusable.length) return JSON.stringify({ pass:false, outcome:'fail', details:`${unusable.length} pointer-activated non-time-media control(s) have no keyboard focus or key handler`, nodes:unusable.length });
+            return JSON.stringify({ pass:false, outcome:'review', details:`${candidates.length} non-time-media interaction candidate(s) found`, nodes:candidates.length,
+                reason:'L’équivalence réelle au clavier et au pointeur doit être vérifiée par interaction contrôlée' });
+        })()
+    "#,
+    ),
+    // 4.13: expose media roles, names and native controls for a follow-up AT review.
+    (
+        "4.13",
+        r#"
+        (() => {
+            const media = [...document.querySelectorAll('audio, video, canvas, object, embed, iframe, svg[role="img"], [role="img"]')];
+            const unnamed = media.filter(el => !(el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title') || el.querySelector('track')?.label || '').trim());
+            return JSON.stringify({ pass:false, outcome:'review', details:`${media.length} media element(s) inventoried; ${unnamed.length} have no explicit name/title`, nodes:media.length,
+                reason:'La compatibilité avec les technologies d’assistance doit être validée avec les rôles, noms et états annoncés' });
+        })()
+    "#,
+    ),
+    // 10.9: record images, icons, charts and CSS-generated shape candidates.
+    (
+        "10.9",
+        r#"
+        (() => {
+            const visual = [...document.querySelectorAll('svg, canvas, img, [role="img"], [class*="icon" i], [class*="arrow" i]')]
+                .filter(el => { const r=el.getBoundingClientRect(); return r.width>0 && r.height>0; });
+            return JSON.stringify({ pass:false, outcome:'review', details:`${visual.length} visual-shape/position candidate(s) require text-alternative comparison`, nodes:visual.length,
+                reason:'La relation entre forme, taille, position et information textuelle est sémantique' });
+        })()
+    "#,
+    ),
+    // 10.12: temporarily apply RGAA text spacing, measure visible overflow, and
+    // always remove the override before returning to the audit session.
+    (
+        "10.12",
+        r#"
+        (() => {
+            const style = document.createElement('style'); style.dataset.rgaaProbe='10.12';
+            style.textContent='* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-block: 2em !important; }';
+            const before = document.documentElement.scrollWidth;
+            document.head.appendChild(style);
+            let overflow = [];
+            try {
+                overflow = [...document.querySelectorAll('body *')].filter(el => {
+                    const r=el.getBoundingClientRect(), s=getComputedStyle(el);
+                    const clippedX = ['hidden', 'clip'].includes(s.overflowX) && el.scrollWidth>el.clientWidth+2;
+                    const clippedY = ['hidden', 'clip'].includes(s.overflowY) && el.scrollHeight>el.clientHeight+2;
+                    return r.width>0 && r.height>0 && (clippedX || clippedY);
+                });
+                const after = document.documentElement.scrollWidth;
+                if (overflow.length) return JSON.stringify({ pass:false, outcome:'review', details:`${overflow.length} possible clipped element(s) after text-spacing override; page width ${before}px → ${after}px`, nodes:overflow.length,
+                    reason:'Confirmer visuellement que le contenu ou une fonction est réellement perdu après application de l’espacement RGAA' });
+                return JSON.stringify({ pass:false, outcome:'review', details:`Text-spacing override applied and rolled back; document width ${before}px → ${after}px`, nodes:0,
+                    reason:'L’absence de débordement DOM ne détecte pas toutes les pertes visuelles ou fonctionnelles' });
+            } finally { style.remove(); }
+        })()
+    "#,
+    ),
+    // 10.13: compare hover/focus rules and identify hidden supplemental content.
+    (
+        "10.13",
+        r#"
+        (() => {
+            const hover = new Set(), focus = new Set();
+            for (const sheet of document.styleSheets) { let rules; try { rules=sheet.cssRules; } catch (_) { continue; }
+                for (const rule of rules || []) if (rule.selectorText) {
+                    if (/:hover/.test(rule.selectorText)) hover.add(rule.selectorText.replace(/:hover[^, ]*/g,'').trim());
+                    if (/:focus|:focus-within/.test(rule.selectorText)) focus.add(rule.selectorText.replace(/:focus(?:-within|-visible)?/g,'').trim());
+                }
+            }
+            const candidates = [...hover].filter(sel => { try { return !!document.querySelector(sel); } catch (_) { return false; } });
+            const missing = candidates.filter(sel => ![...focus].some(f => f && (f===sel || f.includes(sel) || sel.includes(f))));
+            return JSON.stringify({ pass:false, outcome:'review', details:`${candidates.length} hover disclosure selector(s), ${missing.length} without a comparable focus selector`, nodes:candidates.length,
+                reason:'Vérifier au clavier l’apparition, le maintien, le déplacement du pointeur et la fermeture du contenu' });
+        })()
+    "#,
+    ),
+    // 11.11: inspect native validity and nearby correction guidance without
+    // submitting or dispatching invalid events.
+    (
+        "11.11",
+        r#"
+        (() => {
+            const fields=[...document.querySelectorAll('input:not([type=hidden]), select, textarea')].filter(el=>el.willValidate);
+            const invalid=fields.filter(el=>!el.validity.valid);
+            const unguided=invalid.filter(el=>{
+                const ids=(el.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean);
+                const help=ids.map(id=>document.getElementById(id)?.textContent||'').join(' ')+' '+(el.title||'');
+                return help.trim().length<8;
+            });
+            return JSON.stringify({ pass:false, outcome:'review', details:`${fields.length} validated field(s), ${invalid.length} currently invalid, ${unguided.length} without identified correction guidance`, nodes:invalid.length,
+                reason:'La pertinence des suggestions dépend de la règle métier et du contexte de saisie' });
+        })()
+    "#,
+    ),
+    // 12.8: geometry and DOM order are evidence only; the Obscura Tab probe
+    // supplies actual keyboard focus sequence in the audit pipeline.
+    (
+        "12.8",
+        r#"
+        (() => {
+            const items=[...document.querySelectorAll('a[href],button,input:not([type=hidden]),select,textarea,[tabindex]')].filter(el=>el.tabIndex>=0&&!el.disabled);
+            const unusual=items.filter((el,i)=>el.tabIndex>0 || (i>0 && el.compareDocumentPosition(items[i-1]) & Node.DOCUMENT_POSITION_FOLLOWING));
+            return JSON.stringify({ pass:false, outcome:'review', details:`${items.length} sequentially focusable element(s), ${unusual.length} positive-tabindex/order candidate(s)`, nodes:items.length,
+                reason:'Comparer l’ordre réel de Tab avec l’ordre visuel et le sens de lecture' });
+        })()
+    "#,
+    ),
+    // 12.9: keyboard-trap conclusions come from the bounded CDP Tab traversal.
+    (
+        "12.9",
+        r#"
+        (() => JSON.stringify({ pass:false, outcome:'review', details:'Le parcours clavier CDP est exécuté séparément par Obscura', nodes:0,
+            reason:'Une absence de piège sur un parcours borné ne prouve pas l’absence de piège dans tous les états' }))()
+    "#,
+    ),
+    // 12.10: enumerate author-declared single-key shortcuts; handlers need runtime review.
+    (
+        "12.10",
+        r#"
+        (() => {
+            const items=[...document.querySelectorAll('[accesskey]')].map(el=>({key:el.getAttribute('accesskey'),tag:el.tagName.toLowerCase(),name:(el.innerText||el.getAttribute('aria-label')||'').trim().slice(0,80)}));
+            return JSON.stringify({ pass:false, outcome:'review', details:`${items.length} accesskey declaration(s) inventoried`, nodes:items.length,
+                reason:'Les raccourcis enregistrés en JavaScript ne sont pas tous introspectables sans déclencher leur action' });
+        })()
+    "#,
+    ),
+    // 12.11: hover/focus/activation disclosures overlap 10.13; this criterion
+    // additionally needs keyboard reachability and dismissal evidence.
+    (
+        "12.11",
+        r#"
+        (() => {
+            const triggers=[...document.querySelectorAll('[aria-haspopup], [aria-expanded], [title], [data-tooltip], [role="tooltip"]')];
+            return JSON.stringify({ pass:false, outcome:'review', details:`${triggers.length} supplementary-content trigger/target candidate(s)`, nodes:triggers.length,
+                reason:'Tester au clavier l’atteignabilité, le déplacement vers le contenu et sa fermeture' });
+        })()
+    "#,
+    ),
+    // 13.10: detect declarations of pointer/touch gestures without activating them.
+    (
+        "13.10",
+        r#"
+        (() => {
+            const targets=[...document.querySelectorAll('[ontouchstart],[ontouchmove],[onpointerdown],[onpointermove],[ondblclick],[data-gesture]')];
+            return JSON.stringify({ pass:false, outcome:'review', details:`${targets.length} gesture-handler candidate(s) found without activation`, nodes:targets.length,
+                reason:'Vérifier qu’un geste simple permet la même fonction qu’un geste complexe' });
+        })()
+    "#,
+    ),
+    // 13.11: static handler names cannot establish cancellation, so identify
+    // likely pointer-action controls for manual/runtime review.
+    (
+        "13.11",
+        r#"
+        (() => {
+            const targets=[...document.querySelectorAll('[onclick],[onpointerdown],[onmousedown],button,a[href]')];
+            return JSON.stringify({ pass:false, outcome:'review', details:`${targets.length} single-point pointer-action candidate(s)`, nodes:targets.length,
+                reason:'Vérifier que l’action n’est validée qu’au relâchement et qu’elle peut être annulée ou inversée' });
+        })()
+    "#,
+    ),
+    // 13.12: inspect motion API references and device-motion affordances without
+    // requesting sensor permission or moving the device.
+    (
+        "13.12",
+        r#"
+        (() => {
+            const references=(document.documentElement.outerHTML.match(/DeviceMotionEvent|DeviceOrientationEvent|deviceorientation|devicemotion|onshake/gi)||[]).length;
+            const motion=getComputedStyle(document.documentElement).animationName!=='none' || !!document.querySelector('video[autoplay], [data-motion]');
+            return JSON.stringify({ pass:false, outcome:'review', details:`${references} device-motion API reference(s); motion candidate=${motion}`, nodes:references+(motion?1:0),
+                reason:'Aucune permission capteur n’est demandée; vérifier une commande alternative indépendante du mouvement' });
         })()
     "#,
     ),

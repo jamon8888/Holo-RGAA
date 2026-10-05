@@ -1798,6 +1798,29 @@ impl ObscuraBridge {
       .map(a => ({ href: a.href, text: a.textContent.trim(), has_text: a.textContent.trim().length > 0, is_empty: a.textContent.trim().length === 0 }));
     const navigation = Array.from(document.querySelectorAll('nav'))
       .map(n => n.textContent.trim());
+    const regionOf = el => {
+      const r = el.getBoundingClientRect();
+      const y = r.top + window.scrollY;
+      const x = r.left + window.scrollX;
+      const vertical = y < 160 ? 'top' : (y > document.documentElement.scrollHeight - r.height - 160 ? 'bottom' : 'middle');
+      const horizontal = x < 80 ? 'left' : (x + r.width > document.documentElement.clientWidth - 80 ? 'right' : 'center');
+      return `${vertical}:${horizontal}`;
+    };
+    const navigation_systems = [
+      ...Array.from(document.querySelectorAll('nav, [role="navigation"]')).map((n, i) => `navigation:${i}:${regionOf(n)}`),
+      ...(Array.from(document.querySelectorAll('a[href]')).some(a => /sitemap|plan[-_ ]?(du[-_ ]?)?site/i.test(`${a.href} ${a.textContent}`)) ? ['sitemap'] : []),
+      ...(document.querySelector('input[type="search"], [role="search"], form[action*="search"], form[action*="recherche"]') ? ['search'] : [])
+    ];
+    const navigation_positions = Array.from(document.querySelectorAll('nav, [role="navigation"]')).map(regionOf);
+    const sitemap_access = Array.from(document.querySelectorAll('a[href]'))
+      .filter(a => /sitemap|plan[-_ ]?(du[-_ ]?)?site/i.test(`${a.href} ${a.textContent}`))
+      .map(a => `${new URL(a.href, location.href).pathname}:${regionOf(a)}:${(a.textContent || '').trim().toLowerCase()}`);
+    const search_access = Array.from(document.querySelectorAll('input[type="search"], [role="search"], form[action*="search"], form[action*="recherche"]'))
+      .map(el => {
+        const form = el.closest('form');
+        const action = form ? new URL(form.action || location.href, location.href).pathname : '';
+        return `${action}:${regionOf(el)}:${(el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || 'search').trim().toLowerCase()}`;
+      });
     const forms = Array.from(document.querySelectorAll('form'))
       .map(form => ({
         id: form.id || null,
@@ -1810,7 +1833,7 @@ impl ObscuraBridge {
           placeholder: el.placeholder || null
         }))
       }));
-    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms });
+    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access });
   })()
   "#
     }
@@ -2097,6 +2120,83 @@ impl ObscuraBridge {
             .ok_or_else(|| "No tab order data returned".to_string())
     }
 
+    /// Traverse the page with a bounded sequence of real CDP Tab key events.
+    /// No Enter, Space, pointer click, or form submission is dispatched.
+    ///
+    /// # Errors
+    /// Returns an error when the browser cannot create, navigate, inspect, or
+    /// clean up the temporary page target.
+    pub async fn observe_keyboard(&self, url: &str) -> Result<IgtResults, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        let target = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await?;
+        let target_id = target
+            .get("targetId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "No targetId in keyboard-probe response".to_string())?
+            .to_string();
+        let session = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await;
+        let outcome = match session {
+            Ok(session) => {
+                let Some(session_id) = session.get("sessionId").and_then(serde_json::Value::as_str)
+                else {
+                    let cleanup = Self::cdp_send(
+                        &mut ws,
+                        "Target.closeTarget",
+                        serde_json::json!({"targetId": target_id}),
+                    )
+                    .await;
+                    return cleanup
+                        .map(|_| ())
+                        .and_then(|_| Err("No sessionId in keyboard-probe response".to_string()));
+                };
+                let session_id = session_id.to_string();
+                let outcome = async {
+                    Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+                    let mut config = AnalyzeConfig::default();
+                    config.igt_tools.push("keyboard".into());
+                    let request = AnalyzeRequest {
+                        url: url.to_string(),
+                        config,
+                    };
+                    self.run_igt_keyboard(&mut ws, &session_id, &request)
+                        .await
+                        .ok_or_else(|| "keyboard probe returned no observation".to_string())
+                }
+                .await;
+                let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+                match (outcome, cleanup) {
+                    (Ok(result), Ok(())) => Ok(result),
+                    (Ok(_), Err(error)) => Err(error),
+                    (Err(error), _) => Err(error),
+                }
+            }
+            Err(error) => {
+                let _ = Self::cdp_send(
+                    &mut ws,
+                    "Target.closeTarget",
+                    serde_json::json!({"targetId": target_id}),
+                )
+                .await;
+                Err(error)
+            }
+        };
+        outcome
+    }
+
     async fn run_igt_keyboard(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -2109,9 +2209,12 @@ impl ObscuraBridge {
         let max_tabs = 50;
         let mut issues = Vec::new();
         let mut igt_elements = Vec::new();
+        let mut first_focused: Option<String> = None;
         let mut previous_focused: Option<String> = None;
+        let mut seen_identities = std::collections::HashSet::new();
         let mut trap_counter = 0;
         let mut terminated_reason: Option<TerminationReason> = None;
+        let mut completed_cycle = false;
 
         let interactive_roles = [
             "button",
@@ -2179,6 +2282,9 @@ impl ObscuraBridge {
             } else {
                 (String::new(), String::new(), String::new(), String::new())
             };
+            if focused.is_none() {
+                completed_cycle = true;
+            }
 
             if !tag.is_empty() {
                 if interactive_roles.contains(&role.as_str())
@@ -2201,6 +2307,15 @@ impl ObscuraBridge {
                         trap_counter = 0;
                     }
                 }
+
+                if first_focused
+                    .as_ref()
+                    .is_some_and(|first| first == &identity && seen_identities.len() > 1)
+                {
+                    completed_cycle = true;
+                }
+                first_focused.get_or_insert_with(|| identity.clone());
+                seen_identities.insert(identity.clone());
 
                 if trap_counter >= 5 {
                     issues.push(IgtIssue {
@@ -2228,6 +2343,23 @@ impl ObscuraBridge {
                 terminated_reason = Some(TerminationReason::ExecutionError);
                 break;
             }
+            if completed_cycle {
+                break;
+            }
+        }
+
+        if !completed_cycle
+            && terminated_reason.is_none()
+            && !issues.iter().any(|issue| issue.rule == "keyboard-trap")
+        {
+            issues.push(IgtIssue {
+                rule: "keyboard-observation-budget-reached".to_string(),
+                element: "document".to_string(),
+                description: format!(
+                    "Keyboard traversal stopped at the {max_tabs}-Tab safety limit"
+                ),
+            });
+            terminated_reason = Some(TerminationReason::Timeout);
         }
 
         if igt_elements.is_empty() {

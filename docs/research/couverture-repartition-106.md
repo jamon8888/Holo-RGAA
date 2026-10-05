@@ -4,12 +4,12 @@
 
 **Légende — moteur principal** : **A** = axe-core (verdict direct) · **D** = règle déterministe maison (DOM/CSS/HTTP, Playwright, crawler multi-pages, linter) · **H** = Holo IA (vision + sémantique) · **M** = validation humaine obligatoire (`needs_review`).
 
-Les colonnes *Déterministe* et *Holo* décrivent le **rôle secondaire** : chaque critère est analysé par plusieurs couches, le moteur principal porte le verdict.
+Les colonnes *Déterministe* et *Holo* décrivent le **rôle secondaire** : chaque critère est analysé par plusieurs couches, le moteur principal porte le verdict. **axe-core n'est moteur principal que si sa couverture du critère est complète** : une couverture axe partielle ne peut pas produire seule un verdict de conformité, c'est alors le moteur déterministe ou Holo qui tranche (invariant testé dans `engine_plan.rs`).
 
 | Critère | Tests | Principal | Axe-core | Déterministe | Holo IA | Reste humain |
 |---|---|---|---|---|---|---|
 | 1.1 Chaque image porteuse d’information a-t-elle une alternative textuelle… | 8 | **A** | image-alt, input-image-alt, area-alt, role-img-alt, svg-img-alt, object-alt | alt présent sur <img>/role=img/<area>/<input image>/<object>/<svg>/<canvas> | pertinence si alt vide douteux |  |
-| 1.2 Chaque image de décoration est-elle correctement ignorée par les techn… | 6 | **A** | image-redundant-alt, presentation-role-conflict | alt="" / aria-hidden / role=presentation sur images décoratives | décide si une image est réellement décorative |  |
+| 1.2 Chaque image de décoration est-elle correctement ignorée par les techn… | 6 | **H** | image-redundant-alt, presentation-role-conflict | alt="" / aria-hidden / role=presentation sur images décoratives | décide si une image est réellement décorative |  |
 | 1.3 Pour chaque image porteuse d’information ayant une alternative textuel… | 9 | **H** | image-alt | extraction alt + contexte (parent, légende, lien) | alt pertinent vs contenu de l’image (vision) |  |
 | 1.4 Pour chaque image utilisée comme CAPTCHA ou comme image-test, ayant un… | 7 | **H** |  | détection CAPTCHA (iframe recaptcha/hcaptcha, noms/classes) | alt CAPTCHA identifie nature/fonction sans livrer la solution |  |
 | 1.5 Pour chaque image utilisée comme CAPTCHA, une solution d’accès alterna… | 2 | **H** |  | détection CAPTCHA + présence d’une solution alternative (audio, question logique) | alternative équivalente en finalité |  |
@@ -31,16 +31,16 @@ Les colonnes *Déterministe* et *Holo* décrivent le **rôle secondaire** : chaq
 | 4.7 Chaque média temporel est-il clairement identifiable (hors cas particu… | 1 | **D** |  | média identifié par légende/titre adjacent | pertinence de l’identification |  |
 | 4.8 Chaque média non temporel a-t-il, si nécessaire, une alternative (hors… | 2 | **D** |  | alternative au média non temporel (<object>, <canvas>, SVG animé) : lien/texte | pertinence de l’alternative |  |
 | 4.9 Pour chaque média non temporel ayant une alternative, cette alternativ… | 1 | **H** |  | alternative résolue | pertinence vs média |  |
-| 4.10 Chaque son déclenché automatiquement est-il contrôlable par l’utilisat… | 1 | **A** | no-autoplay-audio | autoplay sans muted, durée > 3 s, contrôle de volume/pause |  |  |
+| 4.10 Chaque son déclenché automatiquement est-il contrôlable par l’utilisat… | 1 | **D** | no-autoplay-audio | autoplay sans muted, durée > 3 s, contrôle de volume/pause |  |  |
 | 4.11 La consultation de chaque média temporel est-elle, si nécessaire, cont… | 3 | **D** |  | controls, boutons lecture/pause/stop/volume atteignables au clavier (Playwright) |  |  |
 | 4.12 La consultation de chaque média non temporel est-elle contrôlable par… | 2 | **D** |  | média non temporel contrôlable clavier/pointeur (Playwright) |  |  |
 | 4.13 Chaque média temporel et non temporel est-il compatible avec les techn… | 2 | **D** |  | attributs ARIA des lecteurs (nom, rôle, état) via arbre d’accessibilité | compatibilité AT sur players custom |  |
 | 5.1 Chaque tableau de données complexe a-t-il un résumé ?… | 1 | **D** |  | détection tableau de données complexe (colspan/rowspan imbriqués, > 2 niveaux d’en-têtes) + résumé | confirme la complexité |  |
 | 5.2 Pour chaque tableau de données complexe ayant un résumé, celui-ci est-… | 1 | **H** |  | extraction du résumé | pertinence vs tableau |  |
 | 5.3 Pour chaque tableau de mise en forme, le contenu linéarisé reste-t-il… | 1 | **H** |  | table role=presentation/layout détectée | linéarisation compréhensible |  |
-| 5.4 Pour chaque tableau de données ayant un titre, le titre est-il correct… | 1 | **A** | table-fake-caption | <caption>, aria-labelledby, figcaption rattaché au tableau |  |  |
+| 5.4 Pour chaque tableau de données ayant un titre, le titre est-il correct… | 1 | **D** | table-fake-caption | <caption>, aria-labelledby, figcaption rattaché au tableau |  |  |
 | 5.5 Pour chaque tableau de données ayant un titre, celui-ci est-il pertine… | 1 | **H** |  | extraction du titre | pertinence vs tableau |  |
-| 5.6 Pour chaque tableau de données, chaque en-tête de colonne et chaque en… | 4 | **A** | th-has-data-cells, scope-attr-valid, td-has-header | <th> sur en-têtes de colonne/ligne | en-tête visuellement identifié mais balisé en <td> |  |
+| 5.6 Pour chaque tableau de données, chaque en-tête de colonne et chaque en… | 4 | **H** | th-has-data-cells, scope-attr-valid, td-has-header | <th> sur en-têtes de colonne/ligne | en-tête visuellement identifié mais balisé en <td> |  |
 | 5.7 Pour chaque tableau de données, la technique appropriée permettant d’a… | 5 | **A** | td-headers-attr, th-has-data-cells, scope-attr-valid, td-has-header | scope/headers/id corrects, ARIA columnheader/rowheader |  |  |
 | 5.8 Chaque tableau de mise en forme ne doit pas utiliser d’éléments propre… | 1 | **D** |  | tableau de mise en forme sans th/caption/summary/headers/scope |  |  |
 | 6.1 Chaque lien est-il explicite (hors cas particuliers) ?… | 5 | **H** | identical-links-same-purpose | intitulé + contexte (aria-label, title, parent, cellule) via arbre AX | lien explicite hors contexte, liens identiques mêmes cibles |  |
@@ -53,14 +53,14 @@ Les colonnes *Déterministe* et *Holo* décrivent le **rôle secondaire** : chaq
 | 8.1 Chaque page web est-elle définie par un type de document ?… | 3 | **D** |  | doctype dans le HTML source (HTTP brut) |  |  |
 | 8.2 Pour chaque page web, le code source généré est-il valide selon le typ… | 1 | **D** | duplicate-id-aria | validateur Nu Html Checker sur le DOM généré (hors règles hors-périmètre RGAA) |  |  |
 | 8.3 Dans chaque page web, la langue par défaut est-elle présente ?… | 1 | **A** | html-has-lang | lang sur <html> |  |  |
-| 8.4 Pour chaque page web ayant une langue par défaut, le code de langue es… | 1 | **A** | html-lang-valid, html-xml-lang-mismatch | code BCP47 valide | langue détectée du contenu = langue déclarée |  |
+| 8.4 Pour chaque page web ayant une langue par défaut, le code de langue es… | 1 | **H** | html-lang-valid, html-xml-lang-mismatch | code BCP47 valide | langue détectée du contenu = langue déclarée |  |
 | 8.5 Chaque page web a-t-elle un titre de page ?… | 1 | **A** | document-title | <title> non vide |  |  |
 | 8.6 Pour chaque page web ayant un titre de page, ce titre est-il pertinent… | 1 | **H** |  | title + h1 + contenu | pertinence et unicité du titre |  |
 | 8.7 Dans chaque page web, chaque changement de langue est-il indiqué dans… | 1 | **D** |  | détection de langue par segment (cld/lingua) vs lang ancêtre | passages courts/ambigus |  |
-| 8.8 Dans chaque page web, le code de langue de chaque changement de langue… | 1 | **A** | valid-lang | codes lang des éléments | pertinence de la langue annoncée |  |
+| 8.8 Dans chaque page web, le code de langue de chaque changement de langue… | 1 | **H** | valid-lang | codes lang des éléments | pertinence de la langue annoncée |  |
 | 8.9 Dans chaque page web, les balises ne doivent pas être utilisées unique… | 1 | **D** |  | balises de présentation (b, i, font, center, blink…), tableaux de mise en forme, <br> décoratifs |  |  |
 | 8.10 Dans chaque page web, les changements du sens de lecture sont-ils sign… | 2 | **D** |  | dir/CSS direction, bdo, détection de scripts RTL | changement de sens bien signalé |  |
-| 9.1 Dans chaque page web, l’information est-elle structurée par l’utilisat… | 3 | **A** | heading-order, empty-heading, page-has-heading-one | role=heading + aria-level | hiérarchie pertinente vs maquette visuelle (vision) |  |
+| 9.1 Dans chaque page web, l’information est-elle structurée par l’utilisat… | 3 | **H** | heading-order, empty-heading, page-has-heading-one | role=heading + aria-level | hiérarchie pertinente vs maquette visuelle (vision) |  |
 | 9.2 Dans chaque page web, la structure du document est-elle cohérente (hor… | 1 | **H** | landmark-one-main, region, landmark-no-duplicate-banner | présence header/nav/main/footer/aside | structure cohérente avec la page rendue |  |
 | 9.3 Dans chaque page web, chaque liste est-elle correctement structurée ?… | 3 | **A** | list, listitem, definition-list, dlitem | faux listes (tirets, <br>, paragraphes consécutifs) | confirme les faux positifs |  |
 | 9.4 Dans chaque page web, chaque citation est-elle correctement indiquée ?… | 2 | **D** |  | <blockquote>/<q> vs guillemets/retraits stylés | détecte citations non balisées (sémantique) |  |
@@ -86,17 +86,17 @@ Les colonnes *Déterministe* et *Holo* décrivent le **rôle secondaire** : chaq
 | 11.6 Dans chaque formulaire, chaque regroupement de champs de même nature a… | 1 | **D** |  | <legend> / aria-label sur chaque regroupement |  |  |
 | 11.7 Dans chaque formulaire, chaque légende associée à un regroupement de c… | 1 | **H** |  | extraction légende + champs du groupe | légende pertinente |  |
 | 11.8 Dans chaque formulaire, les items de même nature d’une liste de choix… | 3 | **D** |  | <optgroup label> pour listes longues | regroupement logique |  |
-| 11.9 Dans chaque formulaire, l’intitulé de chaque bouton est-il pertinent (… | 2 | **A** | button-name, input-button-name | nom accessible des boutons | intitulé pertinent |  |
+| 11.9 Dans chaque formulaire, l’intitulé de chaque bouton est-il pertinent (… | 2 | **H** | button-name, input-button-name | nom accessible des boutons | intitulé pertinent |  |
 | 11.10 Dans chaque formulaire, le contrôle de saisie est-il utilisé de manièr… | 7 | **H** |  | required/aria-required/pattern, indications de format, messages | contrôle de saisie pertinent (formats, champs obligatoires) |  |
 | 11.11 Dans chaque formulaire, le contrôle de saisie est-il accompagné, si né… | 2 | **H** |  | erreurs de saisie : aria-describedby, aria-invalid, role=alert | suggestion de correction utile |  |
 | 11.12 Pour chaque formulaire qui modifie ou supprime des données, ou qui tr… | 2 | **M** |  | détection formulaire transmettant données (méthode POST, paiement, compte) | présence d’une étape confirmation/annulation/vérification | test réel du parcours (écriture en base) |
-| 11.13 La finalité d’un champ de saisie peut-elle être déduite pour faciliter… | 1 | **A** | autocomplete-valid | attribut autocomplete valide, champs de finalité connue (nom, email, adresse…) | finalité déduite du libellé |  |
+| 11.13 La finalité d’un champ de saisie peut-elle être déduite pour faciliter… | 1 | **H** | autocomplete-valid | attribut autocomplete valide, champs de finalité connue (nom, email, adresse…) | finalité déduite du libellé |  |
 | 12.1 Chaque ensemble de pages dispose-t-il de deux systèmes de navigation d… | 1 | **D** |  | crawler multi-pages : nav + plan du site + moteur de recherche (≥ 2 systèmes) |  |  |
 | 12.2 Dans chaque ensemble de pages, le menu et les barres de navigation son… | 1 | **D** |  | crawler : position/ordre du menu et de la barre de navigation identiques sur les pages de l’ensemble |  |  |
 | 12.3 La page « plan du site » est-elle pertinente ?… | 3 | **H** |  | plan du site détecté et analysé | pertinence/exhaustivité du plan du site |  |
 | 12.4 Dans chaque ensemble de pages, la page « plan du site » est-elle acces… | 3 | **D** |  | crawler : lien « plan du site » présent sur chaque page, même place |  |  |
 | 12.5 Dans chaque ensemble de pages, le moteur de recherche est-il atteignab… | 3 | **D** |  | crawler : champ de recherche accessible de la même manière sur toutes les pages |  |  |
-| 12.6 Les zones de regroupement de contenus présentes dans plusieurs pages w… | 1 | **A** | landmark-one-main, region, landmark-unique, landmark-banner-is-top-level | landmarks et regroupements communs aux pages, entre pages |  |  |
+| 12.6 Les zones de regroupement de contenus présentes dans plusieurs pages w… | 1 | **D** | landmark-one-main, region, landmark-unique, landmark-banner-is-top-level | landmarks et regroupements communs aux pages, entre pages |  |  |
 | 12.7 Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone… | 2 | **A** | bypass, skip-link | Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus |  |  |
 | 12.8 Dans chaque page web, l’ordre de tabulation est-il cohérent ?… | 2 | **D** | focus-order-semantics | Playwright : séquence de tabulation vs ordre visuel (coordonnées) | ordre cohérent (vision) |  |
 | 12.9 Dans chaque page web, la navigation ne doit pas contenir de piège au c… | 1 | **D** |  | Playwright : tabulation N fois, détection de piège (focus bloqué hors modale) |  |  |
@@ -109,8 +109,8 @@ Les colonnes *Déterministe* et *Holo* décrivent le **rôle secondaire** : chaq
 | 13.5 Dans chaque page web, chaque contenu cryptique (art ASCII, émoticône,… | 1 | **D** |  | regex ASCII-art, émoticônes, notations cryptiques | détecte les cas non couverts par regex |  |
 | 13.6 Dans chaque page web, pour chaque contenu cryptique (art ASCII, émotic… | 1 | **H** |  | alternative des contenus cryptiques | pertinence de l’alternative |  |
 | 13.7 Dans chaque page web, les changements brusques de luminosité ou les ef… | 3 | **M** |  | animations CSS/JS rapides ; frames vidéo échantillonnées (3 flashs/s) | analyse de luminance par frames | confirmation d’un flash réel |
-| 13.8 Dans chaque page web, chaque contenu en mouvement ou clignotant est-il… | 2 | **A** | blink, marquee | CSS animation > 5 s, <video autoplay loop>, GIF animé ; bouton pause/stop | contrôle atteignable |  |
-| 13.9 Dans chaque page web, le contenu proposé est-il consultable quelle que… | 1 | **A** | css-orientation-lock | Playwright : portrait ↔ paysage, contenu/fonctions identiques |  |  |
+| 13.8 Dans chaque page web, chaque contenu en mouvement ou clignotant est-il… | 2 | **D** | blink, marquee | CSS animation > 5 s, <video autoplay loop>, GIF animé ; bouton pause/stop | contrôle atteignable |  |
+| 13.9 Dans chaque page web, le contenu proposé est-il consultable quelle que… | 1 | **D** | css-orientation-lock | Playwright : portrait ↔ paysage, contenu/fonctions identiques |  |  |
 | 13.10 Dans chaque page web, les fonctionnalités utilisables ou disponibles a… | 2 | **D** |  | JS : pointer events multi-touch/path/drag, touch-action ; alternative à geste simple | alternative réellement fonctionnelle |  |
 | 13.11 Dans chaque page web, les actions déclenchées au moyen d’un dispositif… | 1 | **D** | target-size | JS : mousedown/pointerdown/touchstart sans up ; annulation possible |  |  |
 | 13.12 Dans chaque page web, les fonctionnalités qui impliquent un mouvement… | 3 | **D** |  | JS : devicemotion/deviceorientation/accelerometer ; alternative UI | alternative équivalente |  |

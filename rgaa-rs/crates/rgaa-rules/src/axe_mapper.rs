@@ -314,7 +314,7 @@ mod tests {
     /// conformance: axe may fail them, never pass them.
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
         "1.2", "4.10", "5.4", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1", "10.4", "10.11",
-        "11.2", "11.13", "12.6", "13.1", "13.8", "13.9",
+        "11.2", "11.9", "11.13", "12.6", "12.8", "12.10", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -501,10 +501,10 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            32,
-            "43 criteria carried axe rules after #201; the 2026-10-05 engine plan removed 12 mappings that could not decide their criterion (1.5, 1.6, 3.3, 10.2, 10.5, 10.9, 11.4, 12.1, 12.4, 13.3-13.5) and moved document-title to 8.5"
+            35,
+            "43 criteria carried axe rules after #201; the 2026-10-05 engine plan removed 12 mappings that could not decide their criterion (1.5, 1.6, 3.3, 10.2, 10.5, 10.9, 11.4, 12.1, 12.4, 13.3-13.5) and moved document-title to 8.5; it then added partial rules for 11.9, 12.8 and 12.10"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
-        assert_eq!(rule_refs, 80, "expected 80 criterion/rule pairs");
+        assert_eq!(rule_refs, 84, "expected 84 criterion/rule pairs");
     }
 }

@@ -332,6 +332,11 @@ impl GapFixRules {
             })()
         "#);
 
+        for (id, snippet) in crate::plan_snippets::SNIPPETS {
+            let previous = m.insert((*id).into(), snippet);
+            debug_assert!(previous.is_none(), "{id} already has a gap-fix snippet");
+        }
+
         m
     }
 
@@ -564,5 +569,22 @@ mod tests {
             orphans.is_empty(),
             "declared complete-coverage criteria with no snippet: {orphans:?}"
         );
+    }
+
+    /// The snippets added for the engine plan are all partial: they may fail a
+    /// criterion on evidence but never pass it, and they honour the output contract.
+    #[test]
+    fn plan_snippets_are_partial_and_follow_the_contract() {
+        let snippets = GapFixRules::snippets();
+        for (id, _) in crate::plan_snippets::SNIPPETS {
+            let snippet = snippets
+                .get(*id)
+                .unwrap_or_else(|| panic!("{id} must be registered"));
+            assert!(snippet.contains("JSON.stringify") && snippet.contains("pass"));
+            assert!(
+                !GapFixRules::covers_whole_criterion(id),
+                "{id} is a heuristic and must stay partial"
+            );
+        }
     }
 }

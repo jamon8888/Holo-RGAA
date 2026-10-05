@@ -724,6 +724,20 @@
     }
   },
   {
+    "criterion_id": "11.9",
+    "axe_rules": [
+      "button-name",
+      "input-button-name"
+    ],
+    "coverage": "partial",
+    "provenance": {
+      "source": "axe-core rule catalogue (axe_rules.json) + engine plan",
+      "validated_by": "rule ids cross-checked against axe_rules.json",
+      "validated_at": "2026-10-05",
+      "notes": "Added 2026-10-05 (engine plan): the rule catches real violations of this criterion but cannot establish conformance."
+    }
+  },
+  {
     "criterion_id": "11.11",
     "axe_rules": [],
     "coverage": "partial",
@@ -831,6 +845,19 @@
     }
   },
   {
+    "criterion_id": "12.8",
+    "axe_rules": [
+      "tabindex"
+    ],
+    "coverage": "partial",
+    "provenance": {
+      "source": "axe-core rule catalogue (axe_rules.json) + engine plan",
+      "validated_by": "rule ids cross-checked against axe_rules.json",
+      "validated_at": "2026-10-05",
+      "notes": "Added 2026-10-05 (engine plan): the rule catches real violations of this criterion but cannot establish conformance."
+    }
+  },
+  {
     "criterion_id": "12.9",
     "axe_rules": [],
     "coverage": "partial",
@@ -843,13 +870,15 @@
   },
   {
     "criterion_id": "12.10",
-    "axe_rules": [],
+    "axe_rules": [
+      "accesskeys"
+    ],
     "coverage": "partial",
     "provenance": {
       "source": "axe-core 4.9.1 rule-descriptions.md",
       "validated_by": "automated cross-reference",
       "validated_at": "2026-08-24",
-      "notes": "Invalid rules found: [\"character-key-shortcuts\"]"
+      "notes": "Added 2026-10-05 (engine plan): the rule catches real violations of this criterion but cannot establish conformance."
     }
   },
   {

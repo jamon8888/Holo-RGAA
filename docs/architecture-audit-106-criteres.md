@@ -27,7 +27,7 @@ URL ──► rgaa-orchestrator (pipeline.rs)
 | Brique | Rôle | Fichiers qui font foi |
 |---|---|---|
 | **rgaa-core** | Types, catalogue des 106 critères, classification, registre des mécanismes | `src/criteria.rs`, `src/registry.rs`, `data/rgaa-4.1.2/{criteres,mechanisms,axe_rules,automatable_criteres}.json|toml` |
-| **rgaa-obscura** | Pont vers le navigateur **Obscura 0.2.2** (binaire épinglé, CDP) : navigation, évaluation JS, axe, captures, AX tree, clavier (`press_key`, `get_tab_order`) | `src/lib.rs` (`ObscuraBridge`), `src/cdp_pool.rs`, [docs/obscura-substrate.md](obscura-substrate.md) |
+| **rgaa-obscura** | Pont vers le navigateur **Obscura 0.2.2** (binaire épinglé, CDP) : navigation, évaluation JS, axe, captures, AX tree, clavier (`press_key` livre un `keydown`, mais **Obscura n'implémente pas la navigation Tab native** : l'élément focalisé ne change pas) | `src/lib.rs` (`ObscuraBridge`), `src/cdp_pool.rs`, [docs/obscura-substrate.md](obscura-substrate.md) |
 | **axe-core** | Moteur de règles d'accessibilité, 4.9.1, exécuté **dans la page** via Obscura. Ses règles étiquetées `RGAAv4` sont mappées aux critères | `rgaa-obscura/src/lib.rs` (`run_axe_batch`), `rgaa-rules/src/axe_mapper.rs` |
 | **rgaa-rules** | Traduit les violations axe et les résultats des sondes JS en `CriterionResult` | `axe_mapper.rs`, `gap_fix.rs` |
 | **rgaa-agent / rgaa-holo** | Évaluation par LLM (Holo) des critères qui demandent du jugement, avec RAG | `rgaa-agent/src/{agent,criteria_defs,rag}`, `rgaa-holo/src` |
@@ -132,7 +132,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 4.9 | 1 | Pour chaque média non temporel ayant une alternative, cette alternativ | Holo | — | oui | **Couvert** |  |
 | 4.10 | 1 | Chaque son déclenché automatiquement est-il contrôlable par l’utilisat | Déterministe | axe:partiel | — | **Couvert** |  |
 | 4.11 | 3 | La consultation de chaque média temporel est-elle, si nécessaire, cont | Déterministe | sonde JS:partiel | — | **Couvert** |  |
-| 4.12 | 2 | La consultation de chaque média non temporel est-elle contrôlable par  | Déterministe | — | — | **Non testé** |  |
+| 4.12 | 2 | La consultation de chaque média non temporel est-elle contrôlable par  | Déterministe | sonde JS:partiel | — | **Couvert** |  |
 | 4.13 | 2 | Chaque média temporel et non temporel est-il compatible avec les techn | Déterministe | — | — | **Non testé** |  |
 | 5.1 | 1 | Chaque tableau de données complexe a-t-il un résumé ? | Déterministe | sonde JS:partiel | — | **Couvert** |  |
 | 5.2 | 1 | Pour chaque tableau de données complexe ayant un résumé, celui-ci est- | Holo | — | oui | **Couvert** |  |
@@ -198,7 +198,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 12.6 | 1 | Les zones de regroupement de contenus présentes dans plusieurs pages w | Déterministe | axe:partiel | oui | **Couvert** |  |
 | 12.7 | 2 | Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone  | axe-core | axe:complet, sonde JS:complet | oui | **Couvert** |  |
 | 12.8 | 2 | Dans chaque page web, l’ordre de tabulation est-il cohérent ? | Déterministe | — | oui | **Non testé** | #263 #279 |
-| 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | — | — | **Non testé** | #264 |
+| 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | sonde JS:partiel | — | **Couvert** | #264 |
 | 12.10 | 1 | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule  | Déterministe | — | — | **Non testé** | #272 |
 | 12.11 | 1 | Dans chaque page web, les contenus additionnels apparaissant au survol | Déterministe | — | — | **Non testé** |  |
 | 13.1 | 4 | Pour chaque page web, l’utilisateur a-t-il le contrôle de chaque limit | Humain | axe:partiel | — | **Manuel** | #265 |
@@ -214,7 +214,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 13.11 | 1 | Dans chaque page web, les actions déclenchées au moyen d’un dispositif | Déterministe | — | — | **Non testé** | #272 |
 | 13.12 | 3 | Dans chaque page web, les fonctionnalités qui impliquent un mouvement  | Déterministe | — | — | **Non testé** | #272 |
 
-**Totaux :** 78 couverts · 20 non testés · 8 manuels (4.2, 4.4, 4.6, 7.5, 11.12, 13.1, 13.4, 13.7). Moteurs prévus : axe-core 13 · déterministe 53 · Holo 32 · humain 8.
+**Totaux :** 80 couverts · 18 non testés · 8 manuels (4.2, 4.4, 4.6, 7.5, 11.12, 13.1, 13.4, 13.7). Moteurs prévus : axe-core 13 · déterministe 53 · Holo 32 · humain 8.
 
 ## 5. Historique : ce qui a déjà été fait (PR mergées)
 
@@ -241,15 +241,15 @@ Neuf critères déclaraient `axe-native / complete` alors que la règle ne véri
 `document-title` à 8.5 et ajouté `button-name` pour 11.9. Reste la règle de fond : **un mécanisme `partial` ne peut
 jamais émettre `Pass`** (invariant du registre). Les critères 10.2 et 11.4 gardent leur sonde JS.
 
-### 6.2 Les 20 critères non testés
+### 6.2 Les 18 critères non testés
 
-1.6, 4.12, 4.13, 8.7, 10.9, 10.12, 10.13, 11.3, 11.8, 11.11, 12.2, 12.5, 12.8, 12.9, 12.10, 12.11, 13.3, 13.10, 13.11, 13.12.
+1.6, 4.13, 8.7, 10.9, 10.12, 10.13, 11.3, 11.8, 11.11, 12.2, 12.5, 12.8, 12.10, 12.11, 13.3, 13.10, 13.11, 13.12.
 
 Par nature de ce qui manque (les 17 sondes DOM statiques de #280 — 8.1, 8.9, 8.10, 9.4, 5.1, 5.8, 4.1, 4.5, 4.7, 4.8, 4.11, 7.4, 10.5, 10.7, 11.6, 13.2, 13.5 — sont enregistrées avec leurs fixtures ; elles sont partielles : elles prouvent des échecs, jamais la conformité) :
 
 | Besoin (certains critères sont déjà couverts partiellement, ex. 10.7, 10.4, 3.3 ; le besoin est la couverture complète) | Critères | Suivi |
 |---|---|---|
-| Interaction clavier / pointeur (Obscura `press_key`, `get_tab_order`) | 12.9 piège clavier, 12.8 ordre de tabulation, 4.12, 12.11, 10.13, 10.7 | #264, #263/#279 |
+| Interaction clavier / pointeur : seule la forme `keydown` annulable est exploitable sous Obscura (pas de Tab natif) ; 12.9 et 4.12 sont faits (balayage `keydown`, partiels) | 12.8 ordre de tabulation, 12.11, 10.13, 10.7 | #263/#279 |
 | Inventaire des listeners (hook `addEventListener`) | 12.10, 13.10, 13.11, 13.12 | #272 |
 | Mise en page réelle (reflow, espacement du texte, contraste des composants) | 10.4, 10.11, 10.12, 3.3 | #194 (mode C), spec §3 |
 | Niveau **site** (plusieurs pages) | 12.1, 12.2, 12.4, 12.5, 12.3 (liens du plan en HEAD) | #269, #270, #271 |
@@ -271,7 +271,7 @@ Par nature de ce qui manque (les 17 sondes DOM statiques de #280 — 8.1, 8.9, 8
 
 1. Vérifier sur le job E2E Obscura que les fixtures de #280 (dont 8.5 et 11.9 pour axe) se classent correctement sous
    le vrai navigateur ; c'est leur seule validation hors jsdom.
-2. Sondes comportementales Obscura (clavier : 12.9, 12.8, 4.12, 12.11) puis inventaire de listeners (#272).
+2. Sondes comportementales Obscura restantes (12.8, 12.11, 10.13) puis inventaire de listeners (#272). 12.9 et 4.12 : balayage `keydown` annulable, limite connue : piège par refocus asynchrone non détecté.
 3. Niveau site (#269) puis 12.2, 12.5 ; 12.1, 12.3, 12.4 et 13.3 selon #270, #271.
 4. Mesures dépendant de la mise en page (preuve Obscura vs Chrome).
 5. Routage par moteur (`EnginePlan::primary`) et coûts Holo : change les verdicts, passe par #180 et #183.

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 12.9 - modale fermée par Échap</title>
+</head>
+<body>
+    <main>
+        <h1>Modale légitime</h1>
+        <div role="dialog" aria-label="Aide" id="m"><button id="b" type="button">Fermer</button></div>
+    </main>
+    <script>
+var m=document.getElementById('m');m.addEventListener('keydown',function(e){if(e.key==='Tab')e.preventDefault();if(e.key==='Escape'){m.remove();}});
+    </script>
+</body>
+</html>

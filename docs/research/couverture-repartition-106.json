@@ -1,0 +1,1299 @@
+{
+ "version": "RGAA 4.1.2",
+ "criteria": [
+  {
+   "criterion_id": "1.1",
+   "theme": "Images",
+   "tests": 8,
+   "title": "Chaque image porteuse d’information a-t-elle une alternative textuelle ?",
+   "primary": "A",
+   "axe_rules": [
+    "image-alt",
+    "input-image-alt",
+    "area-alt",
+    "role-img-alt",
+    "svg-img-alt",
+    "object-alt"
+   ],
+   "deterministic": "alt présent sur <img>/role=img/<area>/<input image>/<object>/<svg>/<canvas>",
+   "holo": "pertinence si alt vide douteux",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.2",
+   "theme": "Images",
+   "tests": 6,
+   "title": "Chaque image de décoration est-elle correctement ignorée par les technologies d’assistance ?",
+   "primary": "A",
+   "axe_rules": [
+    "image-redundant-alt",
+    "presentation-role-conflict"
+   ],
+   "deterministic": "alt=\"\" / aria-hidden / role=presentation sur images décoratives",
+   "holo": "décide si une image est réellement décorative",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.3",
+   "theme": "Images",
+   "tests": 9,
+   "title": "Pour chaque image porteuse d’information ayant une alternative textuelle, cette alternative est-elle pertinente (hors cas particuliers) ?",
+   "primary": "H",
+   "axe_rules": [
+    "image-alt"
+   ],
+   "deterministic": "extraction alt + contexte (parent, légende, lien)",
+   "holo": "alt pertinent vs contenu de l’image (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.4",
+   "theme": "Images",
+   "tests": 7,
+   "title": "Pour chaque image utilisée comme CAPTCHA ou comme image-test, ayant une alternative textuelle, cette alternative permet-elle d’identifier la nature et la fonction de l’image ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "détection CAPTCHA (iframe recaptcha/hcaptcha, noms/classes)",
+   "holo": "alt CAPTCHA identifie nature/fonction sans livrer la solution",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.5",
+   "theme": "Images",
+   "tests": 2,
+   "title": "Pour chaque image utilisée comme CAPTCHA, une solution d’accès alternatif au contenu ou à la fonction du CAPTCHA est-elle présente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "détection CAPTCHA + présence d’une solution alternative (audio, question logique)",
+   "holo": "alternative équivalente en finalité",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.6",
+   "theme": "Images",
+   "tests": 10,
+   "title": "Chaque image porteuse d’information a-t-elle, si nécessaire, une description détaillée ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "longdesc, aria-describedby, lien/bloc adjacent, <details> après l’image",
+   "holo": "besoin d’une description détaillée (graphique, schéma)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.7",
+   "theme": "Images",
+   "tests": 6,
+   "title": "Pour chaque image porteuse d’information ayant une description détaillée, cette description est-elle pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "résolution de la cible de la description détaillée",
+   "holo": "pertinence de la description vs image",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.8",
+   "theme": "Images",
+   "tests": 6,
+   "title": "Chaque image texte porteuse d’information, en l’absence d’un mécanisme de remplacement, doit si possible être remplacée par du texte stylé. Cette règle est-elle respectée (hors cas particuliers) ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "détection images contenant du texte (<img>, SVG, canvas) vs texte stylable possible",
+   "holo": "OCR + décision « texte image remplaçable par du texte »",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "1.9",
+   "theme": "Images",
+   "tests": 5,
+   "title": "Chaque légende d’image est-elle, si nécessaire, correctement reliée à l’image correspondante ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "<figure>/<figcaption>, role=figure, aria-labelledby/describedby",
+   "holo": "légende réellement associée à l’image",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "2.1",
+   "theme": "Cadres",
+   "tests": 1,
+   "title": "Chaque cadre a-t-il un titre de cadre ?",
+   "primary": "A",
+   "axe_rules": [
+    "frame-title",
+    "frame-title-unique"
+   ],
+   "deterministic": "title non vide sur iframe/frame",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "2.2",
+   "theme": "Cadres",
+   "tests": 1,
+   "title": "Pour chaque cadre ayant un titre de cadre, ce titre de cadre est-il pertinent ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "extraction title + src/contenu du cadre",
+   "holo": "titre pertinent vs contenu du cadre",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "3.1",
+   "theme": "Couleurs",
+   "tests": 6,
+   "title": "Dans chaque page web, l’information ne doit pas être donnée uniquement par la couleur. Cette règle est-elle respectée ?",
+   "primary": "H",
+   "axe_rules": [
+    "link-in-text-block"
+   ],
+   "deterministic": "styles calculés (couleur seule, liens sans soulignement, champs requis en rouge)",
+   "holo": "vision : l’information survit-elle en niveaux de gris",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "3.2",
+   "theme": "Couleurs",
+   "tests": 5,
+   "title": "Dans chaque page web, le contraste entre la couleur du texte et la couleur de son arrière-plan est-il suffisamment élevé (hors cas particuliers) ?",
+   "primary": "A",
+   "axe_rules": [
+    "color-contrast"
+   ],
+   "deterministic": "styles calculés des cas « incomplete » (dégradés, images de fond, pseudo-éléments)",
+   "holo": "contraste de texte sur image de fond (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "3.3",
+   "theme": "Couleurs",
+   "tests": 4,
+   "title": "Dans chaque page web, les couleurs utilisées dans les composants d’interface ou les éléments graphiques porteurs d’informations sont-elles suffisamment contrastées (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "couleurs calculées bordures/icônes/focus, ratio ≥ 3:1",
+   "holo": "éléments graphiques porteurs d’information (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.1",
+   "theme": "Multimédia",
+   "tests": 3,
+   "title": "Chaque média temporel pré-enregistré a-t-il, si nécessaire, une transcription textuelle ou une audiodescription (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "détection média (<video>,<audio>,<object>, embeds YouTube/Vimeo) + lien transcription adjacent",
+   "holo": "pertinence du contexte",
+   "human_residual": "visionnage/écoute si pas de transcription"
+  },
+  {
+   "criterion_id": "4.2",
+   "theme": "Multimédia",
+   "tests": 3,
+   "title": "Pour chaque média temporel pré-enregistré ayant une transcription textuelle ou une audiodescription synchronisée, celles-ci sont-elles pertinentes (hors cas particuliers) ?",
+   "primary": "M",
+   "axe_rules": [],
+   "deterministic": "présence du bloc de transcription / audiodescription",
+   "holo": "pré-tri : transcription vs contenu textuel du média",
+   "human_residual": "vérifier fidélité au contenu"
+  },
+  {
+   "criterion_id": "4.3",
+   "theme": "Multimédia",
+   "tests": 2,
+   "title": "Chaque média temporel synchronisé pré-enregistré a-t-il, si nécessaire, des sous-titres synchronisés (hors cas particuliers) ?",
+   "primary": "A",
+   "axe_rules": [
+    "video-caption",
+    "audio-caption"
+   ],
+   "deterministic": "<track kind=captions|subtitles> présent, WebVTT valide",
+   "holo": "sous-titres des players embarqués (vision frame)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.4",
+   "theme": "Multimédia",
+   "tests": 1,
+   "title": "Pour chaque média temporel synchronisé pré-enregistré ayant des sous-titres synchronisés, ces sous-titres sont-ils pertinents ?",
+   "primary": "M",
+   "axe_rules": [],
+   "deterministic": "présence piste de sous-titres",
+   "holo": "alignement texte/frames échantillonnées",
+   "human_residual": "synchronisation et pertinence à l’écoute"
+  },
+  {
+   "criterion_id": "4.5",
+   "theme": "Multimédia",
+   "tests": 2,
+   "title": "Chaque média temporel pré-enregistré a-t-il, si nécessaire, une audiodescription synchronisée (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "<track kind=descriptions>, piste audio AD, version alternative",
+   "holo": "vision : scènes riches en information visuelle",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.6",
+   "theme": "Multimédia",
+   "tests": 2,
+   "title": "Pour chaque média temporel pré-enregistré ayant une audiodescription synchronisée, celle-ci est-elle pertinente ?",
+   "primary": "M",
+   "axe_rules": [],
+   "deterministic": "présence audiodescription",
+   "holo": "pré-tri",
+   "human_residual": "pertinence et synchro à l’écoute"
+  },
+  {
+   "criterion_id": "4.7",
+   "theme": "Multimédia",
+   "tests": 1,
+   "title": "Chaque média temporel est-il clairement identifiable (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "média identifié par légende/titre adjacent",
+   "holo": "pertinence de l’identification",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.8",
+   "theme": "Multimédia",
+   "tests": 2,
+   "title": "Chaque média non temporel a-t-il, si nécessaire, une alternative (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "alternative au média non temporel (<object>, <canvas>, SVG animé) : lien/texte",
+   "holo": "pertinence de l’alternative",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.9",
+   "theme": "Multimédia",
+   "tests": 1,
+   "title": "Pour chaque média non temporel ayant une alternative, cette alternative est-elle pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "alternative résolue",
+   "holo": "pertinence vs média",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.10",
+   "theme": "Multimédia",
+   "tests": 1,
+   "title": "Chaque son déclenché automatiquement est-il contrôlable par l’utilisateur ?",
+   "primary": "A",
+   "axe_rules": [
+    "no-autoplay-audio"
+   ],
+   "deterministic": "autoplay sans muted, durée > 3 s, contrôle de volume/pause",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.11",
+   "theme": "Multimédia",
+   "tests": 3,
+   "title": "La consultation de chaque média temporel est-elle, si nécessaire, contrôlable par le clavier et tout dispositif de pointage ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "controls, boutons lecture/pause/stop/volume atteignables au clavier (Playwright)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.12",
+   "theme": "Multimédia",
+   "tests": 2,
+   "title": "La consultation de chaque média non temporel est-elle contrôlable par le clavier et tout dispositif de pointage ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "média non temporel contrôlable clavier/pointeur (Playwright)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "4.13",
+   "theme": "Multimédia",
+   "tests": 2,
+   "title": "Chaque média temporel et non temporel est-il compatible avec les technologies d’assistance (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "attributs ARIA des lecteurs (nom, rôle, état) via arbre d’accessibilité",
+   "holo": "compatibilité AT sur players custom",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.1",
+   "theme": "Tableaux",
+   "tests": 1,
+   "title": "Chaque tableau de données complexe a-t-il un résumé ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "détection tableau de données complexe (colspan/rowspan imbriqués, > 2 niveaux d’en-têtes) + résumé",
+   "holo": "confirme la complexité",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.2",
+   "theme": "Tableaux",
+   "tests": 1,
+   "title": "Pour chaque tableau de données complexe ayant un résumé, celui-ci est-il pertinent ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "extraction du résumé",
+   "holo": "pertinence vs tableau",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.3",
+   "theme": "Tableaux",
+   "tests": 1,
+   "title": "Pour chaque tableau de mise en forme, le contenu linéarisé reste-t-il compréhensible ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "table role=presentation/layout détectée",
+   "holo": "linéarisation compréhensible",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.4",
+   "theme": "Tableaux",
+   "tests": 1,
+   "title": "Pour chaque tableau de données ayant un titre, le titre est-il correctement associé au tableau de données ?",
+   "primary": "A",
+   "axe_rules": [
+    "table-fake-caption"
+   ],
+   "deterministic": "<caption>, aria-labelledby, figcaption rattaché au tableau",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.5",
+   "theme": "Tableaux",
+   "tests": 1,
+   "title": "Pour chaque tableau de données ayant un titre, celui-ci est-il pertinent ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "extraction du titre",
+   "holo": "pertinence vs tableau",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.6",
+   "theme": "Tableaux",
+   "tests": 4,
+   "title": "Pour chaque tableau de données, chaque en-tête de colonne et chaque en-tête de ligne sont-ils correctement déclarés ?",
+   "primary": "A",
+   "axe_rules": [
+    "th-has-data-cells",
+    "scope-attr-valid",
+    "td-has-header"
+   ],
+   "deterministic": "<th> sur en-têtes de colonne/ligne",
+   "holo": "en-tête visuellement identifié mais balisé en <td>",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.7",
+   "theme": "Tableaux",
+   "tests": 5,
+   "title": "Pour chaque tableau de données, la technique appropriée permettant d’associer chaque cellule avec ses en-têtes est-elle utilisée (hors cas particuliers) ?",
+   "primary": "A",
+   "axe_rules": [
+    "td-headers-attr",
+    "th-has-data-cells",
+    "scope-attr-valid",
+    "td-has-header"
+   ],
+   "deterministic": "scope/headers/id corrects, ARIA columnheader/rowheader",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "5.8",
+   "theme": "Tableaux",
+   "tests": 1,
+   "title": "Chaque tableau de mise en forme ne doit pas utiliser d’éléments propres aux  tableaux de données. Cette règle est-elle respectée ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "tableau de mise en forme sans th/caption/summary/headers/scope",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "6.1",
+   "theme": "Liens",
+   "tests": 5,
+   "title": "Chaque lien est-il explicite (hors cas particuliers) ?",
+   "primary": "H",
+   "axe_rules": [
+    "identical-links-same-purpose"
+   ],
+   "deterministic": "intitulé + contexte (aria-label, title, parent, cellule) via arbre AX",
+   "holo": "lien explicite hors contexte, liens identiques mêmes cibles",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "6.2",
+   "theme": "Liens",
+   "tests": 1,
+   "title": "Dans chaque page web, chaque lien a-t-il un intitulé ?",
+   "primary": "A",
+   "axe_rules": [
+    "link-name"
+   ],
+   "deterministic": "nom accessible non vide (a, role=link)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "7.1",
+   "theme": "Scripts",
+   "tests": 3,
+   "title": "Chaque script est-il, si nécessaire, compatible avec les technologies d’assistance ?",
+   "primary": "H",
+   "axe_rules": [
+    "aria-allowed-attr",
+    "aria-valid-attr",
+    "aria-valid-attr-value",
+    "aria-required-attr",
+    "aria-roles",
+    "aria-hidden-focus",
+    "nested-interactive"
+   ],
+   "deterministic": "widgets JS : rôle/nom/état dans l’arbre AX avant/après interaction",
+   "holo": "widget compris par une AT (état annoncé)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "7.2",
+   "theme": "Scripts",
+   "tests": 2,
+   "title": "Pour chaque script ayant une alternative, cette alternative est-elle pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "script ayant une alternative (noscript, lien)",
+   "holo": "pertinence de l’alternative",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "7.3",
+   "theme": "Scripts",
+   "tests": 2,
+   "title": "Chaque script est-il contrôlable par le clavier et par tout dispositif de pointage (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [
+    "scrollable-region-focusable",
+    "tabindex",
+    "nested-interactive",
+    "frame-focusable-content"
+   ],
+   "deterministic": "Playwright : tabulation, Entrée/Espace sur chaque handler, parité clavier/pointeur",
+   "holo": "widgets exotiques (drag & drop)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "7.4",
+   "theme": "Scripts",
+   "tests": 1,
+   "title": "Pour chaque script qui initie un changement de contexte, l’utilisateur est-il averti ou en a-t-il le contrôle ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "Playwright : focus/saisie dans chaque champ → URL, nouvelle fenêtre, focus déplacé ; avertissement présent",
+   "holo": "l’avertissement est-il compréhensible",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "7.5",
+   "theme": "Scripts",
+   "tests": 3,
+   "title": "Dans chaque page web, les messages de statut sont-ils correctement restitués par les technologies d’assistance ?",
+   "primary": "M",
+   "axe_rules": [
+    "aria-allowed-role"
+   ],
+   "deterministic": "déclenche action, observe régions role=status|alert|log, aria-live, présence du message dans l’AX tree",
+   "holo": "message visible ⇔ annoncé",
+   "human_residual": "vérification lecteur d’écran réelle (NVDA/VO)"
+  },
+  {
+   "criterion_id": "8.1",
+   "theme": "Éléments obligatoires",
+   "tests": 3,
+   "title": "Chaque page web est-elle définie par un type de document ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "doctype dans le HTML source (HTTP brut)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.2",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Pour chaque page web, le code source généré est-il valide selon le type de document spécifié ?",
+   "primary": "D",
+   "axe_rules": [
+    "duplicate-id-aria"
+   ],
+   "deterministic": "validateur Nu Html Checker sur le DOM généré (hors règles hors-périmètre RGAA)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.3",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Dans chaque page web, la langue par défaut est-elle présente ?",
+   "primary": "A",
+   "axe_rules": [
+    "html-has-lang"
+   ],
+   "deterministic": "lang sur <html>",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.4",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Pour chaque page web ayant une langue par défaut, le code de langue est-il pertinent ?",
+   "primary": "A",
+   "axe_rules": [
+    "html-lang-valid",
+    "html-xml-lang-mismatch"
+   ],
+   "deterministic": "code BCP47 valide",
+   "holo": "langue détectée du contenu = langue déclarée",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.5",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Chaque page web a-t-elle un titre de page ?",
+   "primary": "A",
+   "axe_rules": [
+    "document-title"
+   ],
+   "deterministic": "<title> non vide",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.6",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Pour chaque page web ayant un titre de page, ce titre est-il pertinent ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "title + h1 + contenu",
+   "holo": "pertinence et unicité du titre",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.7",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Dans chaque page web, chaque changement de langue est-il indiqué dans le code source (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "détection de langue par segment (cld/lingua) vs lang ancêtre",
+   "holo": "passages courts/ambigus",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.8",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Dans chaque page web, le code de langue de chaque changement de langue est-il valide et pertinent ?",
+   "primary": "A",
+   "axe_rules": [
+    "valid-lang"
+   ],
+   "deterministic": "codes lang des éléments",
+   "holo": "pertinence de la langue annoncée",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.9",
+   "theme": "Éléments obligatoires",
+   "tests": 1,
+   "title": "Dans chaque page web, les balises ne doivent pas être utilisées uniquement à des fins de présentation. Cette règle est-elle respectée ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "balises de présentation (b, i, font, center, blink…), tableaux de mise en forme, <br> décoratifs",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "8.10",
+   "theme": "Éléments obligatoires",
+   "tests": 2,
+   "title": "Dans chaque page web, les changements du sens de lecture sont-ils signalés ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "dir/CSS direction, bdo, détection de scripts RTL",
+   "holo": "changement de sens bien signalé",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "9.1",
+   "theme": "Structuration de l’information",
+   "tests": 3,
+   "title": "Dans chaque page web, l’information est-elle structurée par l’utilisation appropriée de titres ?",
+   "primary": "A",
+   "axe_rules": [
+    "heading-order",
+    "empty-heading",
+    "page-has-heading-one"
+   ],
+   "deterministic": "role=heading + aria-level",
+   "holo": "hiérarchie pertinente vs maquette visuelle (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "9.2",
+   "theme": "Structuration de l’information",
+   "tests": 1,
+   "title": "Dans chaque page web, la structure du document est-elle cohérente (hors cas particuliers) ?",
+   "primary": "H",
+   "axe_rules": [
+    "landmark-one-main",
+    "region",
+    "landmark-no-duplicate-banner"
+   ],
+   "deterministic": "présence header/nav/main/footer/aside",
+   "holo": "structure cohérente avec la page rendue",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "9.3",
+   "theme": "Structuration de l’information",
+   "tests": 3,
+   "title": "Dans chaque page web, chaque liste est-elle correctement structurée ?",
+   "primary": "A",
+   "axe_rules": [
+    "list",
+    "listitem",
+    "definition-list",
+    "dlitem"
+   ],
+   "deterministic": "faux listes (tirets, <br>, paragraphes consécutifs)",
+   "holo": "confirme les faux positifs",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "9.4",
+   "theme": "Structuration de l’information",
+   "tests": 2,
+   "title": "Dans chaque page web, chaque citation est-elle correctement indiquée ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "<blockquote>/<q> vs guillemets/retraits stylés",
+   "holo": "détecte citations non balisées (sémantique)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.1",
+   "theme": "Présentation de l’information",
+   "tests": 3,
+   "title": "Dans le site web, des feuilles de styles sont-elles utilisées pour contrôler la présentation de l’information ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "HTML : attributs de présentation (align, bgcolor, width…), <style> inline, feuilles CSS liées",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.2",
+   "theme": "Présentation de l’information",
+   "tests": 1,
+   "title": "Dans chaque page web, le contenu visible porteur d’information reste-t-il présent lorsque les feuilles de styles sont désactivées ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "Playwright : CSS désactivée → comparaison texte visible vs texte rendu",
+   "holo": "disparition de contenu informatif (diff vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.3",
+   "theme": "Présentation de l’information",
+   "tests": 1,
+   "title": "Dans chaque page web, l’information reste-t-elle compréhensible lorsque les feuilles de styles sont désactivées ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "ordre DOM linéarisé sans CSS",
+   "holo": "ordre compréhensible",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.4",
+   "theme": "Présentation de l’information",
+   "tests": 2,
+   "title": "Dans chaque page web, le texte reste-t-il lisible lorsque la taille des caractères est augmentée jusqu’à 200 %, au moins (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [
+    "meta-viewport"
+   ],
+   "deterministic": "Playwright : zoom texte 200 %, détection clipping/chevauchement/overflow",
+   "holo": "vision : texte lisible",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.5",
+   "theme": "Présentation de l’information",
+   "tests": 3,
+   "title": "Dans chaque page web, les déclarations CSS de couleurs de fond d’élément et de police sont-elles correctement utilisées ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "analyse CSS : color et background-color toujours déclarées ensemble",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.6",
+   "theme": "Présentation de l’information",
+   "tests": 1,
+   "title": "Dans chaque page web, chaque lien dont la nature n’est pas évidente est-il visible par rapport au texte environnant ?",
+   "primary": "A",
+   "axe_rules": [
+    "link-in-text-block"
+   ],
+   "deterministic": "distinction visuelle des liens (couleur ≥ 3:1, soulignement)",
+   "holo": "nature du lien non évidente",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.7",
+   "theme": "Présentation de l’information",
+   "tests": 1,
+   "title": "Dans chaque page web, pour chaque élément recevant le focus, la prise de focus est-elle visible ?",
+   "primary": "D",
+   "axe_rules": [
+    "focus-order-semantics"
+   ],
+   "deterministic": "Playwright : tab sur chaque élément focusable, diff de capture avant/après",
+   "holo": "indicateur de focus perceptible (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.8",
+   "theme": "Présentation de l’information",
+   "tests": 1,
+   "title": "Pour chaque page web, les contenus cachés ont-ils vocation à être ignorés par les technologies d’assistance ?",
+   "primary": "A",
+   "axe_rules": [
+    "aria-hidden-focus",
+    "hidden-content"
+   ],
+   "deterministic": "CSS display:none/visibility/hidden/aria-hidden vs intention (texte caché pour AT)",
+   "holo": "contenu masqué à tort",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.9",
+   "theme": "Présentation de l’information",
+   "tests": 4,
+   "title": "Dans chaque page web, l’information ne doit pas être donnée uniquement par la forme, taille ou position. Cette règle est-elle respectée ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "styles calculés (forme/taille/position)",
+   "holo": "information portée uniquement par la forme/position (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.10",
+   "theme": "Présentation de l’information",
+   "tests": 4,
+   "title": "Dans chaque page web, l’information ne doit pas être donnée par la forme, taille ou position uniquement. Cette règle est-elle implémentée de façon pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "styles calculés",
+   "holo": "information portée uniquement par la forme/taille/position, sans alternative",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.11",
+   "theme": "Présentation de l’information",
+   "tests": 2,
+   "title": "Pour chaque page web, les contenus peuvent-ils être présentés sans perte d’information ou de fonctionnalité et sans avoir recours soit à un défilement vertical pour une fenêtre ayant une hauteur de 256 px, soit à un défilement horizontal pour une fenêtre ayant une largeur de 320 px (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [
+    "meta-viewport",
+    "meta-viewport-large"
+   ],
+   "deterministic": "Playwright : viewport 320×256 px, scrollWidth/scrollHeight, 400 % zoom",
+   "holo": "perte d’information (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.12",
+   "theme": "Présentation de l’information",
+   "tests": 1,
+   "title": "Dans chaque page web, les propriétés d’espacement du texte peuvent-elles être redéfinies par l’utilisateur sans perte de contenu ou de fonctionnalité (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [
+    "avoid-inline-spacing"
+   ],
+   "deterministic": "Playwright : injection line-height 1.5 / letter-spacing .12em / word-spacing .16em / paragraph 2em, détection clipping",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.13",
+   "theme": "Présentation de l’information",
+   "tests": 3,
+   "title": "Dans chaque page web, les contenus additionnels apparaissant à la prise de focus ou au survol d’un composant d’interface sont-ils contrôlables par l’utilisateur (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "Playwright : hover/focus, Échap, survol du contenu additionnel, persistance",
+   "holo": "contenu additionnel pertinent",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "10.14",
+   "theme": "Présentation de l’information",
+   "tests": 2,
+   "title": "Dans chaque page web, les contenus additionnels apparaissant via les styles CSS uniquement peuvent-ils être rendus visibles au clavier et par tout dispositif de pointage ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "CSS :hover/:focus générant du contenu (content, display) + test clavier",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.1",
+   "theme": "Formulaires",
+   "tests": 3,
+   "title": "Chaque champ de formulaire a-t-il une étiquette ?",
+   "primary": "A",
+   "axe_rules": [
+    "label",
+    "select-name",
+    "input-button-name",
+    "form-field-multiple-labels",
+    "aria-input-field-name"
+   ],
+   "deterministic": "label/for, aria-label, aria-labelledby, title (pas seul)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.2",
+   "theme": "Formulaires",
+   "tests": 6,
+   "title": "Chaque étiquette associée à un champ de formulaire est-elle pertinente (hors cas particuliers) ?",
+   "primary": "H",
+   "axe_rules": [
+    "label-content-name-mismatch",
+    "label-title-only"
+   ],
+   "deterministic": "nom accessible vs libellé visible",
+   "holo": "pertinence de l’étiquette",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.3",
+   "theme": "Formulaires",
+   "tests": 2,
+   "title": "Dans chaque formulaire, chaque étiquette associée à un champ de formulaire ayant la même fonction et répétée plusieurs fois dans une même page ou dans un ensemble de pages est-elle cohérente ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "comparaison des étiquettes de champs de même fonction à travers le formulaire",
+   "holo": "même fonction ⇒ même sens",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.4",
+   "theme": "Formulaires",
+   "tests": 3,
+   "title": "Dans chaque formulaire, chaque étiquette de champ et son champ associé sont-ils accolés (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "Playwright : bounding boxes label ↔ champ (adjacents, ordre) ",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.5",
+   "theme": "Formulaires",
+   "tests": 1,
+   "title": "Dans chaque formulaire, les champs de même nature sont-ils regroupés, si nécessaire ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "<fieldset>, role=group, aria-labelledby",
+   "holo": "regroupement nécessaire (radios/checkboxes/champs adresse)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.6",
+   "theme": "Formulaires",
+   "tests": 1,
+   "title": "Dans chaque formulaire, chaque regroupement de champs de même nature a-t-il une légende ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "<legend> / aria-label sur chaque regroupement",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.7",
+   "theme": "Formulaires",
+   "tests": 1,
+   "title": "Dans chaque formulaire, chaque légende associée à un regroupement de champs de même nature est-elle pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "extraction légende + champs du groupe",
+   "holo": "légende pertinente",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.8",
+   "theme": "Formulaires",
+   "tests": 3,
+   "title": "Dans chaque formulaire, les items de même nature d’une liste de choix sont-ils regroupés de manière pertinente ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "<optgroup label> pour listes longues",
+   "holo": "regroupement logique",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.9",
+   "theme": "Formulaires",
+   "tests": 2,
+   "title": "Dans chaque formulaire, l’intitulé de chaque bouton est-il pertinent (hors cas particuliers) ?",
+   "primary": "A",
+   "axe_rules": [
+    "button-name",
+    "input-button-name"
+   ],
+   "deterministic": "nom accessible des boutons",
+   "holo": "intitulé pertinent",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.10",
+   "theme": "Formulaires",
+   "tests": 7,
+   "title": "Dans chaque formulaire, le contrôle de saisie est-il utilisé de manière pertinente (hors cas particuliers) ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "required/aria-required/pattern, indications de format, messages",
+   "holo": "contrôle de saisie pertinent (formats, champs obligatoires)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.11",
+   "theme": "Formulaires",
+   "tests": 2,
+   "title": "Dans chaque formulaire, le contrôle de saisie est-il accompagné, si nécessaire, de suggestions facilitant la correction des erreurs de saisie ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "erreurs de saisie : aria-describedby, aria-invalid, role=alert",
+   "holo": "suggestion de correction utile",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "11.12",
+   "theme": "Formulaires",
+   "tests": 2,
+   "title": "Pour chaque formulaire qui modifie ou supprime des données, ou qui transmet des réponses à un test ou à un examen, ou dont la validation a des conséquences financières ou juridiques, les données saisies peuvent-elles être modifiées, mises à jour ou récupérées par l’utilisateur ?",
+   "primary": "M",
+   "axe_rules": [],
+   "deterministic": "détection formulaire transmettant données (méthode POST, paiement, compte)",
+   "holo": "présence d’une étape confirmation/annulation/vérification",
+   "human_residual": "test réel du parcours (écriture en base)"
+  },
+  {
+   "criterion_id": "11.13",
+   "theme": "Formulaires",
+   "tests": 1,
+   "title": "La finalité d’un champ de saisie peut-elle être déduite pour faciliter le remplissage automatique des champs avec les données de l’utilisateur ?",
+   "primary": "A",
+   "axe_rules": [
+    "autocomplete-valid"
+   ],
+   "deterministic": "attribut autocomplete valide, champs de finalité connue (nom, email, adresse…)",
+   "holo": "finalité déduite du libellé",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.1",
+   "theme": "Navigation",
+   "tests": 1,
+   "title": "Chaque ensemble de pages dispose-t-il de deux systèmes de navigation différents, au moins (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "crawler multi-pages : nav + plan du site + moteur de recherche (≥ 2 systèmes)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.2",
+   "theme": "Navigation",
+   "tests": 1,
+   "title": "Dans chaque ensemble de pages, le menu et les barres de navigation sont-ils toujours à la même place (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "crawler : position/ordre du menu et de la barre de navigation identiques sur les pages de l’ensemble",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.3",
+   "theme": "Navigation",
+   "tests": 3,
+   "title": "La page « plan du site » est-elle pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "plan du site détecté et analysé",
+   "holo": "pertinence/exhaustivité du plan du site",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.4",
+   "theme": "Navigation",
+   "tests": 3,
+   "title": "Dans chaque ensemble de pages, la page « plan du site » est-elle accessible à partir d’une fonctionnalité identique ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "crawler : lien « plan du site » présent sur chaque page, même place",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.5",
+   "theme": "Navigation",
+   "tests": 3,
+   "title": "Dans chaque ensemble de pages, le moteur de recherche est-il atteignable de manière identique ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "crawler : champ de recherche accessible de la même manière sur toutes les pages",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.6",
+   "theme": "Navigation",
+   "tests": 1,
+   "title": "Les zones de regroupement de contenus présentes dans plusieurs pages web (zones d’en-tête, de navigation principale, de contenu principal, de pied de page et de moteur de recherche) peuvent-elles être atteintes ou évitées ?",
+   "primary": "A",
+   "axe_rules": [
+    "landmark-one-main",
+    "region",
+    "landmark-unique",
+    "landmark-banner-is-top-level"
+   ],
+   "deterministic": "landmarks et regroupements communs aux pages, entre pages",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.7",
+   "theme": "Navigation",
+   "tests": 2,
+   "title": "Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone de contenu principal est-il présent (hors cas particuliers) ?",
+   "primary": "A",
+   "axe_rules": [
+    "bypass",
+    "skip-link"
+   ],
+   "deterministic": "Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.8",
+   "theme": "Navigation",
+   "tests": 2,
+   "title": "Dans chaque page web, l’ordre de tabulation est-il cohérent ?",
+   "primary": "D",
+   "axe_rules": [
+    "focus-order-semantics"
+   ],
+   "deterministic": "Playwright : séquence de tabulation vs ordre visuel (coordonnées)",
+   "holo": "ordre cohérent (vision)",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.9",
+   "theme": "Navigation",
+   "tests": 1,
+   "title": "Dans chaque page web, la navigation ne doit pas contenir de piège au clavier. Cette règle est-elle respectée ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "Playwright : tabulation N fois, détection de piège (focus bloqué hors modale)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.10",
+   "theme": "Navigation",
+   "tests": 1,
+   "title": "Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule touche (lettre minuscule ou majuscule, ponctuation, chiffre ou symbole) sont-ils contrôlables par l’utilisateur ?",
+   "primary": "D",
+   "axe_rules": [
+    "accesskeys"
+   ],
+   "deterministic": "analyse JS : keydown/keypress sans modificateur ; raccourcis désactivables",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "12.11",
+   "theme": "Navigation",
+   "tests": 1,
+   "title": "Dans chaque page web, les contenus additionnels apparaissant au survol, à la prise de focus ou à l’activation d’un composant d’interface sont-ils si nécessaire atteignables au clavier ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "Playwright : contenu additionnel au hover/focus atteignable au clavier (ordre DOM)",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.1",
+   "theme": "Consultation",
+   "tests": 4,
+   "title": "Pour chaque page web, l’utilisateur a-t-il le contrôle de chaque limite de temps modifiant le contenu (hors cas particuliers) ?",
+   "primary": "M",
+   "axe_rules": [
+    "meta-refresh",
+    "meta-refresh-no-exceptions"
+   ],
+   "deterministic": "meta refresh, setTimeout de redirection/déconnexion, compteurs de session",
+   "holo": "",
+   "human_residual": "cas de limite de temps applicative (session, panier)"
+  },
+  {
+   "criterion_id": "13.2",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Dans chaque page web, l’ouverture d’une nouvelle fenêtre ne doit pas être déclenchée sans action de l’utilisateur. Cette règle est-elle respectée ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "target=_blank, window.open, popups à l’ouverture sans action utilisateur ; Playwright popup events",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.3",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Dans chaque page web, chaque document bureautique en téléchargement possède-t-il, si nécessaire, une version accessible (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "liens vers .pdf/.doc(x)/.odt/.xls(x)/.ppt(x)/.epub (extension + Content-Type) ; PDF : tags, titre, langue (veraPDF)",
+   "holo": "version accessible disponible/signalée",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.4",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Pour chaque document bureautique ayant une version accessible, cette version offre-t-elle la même information ?",
+   "primary": "M",
+   "axe_rules": [],
+   "deterministic": "détection de la version accessible proposée",
+   "holo": "comparaison texte version accessible vs original",
+   "human_residual": "équivalence d’information"
+  },
+  {
+   "criterion_id": "13.5",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Dans chaque page web, chaque contenu cryptique (art ASCII, émoticône, syntaxe cryptique) a-t-il une alternative ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "regex ASCII-art, émoticônes, notations cryptiques",
+   "holo": "détecte les cas non couverts par regex",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.6",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Dans chaque page web, pour chaque contenu cryptique (art ASCII, émoticône, syntaxe cryptique) ayant une alternative, cette alternative est-elle pertinente ?",
+   "primary": "H",
+   "axe_rules": [],
+   "deterministic": "alternative des contenus cryptiques",
+   "holo": "pertinence de l’alternative",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.7",
+   "theme": "Consultation",
+   "tests": 3,
+   "title": "Dans chaque page web, les changements brusques de luminosité ou les effets de flash sont-ils correctement utilisés ?",
+   "primary": "M",
+   "axe_rules": [],
+   "deterministic": "animations CSS/JS rapides ; frames vidéo échantillonnées (3 flashs/s)",
+   "holo": "analyse de luminance par frames",
+   "human_residual": "confirmation d’un flash réel"
+  },
+  {
+   "criterion_id": "13.8",
+   "theme": "Consultation",
+   "tests": 2,
+   "title": "Dans chaque page web, chaque contenu en mouvement ou clignotant est-il contrôlable par l’utilisateur ?",
+   "primary": "A",
+   "axe_rules": [
+    "blink",
+    "marquee"
+   ],
+   "deterministic": "CSS animation > 5 s, <video autoplay loop>, GIF animé ; bouton pause/stop",
+   "holo": "contrôle atteignable",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.9",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Dans chaque page web, le contenu proposé est-il consultable quelle que soit l’orientation de l’écran (portrait ou paysage) (hors cas particuliers) ?",
+   "primary": "A",
+   "axe_rules": [
+    "css-orientation-lock"
+   ],
+   "deterministic": "Playwright : portrait ↔ paysage, contenu/fonctions identiques",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.10",
+   "theme": "Consultation",
+   "tests": 2,
+   "title": "Dans chaque page web, les fonctionnalités utilisables ou disponibles au moyen d’un geste complexe peuvent-elles être également disponibles au moyen d’un geste simple (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "JS : pointer events multi-touch/path/drag, touch-action ; alternative à geste simple",
+   "holo": "alternative réellement fonctionnelle",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.11",
+   "theme": "Consultation",
+   "tests": 1,
+   "title": "Dans chaque page web, les actions déclenchées au moyen d’un dispositif de pointage sur un point unique de l’écran peuvent-elles faire l’objet d’une annulation (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [
+    "target-size"
+   ],
+   "deterministic": "JS : mousedown/pointerdown/touchstart sans up ; annulation possible",
+   "holo": "",
+   "human_residual": ""
+  },
+  {
+   "criterion_id": "13.12",
+   "theme": "Consultation",
+   "tests": 3,
+   "title": "Dans chaque page web, les fonctionnalités qui impliquent un mouvement de l’appareil ou vers l’appareil peuvent-elles être satisfaites de manière alternative (hors cas particuliers) ?",
+   "primary": "D",
+   "axe_rules": [],
+   "deterministic": "JS : devicemotion/deviceorientation/accelerometer ; alternative UI",
+   "holo": "alternative équivalente",
+   "human_residual": ""
+  }
+ ]
+}

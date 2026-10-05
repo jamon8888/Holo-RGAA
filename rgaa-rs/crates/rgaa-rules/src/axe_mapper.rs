@@ -224,8 +224,8 @@ mod tests {
             }
         ]"#;
         let results = AxeMapper::map(axe_json).unwrap();
-        // color-contrast maps to 3.3
-        let r = results.get("3.3").expect("3.3 should be present");
+        // color-contrast maps to 3.2 (text contrast, RGAA-3.2.1)
+        let r = results.get("3.2").expect("3.2 should be present");
         assert_eq!(r.status, CriterionStatus::Fail);
         assert!(!r.violations.is_empty());
     }
@@ -262,7 +262,7 @@ mod tests {
             }
         ]"#;
         let results = AxeMapper::map(axe_json).unwrap();
-        let r = results.get("3.3").expect("3.3 should be present");
+        let r = results.get("3.2").expect("3.2 should be present");
         assert_eq!(r.status, CriterionStatus::Fail);
         // Both violations should be present
         assert_eq!(r.violations.len(), 2);
@@ -306,16 +306,15 @@ mod tests {
     /// than derived so that moving a criterion between the two regimes is a visible,
     /// reviewed change and not a side effect of editing `axe_mapping.json`.
     const COMPLETE_COVERAGE_CRITERIA: &[&str] = &[
-        "1.1", "1.2", "1.5", "1.6", "2.1", "3.2", "3.3", "4.3", "5.6", "5.7", "6.1", "6.2", "8.3",
-        "9.1", "9.3", "10.2", "10.5", "10.6", "10.8", "10.9", "11.1", "11.4", "12.1", "12.4",
-        "12.6", "12.7", "13.3", "13.4", "13.5",
+        "1.1", "2.1", "3.2", "4.3", "5.6", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8",
+        "11.1", "12.7",
     ];
 
     /// Criteria whose mapped rules catch real violations but cannot establish
     /// conformance: axe may fail them, never pass them.
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
-        "4.10", "5.4", "7.1", "7.3", "8.2", "8.4", "8.8", "10.4", "10.11", "11.2", "11.13", "13.1",
-        "13.8", "13.9",
+        "1.2", "4.10", "5.4", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1", "10.4", "10.11",
+        "11.2", "11.13", "12.6", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -502,13 +501,10 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            43,
-            "29 criteria carried axe rules before #201, 43 after"
+            32,
+            "43 criteria carried axe rules after #201; the 2026-10-05 engine plan removed 12 mappings that could not decide their criterion (1.5, 1.6, 3.3, 10.2, 10.5, 10.9, 11.4, 12.1, 12.4, 13.3-13.5) and moved document-title to 8.5"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
-        assert_eq!(
-            rule_refs, 96,
-            "expected 96 criterion/rule pairs after the harvest"
-        );
+        assert_eq!(rule_refs, 80, "expected 80 criterion/rule pairs");
     }
 }

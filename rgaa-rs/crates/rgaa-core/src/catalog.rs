@@ -355,8 +355,12 @@ mod tests {
     /// closed rather than claiming a conformance axe cannot establish (#201 AC3).
     #[test]
     fn complete_axe_coverage_is_declared_not_inferred() {
+        // 3.2 (text contrast) is decided by color-contrast; 3.3 (UI components) is not,
+        // and carries no axe rule since the 2026-10-05 engine plan.
+        let (_, three_two) = RgaaCatalog::by_id("3.2").expect("3.2 is in the catalog");
+        assert_eq!(three_two.axe_coverage, AxeCoverage::Complete);
         let (_, three_three) = RgaaCatalog::by_id("3.3").expect("3.3 is in the catalog");
-        assert_eq!(three_three.axe_coverage, AxeCoverage::Complete);
+        assert!(three_three.axe_rules.is_empty());
 
         // 13.1 has fifteen tests and one rule, meta-refresh.
         let (_, thirteen_one) = RgaaCatalog::by_id("13.1").expect("13.1 is in the catalog");

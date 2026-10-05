@@ -1,0 +1,978 @@
+[
+ {
+  "criterion_id": "1.1",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "image-alt",
+   "input-image-alt",
+   "area-alt",
+   "role-img-alt",
+   "svg-img-alt",
+   "object-alt"
+  ],
+  "deterministic": "alt présent sur <img>/role=img/<area>/<input image>/<object>/<svg>/<canvas>",
+  "holo": "pertinence si alt vide douteux",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.2",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "image-redundant-alt",
+   "presentation-role-conflict"
+  ],
+  "deterministic": "alt=\"\" / aria-hidden / role=presentation sur images décoratives",
+  "holo": "décide si une image est réellement décorative",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.3",
+  "primary": "Holo",
+  "axe_rules": [
+   "image-alt"
+  ],
+  "deterministic": "extraction alt + contexte (parent, légende, lien)",
+  "holo": "alt pertinent vs contenu de l’image (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.4",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "détection CAPTCHA (iframe recaptcha/hcaptcha, noms/classes)",
+  "holo": "alt CAPTCHA identifie nature/fonction sans livrer la solution",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.5",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "détection CAPTCHA + présence d’une solution alternative (audio, question logique)",
+  "holo": "alternative équivalente en finalité",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.6",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "longdesc, aria-describedby, lien/bloc adjacent, <details> après l’image",
+  "holo": "besoin d’une description détaillée (graphique, schéma)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.7",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "résolution de la cible de la description détaillée",
+  "holo": "pertinence de la description vs image",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.8",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "détection images contenant du texte (<img>, SVG, canvas) vs texte stylable possible",
+  "holo": "OCR + décision « texte image remplaçable par du texte »",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "1.9",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "<figure>/<figcaption>, role=figure, aria-labelledby/describedby",
+  "holo": "légende réellement associée à l’image",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "2.1",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "frame-title",
+   "frame-title-unique"
+  ],
+  "deterministic": "title non vide sur iframe/frame",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "2.2",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "extraction title + src/contenu du cadre",
+  "holo": "titre pertinent vs contenu du cadre",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "3.1",
+  "primary": "Holo",
+  "axe_rules": [
+   "link-in-text-block"
+  ],
+  "deterministic": "styles calculés (couleur seule, liens sans soulignement, champs requis en rouge)",
+  "holo": "vision : l’information survit-elle en niveaux de gris",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "3.2",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "color-contrast"
+  ],
+  "deterministic": "styles calculés des cas « incomplete » (dégradés, images de fond, pseudo-éléments)",
+  "holo": "contraste de texte sur image de fond (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "3.3",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "couleurs calculées bordures/icônes/focus, ratio ≥ 3:1",
+  "holo": "éléments graphiques porteurs d’information (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.1",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "détection média (<video>,<audio>,<object>, embeds YouTube/Vimeo) + lien transcription adjacent",
+  "holo": "pertinence du contexte",
+  "human_residual": "visionnage/écoute si pas de transcription"
+ },
+ {
+  "criterion_id": "4.2",
+  "primary": "Human",
+  "axe_rules": [],
+  "deterministic": "présence du bloc de transcription / audiodescription",
+  "holo": "pré-tri : transcription vs contenu textuel du média",
+  "human_residual": "vérifier fidélité au contenu"
+ },
+ {
+  "criterion_id": "4.3",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "video-caption",
+   "audio-caption"
+  ],
+  "deterministic": "<track kind=captions|subtitles> présent, WebVTT valide",
+  "holo": "sous-titres des players embarqués (vision frame)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.4",
+  "primary": "Human",
+  "axe_rules": [],
+  "deterministic": "présence piste de sous-titres",
+  "holo": "alignement texte/frames échantillonnées",
+  "human_residual": "synchronisation et pertinence à l’écoute"
+ },
+ {
+  "criterion_id": "4.5",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "<track kind=descriptions>, piste audio AD, version alternative",
+  "holo": "vision : scènes riches en information visuelle",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.6",
+  "primary": "Human",
+  "axe_rules": [],
+  "deterministic": "présence audiodescription",
+  "holo": "pré-tri",
+  "human_residual": "pertinence et synchro à l’écoute"
+ },
+ {
+  "criterion_id": "4.7",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "média identifié par légende/titre adjacent",
+  "holo": "pertinence de l’identification",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.8",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "alternative au média non temporel (<object>, <canvas>, SVG animé) : lien/texte",
+  "holo": "pertinence de l’alternative",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.9",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "alternative résolue",
+  "holo": "pertinence vs média",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.10",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "no-autoplay-audio"
+  ],
+  "deterministic": "autoplay sans muted, durée > 3 s, contrôle de volume/pause",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.11",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "controls, boutons lecture/pause/stop/volume atteignables au clavier (Playwright)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.12",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "média non temporel contrôlable clavier/pointeur (Playwright)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "4.13",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "attributs ARIA des lecteurs (nom, rôle, état) via arbre d’accessibilité",
+  "holo": "compatibilité AT sur players custom",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.1",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "détection tableau de données complexe (colspan/rowspan imbriqués, > 2 niveaux d’en-têtes) + résumé",
+  "holo": "confirme la complexité",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.2",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "extraction du résumé",
+  "holo": "pertinence vs tableau",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.3",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "table role=presentation/layout détectée",
+  "holo": "linéarisation compréhensible",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.4",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "table-fake-caption"
+  ],
+  "deterministic": "<caption>, aria-labelledby, figcaption rattaché au tableau",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.5",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "extraction du titre",
+  "holo": "pertinence vs tableau",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.6",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "th-has-data-cells",
+   "scope-attr-valid",
+   "td-has-header"
+  ],
+  "deterministic": "<th> sur en-têtes de colonne/ligne",
+  "holo": "en-tête visuellement identifié mais balisé en <td>",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.7",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "td-headers-attr",
+   "th-has-data-cells",
+   "scope-attr-valid",
+   "td-has-header"
+  ],
+  "deterministic": "scope/headers/id corrects, ARIA columnheader/rowheader",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "5.8",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "tableau de mise en forme sans th/caption/summary/headers/scope",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "6.1",
+  "primary": "Holo",
+  "axe_rules": [
+   "identical-links-same-purpose"
+  ],
+  "deterministic": "intitulé + contexte (aria-label, title, parent, cellule) via arbre AX",
+  "holo": "lien explicite hors contexte, liens identiques mêmes cibles",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "6.2",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "link-name"
+  ],
+  "deterministic": "nom accessible non vide (a, role=link)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "7.1",
+  "primary": "Holo",
+  "axe_rules": [
+   "aria-allowed-attr",
+   "aria-valid-attr",
+   "aria-valid-attr-value",
+   "aria-required-attr",
+   "aria-roles",
+   "aria-hidden-focus",
+   "nested-interactive"
+  ],
+  "deterministic": "widgets JS : rôle/nom/état dans l’arbre AX avant/après interaction",
+  "holo": "widget compris par une AT (état annoncé)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "7.2",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "script ayant une alternative (noscript, lien)",
+  "holo": "pertinence de l’alternative",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "7.3",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "scrollable-region-focusable",
+   "tabindex",
+   "nested-interactive",
+   "frame-focusable-content"
+  ],
+  "deterministic": "Playwright : tabulation, Entrée/Espace sur chaque handler, parité clavier/pointeur",
+  "holo": "widgets exotiques (drag & drop)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "7.4",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "Playwright : focus/saisie dans chaque champ → URL, nouvelle fenêtre, focus déplacé ; avertissement présent",
+  "holo": "l’avertissement est-il compréhensible",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "7.5",
+  "primary": "Human",
+  "axe_rules": [
+   "aria-allowed-role"
+  ],
+  "deterministic": "déclenche action, observe régions role=status|alert|log, aria-live, présence du message dans l’AX tree",
+  "holo": "message visible ⇔ annoncé",
+  "human_residual": "vérification lecteur d’écran réelle (NVDA/VO)"
+ },
+ {
+  "criterion_id": "8.1",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "doctype dans le HTML source (HTTP brut)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.2",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "duplicate-id-aria"
+  ],
+  "deterministic": "validateur Nu Html Checker sur le DOM généré (hors règles hors-périmètre RGAA)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.3",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "html-has-lang"
+  ],
+  "deterministic": "lang sur <html>",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.4",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "html-lang-valid",
+   "html-xml-lang-mismatch"
+  ],
+  "deterministic": "code BCP47 valide",
+  "holo": "langue détectée du contenu = langue déclarée",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.5",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "document-title"
+  ],
+  "deterministic": "<title> non vide",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.6",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "title + h1 + contenu",
+  "holo": "pertinence et unicité du titre",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.7",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "détection de langue par segment (cld/lingua) vs lang ancêtre",
+  "holo": "passages courts/ambigus",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.8",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "valid-lang"
+  ],
+  "deterministic": "codes lang des éléments",
+  "holo": "pertinence de la langue annoncée",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.9",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "balises de présentation (b, i, font, center, blink…), tableaux de mise en forme, <br> décoratifs",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "8.10",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "dir/CSS direction, bdo, détection de scripts RTL",
+  "holo": "changement de sens bien signalé",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "9.1",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "heading-order",
+   "empty-heading",
+   "page-has-heading-one"
+  ],
+  "deterministic": "role=heading + aria-level",
+  "holo": "hiérarchie pertinente vs maquette visuelle (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "9.2",
+  "primary": "Holo",
+  "axe_rules": [
+   "landmark-one-main",
+   "region",
+   "landmark-no-duplicate-banner"
+  ],
+  "deterministic": "présence header/nav/main/footer/aside",
+  "holo": "structure cohérente avec la page rendue",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "9.3",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "list",
+   "listitem",
+   "definition-list",
+   "dlitem"
+  ],
+  "deterministic": "faux listes (tirets, <br>, paragraphes consécutifs)",
+  "holo": "confirme les faux positifs",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "9.4",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "<blockquote>/<q> vs guillemets/retraits stylés",
+  "holo": "détecte citations non balisées (sémantique)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.1",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "HTML : attributs de présentation (align, bgcolor, width…), <style> inline, feuilles CSS liées",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.2",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "Playwright : CSS désactivée → comparaison texte visible vs texte rendu",
+  "holo": "disparition de contenu informatif (diff vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.3",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "ordre DOM linéarisé sans CSS",
+  "holo": "ordre compréhensible",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.4",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "meta-viewport"
+  ],
+  "deterministic": "Playwright : zoom texte 200 %, détection clipping/chevauchement/overflow",
+  "holo": "vision : texte lisible",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.5",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "analyse CSS : color et background-color toujours déclarées ensemble",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.6",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "link-in-text-block"
+  ],
+  "deterministic": "distinction visuelle des liens (couleur ≥ 3:1, soulignement)",
+  "holo": "nature du lien non évidente",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.7",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "focus-order-semantics"
+  ],
+  "deterministic": "Playwright : tab sur chaque élément focusable, diff de capture avant/après",
+  "holo": "indicateur de focus perceptible (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.8",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "aria-hidden-focus",
+   "hidden-content"
+  ],
+  "deterministic": "CSS display:none/visibility/hidden/aria-hidden vs intention (texte caché pour AT)",
+  "holo": "contenu masqué à tort",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.9",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "styles calculés (forme/taille/position)",
+  "holo": "information portée uniquement par la forme/position (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.10",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "styles calculés",
+  "holo": "information portée uniquement par la forme/taille/position, sans alternative",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.11",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "meta-viewport",
+   "meta-viewport-large"
+  ],
+  "deterministic": "Playwright : viewport 320×256 px, scrollWidth/scrollHeight, 400 % zoom",
+  "holo": "perte d’information (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.12",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "avoid-inline-spacing"
+  ],
+  "deterministic": "Playwright : injection line-height 1.5 / letter-spacing .12em / word-spacing .16em / paragraph 2em, détection clipping",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.13",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "Playwright : hover/focus, Échap, survol du contenu additionnel, persistance",
+  "holo": "contenu additionnel pertinent",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "10.14",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "CSS :hover/:focus générant du contenu (content, display) + test clavier",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.1",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "label",
+   "select-name",
+   "input-button-name",
+   "form-field-multiple-labels",
+   "aria-input-field-name"
+  ],
+  "deterministic": "label/for, aria-label, aria-labelledby, title (pas seul)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.2",
+  "primary": "Holo",
+  "axe_rules": [
+   "label-content-name-mismatch",
+   "label-title-only"
+  ],
+  "deterministic": "nom accessible vs libellé visible",
+  "holo": "pertinence de l’étiquette",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.3",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "comparaison des étiquettes de champs de même fonction à travers le formulaire",
+  "holo": "même fonction ⇒ même sens",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.4",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "Playwright : bounding boxes label ↔ champ (adjacents, ordre) ",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.5",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "<fieldset>, role=group, aria-labelledby",
+  "holo": "regroupement nécessaire (radios/checkboxes/champs adresse)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.6",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "<legend> / aria-label sur chaque regroupement",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.7",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "extraction légende + champs du groupe",
+  "holo": "légende pertinente",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.8",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "<optgroup label> pour listes longues",
+  "holo": "regroupement logique",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.9",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "button-name",
+   "input-button-name"
+  ],
+  "deterministic": "nom accessible des boutons",
+  "holo": "intitulé pertinent",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.10",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "required/aria-required/pattern, indications de format, messages",
+  "holo": "contrôle de saisie pertinent (formats, champs obligatoires)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.11",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "erreurs de saisie : aria-describedby, aria-invalid, role=alert",
+  "holo": "suggestion de correction utile",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "11.12",
+  "primary": "Human",
+  "axe_rules": [],
+  "deterministic": "détection formulaire transmettant données (méthode POST, paiement, compte)",
+  "holo": "présence d’une étape confirmation/annulation/vérification",
+  "human_residual": "test réel du parcours (écriture en base)"
+ },
+ {
+  "criterion_id": "11.13",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "autocomplete-valid"
+  ],
+  "deterministic": "attribut autocomplete valide, champs de finalité connue (nom, email, adresse…)",
+  "holo": "finalité déduite du libellé",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.1",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "crawler multi-pages : nav + plan du site + moteur de recherche (≥ 2 systèmes)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.2",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "crawler : position/ordre du menu et de la barre de navigation identiques sur les pages de l’ensemble",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.3",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "plan du site détecté et analysé",
+  "holo": "pertinence/exhaustivité du plan du site",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.4",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "crawler : lien « plan du site » présent sur chaque page, même place",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.5",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "crawler : champ de recherche accessible de la même manière sur toutes les pages",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.6",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "landmark-one-main",
+   "region",
+   "landmark-unique",
+   "landmark-banner-is-top-level"
+  ],
+  "deterministic": "landmarks et regroupements communs aux pages, entre pages",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.7",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "bypass",
+   "skip-link"
+  ],
+  "deterministic": "Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.8",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "focus-order-semantics"
+  ],
+  "deterministic": "Playwright : séquence de tabulation vs ordre visuel (coordonnées)",
+  "holo": "ordre cohérent (vision)",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.9",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "Playwright : tabulation N fois, détection de piège (focus bloqué hors modale)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.10",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "accesskeys"
+  ],
+  "deterministic": "analyse JS : keydown/keypress sans modificateur ; raccourcis désactivables",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "12.11",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "Playwright : contenu additionnel au hover/focus atteignable au clavier (ordre DOM)",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.1",
+  "primary": "Human",
+  "axe_rules": [
+   "meta-refresh",
+   "meta-refresh-no-exceptions"
+  ],
+  "deterministic": "meta refresh, setTimeout de redirection/déconnexion, compteurs de session",
+  "holo": "",
+  "human_residual": "cas de limite de temps applicative (session, panier)"
+ },
+ {
+  "criterion_id": "13.2",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "target=_blank, window.open, popups à l’ouverture sans action utilisateur ; Playwright popup events",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.3",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "liens vers .pdf/.doc(x)/.odt/.xls(x)/.ppt(x)/.epub (extension + Content-Type) ; PDF : tags, titre, langue (veraPDF)",
+  "holo": "version accessible disponible/signalée",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.4",
+  "primary": "Human",
+  "axe_rules": [],
+  "deterministic": "détection de la version accessible proposée",
+  "holo": "comparaison texte version accessible vs original",
+  "human_residual": "équivalence d’information"
+ },
+ {
+  "criterion_id": "13.5",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "regex ASCII-art, émoticônes, notations cryptiques",
+  "holo": "détecte les cas non couverts par regex",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.6",
+  "primary": "Holo",
+  "axe_rules": [],
+  "deterministic": "alternative des contenus cryptiques",
+  "holo": "pertinence de l’alternative",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.7",
+  "primary": "Human",
+  "axe_rules": [],
+  "deterministic": "animations CSS/JS rapides ; frames vidéo échantillonnées (3 flashs/s)",
+  "holo": "analyse de luminance par frames",
+  "human_residual": "confirmation d’un flash réel"
+ },
+ {
+  "criterion_id": "13.8",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "blink",
+   "marquee"
+  ],
+  "deterministic": "CSS animation > 5 s, <video autoplay loop>, GIF animé ; bouton pause/stop",
+  "holo": "contrôle atteignable",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.9",
+  "primary": "AxeCore",
+  "axe_rules": [
+   "css-orientation-lock"
+  ],
+  "deterministic": "Playwright : portrait ↔ paysage, contenu/fonctions identiques",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.10",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "JS : pointer events multi-touch/path/drag, touch-action ; alternative à geste simple",
+  "holo": "alternative réellement fonctionnelle",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.11",
+  "primary": "Deterministic",
+  "axe_rules": [
+   "target-size"
+  ],
+  "deterministic": "JS : mousedown/pointerdown/touchstart sans up ; annulation possible",
+  "holo": "",
+  "human_residual": ""
+ },
+ {
+  "criterion_id": "13.12",
+  "primary": "Deterministic",
+  "axe_rules": [],
+  "deterministic": "JS : devicemotion/deviceorientation/accelerometer ; alternative UI",
+  "holo": "alternative équivalente",
+  "human_residual": ""
+ }
+]

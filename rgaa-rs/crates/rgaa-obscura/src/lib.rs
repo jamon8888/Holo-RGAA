@@ -2445,7 +2445,9 @@ mod tests {
         let evidence = vec![rgaa_core::EvidenceRef::new("dom_snapshot", "sha256:x")];
         let findings = findings_from_axe("https://example.test", &payload, &evidence)
             .expect("valid axe payload");
-        assert_eq!(findings.len(), 14);
+        // image-alt decides 1.1 and 1.2 only (two nodes each); it was also mapped to 1.5,
+        // 1.6, 10.2, 10.9 and 13.5, where it decided nothing.
+        assert_eq!(findings.len(), 4);
         assert!(findings.windows(2).all(|pair| pair[0].id <= pair[1].id));
         let finding = findings
             .iter()

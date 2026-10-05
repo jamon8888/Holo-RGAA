@@ -489,6 +489,28 @@ mod tests {
         bundle
     }
 
+    /// A probe `review` carries its reason in `justification` (#262); the per-page
+    /// criteria table must show it so the reader learns why the criterion is open.
+    #[test]
+    fn needs_review_reason_reaches_the_criteria_table() {
+        let mut bundle =
+            AuditBundle::new("audit-3", "https://example.test", AuditConfig::default());
+        let mut review = criterion("12.9", CriterionStatus::NeedsReview);
+        review.justification = Some("gap-fix review: moteur absent: 3 focusable".into());
+        bundle.pages.push(PageAudit {
+            page_id: "p1".into(),
+            url: "https://example.test".into(),
+            title: None,
+            criteria: vec![review],
+            findings: vec![],
+            errors: vec![],
+            completed: true,
+            duration_ms: 0,
+        });
+        let html = generate_html_report(&bundle);
+        assert!(html.contains("moteur absent"));
+    }
+
     #[test]
     fn html_report_contains_audit_id() {
         let bundle = sample_bundle();

@@ -359,20 +359,35 @@ impl GapFixRules {
 
     /// Parse JS execution results into `CriterionResult`s.
     ///
-    /// A snippet that reports a violation always yields `Fail` with the evidence. A
-    /// snippet that reports no violation yields `Pass` **only** where it decides the
-    /// whole criterion — see [`Self::covers_whole_criterion`]. A partial mechanism
-    /// finding nothing proves nothing about the tests it does not cover, so its
-    /// criterion is left out of the results entirely and falls to the pipeline's
-    /// declared fallback, exactly as a partial-coverage axe criterion does (#199,
-    /// #201, #202).
+    /// # Contract
+    ///
+    /// A snippet returns `{pass, details, nodes}` (legacy) and may add two optional
+    /// fields (spec §2, #262):
+    ///
+    /// - `outcome`: `"fail" | "pass" | "review"`. When present it takes precedence
+    ///   over `pass`; when absent the outcome is derived from `pass` exactly as before.
+    /// - `reason`: why a `review` was raised (`moteur absent`, `échantillon
+    ///   insuffisant`…). Carried to the report through the justification and the
+    ///   violation description.
+    ///
+    /// # Outcomes
+    ///
+    /// - `fail` always yields `Fail` with the evidence.
+    /// - `pass` yields `Pass` **only** where the mechanism decides the whole criterion
+    ///   — see [`Self::covers_whole_criterion`]. A partial mechanism finding nothing
+    ///   proves nothing about the tests it does not cover, so its criterion is left
+    ///   out of the results and falls to the pipeline's declared fallback (#199, #201,
+    ///   #202).
+    /// - `review` yields `NeedsReview`, keeping the nodes and details. It makes no
+    ///   verdict, so coverage does not gate it.
+    /// - An unrecognised `outcome` degrades to `review` (never to `Pass`).
     pub fn parse_results(
         js_results: &HashMap<String, serde_json::Value>,
     ) -> HashMap<String, CriterionResult> {
         let mut results = HashMap::new();
 
         for (criterion_id, js_result) in js_results {
-            let pass = js_result
+            let legacy_pass = js_result
                 .get("pass")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
@@ -380,11 +395,76 @@ impl GapFixRules {
                 .get("details")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            let reason = js_result
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .filter(|r| !r.is_empty());
             let nodes = js_result.get("nodes").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
-            if pass && !Self::covers_whole_criterion(criterion_id) {
-                continue;
-            }
+            let (outcome, unknown_outcome) = match js_result.get("outcome") {
+                None | Some(serde_json::Value::Null) => (
+                    if legacy_pass {
+                        ProbeOutcome::Pass
+                    } else {
+                        ProbeOutcome::Fail
+                    },
+                    None,
+                ),
+                Some(value) => match value.as_str() {
+                    Some("fail") => (ProbeOutcome::Fail, None),
+                    Some("pass") => (ProbeOutcome::Pass, None),
+                    Some("review") => (ProbeOutcome::Review, None),
+                    _ => {
+                        tracing::warn!(
+                            criterion_id = %criterion_id,
+                            outcome = %value,
+                            "unknown gap-fix outcome; degrading to review"
+                        );
+                        (ProbeOutcome::Review, Some(value.to_string()))
+                    }
+                },
+            };
+
+            let (status, violations, justification) = match outcome {
+                ProbeOutcome::Pass => {
+                    if !Self::covers_whole_criterion(criterion_id) {
+                        continue;
+                    }
+                    (CriterionStatus::Pass, vec![], None)
+                }
+                ProbeOutcome::Fail => (
+                    CriterionStatus::Fail,
+                    vec![Violation {
+                        rule_id: format!("gap-fix-{criterion_id}"),
+                        impact: "serious".into(),
+                        description: details.to_string(),
+                        nodes_affected: nodes,
+                    }],
+                    Some(format!("gap-fix mechanism: {details}")),
+                ),
+                ProbeOutcome::Review => {
+                    let reason = match (&unknown_outcome, reason) {
+                        (Some(bad), _) => format!("unrecognised outcome {bad}"),
+                        (None, Some(r)) => r.to_string(),
+                        (None, None) => String::new(),
+                    };
+                    let text = match (reason.is_empty(), details.is_empty()) {
+                        (false, false) => format!("{reason}: {details}"),
+                        (false, true) => reason,
+                        (true, _) => details.to_string(),
+                    };
+                    (
+                        CriterionStatus::NeedsReview,
+                        vec![Violation {
+                            rule_id: format!("gap-fix-review-{criterion_id}"),
+                            impact: "review".into(),
+                            description: text.clone(),
+                            nodes_affected: nodes,
+                        }],
+                        Some(format!("gap-fix review: {text}")),
+                    )
+                }
+            };
 
             results.insert(
                 criterion_id.clone(),
@@ -392,27 +472,10 @@ impl GapFixRules {
                     criterion_id: criterion_id.clone(),
                     title: String::new(),
                     classification: Classification::Deterministe,
-                    status: if pass {
-                        CriterionStatus::Pass
-                    } else {
-                        CriterionStatus::Fail
-                    },
-                    violations: if pass {
-                        vec![]
-                    } else {
-                        vec![Violation {
-                            rule_id: format!("gap-fix-{criterion_id}"),
-                            impact: "serious".into(),
-                            description: details.to_string(),
-                            nodes_affected: nodes,
-                        }]
-                    },
+                    status,
+                    violations,
                     confidence: None,
-                    justification: if pass {
-                        None
-                    } else {
-                        Some(format!("gap-fix mechanism: {details}"))
-                    },
+                    justification,
                     source: "gap-fix".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
@@ -423,6 +486,14 @@ impl GapFixRules {
 
         results
     }
+}
+
+/// The three outcomes a probe can report (spec §2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeOutcome {
+    Fail,
+    Pass,
+    Review,
 }
 
 #[cfg(test)]
@@ -564,5 +635,103 @@ mod tests {
             orphans.is_empty(),
             "declared complete-coverage criteria with no snippet: {orphans:?}"
         );
+    }
+
+    // --- Three-outcome contract (#262, spec §2) ---------------------------------
+
+    /// `review` keeps the probe's attachments and lands the criterion in
+    /// `needs_review`, with the reason carried in both the justification (HTML
+    /// report) and the violation description (SARIF/JUnit findings).
+    #[test]
+    fn a_review_outcome_keeps_its_attachments_and_needs_review() {
+        let result = parse_one(
+            "12.9",
+            json!({"outcome": "review", "reason": "moteur absent", "details": "3 focusable", "nodes": 3}),
+        )
+        .expect("a review outcome must produce a result");
+
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert_eq!(result.source, "gap-fix");
+        assert_eq!(result.violations.len(), 1);
+        assert_eq!(result.violations[0].nodes_affected, 3);
+        assert!(result.violations[0].description.contains("moteur absent"));
+        assert!(result.violations[0].description.contains("3 focusable"));
+        let justification = result
+            .justification
+            .expect("review carries a justification");
+        assert!(justification.contains("moteur absent"));
+        assert!(justification.contains("3 focusable"));
+    }
+
+    /// A review without a reason still reviews; it just has no reason to show.
+    #[test]
+    fn a_review_without_reason_still_needs_review() {
+        let result = parse_one(
+            "12.9",
+            json!({"outcome": "review", "details": "x", "nodes": 1}),
+        )
+        .expect("result");
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert!(result.justification.is_some_and(|j| j.contains('x')));
+    }
+
+    /// `review` is allowed for partial and complete mechanisms alike: it makes no
+    /// verdict, so coverage does not gate it.
+    #[test]
+    fn review_is_not_gated_by_coverage() {
+        for id in ["2.1", "99.99"] {
+            let result = parse_one(id, json!({"outcome": "review", "reason": "r"}))
+                .expect("review always yields a result");
+            assert_eq!(result.status, CriterionStatus::NeedsReview);
+        }
+    }
+
+    /// An explicit `fail` outcome behaves exactly like `pass: false`.
+    #[test]
+    fn an_explicit_fail_outcome_fails() {
+        let result = parse_one(
+            "11.5",
+            json!({"outcome": "fail", "details": "2 bad", "nodes": 2}),
+        )
+        .expect("result");
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(result.violations[0].nodes_affected, 2);
+    }
+
+    /// An explicit `pass` outcome from a partial mechanism is ignored, like
+    /// `pass: true`; from a complete one it passes.
+    #[test]
+    fn an_explicit_pass_outcome_obeys_coverage() {
+        assert!(parse_one("11.5", json!({"outcome": "pass"})).is_none());
+        let result = parse_one("2.1", json!({"outcome": "pass"})).expect("complete passes");
+        assert_eq!(result.status, CriterionStatus::Pass);
+    }
+
+    /// The outcome wins over a contradictory legacy `pass` flag.
+    #[test]
+    fn outcome_takes_precedence_over_the_pass_flag() {
+        let result = parse_one(
+            "2.1",
+            json!({"outcome": "review", "pass": true, "reason": "r"}),
+        )
+        .expect("result");
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+    }
+
+    /// An unrecognised outcome must never read as conformance: it becomes a review
+    /// that names the bad value.
+    #[test]
+    fn an_unknown_outcome_degrades_to_review() {
+        let result = parse_one("2.1", json!({"outcome": "maybe", "pass": true})).expect("result");
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert!(result.justification.is_some_and(|j| j.contains("maybe")));
+    }
+
+    /// Legacy snippets (no `outcome`) are untouched.
+    #[test]
+    fn legacy_contract_is_unchanged() {
+        let fail = parse_one("2.1", json!({"pass": false, "details": "d", "nodes": 4})).expect("r");
+        assert_eq!(fail.status, CriterionStatus::Fail);
+        assert_eq!(fail.justification.as_deref(), Some("gap-fix mechanism: d"));
     }
 }

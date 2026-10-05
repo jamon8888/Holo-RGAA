@@ -4,8 +4,8 @@ use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::catalog::Automatable;
 use rgaa_core::na_detection;
 use rgaa_core::{
-    AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
-    RgaaCatalog, RgaaCriteria,
+    AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, EnginePlan,
+    PageResult, PlanEngine, RgaaCatalog, RgaaCriteria,
 };
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
@@ -405,14 +405,22 @@ async fn audit_discovered_urls(
         return Err("no pages to audit".to_string());
     }
 
-    let mut batch_results = orchestrator.run_batch(&urls, config).await?;
-
-    if batch_results.is_empty() {
-        return Err(format!(
-            "audit failed for all {} discovered page(s); see warnings above for per-page errors",
-            urls.len()
-        ));
-    }
+    let failures = Arc::new(std::sync::Mutex::new(HashMap::<String, String>::new()));
+    let observed_failures = Arc::clone(&failures);
+    let observer: BatchObserver = Arc::new(move |page_url, outcome| {
+        if let Err(error) = outcome {
+            if let Ok(mut failures) = observed_failures.lock() {
+                failures.insert(page_url.to_string(), error.to_string());
+            }
+        }
+    });
+    let mut batch_results = orchestrator
+        .run_batch_observed(&urls, config, observer)
+        .await?;
+    let failures = failures
+        .lock()
+        .map(|failures| failures.clone())
+        .unwrap_or_default();
 
     // Extract PageResults in the caller's requested order — run_batch
     // returns a HashMap, whose iteration order is arbitrary and would
@@ -422,6 +430,13 @@ async fn audit_discovered_urls(
     for page_url in &urls {
         if let Some(audit) = batch_results.remove(page_url) {
             all_pages.extend(audit.pages);
+        } else if let Some(error) = failures.get(page_url) {
+            all_pages.push(failed_page_result(page_url, error));
+        } else {
+            all_pages.push(failed_page_result(
+                page_url,
+                "audit did not return a result or an error callback",
+            ));
         }
     }
 
@@ -465,6 +480,114 @@ async fn audit_discovered_urls(
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
     })
+}
+
+fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
+    let settled: std::collections::HashSet<&str> = prior_results
+        .iter()
+        .filter(|result| {
+            matches!(
+                result.status,
+                CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+            )
+        })
+        .map(|result| result.criterion_id.as_str())
+        .collect();
+
+    RgaaCriteria::all()
+        .iter()
+        .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
+        .filter(|criterion| !settled.contains(criterion.id))
+        .cloned()
+        .collect()
+}
+
+fn failed_page_result(url: &str, error: &str) -> PageResult {
+    let criteria = RgaaCriteria::all()
+        .into_iter()
+        .map(|criterion| CriterionResult {
+            criterion_id: criterion.id.to_string(),
+            title: criterion.title.to_string(),
+            classification: criterion.classification,
+            status: CriterionStatus::NotTested,
+            violations: vec![],
+            confidence: None,
+            justification: Some(format!("Page audit failed: {error}")),
+            source: "audit-error".to_string(),
+            citations: vec![],
+            considered_sources: vec![],
+            tests: vec![],
+        })
+        .collect();
+    PageResult {
+        url: url.to_string(),
+        title: None,
+        criteria,
+        compliance_rate: 0.0,
+        crawl_depth: 0,
+    }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+    use rgaa_core::types::Violation;
+
+    fn deterministic_result(
+        criterion_id: &str,
+        status: CriterionStatus,
+        source: &str,
+    ) -> CriterionResult {
+        let criterion = RgaaCriteria::find(criterion_id).expect("criterion exists");
+        CriterionResult {
+            criterion_id: criterion_id.to_string(),
+            title: criterion.title.clone(),
+            classification: criterion.classification,
+            status,
+            violations: Vec::<Violation>::new(),
+            confidence: None,
+            justification: None,
+            source: source.to_string(),
+            citations: vec![],
+            considered_sources: vec![],
+            tests: vec![],
+        }
+    }
+
+    #[test]
+    fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
+        let determined = [deterministic_result(
+            "1.2",
+            CriterionStatus::Fail,
+            "axe-core",
+        )];
+
+        let candidates = select_holo_candidates(&determined);
+        let ids: std::collections::HashSet<&str> =
+            candidates.iter().map(|criterion| criterion.id).collect();
+
+        assert_eq!(candidates.len(), 31);
+        assert_eq!(ids.len(), candidates.len());
+        assert!(!ids.contains("1.2"));
+        assert!(ids.contains("3.1"));
+        assert!(!ids.contains("4.2"));
+    }
+
+    #[test]
+    fn failed_page_is_retained_with_every_criterion_not_tested() {
+        let page = failed_page_result("https://example.test/forms", "navigation timed out");
+
+        assert_eq!(page.url, "https://example.test/forms");
+        assert_eq!(page.criteria.len(), 106);
+        assert!(page.criteria.iter().all(|criterion| {
+            criterion.status == CriterionStatus::NotTested
+                && criterion.source == "audit-error"
+                && criterion
+                    .justification
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("navigation timed out"))
+        }));
+    }
 }
 
 /// Discover RGAA mandatory 7 sample pages.
@@ -748,41 +871,31 @@ async fn audit_one(
         format!("malformed page context for {url}: {e}")
     })?;
 
-    // 4. Run agentic evaluation for all IA_ASSISTE criteria
+    // 4. Route only the criteria owned by Holo in the audited EnginePlan.
+    // Axe and deterministic evidence already available for this page suppress
+    // a Holo request when it produced a conclusive result.
     on_phase(AuditPhase::AgentIaAssiste);
-    let ia_criteria = RgaaCriteria::ia_assiste();
+    let prior_results: Vec<CriterionResult> = axe_results
+        .values()
+        .chain(gap_results.values())
+        .cloned()
+        .collect();
+    let holo_criteria = select_holo_candidates(&prior_results);
     info!(
-        criteria = ia_criteria.len(),
-        "Running agentic IA_ASSISTE evaluation"
+        criteria = holo_criteria.len(),
+        "Running one deduplicated Holo batch pipeline for Holo-owned criteria"
     );
 
-    // The list itself is built once per process; `run_ia_assiste` consumes an
-    // owned `Vec`, so only that hand-off copies it.
     let agent_results = agent
         .clone()
-        .run_ia_assiste(ia_criteria.to_vec(), page_context.clone())
+        .run_ia_assiste(holo_criteria, page_context.clone())
         .await;
 
-    let mut holo_results = HashMap::new();
-    for (criterion_id, result) in agent_results {
-        holo_results.insert(criterion_id, result);
-    }
+    let holo_results = agent_results;
 
-    // 4b. Run agentic evaluation for PartiallyAutomatable criteria
+    // Retain the progress event for consumers expecting six ordered phases;
+    // this is bookkeeping only and intentionally issues no second Holo call.
     on_phase(AuditPhase::AgentPartial);
-    let partial_criteria = RgaaCriteria::partiellement_automatique();
-    info!(
-        criteria = partial_criteria.len(),
-        "Running agentic PartiallyAutomatable evaluation"
-    );
-
-    let partial_results = agent
-        .clone()
-        .run_partially_automatable(partial_criteria.to_vec(), page_context.clone())
-        .await;
-    for (criterion_id, result) in partial_results {
-        holo_results.insert(criterion_id, result);
-    }
 
     // 5. Merge results
     //

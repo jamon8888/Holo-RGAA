@@ -55,6 +55,101 @@ struct BatchEvaluationResponse {
     justification: String,
 }
 
+/// Maps one batch reply onto exactly the requested criteria. Missing or
+/// duplicated IDs are unresolved; they must never trigger another Holo call.
+fn map_batch_responses(
+    criteria: &[Criterion],
+    responses: &[BatchEvaluationResponse],
+) -> HashMap<String, CriterionResult> {
+    let requested: std::collections::HashSet<&str> =
+        criteria.iter().map(|criterion| criterion.id).collect();
+    let mut by_id: HashMap<&str, &BatchEvaluationResponse> = HashMap::new();
+    let mut duplicated = std::collections::HashSet::new();
+
+    for response in responses {
+        let id = response.criterion_id.trim();
+        if !requested.contains(id) {
+            continue;
+        }
+        if by_id.insert(id, response).is_some() {
+            duplicated.insert(id);
+        }
+    }
+
+    let mut results = HashMap::with_capacity(criteria.len());
+    for criterion in criteria {
+        let response = by_id
+            .get(criterion.id)
+            .copied()
+            .filter(|_| !duplicated.contains(criterion.id));
+        let result = if let Some(response) = response {
+            let verdict = map_verdict(&HoloResponse {
+                verdict: response.verdict.clone(),
+                confidence: response.confidence,
+                justification: response.justification.clone(),
+            });
+            CriterionResult {
+                criterion_id: criterion.id.to_string(),
+                title: criterion.title.to_string(),
+                classification: criterion.classification,
+                status: verdict,
+                violations: vec![],
+                confidence: Some(response.confidence),
+                justification: Some(response.justification.clone()),
+                source: "agent-batch".to_string(),
+                citations: vec![],
+                considered_sources: vec![],
+                tests: vec![],
+            }
+        } else {
+            CriterionResult {
+                criterion_id: criterion.id.to_string(),
+                title: criterion.title.to_string(),
+                classification: criterion.classification,
+                status: CriterionStatus::NeedsReview,
+                violations: vec![],
+                confidence: None,
+                justification: Some(
+                    "Holo batch response has no unique answer for this criterion".to_string(),
+                ),
+                source: "agent-batch-incomplete".to_string(),
+                citations: vec![],
+                considered_sources: vec![],
+                tests: vec![],
+            }
+        };
+        results.insert(criterion.id.to_string(), result);
+    }
+    results
+}
+
+fn unresolved_batch_results(
+    criteria: &[Criterion],
+    reason: &str,
+) -> HashMap<String, CriterionResult> {
+    criteria
+        .iter()
+        .map(|criterion| {
+            (
+                criterion.id.to_string(),
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification,
+                    status: CriterionStatus::NotTested,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(reason.to_string()),
+                    source: "agent-error".to_string(),
+                    citations: vec![],
+                    considered_sources: vec![],
+                    tests: vec![],
+                },
+            )
+        })
+        .collect()
+}
+
 /// Extracts the outermost JSON array from `text`.
 ///
 /// Models routinely wrap the array in a ```json fence or a sentence of prose,
@@ -502,7 +597,7 @@ impl RgaaAgent {
         // ever tripped it, so other callers kept hammering it.
         if self.breaker_open() {
             tracing::warn!(criteria = ?criterion_ids, "circuit breaker open; skipping batch call");
-            return self.evaluate_individually(criteria, rendered_context).await;
+            return unresolved_batch_results(&criteria, "Holo circuit breaker is open");
         }
 
         // Rate limit
@@ -523,8 +618,10 @@ impl RgaaAgent {
                     tracing::warn!(consecutive_failures = failures, "circuit breaker tripped");
                 }
                 tracing::warn!(criteria = ?criterion_ids, error = %e, "batch evaluation failed");
-                // Fall back to individual evaluation on error
-                return self.evaluate_individually(criteria, rendered_context).await;
+                return unresolved_batch_results(
+                    &criteria,
+                    &format!("Holo batch call failed: {e}"),
+                );
             }
         };
 
@@ -536,98 +633,18 @@ impl RgaaAgent {
             .or_else(|| serde_json::from_str(&response).ok())
             .unwrap_or_default();
 
-        let mut by_id: HashMap<&str, &BatchEvaluationResponse> = HashMap::new();
-        let mut duplicated: Vec<&str> = Vec::new();
-        for r in &batch_responses {
-            let id = r.criterion_id.trim();
-            if id.is_empty() {
-                continue;
-            }
-            if by_id.insert(id, r).is_some() {
-                // Two results for one criterion: neither can be trusted, so
-                // the criterion goes to the individual path below.
-                duplicated.push(id);
-            }
-        }
-        for id in duplicated {
-            by_id.remove(id);
-        }
-
-        // Map responses to results
-        let mut results = HashMap::new();
-        let mut unmatched: Vec<Criterion> = Vec::new();
-        for criterion in &criteria {
-            let Some(response) = by_id.get(criterion.id) else {
-                // No usable result for this criterion. Evaluating it on its own
-                // is the only honest option — defaulting it to "na" would
-                // record a verdict the model never gave.
-                unmatched.push(criterion.clone());
-                continue;
-            };
-
-            let status = map_verdict(&HoloResponse {
-                verdict: response.verdict.clone(),
-                confidence: response.confidence,
-                justification: response.justification.clone(),
-            });
-
-            results.insert(
-                criterion.id.to_string(),
-                CriterionResult {
-                    criterion_id: criterion.id.to_string(),
-                    title: criterion.title.clone(),
-                    classification: criterion.classification,
-                    status,
-                    violations: vec![],
-                    confidence: Some(response.confidence),
-                    justification: Some(response.justification.clone()),
-                    source: "agent-batch".to_string(),
-                    citations: vec![],
-                    considered_sources: vec![],
-                    tests: vec![],
-                },
-            );
-        }
-
-        if !unmatched.is_empty() {
+        let results = map_batch_responses(&criteria, &batch_responses);
+        let incomplete = results
+            .values()
+            .filter(|result| result.source == "agent-batch-incomplete")
+            .count();
+        if incomplete > 0 {
             tracing::warn!(
-                missing = unmatched.len(),
+                missing_or_ambiguous = incomplete,
                 of = criteria.len(),
-                "batch response did not cover every criterion; evaluating the rest individually"
+                "Holo batch response was incomplete; unresolved criteria need review"
             );
-            let fallback = self
-                .evaluate_individually(unmatched, rendered_context)
-                .await;
-            results.extend(fallback);
         }
-
-        results
-    }
-
-    /// Fallback: evaluate criteria individually when batch fails
-    async fn evaluate_individually(
-        self: std::sync::Arc<Self>,
-        criteria: Vec<Criterion>,
-        rendered_context: Arc<String>,
-    ) -> HashMap<String, CriterionResult> {
-        use futures::stream::{self, StreamExt};
-
-        let results = stream::iter(criteria)
-            .map(|criterion| {
-                let self_ = self.clone();
-                let rendered_context = rendered_context.clone();
-                let criterion_id = criterion.id;
-                async move {
-                    let result = self_
-                        .evaluate_criterion_rendered(&criterion, &rendered_context)
-                        .await;
-                    (criterion_id.to_string(), result)
-                }
-            })
-            .buffer_unordered(1) // Sequential for fallback
-            .collect::<HashMap<_, _>>()
-            .await;
-
         results
     }
 
@@ -834,5 +851,49 @@ mod batch_tests {
         // what stops a batch from being billed and answered on the wrong one.
         assert_eq!(tier_for("3.1"), ModelTier::Reasoning);
         assert_eq!(tier_for("1.1"), ModelTier::Tactical);
+    }
+
+    #[test]
+    fn missing_batch_answers_become_review_results_without_individual_fallback() {
+        let criteria = [
+            rgaa_core::RgaaCriteria::find("1.1")
+                .expect("1.1 is in the catalog")
+                .clone(),
+            rgaa_core::RgaaCriteria::find("3.1")
+                .expect("3.1 is in the catalog")
+                .clone(),
+        ];
+        let responses = parse(
+            r#"[{"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"alt présent"}]"#,
+        );
+
+        let results = map_batch_responses(&criteria, &responses);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results["1.1"].status, CriterionStatus::Pass);
+        assert_eq!(results["3.1"].status, CriterionStatus::NeedsReview);
+        assert_eq!(results["3.1"].source, "agent-batch-incomplete");
+        assert!(results["3.1"]
+            .justification
+            .as_deref()
+            .is_some_and(|reason| reason.contains("no unique answer")));
+    }
+
+    #[test]
+    fn duplicate_batch_answers_are_unresolved_instead_of_retried_individually() {
+        let criteria = [rgaa_core::RgaaCriteria::find("1.1")
+            .expect("1.1 is in the catalog")
+            .clone()];
+        let responses = parse(
+            r#"[
+                {"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"first"},
+                {"criterion_id":"1.1","verdict":"fail","confidence":0.9,"justification":"second"}
+            ]"#,
+        );
+
+        let results = map_batch_responses(&criteria, &responses);
+
+        assert_eq!(results["1.1"].status, CriterionStatus::NeedsReview);
+        assert_eq!(results["1.1"].source, "agent-batch-incomplete");
     }
 }

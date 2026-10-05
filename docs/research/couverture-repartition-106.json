@@ -24,7 +24,7 @@
    "theme": "Images",
    "tests": 6,
    "title": "Chaque image de décoration est-elle correctement ignorée par les technologies d’assistance ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "image-redundant-alt",
     "presentation-role-conflict"
@@ -281,7 +281,7 @@
    "theme": "Multimédia",
    "tests": 1,
    "title": "Chaque son déclenché automatiquement est-il contrôlable par l’utilisateur ?",
-   "primary": "A",
+   "primary": "D",
    "axe_rules": [
     "no-autoplay-audio"
    ],
@@ -360,7 +360,7 @@
    "theme": "Tableaux",
    "tests": 1,
    "title": "Pour chaque tableau de données ayant un titre, le titre est-il correctement associé au tableau de données ?",
-   "primary": "A",
+   "primary": "D",
    "axe_rules": [
     "table-fake-caption"
    ],
@@ -384,7 +384,7 @@
    "theme": "Tableaux",
    "tests": 4,
    "title": "Pour chaque tableau de données, chaque en-tête de colonne et chaque en-tête de ligne sont-ils correctement déclarés ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "th-has-data-cells",
     "scope-attr-valid",
@@ -559,7 +559,7 @@
    "theme": "Éléments obligatoires",
    "tests": 1,
    "title": "Pour chaque page web ayant une langue par défaut, le code de langue est-il pertinent ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "html-lang-valid",
     "html-xml-lang-mismatch"
@@ -608,7 +608,7 @@
    "theme": "Éléments obligatoires",
    "tests": 1,
    "title": "Dans chaque page web, le code de langue de chaque changement de langue est-il valide et pertinent ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "valid-lang"
    ],
@@ -643,7 +643,7 @@
    "theme": "Structuration de l’information",
    "tests": 3,
    "title": "Dans chaque page web, l’information est-elle structurée par l’utilisation appropriée de titres ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "heading-order",
     "empty-heading",
@@ -965,7 +965,7 @@
    "theme": "Formulaires",
    "tests": 2,
    "title": "Dans chaque formulaire, l’intitulé de chaque bouton est-il pertinent (hors cas particuliers) ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "button-name",
     "input-button-name"
@@ -1012,7 +1012,7 @@
    "theme": "Formulaires",
    "tests": 1,
    "title": "La finalité d’un champ de saisie peut-elle être déduite pour faciliter le remplissage automatique des champs avec les données de l’utilisateur ?",
-   "primary": "A",
+   "primary": "H",
    "axe_rules": [
     "autocomplete-valid"
    ],
@@ -1080,7 +1080,7 @@
    "theme": "Navigation",
    "tests": 1,
    "title": "Les zones de regroupement de contenus présentes dans plusieurs pages web (zones d’en-tête, de navigation principale, de contenu principal, de pied de page et de moteur de recherche) peuvent-elles être atteintes ou évitées ?",
-   "primary": "A",
+   "primary": "D",
    "axe_rules": [
     "landmark-one-main",
     "region",
@@ -1238,7 +1238,7 @@
    "theme": "Consultation",
    "tests": 2,
    "title": "Dans chaque page web, chaque contenu en mouvement ou clignotant est-il contrôlable par l’utilisateur ?",
-   "primary": "A",
+   "primary": "D",
    "axe_rules": [
     "blink",
     "marquee"
@@ -1252,7 +1252,7 @@
    "theme": "Consultation",
    "tests": 1,
    "title": "Dans chaque page web, le contenu proposé est-il consultable quelle que soit l’orientation de l’écran (portrait ou paysage) (hors cas particuliers) ?",
-   "primary": "A",
+   "primary": "D",
    "axe_rules": [
     "css-orientation-lock"
    ],

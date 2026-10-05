@@ -16,7 +16,7 @@
  },
  {
   "criterion_id": "1.2",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "image-redundant-alt",
    "presentation-role-conflict"
@@ -207,7 +207,7 @@
  },
  {
   "criterion_id": "4.10",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "no-autoplay-audio"
   ],
@@ -265,7 +265,7 @@
  },
  {
   "criterion_id": "5.4",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "table-fake-caption"
   ],
@@ -283,7 +283,7 @@
  },
  {
   "criterion_id": "5.6",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "th-has-data-cells",
    "scope-attr-valid",
@@ -419,7 +419,7 @@
  },
  {
   "criterion_id": "8.4",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "html-lang-valid",
    "html-xml-lang-mismatch"
@@ -456,7 +456,7 @@
  },
  {
   "criterion_id": "8.8",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "valid-lang"
   ],
@@ -482,7 +482,7 @@
  },
  {
   "criterion_id": "9.1",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "heading-order",
    "empty-heading",
@@ -726,7 +726,7 @@
  },
  {
   "criterion_id": "11.9",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "button-name",
    "input-button-name"
@@ -761,7 +761,7 @@
  },
  {
   "criterion_id": "11.13",
-  "primary": "AxeCore",
+  "primary": "Holo",
   "axe_rules": [
    "autocomplete-valid"
   ],
@@ -811,7 +811,7 @@
  },
  {
   "criterion_id": "12.6",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "landmark-one-main",
    "region",
@@ -930,7 +930,7 @@
  },
  {
   "criterion_id": "13.8",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "blink",
    "marquee"
@@ -941,7 +941,7 @@
  },
  {
   "criterion_id": "13.9",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "css-orientation-lock"
   ],

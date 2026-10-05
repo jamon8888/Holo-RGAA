@@ -95,6 +95,22 @@ mod tests {
         assert_eq!(EnginePlan::owned_by(PlanEngine::Human).len(), 8);
     }
 
+    /// axe-core may only own a criterion it decides completely: with partial coverage its
+    /// silence proves nothing, so the verdict must belong to a deterministic probe or Holo.
+    #[test]
+    fn axe_owns_only_criteria_it_covers_completely() {
+        let registry = crate::MechanismRegistry::builtin();
+        for id in EnginePlan::owned_by(PlanEngine::AxeCore) {
+            let covered = registry
+                .axe_for(id)
+                .is_some_and(|m| m.coverage == crate::catalog::AxeCoverage::Complete);
+            assert!(
+                covered,
+                "{id} is owned by axe-core without complete axe coverage"
+            );
+        }
+    }
+
     #[test]
     fn axe_owned_criteria_name_axe_rules() {
         for id in EnginePlan::owned_by(PlanEngine::AxeCore) {

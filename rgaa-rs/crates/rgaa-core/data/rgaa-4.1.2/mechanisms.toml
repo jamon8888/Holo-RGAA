@@ -30,39 +30,13 @@ id        = "axe-1-2"
 criterion = "1.2"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
+coverage  = "partial"
 tests     = []
-outcomes  = ["fail", "pass"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["image-alt", "image-redundant-alt"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
-
-[[mechanism]]
-id        = "axe-1-5"
-criterion = "1.5"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["image-alt"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 1 axe rules validated" }
-
-[[mechanism]]
-id        = "axe-1-6"
-criterion = "1.6"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["image-alt"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "Invalid rules found: [\"longdesc\"]" }
 
 [[mechanism]]
 id        = "axe-2-1"
@@ -173,9 +147,9 @@ id        = "axe-6-1"
 criterion = "6.1"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
+coverage  = "partial"
 tests     = []
-outcomes  = ["fail", "pass"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["link-name"]
@@ -277,9 +251,9 @@ id        = "axe-9-1"
 criterion = "9.1"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
+coverage  = "partial"
 tests     = []
-outcomes  = ["fail", "pass"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["heading-order", "landmark-one-main", "region", "p-as-heading"]
@@ -299,19 +273,6 @@ axe_rules = ["list", "listitem", "definition-list", "dlitem"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Extends list/listitem with definition-list and dlitem." }
 
 [[mechanism]]
-id        = "axe-10-2"
-criterion = "10.2"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["color-contrast", "image-alt"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
-
-[[mechanism]]
 id        = "axe-10-4"
 criterion = "10.4"
 kind      = "axe-native"
@@ -323,19 +284,6 @@ fixtures  = []
 legacy    = true
 axe_rules = ["meta-viewport"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-viewport catches a viewport blocking zoom, a precondition for 200% text rather than the whole criterion." }
-
-[[mechanism]]
-id        = "axe-10-5"
-criterion = "10.5"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["color-contrast"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 1 axe rules validated" }
 
 [[mechanism]]
 id        = "axe-10-6"
@@ -361,19 +309,6 @@ outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
 axe_rules = ["aria-hidden-focus", "hidden-content"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
-
-[[mechanism]]
-id        = "axe-10-9"
-criterion = "10.9"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["color-contrast", "image-alt"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
 
 [[mechanism]]
@@ -414,19 +349,6 @@ fixtures  = []
 legacy    = true
 axe_rules = ["label-content-name-mismatch"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: label-content-name-mismatch catches a visible label the accessible name contradicts, not label relevance in general." }
-
-[[mechanism]]
-id        = "axe-11-4"
-criterion = "11.4"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["label"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 1 axe rules validated" }
 
 [[mechanism]]
 id        = "axe-11-13"
@@ -472,9 +394,9 @@ id        = "axe-12-6"
 criterion = "12.6"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
+coverage  = "partial"
 tests     = []
-outcomes  = ["fail", "pass"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["landmark-one-main", "region", "bypass"]
@@ -505,45 +427,6 @@ fixtures  = []
 legacy    = true
 axe_rules = ["meta-refresh"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-refresh catches one mechanism out of the criterion's 15 tests on time limits." }
-
-[[mechanism]]
-id        = "axe-13-3"
-criterion = "13.3"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["document-title"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "Invalid rules found: [\"pdf\"]" }
-
-[[mechanism]]
-id        = "axe-13-4"
-criterion = "13.4"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["document-title"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "Invalid rules found: [\"pdf\"]" }
-
-[[mechanism]]
-id        = "axe-13-5"
-criterion = "13.5"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
-fixtures  = []
-legacy    = true
-axe_rules = ["image-alt"]
-provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "Invalid rules found: [\"non-text-content\"]" }
 
 [[mechanism]]
 id        = "axe-13-8"
@@ -735,3 +618,216 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+
+[[mechanism]]
+id        = "probe-8-1"
+criterion = "8.1"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["8.1-doctype-pass", "8.1-doctype-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-8-9"
+criterion = "8.9"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["8.9-presentational-tags-pass", "8.9-presentational-tags-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-8-10"
+criterion = "8.10"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["8.10-reading-direction-pass", "8.10-reading-direction-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-9-4"
+criterion = "9.4"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["9.4-quotation-pass", "9.4-quotation-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-5-1"
+criterion = "5.1"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["5.1-complex-table-summary-pass", "5.1-complex-table-summary-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-5-8"
+criterion = "5.8"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["5.8-layout-table-pass", "5.8-layout-table-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-1"
+criterion = "4.1"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["4.1-media-transcript-pass", "4.1-media-transcript-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-5"
+criterion = "4.5"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["4.5-audio-description-pass", "4.5-audio-description-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-7"
+criterion = "4.7"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["4.7-media-identified-pass", "4.7-media-identified-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-8"
+criterion = "4.8"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["4.8-non-temporal-alternative-pass", "4.8-non-temporal-alternative-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-11"
+criterion = "4.11"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["4.11-media-controls-pass", "4.11-media-controls-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-7-4"
+criterion = "7.4"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["7.4-context-change-pass", "7.4-context-change-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-5"
+criterion = "10.5"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["10.5-css-colors-paired-pass", "10.5-css-colors-paired-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-7"
+criterion = "10.7"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["10.7-focus-outline-pass", "10.7-focus-outline-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-11-6"
+criterion = "11.6"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["11.6-fieldset-legend-pass", "11.6-fieldset-legend-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-2"
+criterion = "13.2"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["13.2-new-window-warning-pass", "13.2-new-window-warning-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-5"
+criterion = "13.5"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["13.5-cryptic-content-pass", "13.5-cryptic-content-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "axe-8-5"
+criterion = "8.5"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "complete"
+tests     = []
+outcomes  = ["fail", "pass"]
+fixtures  = ["8.5-document-title-pass", "8.5-document-title-fail"]
+legacy    = false
+axe_rules = ["document-title"]
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json)", validated_by = "rule id cross-checked against axe_rules.json", validated_at = "2026-10-05", notes = "document-title is tagged RGAA-8.5.1 by axe-core; moved here from 13.3/13.4 where it decided nothing." }
+
+[[mechanism]]
+id        = "axe-11-9"
+criterion = "11.9"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["11.9-button-name-pass", "11.9-button-name-fail"]
+legacy    = false
+axe_rules = ["button-name", "input-button-name"]
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json)", validated_by = "rule id cross-checked against axe_rules.json", validated_at = "2026-10-05", notes = "button-name is tagged RGAA-11.9.1 by axe-core; catches an empty name, not a pertinent one." }

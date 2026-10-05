@@ -31,6 +31,12 @@ rgaa-rs/
     rgaa-cli/             # CLI interface — EMPTY
 ```
 
+### Couverture des 106 critères RGAA
+
+Qui fait quoi (Obscura, axe-core, sondes JS, Holo), comment traiter chaque critère et ce qui reste à faire :
+voir [docs/architecture-audit-106-criteres.md](docs/architecture-audit-106-criteres.md). À lire avant d'ajouter
+ou de modifier un mécanisme (`rgaa-rules`, `mechanisms.toml`).
+
 ### Key Dependencies
 
 - `tokio` (async runtime), `reqwest` (HTTP), `serde`/`serde_json` (serialization)

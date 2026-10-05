@@ -31,6 +31,7 @@ les fixtures exigées et le lot de livraison.
 
 1. **Pas de `Pass` sans preuve.** Un mécanisme qui ne décide pas tous les tests d'un critère ne peut jamais produire `pass`. Son silence laisse le critère au repli du pipeline.
 2. **Trois issues par mécanisme** : `fail` (avec preuve), `pass` (réservé aux mécanismes déclarés `complete`), `review` (indice ciblé pour l'agent ou l'humain, sans verdict). C'est une extension du contrat gap-fix actuel `{pass, details, nodes}`.
+   **`not_applicable` n'est pas une issue de mécanisme** : la décision d'applicabilité reste dans la détection d'applicabilité du pipeline (`na_detection`, calculée avant toute évaluation, carte #180). Un mécanisme dont l'applicabilité est détectable (1.4 CAPTCHA, 11.12 formulaires sensibles, 12.5 moteur de recherche, 13.12 capteurs) émet `review` avec un **indice d'applicabilité** joint (par exemple « aucun moteur de recherche sur l'échantillon »), que la détection d'applicabilité peut consommer ; il n'émet jamais `not_applicable` lui-même.
 3. **Deux niveaux de « couvert »**, comptés séparément :
    - **couvert décisif** : le mécanisme peut émettre `fail`, ou `pass` + `fail` s'il est `complete` ;
    - **orienté** : le mécanisme ne peut émettre que `review`. Il aide l'agent mais ne compte pas dans l'objectif de couverture.
@@ -69,7 +70,10 @@ citées comme verdict de conformité.
 
 ## 4. Plancher de validation d'un nouveau contrôle (ticket *plancher de validation*)
 
-1. **Admission** : un contrôle compte comme « testé » s'il a une fixture conforme **et** une fixture non conforme, et si le mécanisme les classe correctement.
+1. **Admission** : un contrôle compte comme « testé » s'il a une fixture conforme **et** une fixture non conforme, et si le mécanisme les classe correctement. L'issue **attendue** dépend de la classe du mécanisme, et le test de classification la vérifie explicitement :
+   - `complete` : fixture conforme ⇒ `pass` ; fixture non conforme ⇒ `fail` ;
+   - `partial` (décisif) : fixture conforme ⇒ aucun `fail` (le silence n'est jamais un `pass`) ; fixture non conforme ⇒ `fail` ;
+   - `orienté` (`review` seul) : fixture conforme ⇒ ni `fail` ni `review` ; fixture non conforme ⇒ `review` (jamais `fail`).
 2. **Emplacement** : `rgaa-test-corpus/criteria/`, convention de nom existante `{critère}-{slug}-pass|fail`.
 3. **Granularité** : un verdict par critère par défaut. Un mécanisme déclaré `complete` exige **une fixture par test RGAA** (la convention de nom portera le test dans le `slug`, ex. `11.6-t1-fieldset-legend-fail`).
 4. **Sans fixture** : le mécanisme n'est pas branché sur le chemin d'audit ; le critère retombe dans le repli du pipeline. Un test de CI le vérifie à partir du registre (§5).
@@ -131,7 +135,7 @@ Légende. **Mécanisme** : `axe-N` règle axe native non mappée ou ré-attribu�
 | 12.2 | `site` : ordre relatif de la navigation dans le source (la « place » visuelle reste humaine) | Obscura | F,R | partial | B1-L2 | accueil et pages de connexion exclus |
 | 12.3 | `site` : liens du plan du site en `HEAD` ; test 3 intitulé/titre de cible en `R` ; test 1 humain | Obscura | F,R | partial | B1-L2 | détection de la page plan fragile → `R` si introuvable |
 | 12.4 | `data` (→ `partial`) puis `site` | — | F,R | partial | B1-L0, B1-L2 | « atteignable de manière identique » |
-| 12.5 | `site` : moteur de recherche (`[role=search]`, `input[type=search]`) présence, place et ordre dans le source | Obscura | F,R | partial | B1-L2 | `not_applicable` si aucun moteur sur tout l'échantillon |
+| 12.5 | `site` : moteur de recherche (`[role=search]`, `input[type=search]`) présence, place et ordre dans le source | Obscura | F,R | partial | B1-L2 | indice d'applicabilité joint si aucun moteur sur tout l'échantillon (pas de `not_applicable` émis, §2) |
 | 12.8 | `data` : `tabindex` (tabindex positif) rattachée à 12.8 ; `focus-order-semantics` (tag RGAA-12.8.1) y est aussi rattachée mais **inerte** : expérimentale, désactivée par défaut sous axe 4.9.1 | Obscura | R (plafond) | partial | B1-L0 | verdict max « suspect » (`R`), jamais `F` : exige un plafond de verdict par mécanisme dans `AxeMapper` (issue dédiée) ; parcours Tab réel reste hors Obscura |
 | 12.9 | `js-C` : `keydown` Tab annulable sur chaque focusable, puis Échap (prototype) | Obscura | F,R | partial | B1-L1 | détecte les `Fail` seulement ; silence = `needs_review` ; pièges par refocus asynchrone non détectés |
 | 12.10 | `js-S` : listeners clavier globaux (hook `addEventListener`) (v) | Obscura | R | orienté | B1-L3 | conformité non décidable |
@@ -149,7 +153,7 @@ Légende. **Mécanisme** : `axe-N` règle axe native non mappée ou ré-attribu�
 | 13.9 | `js-C` : rendu en deux orientations (`Emulation.setDeviceMetricsOverride`, OK sous Obscura), diff du contenu textuel, `screen.orientation.lock` ; existant `css-orientation-lock` | Obscura | F,R | partial | B1-L1 | le contenu doit rester, pas la présentation |
 | 13.10 | `js-S` : inventaire des widgets à geste | Obscura | R | orienté | B1-L3 | équivalence humaine |
 | 13.11 | `js-S` : handlers `mousedown`/`pointerdown` portant l'action | Obscura | R | orienté | B1-L3 | délégation d'événements : faux négatifs |
-| 13.12 | `js-S` : écoute des capteurs (`devicemotion`, `deviceorientation`, `Accelerometer`) | Obscura | R | orienté | B1-L3 | pas d'usage détecté → `not_applicable` plausible |
+| 13.12 | `js-S` : écoute des capteurs (`devicemotion`, `deviceorientation`, `Accelerometer`) | Obscura | R | orienté | B1-L3 | pas d'usage détecté → indice d'applicabilité joint (pas de `not_applicable` émis, §2) |
 
 ### 7.3 Thème 4 — Multimédia  (lot B2)
 
@@ -217,7 +221,7 @@ Mutualisation : **un inventaire média** (`video`, `audio`, `object`, `embed`, `
 | 11.9 | `data` : `label-content-name-mismatch` rattachée aussi à 11.9 ; `js-S` : noms génériques ou techniques (`btn_3`) en `R` | Obscura | F,R | partial | B4-L0, B4-L1 | pertinence du nom humaine |
 | 11.10 | `js-S` : champ `required` sans indicateur visible, format décrit seulement par `placeholder` (`R`) ; 11.10.3-4 `js-C` : `checkValidity()`/`reportValidity()` **jamais `submit()`** | Obscura | R | orienté | B4-L1, B4-L3 | formulaires de commande/suppression : risque d'effet de bord |
 | 11.11 | `js-S` : `pattern`/`type` sans exemple (11.11.2) ; 11.11.1 `js-C` comme 11.10.3 | Obscura | R | orienté | B4-L1, B4-L3 | message natif localisé : non fiable |
-| 11.12 | `js-S` : applicabilité (formulaire `post` avec `password`/`iban`/`card`, boutons « payer/supprimer ») ; résolution humaine | Obscura | R | orienté | B4-L1 | sert surtout à établir `not_applicable` |
+| 11.12 | `js-S` : applicabilité (formulaire `post` avec `password`/`iban`/`card`, boutons « payer/supprimer ») ; résolution humaine | Obscura | R | orienté | B4-L1 | sert surtout à fournir un indice d'applicabilité (pas de `not_applicable` émis, §2) |
 | 11.13 | `js-S` : champ à finalité utilisateur sans `autocomplete` (`type=email\|tel\|password\|url` et `name` strict en `F`, le reste en `R`) ; existant `autocomplete-valid` | Obscura | F,R | partial | B4-L1 | jeu de motifs WCAG 1.3.5 |
 
 ### 7.6 Thèmes 1, 2, 3 — Images, cadres, couleurs  (lot B5)
@@ -225,7 +229,7 @@ Mutualisation : **un inventaire média** (`video`, `audio`, `object`, `embed`, `
 | Critère | Mécanisme | Moteur | Issues | Couv. | Lot | Remarque |
 |---|---|---|---|---|---|---|
 | 1.3 | `js-S` : défauts manifestes (alt = nom de fichier, générique, longueur > seuil) ; `<canvas>` : enfants et rôle exposé | Obscura | F,R | partial | B5-L1 | ne valide jamais ; seuil de longueur = convention de sonde, à valider |
-| 1.4 | `js-S` : découverte de CAPTCHA (`iframe[src*=recaptcha\|hcaptcha\|turnstile]`, mots-clés) | Obscura | R | orienté | B5-L1 | `not_applicable` seulement avec prudence |
+| 1.4 | `js-S` : découverte de CAPTCHA (`iframe[src*=recaptcha\|hcaptcha\|turnstile]`, mots-clés) | Obscura | R | orienté | B5-L1 | indice d'applicabilité « aucun CAPTCHA détecté », jamais `not_applicable` émis par le mécanisme (§2) |
 | 1.7 | `js-S` : `aria-describedby` résolu et non vide ; `longdesc` joignable (`HEAD`) | Obscura | F,R | partial | B5-L1 | pertinence humaine |
 | 1.8 | `humain` ; supprimer l'entrée `partial` vide | — | R | — | — | §9 (pixels exclus) |
 | 2.2 | `data` : `frame-title-unique` (tag RGAA-2.2.1) mappée sur 2.2 ; `js-S` : titres génériques | Obscura | F,R | partial | B5-L0, B5-L1 | deux iframes jumeaux : prudence |

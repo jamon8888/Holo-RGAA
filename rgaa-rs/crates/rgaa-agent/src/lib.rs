@@ -12,6 +12,7 @@ pub mod agent;
 pub mod config;
 pub mod criteria_defs;
 pub mod error;
+pub mod metrics;
 pub mod prompts;
 pub mod ratelimit;
 pub mod references;

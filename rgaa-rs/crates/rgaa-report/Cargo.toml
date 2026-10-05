@@ -5,6 +5,11 @@ name = "rgaa-report"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Native tagged PDF/UA rendering (spike for #152). Off by default: the Chromium
+# path in `pdf` is unchanged and the default build pulls none of this.
+pdf-native = ["dep:krilla", "dep:rustybuzz"]
+
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
 serde = { workspace = true }
@@ -12,3 +17,7 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
+
+# Pinned exactly: krilla is 0.x and its API is not yet stable (#152).
+krilla = { version = "=0.8.2", optional = true, default-features = false, features = ["simple-text"] }
+rustybuzz = { version = "=0.20.1", optional = true }

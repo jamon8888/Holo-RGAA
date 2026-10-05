@@ -9,5 +9,6 @@
 #
 # `mold` must be on PATH when this applies — CLAUDE.md documents the local
 # machine-wide install; CI installs it via rui314/setup-mold@v1.
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+# Temporarily disabled - mold linker not available in this environment
+# [target.x86_64-unknown-linux-gnu]
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]

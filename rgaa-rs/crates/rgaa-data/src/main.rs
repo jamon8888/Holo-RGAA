@@ -28,9 +28,13 @@ async fn main() -> Result<()> {
     tracing::info!("Validating axe-core → RGAA mapping...");
     let existing_mapping = parse::load_existing_mapping();
     let validated = validate::validate_mapping(&axe_rules, &existing_mapping);
-    let mapping_json = serde_json::to_string_pretty(&validated)?;
-    std::fs::write(out_dir.join("axe_mapping.json"), &mapping_json)?;
-    tracing::info!("Saved {} validated mappings", validated.len());
+    // `axe_mapping.json` is retired: the single mechanism registry
+    // (`mechanisms.toml`) is now the source of truth for axe assignments (#261).
+    // This pass only reports, it no longer overwrites hand-maintained data.
+    tracing::info!(
+        "Validated {} legacy mappings against axe-core (report only; edit mechanisms.toml)",
+        validated.len()
+    );
 
     tracing::info!("Analyzing automatability from criteres.json...");
     let criteres_path = out_dir.join("criteres.json");

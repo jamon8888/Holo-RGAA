@@ -30,14 +30,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash -n claude-plugin/tests/plugin-contract.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # `claude plugin validate --strict` is the authoritative check on the
+      # plugin manifest, the hooks file and the skill/agent/command front
+      # matter — it is what caught `author` as a string and an unquoted
+      # ${CLAUDE_PLUGIN_ROOT} in a hook command, both of which the contract
+      # script's own checks passed. It runs offline and needs no credentials.
+      # Without the CLI the script skips that section, so install it here.
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: bash -n rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
       # Never ran in CI before, which is how the plugin README came to
       # advertise "three tools" for a six-tool server and the install guide
       # came to name `rgaa_analyze` / `rgaa_remediate` / `rgaa_igt` — three
       # tools no server has ever registered. The script now diffs the
       # documented tool names against the ones `rgaa-mcp` registers, so that
       # drift fails here instead of reaching a plugin user.
-      - run: bash claude-plugin/tests/plugin-contract.sh
+      - run: bash rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
   ts-types:
     name: TypeScript types
     runs-on: ubuntu-latest
@@ -363,4 +373,4 @@ jobs:
           HOLO3_BASE_URL: ${{ secrets.HOLO3_BASE_URL }}
           HOLO3_MODEL: ${{ secrets.HOLO3_MODEL }}
           RUSTC_WRAPPER: sccache
-        run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture
+        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification -- --nocapture

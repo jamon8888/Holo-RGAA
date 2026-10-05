@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 const ENGINE_PLAN_JSON: &str = include_str!("../data/rgaa-4.1.2/engine_plan.json");
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
-pub enum Engine {
+pub enum PlanEngine {
     /// axe-core rules decide.
     AxeCore,
     /// In-house DOM/CSS/HTTP checks (Playwright, crawler, linter) decide.
@@ -26,7 +26,7 @@ pub enum Engine {
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnginePlanEntry {
     pub criterion_id: String,
-    pub primary: Engine,
+    pub primary: PlanEngine,
     pub axe_rules: Vec<String>,
     pub deterministic: String,
     pub holo: String,
@@ -53,12 +53,12 @@ impl EnginePlan {
         Self::map().get(id)
     }
 
-    pub fn primary(id: &str) -> Option<Engine> {
+    pub fn primary(id: &str) -> Option<PlanEngine> {
         Self::get(id).map(|e| e.primary)
     }
 
     /// Criterion ids owned by `engine`, in catalog order.
-    pub fn owned_by(engine: Engine) -> Vec<&'static str> {
+    pub fn owned_by(engine: PlanEngine) -> Vec<&'static str> {
         crate::RgaaCriteria::all()
             .iter()
             .filter(|c| Self::primary(c.id) == Some(engine))
@@ -83,21 +83,21 @@ mod tests {
     #[test]
     fn engines_partition_the_catalog() {
         let total: usize = [
-            Engine::AxeCore,
-            Engine::Deterministic,
-            Engine::Holo,
-            Engine::Human,
+            PlanEngine::AxeCore,
+            PlanEngine::Deterministic,
+            PlanEngine::Holo,
+            PlanEngine::Human,
         ]
         .into_iter()
         .map(|e| EnginePlan::owned_by(e).len())
         .sum();
         assert_eq!(total, 106);
-        assert_eq!(EnginePlan::owned_by(Engine::Human).len(), 8);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Human).len(), 8);
     }
 
     #[test]
     fn axe_owned_criteria_name_axe_rules() {
-        for id in EnginePlan::owned_by(Engine::AxeCore) {
+        for id in EnginePlan::owned_by(PlanEngine::AxeCore) {
             assert!(!EnginePlan::get(id).unwrap().axe_rules.is_empty(), "{id}");
         }
     }

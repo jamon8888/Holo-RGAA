@@ -2,7 +2,7 @@
 # install.ps1 — One-command installer for rgaa-rs on Windows (x86_64)
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/jamon8888/Holo-RGAA/main/rgaa-rs/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/rgaa-rs/install.ps1 | iex
 #   .\install.ps1 -Version latest        # bleeding edge (default)
 #   .\install.ps1 -Version v0.1.0        # tagged release
 #   .\install.ps1 -Uninstall             # remove installed files
@@ -93,7 +93,14 @@ try {
 
 # Claude Code plugin
 Write-Step "Installing Claude Code plugin..."
-$PluginDir = "$env:USERPROFILE\.claude\plugins\rgaa-audit"
+$PluginDir = "$env:USERPROFILE\.claude\plugins\rgaa-accessibility"
+# Installs from before the plugin trees were deduplicated put the old
+# `rgaa-audit` copy here; left in place, Claude Code loads both.
+$LegacyPluginDir = "$env:USERPROFILE\.claude\plugins\rgaa-audit"
+if (Test-Path $LegacyPluginDir) {
+    Remove-Item $LegacyPluginDir -Recurse -Force
+    Write-Host "  Removed superseded plugin: $LegacyPluginDir" -ForegroundColor Yellow
+}
 try {
     $pluginTmp = Join-Path $TmpDir "rgaa-plugin-fetch"
     New-Item -ItemType Directory -Force -Path $pluginTmp | Out-Null
@@ -101,10 +108,23 @@ try {
     Invoke-WebRequest -Uri "https://codeload.github.com/${Repo}/tar.gz/${Version}" -OutFile $pluginTarball -UserAgent "rgaa-install"
     tar -xzf $pluginTarball -C $pluginTmp
     $repoRoot = Get-ChildItem -Path $pluginTmp -Directory | Where-Object { $_.Name -like "Holo-RGAA-*" } | Select-Object -First 1
-    if ($repoRoot -and (Test-Path (Join-Path $repoRoot.FullName "claude-plugin"))) {
+    # The canonical tree is rgaa-rs/plugins/rgaa-consultant. A tag from before
+    # the dedup has no such directory, and its claude-plugin/ is still a real
+    # plugin, so that path stays as a fallback.
+    $pluginSource = $null
+    if ($repoRoot) {
+        $canon = Join-Path $repoRoot.FullName "rgaa-rs/plugins/rgaa-consultant"
+        $legacy = Join-Path $repoRoot.FullName "claude-plugin"
+        if (Test-Path $canon) {
+            $pluginSource = $canon
+        } elseif (Test-Path (Join-Path $legacy ".claude-plugin/plugin.json")) {
+            $pluginSource = $legacy
+        }
+    }
+    if ($pluginSource) {
         if (Test-Path $PluginDir) { Remove-Item $PluginDir -Recurse -Force }
         New-Item -ItemType Directory -Force -Path (Split-Path $PluginDir) | Out-Null
-        Copy-Item (Join-Path $repoRoot.FullName "claude-plugin") $PluginDir -Recurse -Force
+        Copy-Item $pluginSource $PluginDir -Recurse -Force
         Write-Host "  Plugin installed: $PluginDir" -ForegroundColor Green
     } else {
         Write-Host "  WARNING: plugin not in tarball; continuing without plugin." -ForegroundColor Yellow

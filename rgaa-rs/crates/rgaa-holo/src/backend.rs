@@ -54,7 +54,7 @@ impl Tier {
 /// unconfigured environment fails closed. A second route is used only as an
 /// opt-in technical fallback ([`Self::Fallback`]) — never activated
 /// implicitly, never a silent default.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BackendConfig {
     /// A single provider route.
     Single(LlmSettings),

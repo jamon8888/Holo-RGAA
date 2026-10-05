@@ -27,13 +27,39 @@ The binaries will be in `target/release/`:
 
 ### 2. Install the Claude Code plugin
 
-```bash
-# Copy the plugin to Claude Code's plugin directory
-cp -r claude-plugin ~/.claude/plugins/rgaa-accessibility
+The plugin lives at `rgaa-rs/plugins/rgaa-consultant/` — that is the only plugin
+tree. The top-level `claude-plugin/` directory this guide used to install from is
+a deprecated pointer: it carries no manifest, and installing it gave you the
+stale `rgaa-audit` 0.1.0 fork instead of `rgaa-accessibility` 2.0.0.
 
-# Or symlink for development
-ln -s $(pwd)/claude-plugin ~/.claude/plugins/rgaa-accessibility
+The repository carries a marketplace manifest (`.claude-plugin/marketplace.json`),
+so the plugin installs through the normal plugin commands:
+
+```bash
+# From GitHub
+claude plugin marketplace add jamon8888/Holo-RGAA
+claude plugin install rgaa-accessibility@holo-rgaa
+
+# Or from this clone, for development
+claude plugin marketplace add ./
+claude plugin install rgaa-accessibility@holo-rgaa
+
+# Or let the installer do it (also removes a stale ~/.claude/plugins/rgaa-audit)
+./install.sh
 ```
+
+If you installed before this change, remove the old copy — otherwise Claude Code
+loads two manifests for the same tools:
+
+```bash
+rm -rf ~/.claude/plugins/rgaa-audit
+```
+
+Check it loaded with `claude plugin details rgaa-accessibility`, or `/plugin`
+inside Claude Code: `rgaa-accessibility` should be listed, with the
+`/audit-site`, `/audit-project` and `/generate-report` commands, four agents and
+two hooks. `claude plugin validate rgaa-rs/plugins/rgaa-consultant` validates the
+tree without installing it.
 
 ### 3. Configure environment
 
@@ -71,14 +97,16 @@ rgaa-cli policy --baseline baseline.json --current current.json
 
 ### MCP Server (Claude Code)
 
-The MCP server provides seven tools for Claude Code. These are the names the
+The MCP server provides nine tools for Claude Code. These are the names the
 server actually registers — call them exactly as written:
 
 - `analyze` - Per-criterion findings for one page, with evidence and justification
 - `audit_url` - Full site audit through the orchestrator; returns a summary (`taux_global`, `etat_conformite`) plus `sampled_page_urls`
 - `get_audit_result` - Retrieve a previously run audit by `audit_id`
+- `lint_static` - Static accessibility lint of HTML/JSX/TSX/Vue source: rule, severity, line/column and a fix hint, against a selectable profile (`rgaa-4.1`, `wcag-2.1-aa`, `section-508`). No browser and no build, so it suits an edit loop — a first pass over source, not a conformance verdict
 - `list_criteria` - The 106 RGAA criteria with id, title, and classification
 - `remediate` - Approval-gated remediation proposals
+- `source_map` - Map a browser finding back to the template that produced it: `source_location` (file, line, column, snippet) per finding. Best-effort literal match over React JSX, Vue SFC, Angular and vanilla HTML; ambiguous findings return in `unmappable` rather than guessed
 - `verify_fix` - Re-verify corrected files against a reference audit (`fixed` / `remaining` / `new` / `unverified`)
 - `igt` - Guided keyboard test (**deprecated**: use `analyze` with `config.igt_tools: ["keyboard"]`)
 
@@ -87,9 +115,13 @@ on the URLs it reports in `sampled_page_urls`.
 
 #### HTTP transport
 
-`rgaa-mcp-http` exposes the same six tools as JSON-RPC over `POST /mcp`, with
-progress events on `GET /mcp/events` (SSE). Cross-origin requests are denied
-unless `RGAA_CORS_ORIGINS` names the allowed origins.
+`rgaa-mcp-http` — equivalently `rgaa mcp-server` — exposes the same nine
+tools as JSON-RPC over `POST /mcp`, with progress events on `GET /mcp/events`
+(SSE). Both endpoints are authorized before a tool runs: a browser origin is
+refused unless `RGAA_CORS_ORIGINS` (or `--cors-origin`) names it, and when
+`RGAA_MCP_TOKEN` (or `--auth-token`) is set every request must present
+`Authorization: Bearer <token>`. `GET /health` stays open. See
+[plugin-integration.md](plugin-integration.md#http-transport).
 
 ### API Server (Remote)
 

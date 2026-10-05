@@ -8,7 +8,7 @@
 use crate::backend::LlmBackend;
 use crate::transport::{ChatTransport, HoloResponse};
 use async_trait::async_trait;
-use rgaa_core::{LlmSettings, RgaaError};
+use rgaa_core::{LlmProvenance, LlmSettings, RgaaError};
 
 /// A backend bound to one resolved provider route.
 #[derive(Debug, Clone)]
@@ -41,8 +41,16 @@ impl ChatBackend {
             model,
             settings.api_key_opt(),
             settings.timeout,
+            settings.params,
         )?;
         Ok(Self { transport })
+    }
+
+    /// The parameters a call through this backend runs with — the same
+    /// [`LlmSettings::params`] the `rig` agent reads, recorded as sent.
+    #[must_use]
+    pub fn provenance(&self) -> LlmProvenance {
+        self.transport.provenance()
     }
 
     /// Full chat-completions URL this backend posts to.
@@ -165,6 +173,129 @@ mod tests {
             "{req}"
         );
         assert!(req.contains("gpt-4o-mini"), "{req}");
+    }
+
+    /// The body of the recorded request, as JSON.
+    fn body_of(raw: &str) -> serde_json::Value {
+        let body = raw
+            .split_once("\r\n\r\n")
+            .map(|(_, b)| b)
+            .unwrap_or_default();
+        serde_json::from_str(body).unwrap_or_else(|e| panic!("body not JSON ({e}): {body}"))
+    }
+
+    const OK_BODY: &str = r#"{"verdict":"pass","confidence":1.0,"justification":"ok"}"#;
+
+    #[tokio::test]
+    async fn a_hosted_route_sends_only_the_four_classic_keys() {
+        // A hosted API rejects body keys it does not know, so nothing beyond
+        // the defaults may appear unless it was configured.
+        let server = spawn_mock_server(OK_BODY);
+        let backend = ChatBackend::new(&settings(&[
+            ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_API_KEY", "k"),
+            ("RGAA_LLM_MODEL", "gpt-4o-mini"),
+        ]))
+        .unwrap()
+        .with_endpoint(server.url());
+        backend.evaluate("p").await.unwrap();
+
+        let body = body_of(&server.last_request());
+        let mut keys: Vec<&str> = body
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["max_tokens", "messages", "model", "temperature"]);
+        assert_eq!(body["temperature"], rgaa_core::DEFAULT_TEMPERATURE);
+        assert_eq!(body["max_tokens"], rgaa_core::DEFAULT_MAX_TOKENS);
+    }
+
+    #[tokio::test]
+    async fn a_self_hosted_route_switches_thinking_off() {
+        // The bug this fixes: thinking tokens are billed against max_tokens,
+        // so the verdict JSON was truncated and every call failed to parse.
+        let server = spawn_mock_server(OK_BODY);
+        let backend = ChatBackend::new(&settings(&[
+            ("RGAA_LLM_PROVIDER", "vllm"),
+            ("RGAA_LLM_BASE_URL", "http://gpu-box:8000/v1"),
+            ("RGAA_LLM_MODEL", "qwen3-8b"),
+        ]))
+        .unwrap()
+        .with_endpoint(server.url());
+        backend.evaluate("p").await.unwrap();
+
+        let body = body_of(&server.last_request());
+        assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(body["think"], false);
+        assert_eq!(body["enable_thinking"], false);
+        assert!(body.get("response_format").is_none());
+    }
+
+    #[tokio::test]
+    async fn response_format_is_sent_when_a_schema_is_asked_for() {
+        let server = spawn_mock_server(OK_BODY);
+        let backend = ChatBackend::new(&settings(&[
+            ("RGAA_LLM_PROVIDER", "vllm"),
+            ("RGAA_LLM_MODEL", "qwen3-8b"),
+            ("RGAA_LLM_RESPONSE_FORMAT", "json_schema"),
+        ]))
+        .unwrap()
+        .with_endpoint(server.url());
+        backend.evaluate("p").await.unwrap();
+
+        let rf = &body_of(&server.last_request())["response_format"];
+        assert_eq!(rf["type"], "json_schema");
+        assert_eq!(rf["json_schema"]["name"], "rgaa_verdict");
+        assert_eq!(
+            rf["json_schema"]["schema"]["required"],
+            serde_json::json!(["verdict", "confidence", "justification"])
+        );
+    }
+
+    #[tokio::test]
+    async fn json_object_mode_is_sent_verbatim() {
+        let server = spawn_mock_server(OK_BODY);
+        let backend = ChatBackend::new(&settings(&[
+            ("RGAA_LLM_PROVIDER", "ollama"),
+            ("RGAA_LLM_MODEL", "qwen3:8b"),
+            ("RGAA_LLM_RESPONSE_FORMAT", "json_object"),
+        ]))
+        .unwrap()
+        .with_endpoint(server.url());
+        backend.evaluate("p").await.unwrap();
+        assert_eq!(
+            body_of(&server.last_request())["response_format"],
+            serde_json::json!({"type": "json_object"})
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_sampling_parameters_reach_the_wire() {
+        let server = spawn_mock_server(OK_BODY);
+        let backend = ChatBackend::new(&settings(&[
+            ("RGAA_LLM_PROVIDER", "vllm"),
+            ("RGAA_LLM_MODEL", "m"),
+            ("RGAA_LLM_TEMPERATURE", "0.0"),
+            ("RGAA_LLM_MAX_TOKENS", "777"),
+        ]))
+        .unwrap()
+        .with_endpoint(server.url());
+        backend.evaluate("p").await.unwrap();
+
+        let body = body_of(&server.last_request());
+        assert_eq!(body["temperature"], 0.0);
+        assert_eq!(body["max_tokens"], 777);
+
+        // …and the same values are what provenance reports.
+        let p = backend.provenance();
+        assert_eq!(p.temperature, 0.0);
+        assert_eq!(p.max_tokens, 777);
+        assert_eq!(p.provider, "vllm");
+        assert_eq!(p.model, "m");
+        assert_eq!(p.enable_thinking, Some(false));
     }
 
     #[tokio::test]

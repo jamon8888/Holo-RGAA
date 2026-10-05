@@ -414,6 +414,14 @@ pub struct NestedAnalyzeResponse {
     pub errors: Vec<PageErrorDto>,
     pub completed: bool,
     pub duration_ms: u64,
+    /// Version string of the browser substrate that produced this result
+    /// (issue #32).
+    ///
+    /// Skipped when the bridge did not report one, so a client written
+    /// against the older shape sees byte-identical payloads and the field is
+    /// purely additive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub obscura_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -430,6 +438,9 @@ pub struct AnalyzeResponseFlat {
     pub errors: Vec<PageErrorDto>,
     pub completed: bool,
     pub duration_ms: u64,
+    /// See [`NestedAnalyzeResponse::obscura_version`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub obscura_version: Option<String>,
 }
 
 impl AnalyzeResponse {
@@ -441,6 +452,7 @@ impl AnalyzeResponse {
             errors: result.errors.into_iter().map(Into::into).collect(),
             completed: result.completed,
             duration_ms: result.duration_ms,
+            obscura_version: result.obscura_version,
         };
         match result.igt {
             Some(igt) => Self::Nested(NestedAnalyzeResponse {
@@ -453,6 +465,7 @@ impl AnalyzeResponse {
                 errors: flat.errors,
                 completed: flat.completed,
                 duration_ms: flat.duration_ms,
+                obscura_version: flat.obscura_version,
             }),
             None => Self::Flat(flat),
         }

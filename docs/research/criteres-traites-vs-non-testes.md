@@ -2,7 +2,7 @@
 
 **TRAITÉ** = le moteur principal du plan est réellement implémenté pour ce critère (règle axe mappée, gap-fix JS, ou évaluation agent Holo). Les mécanismes gap-fix ajoutés pour le plan sont *partiels* : ils prouvent des échecs, jamais une conformité. **NON TESTÉ** = le contrôle prévu n'existe pas encore ; seul un éventuel repli (indiqué) produit un verdict, sinon `needs_review`. **MANUEL** = humain par conception.
 
-Totaux : {'TRAITÉ': 77, 'NON TESTÉ': 21, 'MANUEL': 8}
+Totaux : {'TRAITÉ': 75, 'NON TESTÉ': 23, 'MANUEL': 8} (12.8 et 12.10 : règles axe `tabindex`/`accesskeys` non retenues, voir #263, #272, #279)
 
 | Critère | Moteur prévu | Statut | Moteurs qui tournent aujourd’hui | Intitulé |
 |---|---|---|---|---|
@@ -96,9 +96,9 @@ Totaux : {'TRAITÉ': 77, 'NON TESTÉ': 21, 'MANUEL': 8}
 | 12.5 | Deterministic | NON TESTÉ | — | Dans chaque ensemble de pages, le moteur de recherche est-il atteignable de mani |
 | 12.6 | AxeCore | TRAITÉ | axe(partial)+agent-Holo | Les zones de regroupement de contenus présentes dans plusieurs pages web (zones  |
 | 12.7 | AxeCore | TRAITÉ | axe(complete)+gap-fix+agent-Holo | Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone de contenu |
-| 12.8 | Deterministic | TRAITÉ | axe(partial)+agent-Holo | Dans chaque page web, l’ordre de tabulation est-il cohérent ? |
+| 12.8 | Deterministic | NON TESTÉ (repli : agent-Holo) | agent-Holo | Dans chaque page web, l’ordre de tabulation est-il cohérent ? |
 | 12.9 | Deterministic | NON TESTÉ | — | Dans chaque page web, la navigation ne doit pas contenir de piège au clavier. Ce |
-| 12.10 | Deterministic | TRAITÉ | axe(partial) | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule touche (le |
+| 12.10 | Deterministic | NON TESTÉ | — | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule touche (le |
 | 12.11 | Deterministic | NON TESTÉ | — | Dans chaque page web, les contenus additionnels apparaissant au survol, à la pri |
 | 13.1 | Human | MANUEL (par conception) | axe(partial) | Pour chaque page web, l’utilisateur a-t-il le contrôle de chaque limite de temps |
 | 13.2 | Deterministic | TRAITÉ | gap-fix | Dans chaque page web, l’ouverture d’une nouvelle fenêtre ne doit pas être déclen |

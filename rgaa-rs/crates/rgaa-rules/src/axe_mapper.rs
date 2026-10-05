@@ -1,7 +1,8 @@
 use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
 use rgaa_core::{
-    Classification, CriterionResult, CriterionStatus, RgaaCatalog, RgaaError, Violation,
+    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
+    RgaaCatalog, RgaaError, Violation,
 };
 use std::sync::OnceLock;
 
@@ -94,25 +95,31 @@ impl AxeMapper {
         MAPPING.get_or_init(Self::build_rgaa_to_axe_map)
     }
 
-    /// Derived from the catalog's `axe_mapping.json`, which is the single source of
-    /// truth for RGAA → axe-core rule assignments.
+    /// Derived from the single mechanism registry (`mechanisms.toml`), which is the
+    /// source of truth for RGAA → axe-core rule assignments.
     ///
-    /// Criteria whose mapping carries no axe rule are **omitted**: initializing them
-    /// to `Pass` would assert conformance no axe rule could ever contradict. They are
-    /// left to the pipeline's declared fallback instead (#199).
+    /// Criteria with no axe-native mechanism are simply absent from the registry: they
+    /// are never initialised to `Pass`, which no axe rule could ever contradict, and
+    /// are left to the pipeline's declared fallback instead (#199, #261).
     fn build_rgaa_to_axe_map() -> IndexMap<String, CriterionMechanism> {
+        let registry = MechanismRegistry::builtin();
         let mut m: IndexMap<String, CriterionMechanism> = IndexMap::new();
+        // Catalog order (theme, then criterion), not file order, so that the order of
+        // results and violations stays what it was before the registry existed.
         for theme in RgaaCatalog::all() {
             for wrapper in &theme.criteria {
-                let criterion = &wrapper.criterium;
-                if criterion.axe_rules.is_empty() {
+                let id = wrapper.criterium.id_for_theme(theme.number);
+                let Some(mechanism) = registry.axe_for(&id) else {
+                    continue;
+                };
+                if mechanism.kind != MechanismKind::AxeNative || mechanism.axe_rules.is_empty() {
                     continue;
                 }
                 m.insert(
-                    criterion.id_for_theme(theme.number),
+                    id,
                     CriterionMechanism {
-                        rules: criterion.axe_rules.clone(),
-                        coverage: criterion.axe_coverage,
+                        rules: mechanism.axe_rules.clone(),
+                        coverage: mechanism.coverage,
                     },
                 );
             }
@@ -224,8 +231,8 @@ mod tests {
             }
         ]"#;
         let results = AxeMapper::map(axe_json).unwrap();
-        // color-contrast maps to 3.2 (text contrast, RGAA-3.2.1)
-        let r = results.get("3.2").expect("3.2 should be present");
+        // color-contrast maps to 3.3
+        let r = results.get("3.3").expect("3.3 should be present");
         assert_eq!(r.status, CriterionStatus::Fail);
         assert!(!r.violations.is_empty());
     }
@@ -262,7 +269,7 @@ mod tests {
             }
         ]"#;
         let results = AxeMapper::map(axe_json).unwrap();
-        let r = results.get("3.2").expect("3.2 should be present");
+        let r = results.get("3.3").expect("3.3 should be present");
         assert_eq!(r.status, CriterionStatus::Fail);
         // Both violations should be present
         assert_eq!(r.violations.len(), 2);
@@ -304,17 +311,17 @@ mod tests {
     /// Criteria whose mapped axe rules decide every one of their tests, so axe's
     /// silence is evidence and a criterion-level `Pass` is justified. Listed rather
     /// than derived so that moving a criterion between the two regimes is a visible,
-    /// reviewed change and not a side effect of editing `axe_mapping.json`.
+    /// reviewed change and not a side effect of editing `mechanisms.toml`.
     const COMPLETE_COVERAGE_CRITERIA: &[&str] = &[
-        "1.1", "2.1", "3.2", "4.3", "5.6", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8",
-        "11.1", "12.7",
+        "1.1", "2.1", "3.2", "4.3", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8", "11.1",
+        "12.7",
     ];
 
     /// Criteria whose mapped rules catch real violations but cannot establish
     /// conformance: axe may fail them, never pass them.
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
-        "1.2", "4.10", "5.4", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1", "10.4", "10.11",
-        "11.2", "11.9", "11.13", "12.6", "12.8", "12.10", "13.1", "13.8", "13.9",
+        "1.2", "3.3", "4.10", "5.4", "5.6", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1",
+        "10.4", "10.11", "11.2", "11.9", "11.13", "12.1", "12.4", "12.6", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -466,7 +473,7 @@ mod tests {
     }
 
     /// The two regimes must partition the criteria that carry rules — a criterion in
-    /// neither list would mean `axe_mapping.json` gained an entry without anyone
+    /// neither list would mean `mechanisms.toml` gained an entry without anyone
     /// deciding whether axe may pass it.
     #[test]
     fn coverage_lists_account_for_every_criterion_carrying_axe_rules() {
@@ -501,10 +508,12 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            35,
-            "43 criteria carried axe rules after #201; the 2026-10-05 engine plan removed 12 mappings that could not decide their criterion (1.5, 1.6, 3.3, 10.2, 10.5, 10.9, 11.4, 12.1, 12.4, 13.3-13.5) and moved document-title to 8.5; it then added partial rules for 11.9, 12.8 and 12.10"
+            36,
+            "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
+             decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
+             to 8.5 and button-name to 11.9"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
-        assert_eq!(rule_refs, 84, "expected 84 criterion/rule pairs");
+        assert_eq!(rule_refs, 88, "expected 88 criterion/rule pairs");
     }
 }

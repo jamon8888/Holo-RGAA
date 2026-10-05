@@ -4,12 +4,13 @@ use crate::error::AgentError;
 use crate::prompts::{page_discovery_preamble, PromptBuilder};
 use crate::ratelimit::{ModelTier, Ratelimiter};
 use crate::verify::map_verdict;
-use rgaa_core::{Classification, Criterion, CriterionResult, CriterionStatus};
+use rgaa_core::{
+    Classification, Criterion, CriterionResult, CriterionStatus, LlmProvenance, ResponseFormat,
+};
 use rgaa_holo::{HoloClient, HoloResponse, PageContext};
 use rgaa_spider::SpiderTool;
 use rig_agent::agent::Agent;
 use rig_agent::client::AgentClientExt;
-use rig_agent::completion::Prompt;
 use rig_core::providers::openai;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -110,6 +111,12 @@ pub struct RgaaAgent {
     /// Agent for [`ModelTier::Reasoning`]; the same model as `tactical`
     /// unless the operator set a reasoning-specific one.
     reasoning: Agent,
+    /// What a tactical-tier call records as having run with. Captured at
+    /// build time from the same [`AgentConfig::params`] the agents were
+    /// built from, so it cannot drift from what is on the wire.
+    provenance_tactical: LlmProvenance,
+    /// As `provenance_tactical`, for the reasoning tier.
+    provenance_reasoning: LlmProvenance,
     rate_limiter: Arc<Ratelimiter>,
     agent_concurrency: usize,
     /// Shared across every clone (and every concurrent task spawned from
@@ -155,9 +162,28 @@ impl RgaaAgent {
         // 3. Build one agent per tier. When both tiers resolve to the same
         //    model this builds the same agent twice, which is cheap — no
         //    request is issued until `prompt`.
+        //
+        //    `response_format` is deliberately left out of the extra body
+        //    here while `rgaa-holo`'s transport sends it: a rig agent carries
+        //    one fixed body for every prompt it serves, and this one serves
+        //    both `evaluate_batch` (an *array* of verdicts) and
+        //    `evaluate_criterion` (a single verdict object). Constraining it
+        //    to either schema makes the other prompt unanswerable. The
+        //    thinking switches and the sampling parameters have no such
+        //    conflict and are sent on both paths, identically.
+        let params = config.params;
+        let extra_body = params.extra_body_without_response_format();
         let build_agent = |model: &str| {
-            client
+            let mut builder = client
                 .agent(model)
+                // Without these the provider's own defaults applied and two
+                // runs of the same bake-off were not comparable (#193).
+                .temperature(params.temperature)
+                .max_tokens(u64::from(params.max_tokens));
+            if !extra_body.is_empty() {
+                builder = builder.additional_params(serde_json::Value::Object(extra_body.clone()));
+            }
+            builder
                 .preamble(
                     "You are an RGAA accessibility expert. Evaluate criteria and provide verdicts.",
                 )
@@ -173,17 +199,35 @@ impl RgaaAgent {
                 .build()
         };
 
+        let provenance_tactical = config.provenance(config.model_tactical());
+        let provenance_reasoning = config.provenance(config.model_reasoning());
+
         tracing::info!(
             provider = %config.provider,
             base_url = %config.base_url,
             model_tactical = %config.model_tactical(),
             model_reasoning = %config.model_reasoning(),
+            temperature = params.temperature,
+            max_tokens = params.max_tokens,
+            enable_thinking = ?params.enable_thinking,
+            tactical_rpm = config.tactical_rpm,
+            reasoning_rpm = config.reasoning_rpm,
+            agent_concurrency = config.agent_concurrency,
             "LLM route configured"
         );
+        if params.response_format != ResponseFormat::None {
+            tracing::info!(
+                response_format = params.response_format.as_str(),
+                "response_format applies to the rgaa-holo transport only; \
+                 the agent path sends none (its batch prompt answers with an array)"
+            );
+        }
 
         Ok(Self {
             tactical: build_agent(config.model_tactical()),
             reasoning: build_agent(config.model_reasoning()),
+            provenance_tactical,
+            provenance_reasoning,
             rate_limiter,
             // Floored at 1 independently of `AgentConfig::from_env`, which
             // already drops a zero: the field is public, so a hand-built
@@ -193,6 +237,36 @@ impl RgaaAgent {
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             tripped_at: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// What a call on `tier` runs with: effective model, temperature, token
+    /// budget, thinking flag and output constraint.
+    ///
+    /// A bake-off run records this next to its verdicts; without it, a
+    /// comparison between two models cannot be re-read later for *which*
+    /// parameters produced it.
+    #[must_use]
+    pub fn provenance(&self, tier: ModelTier) -> &LlmProvenance {
+        match tier {
+            ModelTier::Tactical => &self.provenance_tactical,
+            ModelTier::Reasoning => &self.provenance_reasoning,
+        }
+    }
+
+    /// Runs one prompt on `tier`'s agent and emits its cost event (#122).
+    /// `criteria` names what the call evaluated, comma-separated; a batch
+    /// call is recorded once for the whole batch, not split per criterion.
+    async fn prompt_measured(
+        &self,
+        tier: ModelTier,
+        prompt: &str,
+        criteria: &str,
+    ) -> Result<String, rig_agent::completion::PromptError> {
+        let tier_name = match tier {
+            ModelTier::Tactical => "tactical",
+            ModelTier::Reasoning => "reasoning",
+        };
+        crate::metrics::measured_prompt(self.agent_for(tier), tier_name, prompt, criteria).await
     }
 
     /// The agent bound to `tier`'s model.
@@ -296,7 +370,10 @@ impl RgaaAgent {
         let tier = tier_for(criterion.id);
         self.rate_limiter.acquire(tier).await;
 
-        match self.agent_for(tier).prompt(prompt.as_str()).await {
+        match self
+            .prompt_measured(tier, prompt.as_str(), criterion.id)
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {
@@ -432,7 +509,10 @@ impl RgaaAgent {
         self.rate_limiter.acquire(tier).await;
 
         // Call LLM
-        let response = match self.agent_for(tier).prompt(prompt.as_str()).await {
+        let response = match self
+            .prompt_measured(tier, prompt.as_str(), &criterion_ids.join(","))
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 response
@@ -617,7 +697,10 @@ impl RgaaAgent {
         let tier = tier_for(criterion.id);
         self.rate_limiter.acquire(tier).await;
 
-        match self.agent_for(tier).prompt(prompt.as_str()).await {
+        match self
+            .prompt_measured(tier, prompt.as_str(), criterion.id)
+            .await
+        {
             Ok(response) => {
                 self.record_success();
                 let parsed = HoloClient::extract_json(&response).unwrap_or_else(|| HoloResponse {

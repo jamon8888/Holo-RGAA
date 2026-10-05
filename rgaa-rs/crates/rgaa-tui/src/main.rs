@@ -33,7 +33,7 @@ enum TopCommand {
         #[command(subcommand)]
         sub: Option<ConfigCommand>,
     },
-    /// Run the install wizard
+    /// Show how to install rgaa (delegates to install.sh)
     Install,
     /// Serve the MCP tool server (HTTP + SSE, or `--stdio`)
     McpServer(rgaa_mcp_http::McpServerArgs),
@@ -72,7 +72,12 @@ async fn main() {
     }
 
     match cli.command {
-        None | Some(TopCommand::Tui) => rgaa_tui::tui::run().await,
+        None | Some(TopCommand::Tui) => {
+            if let Err(e) = rgaa_tui::tui::run().await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Some(TopCommand::Audit { url, export }) => {
             if let Err(e) = rgaa_tui::commands::audit(url, export).await {
                 eprintln!("Error: {e}");

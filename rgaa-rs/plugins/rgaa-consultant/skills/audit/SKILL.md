@@ -1,3 +1,8 @@
+---
+name: audit
+description: Run a full RGAA 4.1.2 accessibility audit of a URL or local project and return findings mapped to the 106 criteria, with evidence and a compliance rate. Use when the user asks to audit a site, run an RGAA or accessibility scan, or asks what the RGAA compliance of a page is.
+---
+
 # audit — RGAA Accessibility Audit
 
 ## Purpose

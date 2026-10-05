@@ -606,10 +606,7 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if statuses
-                    .iter()
-                    .any(|s| !matches!(s, CriterionStatus::NotTested))
-                {
+                if rgaa_report::is_validated(&statuses) {
                     validated_executed += 1;
                 }
             }
@@ -759,9 +756,11 @@ async fn audit_one(
         "Running agentic IA_ASSISTE evaluation"
     );
 
+    // The list itself is built once per process; `run_ia_assiste` consumes an
+    // owned `Vec`, so only that hand-off copies it.
     let agent_results = agent
         .clone()
-        .run_ia_assiste(ia_criteria, page_context.clone())
+        .run_ia_assiste(ia_criteria.to_vec(), page_context.clone())
         .await;
 
     let mut holo_results = HashMap::new();
@@ -779,7 +778,7 @@ async fn audit_one(
 
     let partial_results = agent
         .clone()
-        .run_partially_automatable(partial_criteria, page_context.clone())
+        .run_partially_automatable(partial_criteria.to_vec(), page_context.clone())
         .await;
     for (criterion_id, result) in partial_results {
         holo_results.insert(criterion_id, result);
@@ -799,12 +798,14 @@ async fn audit_one(
             .chain(holo_results),
     );
 
-    // 6. Ensure every criterion has an entry.
+    // 6. Ensure every criterion has an entry, so the result always spans the
+    // full 106-criterion catalog.
     //
-    // Déterministe criteria not flagged by axe-core/gap-fix (and not already
-    // present from Holo3) are conforming for the automated checks -> Pass, so
-    // the compliance rate reflects the full 106-criterion catalog instead of
-    // only the criteria that produced a violation.
+    // Silence is not evidence: a Déterministe criterion that no mechanism
+    // flagged (and that Holo3 did not decide) is `NotTested`, never `Pass`.
+    // Only a mechanism that can actually fail the criterion may pass it (#199,
+    // #201). `NotTested` and `NeedsReview` are both left out of `taux_global`,
+    // so the rate is optimistic by exactly the criteria nobody decided.
     // Manuel criteria always require human review -> NeedsReview.
     // PartiallyAutomatable criteria need human review for un-covered portions
     // -> NeedsReview.
@@ -865,7 +866,7 @@ async fn audit_one(
     // 7. Apply NA detection
     let mut criteria: Vec<CriterionResult> = all_results.into_values().collect();
     for criterion in &mut criteria {
-        if let Some(&false) = na_map.get(&criterion.criterion_id) {
+        if let Some(&false) = na_map.get(criterion.criterion_id.as_str()) {
             criterion.status = CriterionStatus::NotApplicable;
         }
     }

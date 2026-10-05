@@ -1,3 +1,8 @@
+---
+description: Audit a local project source tree for RGAA issues
+argument-hint: [path]
+---
+
 # `/audit-project` — Audit a Local Project
 
 ## Description

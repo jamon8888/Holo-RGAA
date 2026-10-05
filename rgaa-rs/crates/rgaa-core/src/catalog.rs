@@ -1,10 +1,10 @@
+use crate::registry::MechanismRegistry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 const CRITERES_JSON: &str = include_str!("../data/rgaa-4.1.2/criteres.json");
 const AUTOMATABLE_JSON: &str = include_str!("../data/rgaa-4.1.2/automatable_criteres.json");
-const AXE_MAPPING_JSON: &str = include_str!("../data/rgaa-4.1.2/axe_mapping.json");
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
@@ -23,15 +23,6 @@ struct RawRoot {
 #[derive(Debug, Clone, Deserialize)]
 struct AutomatableRoot {
     criteria: Vec<AutomatableCriterion>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AxeMappingEntry {
-    criterion_id: String,
-    axe_rules: Vec<String>,
-    #[serde(default)]
-    coverage: AxeCoverage,
-    provenance: AxeProvenance,
 }
 
 /// How much of a criterion its mapped axe-core rules actually decide.
@@ -159,8 +150,6 @@ impl RgaaCatalog {
         let raw: RawRoot = serde_json::from_str(CRITERES_JSON).expect("criteres.json must parse");
         let automatable_root: AutomatableRoot =
             serde_json::from_str(AUTOMATABLE_JSON).expect("automatable_criteres.json must parse");
-        let axe_entries: Vec<AxeMappingEntry> =
-            serde_json::from_str(AXE_MAPPING_JSON).expect("axe_mapping.json must parse");
 
         let mut automatable_map: HashMap<String, Automatable> = HashMap::new();
         let mut accounting_map: HashMap<String, TestAccounting> = HashMap::new();
@@ -176,15 +165,6 @@ impl RgaaCatalog {
             );
         }
 
-        let mut axe_rules_map: HashMap<String, Vec<String>> = HashMap::new();
-        let mut axe_coverage_map: HashMap<String, AxeCoverage> = HashMap::new();
-        let mut axe_provenance_map: HashMap<String, AxeProvenance> = HashMap::new();
-        for entry in axe_entries {
-            axe_rules_map.insert(entry.criterion_id.clone(), entry.axe_rules);
-            axe_coverage_map.insert(entry.criterion_id.clone(), entry.coverage);
-            axe_provenance_map.insert(entry.criterion_id, entry.provenance);
-        }
-
         let mut themes = raw.topics;
         for theme in &mut themes {
             for cw in &mut theme.criteria {
@@ -193,10 +173,13 @@ impl RgaaCatalog {
                     automatable_map.remove(&criterion_id).unwrap_or_default();
                 cw.criterium.test_accounting =
                     accounting_map.remove(&criterion_id).unwrap_or_default();
-                cw.criterium.axe_rules = axe_rules_map.remove(&criterion_id).unwrap_or_default();
-                cw.criterium.axe_coverage =
-                    axe_coverage_map.remove(&criterion_id).unwrap_or_default();
-                cw.criterium.axe_provenance = axe_provenance_map.remove(&criterion_id);
+                // axe assignments come from the single mechanism registry; a criterion
+                // with no axe-native mechanism keeps empty rules and Partial coverage.
+                if let Some(axe) = MechanismRegistry::builtin().axe_for(&criterion_id) {
+                    cw.criterium.axe_rules = axe.axe_rules.clone();
+                    cw.criterium.axe_coverage = axe.coverage;
+                    cw.criterium.axe_provenance = axe.provenance.clone();
+                }
             }
         }
         Self { themes }
@@ -355,12 +338,21 @@ mod tests {
     /// closed rather than claiming a conformance axe cannot establish (#201 AC3).
     #[test]
     fn complete_axe_coverage_is_declared_not_inferred() {
-        // 3.2 (text contrast) is decided by color-contrast; 3.3 (UI components) is not,
-        // and carries no axe rule since the 2026-10-05 engine plan.
         let (_, three_two) = RgaaCatalog::by_id("3.2").expect("3.2 is in the catalog");
         assert_eq!(three_two.axe_coverage, AxeCoverage::Complete);
-        let (_, three_three) = RgaaCatalog::by_id("3.3").expect("3.3 is in the catalog");
-        assert!(three_three.axe_rules.is_empty());
+
+        // 3.3 and 5.6 were declared complete although color-contrast measures text only
+        // and td-headers-attr does not decide 5.6's four tests; 12.1 and 12.4 are
+        // whole-set-of-pages criteria carried by single-page rules. axe's silence passed
+        // them with nothing established (#256).
+        for id in ["3.3", "5.6", "12.1", "12.4"] {
+            let (_, criterion) = RgaaCatalog::by_id(id).expect("criterion is in the catalog");
+            assert_eq!(
+                criterion.axe_coverage,
+                AxeCoverage::Partial,
+                "{id} must not be Pass-able by axe silence"
+            );
+        }
 
         // 13.1 has fifteen tests and one rule, meta-refresh.
         let (_, thirteen_one) = RgaaCatalog::by_id("13.1").expect("13.1 is in the catalog");

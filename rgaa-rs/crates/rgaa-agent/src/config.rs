@@ -1,4 +1,5 @@
 use rgaa_core::provider::LlmSettings;
+use rgaa_core::{CompletionParams, LlmProvenance};
 use rig_core::http_client::ReqwestClient;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -41,10 +42,15 @@ pub struct AgentConfig {
     pub memory_retention: MemoryRetention,
     /// Maximum agentic turns per criterion evaluation.
     pub max_turns: usize,
-    /// Maximum tokens per model completion.
-    pub max_tokens: usize,
-    /// Sampling temperature for the reasoning model.
-    pub temperature: f32,
+    /// Completion parameters sent on every call this agent makes.
+    ///
+    /// Replaces the `max_tokens`/`temperature` fields that used to sit here
+    /// and reach nothing: the `rig` agent sent neither, so the provider's own
+    /// defaults applied while `rgaa-holo`'s transport sent a second,
+    /// different pair of its own. Both paths now read this one value — see
+    /// [`CompletionParams`].
+    #[serde(default)]
+    pub params: CompletionParams,
     /// Requests per minute for the tactical (fast) model tier.
     #[serde(default = "default_tactical_rpm")]
     pub tactical_rpm: u32,
@@ -74,9 +80,23 @@ fn default_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+/// Concurrency for an unthrottled (self-hosted) route.
+///
+/// `rpm == 0` means "no rate limit" to
+/// [`Ratelimiter`](crate::ratelimit::Ratelimiter), but the RPM formula below
+/// reads it as "almost no requests" and would pin a GPU box to one call at a
+/// time — the opposite of what dropping the limit was for. A fixed, modest
+/// default instead: enough to keep a single box busy, not enough to bury it.
+/// `RGAA_AGENT_CONCURRENCY` overrides it.
+const UNTHROTTLED_CONCURRENCY: usize = 4;
+
 /// `max(1, min(rpm / 15, 16))` — the perf design doc's formula, applied to
-/// whichever tactical RPM is actually configured.
+/// whichever tactical RPM is actually configured, with `0` (unlimited)
+/// handled separately as [`UNTHROTTLED_CONCURRENCY`].
 fn agent_concurrency_for(rpm: u32) -> usize {
+    if rpm == 0 {
+        return UNTHROTTLED_CONCURRENCY;
+    }
     ((rpm / 15).clamp(1, 16)) as usize
 }
 
@@ -99,8 +119,7 @@ impl std::fmt::Debug for AgentConfig {
             .field("embedding_dimensions", &self.embedding_dimensions)
             .field("memory_retention", &self.memory_retention)
             .field("max_turns", &self.max_turns)
-            .field("max_tokens", &self.max_tokens)
-            .field("temperature", &self.temperature)
+            .field("params", &self.params)
             .field("tactical_rpm", &self.tactical_rpm)
             .field("reasoning_rpm", &self.reasoning_rpm)
             .finish()
@@ -125,8 +144,7 @@ impl Serialize for AgentConfig {
             embedding_dimensions: usize,
             memory_retention: &'a MemoryRetention,
             max_turns: usize,
-            max_tokens: usize,
-            temperature: f32,
+            params: &'a CompletionParams,
             tactical_rpm: u32,
             reasoning_rpm: u32,
         }
@@ -143,8 +161,7 @@ impl Serialize for AgentConfig {
             embedding_dimensions: self.embedding_dimensions,
             memory_retention: &self.memory_retention,
             max_turns: self.max_turns,
-            max_tokens: self.max_tokens,
-            temperature: self.temperature,
+            params: &self.params,
             tactical_rpm: self.tactical_rpm,
             reasoning_rpm: self.reasoning_rpm,
         };
@@ -201,8 +218,7 @@ impl Default for AgentConfig {
                 long_term_pattern: "findings-*".into(),
             },
             max_turns: 10,
-            max_tokens: 4096,
-            temperature: 0.3,
+            params: CompletionParams::default(),
             tactical_rpm: default_tactical_rpm(),
             reasoning_rpm: default_reasoning_rpm(),
             agent_concurrency: default_agent_concurrency(),
@@ -230,9 +246,14 @@ impl AgentConfig {
     /// - `LANCEDB_PATH` (optional): LanceDB storage path. Defaults to
     ///   `./data/lancedb`.
     /// - `RGAA_TACTICAL_RPM` (optional): Tactical model requests per minute.
-    ///   Defaults to 10.
+    ///   Defaults to 10 against a hosted API and to `0` — unlimited —
+    ///   against a self-hosted one (`ollama`, `vllm`, `lmstudio`, `custom`).
     /// - `RGAA_REASONING_RPM` (optional): Reasoning model requests per minute.
-    ///   Defaults to 20.
+    ///   Defaults to 20, or `0` against a self-hosted endpoint.
+    /// - `RGAA_LLM_TEMPERATURE`, `RGAA_LLM_MAX_TOKENS`,
+    ///   `RGAA_LLM_ENABLE_THINKING`, `RGAA_LLM_RESPONSE_FORMAT` (optional):
+    ///   the completion parameters, resolved by
+    ///   [`LlmSettings`] and shared with `rgaa-holo`.
     /// - `RGAA_AGENT_CONCURRENCY` (optional): Maximum concurrent criterion
     ///   evaluations. Defaults to `max(1, min(tactical_rpm / 15, 16))` using
     ///   the `RGAA_TACTICAL_RPM` value resolved above. A value of `0` is
@@ -252,8 +273,14 @@ impl AgentConfig {
     /// environment variables (`LANCEDB_PATH`, the two RPM limits).
     pub fn from_llm_settings(llm: LlmSettings) -> Self {
         // Parsed before the struct literal so the concurrency fallback can be
-        // derived from it.
-        let tactical_rpm = env_u32("RGAA_TACTICAL_RPM", default_tactical_rpm());
+        // derived from it. The *default* now depends on the route: a hosted
+        // API throttles and bills, a box the operator owns does neither, so
+        // a self-hosted endpoint runs unthrottled unless told otherwise.
+        let tactical_rpm = env_u32("RGAA_TACTICAL_RPM", llm.default_rpm(default_tactical_rpm()));
+        let reasoning_rpm = env_u32(
+            "RGAA_REASONING_RPM",
+            llm.default_rpm(default_reasoning_rpm()),
+        );
         Self {
             provider: llm.provider.name.to_string(),
             base_url: llm.base_url,
@@ -263,8 +290,9 @@ impl AgentConfig {
             model_reasoning: llm.model_reasoning,
             timeout: llm.timeout,
             lancedb_path: std::env::var("LANCEDB_PATH").unwrap_or_else(|_| "./data/lancedb".into()),
+            params: llm.params,
             tactical_rpm,
-            reasoning_rpm: env_u32("RGAA_REASONING_RPM", default_reasoning_rpm()),
+            reasoning_rpm,
             // Zero is dropped rather than honoured: it would reach
             // `buffer_unordered(0)`, which never polls its source stream and
             // leaves an audit pending forever. Falling back matches how the
@@ -321,6 +349,19 @@ impl AgentConfig {
             .timeout(self.timeout)
             .build()
             .map_err(|e| crate::error::AgentError::Config(format!("HTTP client init failed: {e}")))
+    }
+
+    /// What a call on `model` through this configuration records as having
+    /// run with: the effective model, temperature, token budget and thinking
+    /// flag, so a bake-off run stays auditable after the fact.
+    #[must_use]
+    pub fn provenance(&self, model: &str) -> LlmProvenance {
+        LlmProvenance::new(
+            self.provider.clone(),
+            model,
+            format!("{}/chat/completions", self.base_url.trim_end_matches('/')),
+            &self.params,
+        )
     }
 
     /// True when both tiers resolve to the same model — the single-model
@@ -444,10 +485,63 @@ mod tests {
         assert_eq!(agent_concurrency_for(10), 1);
         assert_eq!(agent_concurrency_for(60), 4);
         assert_eq!(agent_concurrency_for(300), 16);
-        // Clamped at both ends.
-        assert_eq!(agent_concurrency_for(0), 1);
+        // Clamped at the top; `0` is unlimited and handled separately
+        // (see `an_unthrottled_route_does_not_collapse_to_one_call_at_a_time`).
+        assert_eq!(agent_concurrency_for(1), 1);
         assert_eq!(agent_concurrency_for(100_000), 16);
         assert_eq!(default_agent_concurrency(), agent_concurrency_for(10));
+    }
+
+    #[test]
+    fn completion_params_come_from_the_resolved_route() {
+        // #193: the agent used to carry its own dead 4096/0.3 while the
+        // transport hardcoded 512/0.1. There is one source now, and this is
+        // the agent side of it.
+        let llm = LlmSettings::from_env_with(|k| {
+            match k {
+                "RGAA_LLM_PROVIDER" => Some("vllm"),
+                "RGAA_LLM_MODEL" => Some("qwen3-8b"),
+                "RGAA_LLM_TEMPERATURE" => Some("0.05"),
+                "RGAA_LLM_MAX_TOKENS" => Some("1234"),
+                _ => None,
+            }
+            .map(str::to_string)
+        })
+        .unwrap();
+        let c = AgentConfig::from_llm_settings(llm);
+        assert_eq!(c.params.temperature, 0.05);
+        assert_eq!(c.params.max_tokens, 1234);
+        assert_eq!(c.params.enable_thinking, Some(false));
+
+        // The default config carries the same shared constants, not a
+        // second opinion of its own.
+        let d = AgentConfig::default();
+        assert_eq!(d.params.temperature, rgaa_core::DEFAULT_TEMPERATURE);
+        assert_eq!(d.params.max_tokens, rgaa_core::DEFAULT_MAX_TOKENS);
+    }
+
+    #[test]
+    fn provenance_reports_the_effective_route() {
+        let c = AgentConfig {
+            provider: "vllm".into(),
+            base_url: "http://gpu-box:8000/v1/".into(),
+            model: "qwen3-8b".into(),
+            ..Default::default()
+        };
+        let p = c.provenance(c.model_tactical());
+        assert_eq!(p.provider, "vllm");
+        assert_eq!(p.model, "qwen3-8b");
+        // The trailing slash must not produce `/v1//chat/completions`.
+        assert_eq!(p.endpoint, "http://gpu-box:8000/v1/chat/completions");
+        assert_eq!(p.max_tokens, rgaa_core::DEFAULT_MAX_TOKENS);
+    }
+
+    #[test]
+    fn an_unthrottled_route_does_not_collapse_to_one_call_at_a_time() {
+        // 0 rpm means unlimited to the rate limiter; reading it through the
+        // rpm/15 formula would have pinned a self-hosted box to 1.
+        assert_eq!(agent_concurrency_for(0), UNTHROTTLED_CONCURRENCY);
+        const { assert!(UNTHROTTLED_CONCURRENCY > 1) };
     }
 
     #[test]

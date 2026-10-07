@@ -156,11 +156,16 @@ pub fn validate_automatic_verdict_coverage(
             {
                 complete = false;
             }
+            let site_comparison_failed = (result.source == "site-comparison"
+                && result.status == CriterionStatus::Fail)
+                || result
+                    .justification
+                    .as_deref()
+                    .is_some_and(|justification| {
+                        justification.contains("Site-level comparison returned Fail:")
+                    });
             if result.status == CriterionStatus::Fail
-                && result
-                    .considered_sources
-                    .iter()
-                    .any(|source| source == "site-comparison")
+                && site_comparison_failed
                 && !result.tests.iter().any(|outcome| {
                     outcome.status == CriterionStatus::Fail && outcome.source == "site-comparison"
                 })
@@ -260,15 +265,19 @@ fn record_site_comparison_evidence(
         site_result.failed_pages
     );
     let existing_failure = result.status == CriterionStatus::Fail;
+    let site_finding = format!(
+        "Site-level comparison returned {:?}: {details}",
+        site_result.status
+    );
     if existing_failure {
         result
             .justification
             .get_or_insert_with(String::new)
-            .push_str(&format!("; Site-level comparison: {details}"));
+            .push_str(&format!("; {site_finding}"));
     } else {
         result.status = site_result.status.clone();
         result.source = "site-comparison".to_string();
-        result.justification = Some(details.clone());
+        result.justification = Some(site_finding);
     }
 
     if !result
@@ -1232,6 +1241,38 @@ mod routing_tests {
         let error = validate_automatic_verdict_coverage(&results)
             .expect_err("an unkeyed site failure cannot be closed by model rows");
         assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
+    }
+
+    #[test]
+    fn site_needs_review_does_not_block_an_existing_mechanism_failure() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.4")
+            .expect("criterion 12.4 exists");
+        result.status = CriterionStatus::Fail;
+        result.source = "gap-fix".into();
+        result.considered_sources.push("gap-fix".into());
+        let site_review = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.4",
+            status: CriterionStatus::NeedsReview,
+            details: "target relevance still requires review".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_review);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert!(result
+            .considered_sources
+            .contains(&"site-comparison".into()));
+        assert!(result
+            .justification
+            .as_deref()
+            .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
     }
 
     #[test]

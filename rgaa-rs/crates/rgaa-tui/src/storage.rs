@@ -232,6 +232,7 @@ mod tests {
             coverage_percent: 0.0,
             etat_conformite: "partielle".to_string(),
             duration_ms: 12,
+            audit_complete: false,
         }
     }
 

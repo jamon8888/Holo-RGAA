@@ -543,6 +543,14 @@ async fn audit_discovered_urls(
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 });
             }
             page.compliance_rate = calculate_compliance(&page.criteria);
@@ -588,6 +596,7 @@ async fn audit_discovered_urls(
         coverage_percent,
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
+        audit_complete: false,
     })
 }
 
@@ -626,6 +635,14 @@ fn failed_page_result(url: &str, error: &str) -> PageResult {
             citations: vec![],
             considered_sources: vec![],
             tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         })
         .collect();
     PageResult {
@@ -660,6 +677,14 @@ mod routing_tests {
             citations: vec![],
             considered_sources: vec![],
             tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 
@@ -1073,6 +1098,14 @@ async fn audit_one(
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 });
         } else if !all_results.contains_key(criterion.id) {
             let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
@@ -1106,6 +1139,14 @@ async fn audit_one(
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 });
         }
     }
@@ -1170,5 +1211,6 @@ async fn audit_one(
         coverage_percent,
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
+        audit_complete: false,
     })
 }

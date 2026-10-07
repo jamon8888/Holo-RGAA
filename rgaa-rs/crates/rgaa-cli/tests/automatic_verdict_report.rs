@@ -490,6 +490,11 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
     let unresolved = failed
         .get(missing.id)
         .expect("requested ID remains visible");
+    assert_eq!(unresolved.source, "agent-estimate-incomplete");
+    assert!(unresolved
+        .justification
+        .as_deref()
+        .is_some_and(|reason| reason.contains("automatic estimate provider call failed")));
     assert_eq!(unresolved.automated_verdict, None);
     assert_eq!(unresolved.verified_status, None);
     assert!(unresolved.review_required);

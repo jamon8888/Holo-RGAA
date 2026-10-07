@@ -306,6 +306,26 @@ fn command_writes_output_or_atomically_replaces_input() {
     }));
 }
 
+#[cfg(unix)]
+#[test]
+fn in_place_replacement_preserves_restrictive_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = TestDirectory::new();
+    let input = directory.path("private-audit.json");
+    fs::write(
+        &input,
+        serde_json::to_vec(&audit(&["https://a.test"], &["1.1"])).unwrap(),
+    )
+    .unwrap();
+    fs::set_permissions(&input, fs::Permissions::from_mode(0o600)).unwrap();
+
+    run(args(&input, "1.1", ReviewStatus::Fail)).unwrap();
+
+    let mode = fs::metadata(&input).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
 #[test]
 fn command_rejects_malformed_json_and_invalid_author_or_reason() {
     let directory = TestDirectory::new();

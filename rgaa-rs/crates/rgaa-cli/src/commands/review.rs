@@ -185,6 +185,11 @@ fn locate_criterion(
 }
 
 fn write_atomically(destination: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let destination_permissions = match fs::metadata(destination) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
     let parent = destination
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -216,6 +221,9 @@ fn write_atomically(destination: &Path, bytes: &[u8]) -> std::io::Result<()> {
         file.write_all(bytes)?;
         file.flush()?;
         file.sync_all()?;
+        if let Some(permissions) = destination_permissions {
+            file.set_permissions(permissions)?;
+        }
         drop(file);
         fs::rename(&temporary_path, destination)
     })();

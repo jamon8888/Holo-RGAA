@@ -159,6 +159,7 @@ pub fn merge_candidates(candidates: Vec<CriterionResult>) -> Option<CriterionRes
     }
     if let Some(assessment) = model_assessment {
         winner.automated_verdict = assessment.automated_verdict;
+        winner.raw_confidence = assessment.raw_confidence;
         winner.confidence = assessment.confidence;
         winner.confidence_calibration_version = assessment.confidence_calibration_version.clone();
         winner.review_required |= assessment.review_required;
@@ -266,6 +267,9 @@ mod tests {
     fn deterministic_fail_keeps_conflicting_model_prediction_separate() {
         let mut model = result("agent-estimate", CriterionStatus::NeedsReview);
         model.automated_verdict = Some(rgaa_core::AutomatedVerdict::Pass);
+        model.raw_confidence = Some(0.73);
+        model.confidence = Some(0.61);
+        model.confidence_calibration_version = Some("calibration-2026-10".into());
         model.verdict_basis = vec![VerdictBasis::ModelEstimate];
         model.review_required = true;
         model.tests.push(TestOutcome {
@@ -290,6 +294,12 @@ mod tests {
         assert_eq!(
             merged.automated_verdict,
             Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert_eq!(merged.raw_confidence, Some(0.73));
+        assert_eq!(merged.confidence, Some(0.61));
+        assert_eq!(
+            merged.confidence_calibration_version.as_deref(),
+            Some("calibration-2026-10")
         );
         assert!(merged.verdict_basis.contains(&VerdictBasis::Axe));
         assert!(merged.verdict_basis.contains(&VerdictBasis::ModelEstimate));

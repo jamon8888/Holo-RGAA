@@ -3,7 +3,7 @@ use crate::criteria_defs::VISUAL_CRITERIA;
 use crate::error::AgentError;
 use crate::prompts::{page_discovery_preamble, PromptBuilder};
 use crate::ratelimit::{ModelTier, Ratelimiter};
-use crate::verify::map_verdict;
+use crate::verify::{map_automatic_response, map_verdict, unresolved_automatic_results};
 use rgaa_core::{
     Classification, Criterion, CriterionResult, CriterionStatus, LlmProvenance, ResponseFormat,
 };
@@ -249,6 +249,57 @@ pub struct RgaaAgent {
 }
 
 impl RgaaAgent {
+    /// Estimate every supplied criterion, including human routes, in bounded batches.
+    ///
+    /// Borrows the input and renders page context once. Transport failures and
+    /// invalid responses return unresolved entries for every affected ID; model
+    /// predictions remain separate from verified verdicts and raw confidence
+    /// remains uncalibrated. Prior results provide context, never default verdicts.
+    #[tracing::instrument(skip_all, fields(criteria_count = criteria.len()))]
+    pub async fn run_automatic_estimates(
+        &self,
+        criteria: &[Criterion],
+        page_context: &PageContext,
+        prior_results: &[CriterionResult],
+    ) -> HashMap<String, CriterionResult> {
+        use futures::stream::{self, StreamExt};
+        let rendered = PromptBuilder::render_context(page_context);
+        stream::iter(criteria.chunks(BATCH_SIZE))
+            .map(|batch| {
+                let rendered = &rendered;
+                async move {
+                    let ids = batch.iter().map(|criterion| criterion.id).collect::<Vec<_>>().join(",");
+                    let tier = if batch.iter().any(|criterion| matches!(tier_for(criterion.id), ModelTier::Reasoning)) {
+                        ModelTier::Reasoning
+                    } else {
+                        ModelTier::Tactical
+                    };
+                    if self.breaker_open() {
+                        return unresolved_automatic_results(batch, "automatic estimate circuit breaker is open");
+                    }
+                    let prompt = PromptBuilder::build_automatic_from_rendered(batch, rendered, prior_results);
+                    self.rate_limiter.acquire(tier).await;
+                    match self.prompt_measured(tier, &prompt, &ids).await {
+                        Ok(response) => {
+                            self.record_success();
+                            map_automatic_response(batch, &response)
+                        }
+                        Err(error) => {
+                            self.record_failure();
+                            tracing::warn!(criteria = %ids, error = %error, "automatic estimate failed");
+                            unresolved_automatic_results(batch, "automatic estimate provider call failed")
+                        }
+                    }
+                }
+            })
+            .buffer_unordered(self.agent_concurrency)
+            .fold(HashMap::with_capacity(criteria.len()), |mut results, batch| async move {
+                results.extend(batch);
+                results
+            })
+            .await
+    }
+
     /// Builds the agent and rate limiter.
     ///
     /// # Errors

@@ -299,7 +299,18 @@ pub struct AuditResult {
     pub na: usize,
     pub overall_compliance: f64,
     pub taux_global: f64,
+    /// Deprecated compatibility measure, retained with its historical meaning.
+    /// It is not any of the three assessment metrics below.
     pub coverage_percent: f64,
+    /// Page-criterion slots with an automatic prediction, divided by expected slots.
+    #[serde(default)]
+    pub automatic_verdict_coverage_percent: f64,
+    /// RGAA test slots with non-model evidence, divided by expected test slots.
+    #[serde(default)]
+    pub test_evidence_coverage_percent: f64,
+    /// Verified Pass / (verified Pass + verified Fail); model-only estimates are excluded.
+    #[serde(default)]
+    pub verified_compliance_percent: f64,
     pub etat_conformite: String,
     pub duration_ms: u64,
     /// True only after every page and criterion passes the completion gate.
@@ -380,6 +391,9 @@ mod tests {
     fn audit_result_legacy_json_defaults_to_incomplete() -> serde_json::Result<()> {
         let old_audit: AuditResult = serde_json::from_str(LEGACY_AUDIT_JSON)?;
         assert!(!old_audit.audit_complete);
+        assert_eq!(old_audit.automatic_verdict_coverage_percent, 0.0);
+        assert_eq!(old_audit.test_evidence_coverage_percent, 0.0);
+        assert_eq!(old_audit.verified_compliance_percent, 0.0);
         let decoded: AuditResult = serde_json::from_str(&serde_json::to_string(&old_audit)?)?;
         assert!(!decoded.audit_complete);
         Ok(())

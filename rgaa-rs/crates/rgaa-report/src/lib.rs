@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 
 use rgaa_core::catalog::Automatable;
-use rgaa_core::{ConformityStatus, CriterionResult, CriterionStatus, RgaaCatalog};
+use rgaa_core::{
+    ConformityStatus, CriterionResult, CriterionStatus, PageResult, RgaaCatalog, RgaaCriteria,
+};
 
 pub mod declaration;
 pub mod depot;
@@ -102,8 +104,15 @@ pub const UE_QUALITATIF: Referentiel = Referentiel {
 pub struct SiteMetrics {
     /// Official global rate `C / (C + NC)`, NA/NT excluded.
     pub taux_global: f64,
-    /// Share of automatable criteria actually executed.
+    /// Deprecated compatibility measure: share of automatable criteria
+    /// validated under the historical rule. It is not one of the three new metrics.
     pub coverage_percent: f64,
+    /// Page-criterion slots containing an automatic verdict / expected slots.
+    pub automatic_verdict_coverage_percent: f64,
+    /// Test slots backed by non-model evidence / expected test slots.
+    pub test_evidence_coverage_percent: f64,
+    /// Verified Pass / (verified Pass + verified Fail).
+    pub verified_compliance_percent: f64,
     /// Legal status words of the framework (`"totale"`, `"partielle"`, `"non conforme"`).
     pub etat_conformite: String,
     /// Applicable criteria fully passing on every page.
@@ -116,6 +125,156 @@ pub struct SiteMetrics {
     pub non_testes: usize,
     /// True when at least one criterion was never tested.
     pub audit_incomplet: bool,
+}
+
+/// Counts and percentages that keep predictions, test evidence, and verified
+/// compliance separate. Percentages are calculated only after integer counts
+/// have been aggregated across every page.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AuditMetrics {
+    pub expected_criterion_pages: usize,
+    pub automatic_verdicts: usize,
+    pub automatic_verdict_coverage_percent: f64,
+    pub expected_tests: usize,
+    pub tests_with_non_model_evidence: usize,
+    pub test_evidence_coverage_percent: f64,
+    pub verified_compliance_percent: f64,
+}
+
+/// Compute site metrics from page-level results.
+///
+/// Automatic coverage uses 106 slots per page; evidence coverage uses the
+/// catalog's 258 test slots per page. Duplicate or unknown criterion/test keys
+/// cannot inflate either numerator.
+#[must_use]
+pub fn compute_audit_metrics(pages: &[PageResult]) -> AuditMetrics {
+    use std::collections::HashSet;
+
+    let criteria_per_page = RgaaCriteria::count();
+    let tests_per_page = RgaaCatalog::all_test_keys().len();
+    let expected_criterion_pages = pages.len() * criteria_per_page;
+    let expected_tests = pages.len() * tests_per_page;
+    let known_tests: HashSet<(String, String)> = RgaaCatalog::all_test_keys().into_iter().collect();
+    let mut automatic_slots = HashSet::new();
+    let mut evidence_slots = HashSet::new();
+    let mut site_statuses: HashMap<&str, Vec<Option<CriterionStatus>>> = HashMap::new();
+    for criterion in RgaaCriteria::all() {
+        site_statuses.insert(criterion.id, Vec::with_capacity(pages.len()));
+    }
+
+    for (page_index, page) in pages.iter().enumerate() {
+        let mut seen_criteria = HashSet::new();
+        let mut first_by_id = HashMap::new();
+        for criterion in &page.criteria {
+            let known_criterion = RgaaCatalog::by_id(&criterion.criterion_id).is_some();
+            if known_criterion && seen_criteria.insert(criterion.criterion_id.as_str()) {
+                first_by_id.insert(criterion.criterion_id.as_str(), criterion);
+                if criterion.automated_verdict.is_some() {
+                    automatic_slots.insert((page_index, criterion.criterion_id.as_str()));
+                }
+            }
+
+            for outcome in &criterion.tests {
+                let key = (criterion.criterion_id.clone(), outcome.test_key.clone());
+                if known_tests.contains(&key)
+                    && !is_model_source(&outcome.source)
+                    && outcome
+                        .evidence
+                        .as_deref()
+                        .is_some_and(|e| !e.trim().is_empty())
+                {
+                    evidence_slots.insert((page_index, key.0, key.1));
+                }
+            }
+        }
+        for (criterion_id, statuses) in &mut site_statuses {
+            statuses.push(
+                first_by_id
+                    .get(criterion_id)
+                    .and_then(|c| verified_status_for(c)),
+            );
+        }
+    }
+
+    let automatic_verdicts = automatic_slots.len().min(expected_criterion_pages);
+    let tests_with_non_model_evidence = evidence_slots.len().min(expected_tests);
+    let verified = site_verified_counts(&site_statuses, pages.len());
+    AuditMetrics {
+        expected_criterion_pages,
+        automatic_verdicts,
+        automatic_verdict_coverage_percent: percentage(
+            automatic_verdicts,
+            expected_criterion_pages,
+        ),
+        expected_tests,
+        tests_with_non_model_evidence,
+        test_evidence_coverage_percent: percentage(tests_with_non_model_evidence, expected_tests),
+        verified_compliance_percent: percentage(verified.0, verified.0 + verified.1),
+    }
+}
+
+fn percentage(numerator: usize, denominator: usize) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        100.0 * numerator as f64 / denominator as f64
+    }
+}
+
+fn is_model_source(source: &str) -> bool {
+    let source = source.to_ascii_lowercase();
+    source == "agent"
+        || source.starts_with("agent-")
+        || source == "holo"
+        || source == "holo3"
+        || source == "myia"
+        || source.contains("model")
+        || source.contains("estimate")
+}
+
+/// Resolve an explicit verified status, or a conclusive legacy non-model status.
+/// Model-derived legacy Pass/Fail values are never treated as verified.
+#[must_use]
+pub fn verified_status_for(criterion: &CriterionResult) -> Option<CriterionStatus> {
+    if let Some(status) = &criterion.verified_status {
+        return Some(status.clone());
+    }
+    if is_model_source(&criterion.source) {
+        return None;
+    }
+    matches!(
+        criterion.status,
+        CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+    )
+    .then(|| criterion.status.clone())
+}
+
+fn site_verified_counts(
+    statuses: &HashMap<&str, Vec<Option<CriterionStatus>>>,
+    page_count: usize,
+) -> (usize, usize) {
+    let mut pass = 0;
+    let mut fail = 0;
+    for page_statuses in statuses.values() {
+        let has_fail = page_statuses
+            .iter()
+            .flatten()
+            .any(|s| *s == CriterionStatus::Fail);
+        if has_fail {
+            fail += 1;
+        } else if page_statuses.len() == page_count
+            && page_statuses.iter().all(|status| {
+                matches!(
+                    status,
+                    Some(CriterionStatus::Pass | CriterionStatus::NotApplicable)
+                )
+            })
+            && page_statuses.contains(&Some(CriterionStatus::Pass))
+        {
+            pass += 1;
+        }
+    }
+    (pass, fail)
 }
 
 impl SiteMetrics {
@@ -165,7 +324,7 @@ pub fn compliance_rate(criteria: &[CriterionResult]) -> f64 {
         par_critere
             .entry(criterion.criterion_id.as_str())
             .or_default()
-            .push(criterion.status.clone());
+            .push(verified_status_for(criterion).unwrap_or(CriterionStatus::NeedsReview));
     }
     let mut pass = 0;
     let mut fail = 0;
@@ -238,30 +397,40 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
     let mut validated_total = 0;
     let mut validated_executed = 0;
     let mut audit_incomplet = false;
-    let mut par_critere: HashMap<&str, Vec<CriterionStatus>> = HashMap::new();
+    let mut par_critere_raw: HashMap<&str, Vec<CriterionStatus>> = HashMap::new();
+    let mut par_critere_verified: HashMap<&str, Vec<CriterionStatus>> = HashMap::new();
 
     for criterion in criteria {
+        let verified = verified_status_for(criterion).unwrap_or(CriterionStatus::NeedsReview);
         if criterion.status == CriterionStatus::NotTested {
             audit_incomplet = true;
         }
-        par_critere
+        par_critere_raw
             .entry(criterion.criterion_id.as_str())
             .or_default()
             .push(criterion.status.clone());
+        par_critere_verified
+            .entry(criterion.criterion_id.as_str())
+            .or_default()
+            .push(verified);
     }
-    for (id, statuts) in &par_critere {
+    for (id, raw_statuses) in &par_critere_raw {
+        let verified_statuses = par_critere_verified
+            .get(id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         if let Some((_theme, cat)) = RgaaCatalog::by_id(id) {
             if matches!(
                 cat.automatable,
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if is_validated(statuts) {
+                if is_validated(raw_statuses) {
                     validated_executed += 1;
                 }
             }
         }
-        match reduire_statuts(statuts) {
+        match reduire_statuts(verified_statuses) {
             ConformityStatus::Conforme => conformes += 1,
             ConformityStatus::NonConforme => non_conformes += 1,
             ConformityStatus::NonApplicable => non_applicables += 1,
@@ -279,6 +448,14 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
     } else {
         0.0
     };
+    let one_page = [PageResult {
+        url: String::new(),
+        title: None,
+        criteria: criteria.to_vec(),
+        compliance_rate: 0.0,
+        crawl_depth: 0,
+    }];
+    let new_metrics = compute_audit_metrics(&one_page);
     let etat_conformite = if !referentiel.taux_juridique {
         String::new()
     } else if referentiel.retrograde_si_non_teste && audit_incomplet {
@@ -294,6 +471,9 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
     SiteMetrics {
         taux_global,
         coverage_percent,
+        automatic_verdict_coverage_percent: new_metrics.automatic_verdict_coverage_percent,
+        test_evidence_coverage_percent: new_metrics.test_evidence_coverage_percent,
+        verified_compliance_percent: new_metrics.verified_compliance_percent,
         etat_conformite,
         conformes,
         non_conformes,
@@ -306,7 +486,7 @@ pub fn compute_metrics(criteria: &[CriterionResult], referentiel: &Referentiel) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::Classification;
+    use rgaa_core::{AutomatedVerdict, Classification, TestOutcome};
 
     fn result(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {
@@ -330,6 +510,28 @@ mod tests {
             review_reason: None,
             verified_status: None,
             review_events: Vec::new(),
+        }
+    }
+
+    fn assessment_page(url: &str) -> PageResult {
+        let criteria = RgaaCriteria::all()
+            .iter()
+            .map(|entry| {
+                let mut criterion = result(entry.id, CriterionStatus::NeedsReview);
+                criterion.title = entry.title.to_string();
+                criterion.classification = entry.classification;
+                criterion.source = "agent-estimate".into();
+                criterion.automated_verdict = Some(AutomatedVerdict::Pass);
+                criterion.review_required = true;
+                criterion
+            })
+            .collect();
+        PageResult {
+            url: url.into(),
+            title: None,
+            criteria,
+            compliance_rate: 0.0,
+            crawl_depth: 0,
         }
     }
 
@@ -359,6 +561,93 @@ mod tests {
         let low = vec![result("1.1", CriterionStatus::Fail)];
         let m = compute_metrics(&low, &RGAA_41);
         assert_eq!(m.etat_conformite, "non conforme");
+    }
+
+    #[test]
+    fn four_pages_count_424_automatic_slots_and_missing_one_prediction() {
+        let mut pages = vec![
+            assessment_page("https://example.test/1"),
+            assessment_page("https://example.test/2"),
+            assessment_page("https://example.test/3"),
+            assessment_page("https://example.test/4"),
+        ];
+        pages[3].criteria[105].automated_verdict = None;
+
+        let metrics = compute_audit_metrics(&pages);
+        assert_eq!(metrics.expected_criterion_pages, 424);
+        assert_eq!(metrics.automatic_verdicts, 423);
+        assert_eq!(
+            metrics.automatic_verdict_coverage_percent,
+            100.0 * 423.0 / 424.0
+        );
+        assert_eq!(metrics.verified_compliance_percent, 0.0);
+    }
+
+    #[test]
+    fn test_evidence_uses_page_test_slots_and_excludes_model_rows() {
+        let mut first = assessment_page("https://example.test/1");
+        let mut second = assessment_page("https://example.test/2");
+        let first_criterion = first
+            .criteria
+            .iter_mut()
+            .find(|c| c.criterion_id == "1.1")
+            .unwrap();
+        first_criterion.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "axe-core".into(),
+            evidence: Some("img#logo has accessible name".into()),
+        });
+        first_criterion.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "axe-core".into(),
+            evidence: Some("duplicate observation does not add a slot".into()),
+        });
+        let model_criterion = second
+            .criteria
+            .iter_mut()
+            .find(|c| c.criterion_id == "1.1")
+            .unwrap();
+        model_criterion.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "agent-estimate".into(),
+            evidence: Some("model-supplied pointer".into()),
+        });
+
+        let metrics = compute_audit_metrics(&[first, second]);
+        assert_eq!(metrics.expected_tests, 516);
+        assert_eq!(metrics.tests_with_non_model_evidence, 1);
+        assert_eq!(metrics.test_evidence_coverage_percent, 100.0 / 516.0);
+    }
+
+    #[test]
+    fn verified_compliance_ignores_legacy_agent_pass_and_includes_human_review() {
+        let mut legacy_model = result("1.1", CriterionStatus::Pass);
+        legacy_model.source = "agent".into();
+        let mut reviewed = result("1.2", CriterionStatus::NeedsReview);
+        reviewed.source = "agent-estimate".into();
+        reviewed.verified_status = Some(CriterionStatus::Pass);
+        let mut legacy_deterministic = result("1.3", CriterionStatus::Pass);
+        legacy_deterministic.source = "axe-core".into();
+        let mut legacy_failure = result("1.4", CriterionStatus::Fail);
+        legacy_failure.source = "gap-fix".into();
+        let page = PageResult {
+            url: "https://example.test".into(),
+            title: None,
+            criteria: vec![legacy_model, reviewed, legacy_deterministic, legacy_failure],
+            compliance_rate: 0.0,
+            crawl_depth: 0,
+        };
+
+        let metrics = compute_audit_metrics(&[page]);
+        assert!((metrics.verified_compliance_percent - (200.0 / 3.0)).abs() < 0.0001);
+        let mut legacy_model = result("1.1", CriterionStatus::Pass);
+        legacy_model.source = "agent".into();
+        assert_eq!(verified_status_for(&legacy_model), None);
+        legacy_model.source = "agent-error".into();
+        assert_eq!(verified_status_for(&legacy_model), None);
     }
 
     #[test]
@@ -466,6 +755,9 @@ mod tests {
         let m = SiteMetrics {
             taux_global: 34.285_714_285_714_285,
             coverage_percent: 76.744_186_046_511_63,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
             etat_conformite: "non conforme".into(),
             conformes: 12,
             non_conformes: 23,
@@ -490,6 +782,9 @@ mod tests {
         let mut m = SiteMetrics {
             taux_global: 81.08,
             coverage_percent: 100.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
             etat_conformite: "partielle".into(),
             conformes: 30,
             non_conformes: 7,
@@ -512,6 +807,9 @@ mod tests {
         let m = SiteMetrics {
             taux_global: 100.0,
             coverage_percent: 100.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
             etat_conformite: "totale".into(),
             conformes: 20,
             non_conformes: 0,

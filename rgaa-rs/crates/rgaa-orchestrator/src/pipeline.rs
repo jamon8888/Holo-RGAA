@@ -156,6 +156,17 @@ pub fn validate_automatic_verdict_coverage(
             {
                 complete = false;
             }
+            if result.status == CriterionStatus::Fail
+                && result
+                    .considered_sources
+                    .iter()
+                    .any(|source| source == "site-comparison")
+                && !result.tests.iter().any(|outcome| {
+                    outcome.status == CriterionStatus::Fail && outcome.source == "site-comparison"
+                })
+            {
+                complete = false;
+            }
         } else {
             complete = false;
         }
@@ -235,6 +246,72 @@ fn pages_have_complete_automatic_coverage(pages: &[PageResult]) -> bool {
         && pages
             .iter()
             .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok())
+}
+
+fn record_site_comparison_evidence(
+    result: &mut CriterionResult,
+    site_result: &site_comparison::SiteCriterionObservation,
+) {
+    let details = format!(
+        "{}; sample_complete={}, sampled_pages={}, failed_pages={}",
+        site_result.details,
+        site_result.sample_complete,
+        site_result.sampled_pages,
+        site_result.failed_pages
+    );
+    let existing_failure = result.status == CriterionStatus::Fail;
+    if existing_failure {
+        result
+            .justification
+            .get_or_insert_with(String::new)
+            .push_str(&format!("; Site-level comparison: {details}"));
+    } else {
+        result.status = site_result.status.clone();
+        result.source = "site-comparison".to_string();
+        result.justification = Some(details.clone());
+    }
+
+    if !result
+        .considered_sources
+        .iter()
+        .any(|source| source == "site-comparison")
+    {
+        result
+            .considered_sources
+            .push("site-comparison".to_string());
+    }
+    let evidence = format!("site-comparison: {details}");
+    if !result.verdict_basis.contains(&VerdictBasis::Deterministic) {
+        result.verdict_basis.push(VerdictBasis::Deterministic);
+    }
+    if matches!(
+        site_result.status,
+        CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+    ) {
+        result.verified_status = Some(site_result.status.clone());
+
+        // The site comparison can identify a test outcome only when the
+        // catalog has one key for this criterion. For multi-test criteria,
+        // preserve the aggregate evidence and let the coverage gate stay open
+        // on a Fail rather than attributing it to every test.
+        if let Some(test_map) = RgaaCatalog::tests(&result.criterion_id) {
+            if test_map.len() == 1 {
+                let test_key = test_map.keys().next().expect("a single test key exists");
+                if !result.tests.iter().any(|outcome| {
+                    outcome.test_key == *test_key
+                        && outcome.source == "site-comparison"
+                        && outcome.status == site_result.status
+                }) {
+                    result.tests.push(TestOutcome {
+                        test_key: test_key.clone(),
+                        status: site_result.status.clone(),
+                        source: "site-comparison".into(),
+                        evidence: Some(evidence),
+                    });
+                }
+            }
+        }
+    }
 }
 
 /// Materialize per-test `Pass` outcomes only when an executed complete
@@ -712,41 +789,10 @@ async fn audit_discovered_urls(
                 .iter_mut()
                 .find(|result| result.criterion_id == site_result.criterion_id)
             {
-                if existing.status == CriterionStatus::Fail {
-                    let note = format!(
-                        "Site-level comparison also found: {}; sample_complete={}, sampled_pages={}, failed_pages={}",
-                        site_result.details,
-                        site_result.sample_complete,
-                        site_result.sampled_pages,
-                        site_result.failed_pages
-                    );
-                    existing
-                        .justification
-                        .get_or_insert_with(String::new)
-                        .push_str(&format!("; {note}"));
-                    if !existing
-                        .considered_sources
-                        .iter()
-                        .any(|s| s == "site-comparison")
-                    {
-                        existing
-                            .considered_sources
-                            .push("site-comparison".to_string());
-                    }
-                    continue;
-                }
-                existing.status = site_result.status.clone();
-                existing.source = "site-comparison".to_string();
-                existing.justification = Some(format!(
-                    "{}; sample_complete={}, sampled_pages={}, failed_pages={}",
-                    site_result.details,
-                    site_result.sample_complete,
-                    site_result.sampled_pages,
-                    site_result.failed_pages
-                ));
+                record_site_comparison_evidence(existing, &site_result);
                 existing.violations.clear();
             } else {
-                page.criteria.push(CriterionResult {
+                let mut result = CriterionResult {
                     criterion_id: criterion.id.to_string(),
                     title: criterion.title.to_string(),
                     classification: criterion.classification,
@@ -772,7 +818,9 @@ async fn audit_discovered_urls(
                     review_reason: None,
                     verified_status: None,
                     review_events: Vec::new(),
-                });
+                };
+                record_site_comparison_evidence(&mut result, &site_result);
+                page.criteria.push(result);
             }
             page.compliance_rate = calculate_compliance(&page.criteria);
         }
@@ -1112,6 +1160,78 @@ mod routing_tests {
             complete, incomplete
         ]));
         assert!(!pages_have_complete_automatic_coverage(&[]));
+    }
+
+    #[test]
+    fn keyed_site_failure_preserves_model_pass_and_is_counted_as_deterministic() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.1")
+            .expect("criterion 12.1 exists");
+        let site_failure = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.1",
+            status: CriterionStatus::Fail,
+            details: "one observed page lacks a navigation system".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_failure);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(result.verified_status, Some(CriterionStatus::Fail));
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
+        assert!(result
+            .considered_sources
+            .contains(&"site-comparison".into()));
+        assert!(result.tests.iter().any(|outcome| {
+            outcome.test_key == "1"
+                && outcome.source == "site-comparison"
+                && outcome.status == CriterionStatus::Fail
+        }));
+        assert_eq!(
+            rgaa_core::reduce_test_outcomes(&result.tests, &["1".to_string()]),
+            Some(CriterionStatus::Fail)
+        );
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+    }
+
+    #[test]
+    fn unkeyed_site_failure_for_multi_test_criterion_keeps_coverage_incomplete() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.4")
+            .expect("criterion 12.4 exists");
+        let site_failure = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.4",
+            status: CriterionStatus::Fail,
+            details: "site-wide sitemap placement signatures differ".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_failure);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(!result
+            .tests
+            .iter()
+            .any(|outcome| outcome.source == "site-comparison"));
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("an unkeyed site failure cannot be closed by model rows");
+        assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
     }
 
     #[test]

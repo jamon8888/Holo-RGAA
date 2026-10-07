@@ -270,8 +270,15 @@ fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
     // Keep the page-scoped copies that the HTML renderer uses.
     bundle.findings.clear();
     let bundle_json = serde_json::to_vec(&bundle).expect("bundle JSON");
+    let expected_audit_state = if audit.audit_complete {
+        "Audit automatique complet"
+    } else {
+        "Audit automatique incomplet"
+    };
     if !audit.audit_complete {
-        assert!(!String::from_utf8_lossy(&bundle_json).contains("audit_complete"));
+        let serialized_bundle: serde_json::Value =
+            serde_json::from_slice(&bundle_json).expect("serialized bundle should be JSON");
+        assert_eq!(serialized_bundle["audit_complete"], false);
     }
     std::fs::write(&input, bundle_json).expect("bundle fixture should be written");
     let expected_coverage = format!("{:.1}%", audit.automatic_verdict_coverage_percent);
@@ -279,11 +286,8 @@ fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
         .expect("native report renderer should succeed");
     assert!(native_html.contains(&expected_coverage));
     assert!(native_html.contains("Non Conforme"));
+    assert!(native_html.contains(expected_audit_state));
     assert!(!native_html.contains("status-badge pass\">Conforme</span>"));
-    if !audit.audit_complete {
-        assert!(!native_html.contains("audit_complete"));
-        assert!(!native_html.contains("Audit terminé"));
-    }
 
     let exit = render_cli_report(ReportArgs {
         common: CommonArgs {
@@ -303,15 +307,8 @@ fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
     assert!(html.contains("Conformité vérifiée"));
     assert!(html.contains(&expected_coverage));
     assert!(html.contains("Non Conforme"));
+    assert!(html.contains(expected_audit_state));
     assert!(!html.contains("status-badge pass\">Conforme</span>"));
-    if !audit.audit_complete {
-        // AuditBundle (the CLI report input) does not carry AuditResult's
-        // audit_complete flag. The report must still expose the sub-100%
-        // prediction coverage and must never label the outage as conforming.
-        assert!(audit.automatic_verdict_coverage_percent < 100.0);
-        assert!(!html.contains("audit_complete"));
-        assert!(!html.contains("Audit terminé"));
-    }
 }
 
 #[tokio::test]

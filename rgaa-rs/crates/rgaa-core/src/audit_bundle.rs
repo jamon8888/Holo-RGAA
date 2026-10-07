@@ -60,6 +60,10 @@ pub struct AuditBundle {
     pub schema_version: String,
     pub audit_id: String,
     pub url: String,
+    /// Whether automatic verdict coverage passed its completion gate.
+    /// `None` means the source bundle predates this field or did not report it.
+    #[serde(default)]
+    pub audit_complete: Option<bool>,
     pub config: AuditConfig,
     pub pages: Vec<PageAudit>,
     pub findings: Vec<Finding>,
@@ -73,6 +77,7 @@ impl AuditBundle {
             schema_version: CURRENT_SCHEMA_VERSION.to_owned(),
             audit_id: audit_id.into(),
             url: url.into(),
+            audit_complete: None,
             config,
             pages: Vec::new(),
             findings: Vec::new(),
@@ -255,6 +260,7 @@ impl From<AuditResult> for AuditBundle {
             schema_version: CURRENT_SCHEMA_VERSION.to_owned(),
             audit_id: result.audit_id,
             url: result.url,
+            audit_complete: Some(result.audit_complete),
             config: AuditConfig::default(),
             pages: page_audits,
             findings,
@@ -305,6 +311,15 @@ mod tests {
 
         assert_eq!(decoded.schema_version, "1.0");
         assert_eq!(decoded.audit_id, "audit-1");
+        assert_eq!(decoded.audit_complete, None);
+
+        let mut legacy_json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        legacy_json
+            .as_object_mut()
+            .unwrap()
+            .remove("audit_complete");
+        let legacy: AuditBundle = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(legacy.audit_complete, None);
     }
 
     #[test]
@@ -468,6 +483,22 @@ mod tests {
         assert_eq!(bundle.summary.passed, 100);
         assert_eq!(bundle.summary.failed, 5);
         assert_eq!(bundle.summary.needs_review, 0);
+        assert_eq!(bundle.audit_complete, Some(false));
+        // Existing page-processing semantics remain independent from verdict coverage.
+        assert!(bundle.pages[0].completed);
+        assert_eq!(bundle.summary.completed_pages, 1);
+    }
+
+    #[test]
+    fn from_complete_audit_result_preserves_complete_state() {
+        let mut result = sample_audit_result();
+        result.audit_complete = true;
+
+        let bundle = AuditBundle::from(result);
+
+        assert_eq!(bundle.audit_complete, Some(true));
+        assert!(bundle.pages[0].completed);
+        assert_eq!(bundle.summary.completed_pages, 1);
     }
 
     #[test]

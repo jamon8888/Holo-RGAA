@@ -29,6 +29,15 @@
       "evidence": {"kind": "html_markup_and_adversarial_text", "note": "markup label remains the expected outcome"}
     },
     {
+      "case_id": "image-alt-ambiguous",
+      "criterion_id": "1.3",
+      "test_key": "1",
+      "expected_verdict": "fail",
+      "fixture": "1.3-image-alt-ambiguous-fail.html",
+      "rationale": "The image is identified as a process diagram, but its alternative only says ‘image’, which does not convey its informative content.",
+      "evidence": {"kind": "html_image_and_context", "note": "alt text is the generic word image while the surrounding content identifies a process diagram"}
+    },
+    {
       "case_id": "text-contrast-insufficient",
       "criterion_id": "3.2",
       "test_key": "1",
@@ -63,6 +72,15 @@
       "fixture": "4.1-media-transcript-pass.html",
       "rationale": "The paired fixture provides a transcript for the prerecorded audio.",
       "evidence": {"kind": "html_media_markup", "note": "fixture is the corpus pass example for criterion 4.1"}
+    },
+    {
+      "case_id": "media-alternative-non-equivalent",
+      "criterion_id": "4.9",
+      "test_key": "1",
+      "expected_verdict": "fail",
+      "fixture": "4.9-media-alternative-non-equivalent-fail.html",
+      "rationale": "The adjacent text alternative describes unrelated content rather than the information represented by the process diagram.",
+      "evidence": {"kind": "html_media_and_alternative", "note": "object identifies a reservation process diagram but its linked alternative describes the weather"}
     },
     {
       "case_id": "form-label-missing",

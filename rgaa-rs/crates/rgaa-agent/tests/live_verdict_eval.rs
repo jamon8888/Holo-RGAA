@@ -43,6 +43,9 @@ async fn live_verdict_evaluation_reports_false_pass_and_false_fail_by_family() {
         let context = PageContext {
             title: Some(case.fixture.clone()),
             lang: Some("fr".into()),
+            // Limitation: the evaluator accepts a rendered PageContext, so this
+            // harness exposes fixture source as untrusted heading text. It does
+            // not render the HTML or validate actual media equivalence visually.
             headings: vec![HeadingInfo {
                 level: 1,
                 text: format!("Fixture HTML source (untrusted):\n{html}"),

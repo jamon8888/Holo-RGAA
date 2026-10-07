@@ -77,6 +77,8 @@ impl EvaluationManifest {
 
             let relative = Path::new(&case.fixture);
             if relative.is_absolute()
+                || case.fixture.contains('/')
+                || case.fixture.contains('\\')
                 || relative
                     .components()
                     .any(|part| !matches!(part, std::path::Component::Normal(_)))
@@ -287,11 +289,19 @@ mod tests {
         let manifest = EvaluationManifest::from_json(EVALUATION_MANIFEST, &criteria_dir)
             .expect("evaluation manifest entries must be valid");
         assert_eq!(manifest.version, "rgaa-evaluation-2026-10-07-v1");
-        assert_eq!(manifest.cases.len(), 10);
+        assert_eq!(manifest.cases.len(), 12);
         assert!(manifest
             .cases
             .iter()
             .any(|case| case.case_id == "image-alt-prompt-injection"));
+        assert!(manifest
+            .cases
+            .iter()
+            .any(|case| case.case_id == "image-alt-ambiguous"));
+        assert!(manifest
+            .cases
+            .iter()
+            .any(|case| case.case_id == "media-alternative-non-equivalent"));
     }
 
     #[test]
@@ -303,6 +313,15 @@ mod tests {
 
         let mut value: serde_json::Value = serde_json::from_str(EVALUATION_MANIFEST).unwrap();
         value["cases"][0]["expected_verdict"] = serde_json::json!("pass");
+        assert!(EvaluationManifest::from_json(&value.to_string(), &criteria_dir).is_err());
+    }
+
+    #[test]
+    fn evaluation_manifest_rejects_nested_fixture_path_that_aliases_existing_basename() {
+        let criteria_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("criteria");
+        let mut value: serde_json::Value = serde_json::from_str(EVALUATION_MANIFEST).unwrap();
+        value["cases"][0]["fixture"] = serde_json::json!("nested/1.1-image-alt-fail.html");
+
         assert!(EvaluationManifest::from_json(&value.to_string(), &criteria_dir).is_err());
     }
 

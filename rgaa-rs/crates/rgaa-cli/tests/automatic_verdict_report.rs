@@ -13,11 +13,13 @@ use rgaa_cli::commands::review::apply_review;
 use rgaa_cli::commands::CommonArgs;
 use rgaa_core::test_plan::{CoverageLevel, TestRoutePlan};
 use rgaa_core::{
-    AuditBundle, AuditResult, Classification, CriterionResult, CriterionStatus, PageResult,
+    AuditBundle, AuditResult, Classification, CriterionResult, CriterionStatus, RgaaCatalog,
     RgaaCriteria, TestOutcome, VerdictBasis, Violation,
 };
-use rgaa_orchestrator::{merge_candidates, pipeline::validate_automatic_verdict_coverage};
-use rgaa_report::{compute_audit_metrics, ReportFormat};
+use rgaa_orchestrator::pipeline::{
+    assemble_page_audit, assemble_site_audit, validate_automatic_verdict_coverage,
+};
+use rgaa_report::ReportFormat;
 
 /// A bounded local OpenAI-compatible endpoint. Its response uses the real
 /// Task 4 batch JSON contract and is consumed by the unchanged agent parser.
@@ -190,10 +192,10 @@ fn page_context(url: &str) -> rgaa_holo::PageContext {
 /// Applies route-owned deterministic tests to the provider's actual estimates.
 /// Complete routes are tested by the deterministic fake; partial routes retain
 /// the Task 4 estimate and evidence gap.
-fn merge_deterministic_routes(
-    estimate: CriterionResult,
+fn deterministic_route_candidate(
+    estimate: &CriterionResult,
     finding: Option<(&str, &str)>,
-) -> CriterionResult {
+) -> Option<CriterionResult> {
     let route_plan = TestRoutePlan::builtin();
     let mut deterministic = estimate.clone();
     deterministic.source = "axe-core".to_owned();
@@ -214,14 +216,12 @@ fn merge_deterministic_routes(
     deterministic.tests.clear();
     deterministic.violations.clear();
 
-    let mut complete_keys = Vec::new();
     for route in route_plan
         .routes()
         .iter()
         .filter(|route| route.criterion_id == estimate.criterion_id)
     {
         if route.coverage == CoverageLevel::Complete {
-            complete_keys.push(route.test_key.clone());
             let failed = finding.is_some_and(|(key, _)| key == route.test_key);
             deterministic.tests.push(TestOutcome {
                 test_key: route.test_key.clone(),
@@ -235,11 +235,6 @@ fn merge_deterministic_routes(
             });
         }
     }
-    let mut estimate = estimate;
-    estimate
-        .tests
-        .retain(|outcome| !complete_keys.contains(&outcome.test_key));
-
     if let Some((test_key, description)) = finding {
         deterministic.violations.push(Violation {
             rule_id: "mock-deterministic-finding".to_owned(),
@@ -253,11 +248,7 @@ fn merge_deterministic_routes(
             .any(|test| { test.test_key == test_key && test.status == CriterionStatus::Fail }));
     }
 
-    if deterministic.tests.is_empty() {
-        estimate
-    } else {
-        merge_candidates(vec![deterministic, estimate]).expect("both candidates are present")
-    }
+    (!deterministic.tests.is_empty()).then_some(deterministic)
 }
 
 fn chosen_finding_route() -> (String, String) {
@@ -269,31 +260,6 @@ fn chosen_finding_route() -> (String, String) {
     (route.criterion_id.clone(), route.test_key.clone())
 }
 
-fn audit_result(pages: Vec<PageResult>) -> AuditResult {
-    let metrics = compute_audit_metrics(&pages);
-    AuditResult {
-        audit_id: "mock-rgaa-audit".to_owned(),
-        url: "https://example.test".to_owned(),
-        total_criteria: pages.iter().map(|page| page.criteria.len()).sum(),
-        passed: 0,
-        failed: 0,
-        na: 0,
-        overall_compliance: metrics.verified_compliance_percent,
-        taux_global: metrics.verified_compliance_percent,
-        coverage_percent: 0.0,
-        automatic_verdict_coverage_percent: metrics.automatic_verdict_coverage_percent,
-        test_evidence_coverage_percent: metrics.test_evidence_coverage_percent,
-        verified_compliance_percent: metrics.verified_compliance_percent,
-        etat_conformite: "Non Conforme".to_owned(),
-        duration_ms: 1,
-        audit_complete: !pages.is_empty()
-            && pages
-                .iter()
-                .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok()),
-        pages,
-    }
-}
-
 fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
     let directory = tempfile::tempdir().expect("temporary report directory");
     let input = directory.path().join("audit-bundle.json");
@@ -303,14 +269,21 @@ fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
     // scope, while validation requires finding IDs to be unique globally.
     // Keep the page-scoped copies that the HTML renderer uses.
     bundle.findings.clear();
-    std::fs::write(&input, serde_json::to_vec(&bundle).expect("bundle JSON"))
-        .expect("bundle fixture should be written");
+    let bundle_json = serde_json::to_vec(&bundle).expect("bundle JSON");
+    if !audit.audit_complete {
+        assert!(!String::from_utf8_lossy(&bundle_json).contains("audit_complete"));
+    }
+    std::fs::write(&input, bundle_json).expect("bundle fixture should be written");
     let expected_coverage = format!("{:.1}%", audit.automatic_verdict_coverage_percent);
     let native_html = rgaa_report::render(&bundle, ReportFormat::Html)
         .expect("native report renderer should succeed");
     assert!(native_html.contains(&expected_coverage));
     assert!(native_html.contains("Non Conforme"));
     assert!(!native_html.contains("status-badge pass\">Conforme</span>"));
+    if !audit.audit_complete {
+        assert!(!native_html.contains("audit_complete"));
+        assert!(!native_html.contains("Audit terminé"));
+    }
 
     let exit = render_cli_report(ReportArgs {
         common: CommonArgs {
@@ -336,7 +309,8 @@ fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
         // audit_complete flag. The report must still expose the sub-100%
         // prediction coverage and must never label the outage as conforming.
         assert!(audit.automatic_verdict_coverage_percent < 100.0);
-        assert!(!html.contains("audit_complete\">true"));
+        assert!(!html.contains("audit_complete"));
+        assert!(!html.contains("Audit terminé"));
     }
 }
 
@@ -360,7 +334,7 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             .run_automatic_estimates(RgaaCriteria::all(), &page_context(url), &[])
             .await;
         assert_eq!(estimates.len(), 106, "every catalog ID should be returned");
-        let mut criteria = Vec::with_capacity(106);
+        let mut candidates = Vec::with_capacity(212);
         for criterion in RgaaCriteria::all() {
             let estimate = estimates
                 .get(criterion.id)
@@ -373,11 +347,29 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             }
             let finding = (page_index == 0 && criterion.id == finding_criterion)
                 .then_some((finding_key.as_str(), "mock deterministic failure"));
-            criteria.push(merge_deterministic_routes(estimate, finding));
+            candidates.push((criterion.id.to_owned(), estimate.clone()));
+            if let Some(deterministic) = deterministic_route_candidate(&estimate, finding) {
+                candidates.push((criterion.id.to_owned(), deterministic));
+            }
         }
 
+        let mut na_map = std::collections::HashMap::new();
         if page_index == 0 {
-            let human_review = criteria
+            na_map.insert("4.2", false);
+        }
+        let mut page_audit = assemble_page_audit(
+            (*url).to_owned(),
+            Some(format!("Mock page {page_index}")),
+            candidates,
+            &na_map,
+            1,
+        );
+        assert_eq!(page_audit.pages[0].criteria.len(), 106);
+        assert!(page_audit.audit_complete);
+
+        if page_index == 0 {
+            let human_review = page_audit.pages[0]
+                .criteria
                 .iter_mut()
                 .find(|criterion| criterion.criterion_id == "1.1")
                 .expect("criterion 1.1 exists");
@@ -399,20 +391,14 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             assert_eq!(human_review.review_events.len(), 1);
         }
 
-        pages.push(PageResult {
-            url: (*url).to_owned(),
-            title: Some(format!("Mock page {page_index}")),
-            criteria,
-            compliance_rate: 0.0,
-            crawl_depth: page_index as u32,
-        });
+        pages.extend(page_audit.pages);
     }
 
     assert!(
         provider.request_count() >= 4 * 20,
         "expected batched local calls"
     );
-    let audit = audit_result(pages);
+    let audit = assemble_site_audit("https://example.test".to_owned(), pages, 4);
     let row_count: usize = audit.pages.iter().map(|page| page.criteria.len()).sum();
     let verdict_count: usize = audit
         .pages
@@ -429,7 +415,11 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         .iter()
         .filter(|route| route.coverage == CoverageLevel::Complete)
         .count();
-    let expected_evidence_percent = 100.0 * (4 * complete_route_count) as f64 / (4 * 258) as f64;
+    let not_applicable_test_count = RgaaCatalog::tests("4.2")
+        .expect("criterion 4.2 is in the test catalog")
+        .len();
+    let expected_evidence_percent =
+        100.0 * (4 * complete_route_count + not_applicable_test_count) as f64 / (4 * 258) as f64;
     assert_eq!(
         audit.test_evidence_coverage_percent,
         expected_evidence_percent
@@ -440,6 +430,15 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         .criteria
         .iter()
         .any(|criterion| !criterion.violations.is_empty()));
+    let deterministically_not_applicable = audit.pages[0]
+        .criteria
+        .iter()
+        .find(|criterion| criterion.criterion_id == "4.2")
+        .expect("NA criterion exists");
+    assert_eq!(
+        deterministically_not_applicable.verified_status,
+        Some(CriterionStatus::NotApplicable)
+    );
     let manual_estimate = audit.pages[0]
         .criteria
         .iter()
@@ -466,7 +465,7 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
     let agent = RgaaAgent::new(&test_agent(healthy.base_url.clone()))
         .await
         .expect("agent should use the local healthy endpoint");
-    let mut estimates = agent
+    let estimates = agent
         .run_automatic_estimates(
             RgaaCriteria::all(),
             &page_context("https://example.test/outage"),
@@ -498,19 +497,31 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
     assert_eq!(unresolved.verified_status, None);
     assert!(unresolved.review_required);
     assert!(outage.request_count() >= 1);
-    estimates.insert(missing.id.to_owned(), unresolved.clone());
-
-    let criteria = RgaaCriteria::all()
-        .iter()
-        .map(|criterion| estimates.get(criterion.id).unwrap().clone())
-        .collect();
-    let incomplete = audit_result(vec![PageResult {
-        url: "https://example.test/outage".to_owned(),
-        title: Some("Provider outage fixture".to_owned()),
-        criteria,
-        compliance_rate: 0.0,
-        crawl_depth: 0,
-    }]);
+    let (finding_criterion, finding_key) = chosen_finding_route();
+    let mut candidates = Vec::with_capacity(212);
+    for criterion in RgaaCriteria::all() {
+        let estimate = if criterion.id == missing.id {
+            unresolved.clone()
+        } else {
+            estimates
+                .get(criterion.id)
+                .expect("healthy mock returned every criterion")
+                .clone()
+        };
+        candidates.push((criterion.id.to_owned(), estimate.clone()));
+        let finding = (criterion.id == finding_criterion)
+            .then_some((finding_key.as_str(), "mock deterministic failure"));
+        if let Some(deterministic) = deterministic_route_candidate(&estimate, finding) {
+            candidates.push((criterion.id.to_owned(), deterministic));
+        }
+    }
+    let incomplete = assemble_page_audit(
+        "https://example.test/outage".to_owned(),
+        Some("Provider outage fixture".to_owned()),
+        candidates,
+        &std::collections::HashMap::new(),
+        1,
+    );
     assert!(!incomplete.audit_complete);
     assert!(incomplete.automatic_verdict_coverage_percent < 100.0);
     assert!(validate_automatic_verdict_coverage(&incomplete.pages[0].criteria).is_err());

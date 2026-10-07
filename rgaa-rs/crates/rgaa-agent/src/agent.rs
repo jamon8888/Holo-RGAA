@@ -263,31 +263,41 @@ impl RgaaAgent {
         prior_results: &[CriterionResult],
     ) -> HashMap<String, CriterionResult> {
         use futures::stream::{self, StreamExt};
-        let rendered = PromptBuilder::render_context(page_context);
-        stream::iter(criteria.chunks(BATCH_SIZE))
+        let rendered = Arc::new(PromptBuilder::render_context(page_context));
+        let prior_results = Arc::new(prior_results.to_vec());
+        let batches: Vec<Vec<Criterion>> = criteria
+            .chunks(BATCH_SIZE)
+            .map(<[Criterion]>::to_vec)
+            .collect();
+        stream::iter(batches)
             .map(|batch| {
-                let rendered = &rendered;
+                let rendered = Arc::clone(&rendered);
+                let prior_results = Arc::clone(&prior_results);
                 async move {
-                    let ids = batch.iter().map(|criterion| criterion.id).collect::<Vec<_>>().join(",");
+                    let ids = batch
+                        .iter()
+                        .map(|criterion| criterion.id)
+                        .collect::<Vec<_>>()
+                        .join(",");
                     let tier = if batch.iter().any(|criterion| matches!(tier_for(criterion.id), ModelTier::Reasoning)) {
                         ModelTier::Reasoning
                     } else {
                         ModelTier::Tactical
                     };
                     if self.breaker_open() {
-                        return unresolved_automatic_results(batch, "automatic estimate circuit breaker is open");
+                        return unresolved_automatic_results(&batch, "automatic estimate circuit breaker is open");
                     }
-                    let prompt = PromptBuilder::build_automatic_from_rendered(batch, rendered, prior_results);
+                    let prompt = PromptBuilder::build_automatic_from_rendered(&batch, &rendered, &prior_results);
                     self.rate_limiter.acquire(tier).await;
                     match self.prompt_measured(tier, &prompt, &ids).await {
                         Ok(response) => {
                             self.record_success();
-                            map_automatic_response(batch, &response)
+                            map_automatic_response(&batch, &response)
                         }
                         Err(error) => {
                             self.record_failure();
                             tracing::warn!(criteria = %ids, error = %error, "automatic estimate failed");
-                            unresolved_automatic_results(batch, "automatic estimate provider call failed")
+                            unresolved_automatic_results(&batch, "automatic estimate provider call failed")
                         }
                     }
                 }

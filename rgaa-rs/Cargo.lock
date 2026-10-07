@@ -6751,6 +6751,7 @@ dependencies = [
  "rgaa-holo",
  "rgaa-remediation",
  "rgaa-spider",
+ "rgaa-test-corpus",
  "rig-agent",
  "rig-core",
  "rig-lancedb",

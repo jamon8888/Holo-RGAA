@@ -468,6 +468,7 @@ mod tests {
             status,
             violations: Vec::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: "t".into(),
             citations: Vec::new(),

@@ -208,6 +208,12 @@ pub struct CriterionResult {
     pub classification: Classification,
     pub status: CriterionStatus,
     pub violations: Vec<Violation>,
+    /// Uncalibrated confidence reported by a model. Kept separate from the
+    /// calibrated confidence below; defaults to `None` for older audit JSON.
+    #[serde(default)]
+    pub raw_confidence: Option<f64>,
+    /// Calibrated confidence, when an eligible held-out calibration bin exists.
+    /// Model-reported values belong in `raw_confidence` instead.
     pub confidence: Option<f64>,
     pub justification: Option<String>,
     pub source: String,
@@ -362,6 +368,7 @@ mod tests {
         assert!(decoded.verdict_basis.is_empty());
         assert!(decoded.evidence.is_empty());
         assert_eq!(decoded.confidence_calibration_version, None);
+        assert_eq!(decoded.raw_confidence, None);
         assert!(!decoded.review_required);
         assert_eq!(decoded.review_reason, None);
         assert_eq!(decoded.verified_status, None);
@@ -405,6 +412,7 @@ mod tests {
             location: Some("snapshots/page.html".into()),
         }];
         result.confidence_calibration_version = Some("v1".into());
+        result.raw_confidence = Some(0.91);
         result.review_required = true;
         result.review_reason = Some("model estimate requires review".into());
         let decoded: CriterionResult = serde_json::from_str(&serde_json::to_string(&result)?)?;
@@ -489,7 +497,8 @@ mod tests {
             classification: Classification::IaAssiste,
             status: CriterionStatus::Fail,
             violations: vec![],
-            confidence: Some(0.9),
+            confidence: None,
+            raw_confidence: Some(0.9),
             justification: Some("missing alt".into()),
             source: "agent".into(),
             citations,

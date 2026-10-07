@@ -216,6 +216,7 @@ mod tests {
             status,
             violations: vec![],
             confidence: None,
+            raw_confidence: None,
             justification: Some(format!("from {source}")),
             source: source.into(),
             citations: vec![],

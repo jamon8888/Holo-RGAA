@@ -335,6 +335,7 @@ mod tests {
             status,
             violations: Vec::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: "test".to_string(),
             citations: Vec::new(),

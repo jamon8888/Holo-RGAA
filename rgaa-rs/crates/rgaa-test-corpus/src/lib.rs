@@ -1,5 +1,126 @@
 use rgaa_core::Classification;
+use serde::Deserialize;
+use std::collections::HashSet;
 use std::path::Path;
+
+/// Versioned, explicitly annotated examples used to evaluate model estimates.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluationManifest {
+    pub version: String,
+    pub cases: Vec<EvaluationCase>,
+}
+
+/// One labeled fixture reference. These are evaluation examples, not confidence
+/// calibration samples; the manifest carries no sample-count claims.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluationCase {
+    pub case_id: String,
+    pub criterion_id: String,
+    pub test_key: String,
+    pub expected_verdict: ExpectedVerdict,
+    /// Fixture filename relative to the corpus `criteria/` directory.
+    pub fixture: String,
+    pub rationale: String,
+    pub evidence: EvidenceAnnotation,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpectedVerdict {
+    Pass,
+    Fail,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceAnnotation {
+    pub kind: String,
+    pub note: String,
+}
+
+impl EvaluationManifest {
+    /// Parse the versioned evaluation manifest and verify every catalog key and
+    /// fixture label against the files already present in the corpus.
+    pub fn from_json(raw: &str, criteria_dir: &Path) -> Result<Self, String> {
+        let manifest: Self = serde_json::from_str(raw)
+            .map_err(|error| format!("invalid evaluation manifest: {error}"))?;
+        if manifest.version.trim().is_empty() || manifest.cases.is_empty() {
+            return Err("evaluation manifest requires a version and at least one case".into());
+        }
+        let corpus = TestCorpus::load(criteria_dir)?;
+        let mut case_ids = HashSet::with_capacity(manifest.cases.len());
+        for case in &manifest.cases {
+            if case.case_id.trim().is_empty()
+                || case.rationale.trim().is_empty()
+                || case.evidence.kind.trim().is_empty()
+                || case.evidence.note.trim().is_empty()
+            {
+                return Err(format!(
+                    "{}: case id, rationale and evidence annotations are required",
+                    case.case_id
+                ));
+            }
+            if !case_ids.insert(case.case_id.as_str()) {
+                return Err(format!("duplicate evaluation case id: {}", case.case_id));
+            }
+            let tests = rgaa_core::RgaaCatalog::tests(&case.criterion_id)
+                .ok_or_else(|| format!("{}: unknown catalog criterion", case.criterion_id))?;
+            if !tests.contains_key(&case.test_key) {
+                return Err(format!(
+                    "{}/{}: unknown catalog test key",
+                    case.criterion_id, case.test_key
+                ));
+            }
+
+            let relative = Path::new(&case.fixture);
+            if relative.is_absolute()
+                || relative
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+                || relative
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    != Some("html")
+            {
+                return Err(format!(
+                    "{}: fixture must be a relative HTML filename",
+                    case.case_id
+                ));
+            }
+            let filename = relative
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            if !filename.starts_with(&format!("{}-", case.criterion_id)) {
+                return Err(format!(
+                    "{}: fixture belongs to a different criterion",
+                    case.case_id
+                ));
+            }
+            let fixture_name = filename.trim_end_matches(".html");
+            let page = corpus
+                .all_pages()
+                .iter()
+                .find(|page| page.name == fixture_name)
+                .ok_or_else(|| format!("{}: fixture does not exist in corpus", case.fixture))?;
+            let expected = match case.expected_verdict {
+                ExpectedVerdict::Pass => "Pass",
+                ExpectedVerdict::Fail => "Fail",
+                ExpectedVerdict::NotApplicable => "NotApplicable",
+            };
+            if page.expected_status != expected {
+                return Err(format!(
+                    "{}: manifest verdict {expected} disagrees with fixture label {}",
+                    case.fixture, page.expected_status
+                ));
+            }
+        }
+        Ok(manifest)
+    }
+}
 
 /// Whether a test page exercises a criterion the ordinary way, or is
 /// specifically designed to probe evaluator robustness (ticket #131:
@@ -153,9 +274,36 @@ impl Default for TestCorpus {
 mod tests {
     use super::*;
 
+    const EVALUATION_MANIFEST: &str = include_str!("../../rgaa-agent/data/verdict-evaluation.json");
+
     fn load_corpus() -> TestCorpus {
         let criteria_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("criteria");
         TestCorpus::load(&criteria_dir).expect("load should succeed")
+    }
+
+    #[test]
+    fn versioned_evaluation_manifest_resolves_catalog_keys_and_labeled_fixtures() {
+        let criteria_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("criteria");
+        let manifest = EvaluationManifest::from_json(EVALUATION_MANIFEST, &criteria_dir)
+            .expect("evaluation manifest entries must be valid");
+        assert_eq!(manifest.version, "rgaa-evaluation-2026-10-07-v1");
+        assert_eq!(manifest.cases.len(), 10);
+        assert!(manifest
+            .cases
+            .iter()
+            .any(|case| case.case_id == "image-alt-prompt-injection"));
+    }
+
+    #[test]
+    fn evaluation_manifest_rejects_unknown_keys_and_conflicting_fixture_labels() {
+        let criteria_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("criteria");
+        let mut value: serde_json::Value = serde_json::from_str(EVALUATION_MANIFEST).unwrap();
+        value["cases"][0]["test_key"] = serde_json::json!("999");
+        assert!(EvaluationManifest::from_json(&value.to_string(), &criteria_dir).is_err());
+
+        let mut value: serde_json::Value = serde_json::from_str(EVALUATION_MANIFEST).unwrap();
+        value["cases"][0]["expected_verdict"] = serde_json::json!("pass");
+        assert!(EvaluationManifest::from_json(&value.to_string(), &criteria_dir).is_err());
     }
 
     #[test]

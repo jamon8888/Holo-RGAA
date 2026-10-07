@@ -120,6 +120,7 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
                     nodes_affected: 2,
                 }],
                 confidence: None,
+                raw_confidence: None,
                 justification: None,
                 source: "axe".into(),
                 citations: vec![],

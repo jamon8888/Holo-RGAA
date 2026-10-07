@@ -268,7 +268,8 @@ mod tests {
             classification: Classification::IaAssiste,
             status: CriterionStatus::Fail,
             violations: Vec::new(),
-            confidence: Some(0.87),
+            confidence: None,
+            raw_confidence: Some(0.87),
             justification: Some("alternative absente".into()),
             source: "holo3".into(),
             citations: vec![
@@ -297,6 +298,7 @@ mod tests {
             status: CriterionStatus::Pass,
             violations: Vec::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: "axe-core".into(),
             citations: Vec::new(),

@@ -335,14 +335,6 @@ fn automated_verdict_cell(criterion: &CriterionResult) -> String {
         .verdict_basis
         .contains(&VerdictBasis::ModelEstimate)
         || crate::is_model_source(&criterion.source);
-    let has_non_model_evidence = criterion.tests.iter().any(|test| {
-        !crate::is_model_source(&test.source)
-            && test
-                .evidence
-                .as_deref()
-                .is_some_and(|evidence| !evidence.trim().is_empty())
-    });
-    let is_estimate = is_estimate && !has_non_model_evidence;
     if is_estimate {
         format!("{} <small>(estimation)</small>", label)
     } else {
@@ -567,7 +559,7 @@ fn escape_html(s: &str) -> String {
 mod tests {
     use super::*;
     use rgaa_core::{
-        AuditConfig, Classification, EvidenceRef, PageAudit, ReviewEvent, VerdictBasis,
+        AuditConfig, Classification, EvidenceRef, PageAudit, ReviewEvent, TestOutcome, VerdictBasis,
     };
 
     fn criterion(id: &str, status: CriterionStatus) -> CriterionResult {
@@ -758,5 +750,22 @@ mod tests {
             assert!(html.contains(label), "missing {label}");
         }
         assert!(!html.contains("<h3>Couverture</h3>"));
+    }
+
+    #[test]
+    fn automatic_model_estimate_remains_labeled_with_non_model_evidence() {
+        let mut item = criterion("1.1", CriterionStatus::NeedsReview);
+        item.automated_verdict = Some(AutomatedVerdict::Pass);
+        item.verdict_basis = vec![VerdictBasis::ModelEstimate];
+        item.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "axe-core".into(),
+            evidence: Some("img#logo has an accessible name".into()),
+        });
+
+        let rendered = automated_verdict_cell(&item);
+        assert!(rendered.contains("Conforme"));
+        assert!(rendered.contains("estimation"));
     }
 }

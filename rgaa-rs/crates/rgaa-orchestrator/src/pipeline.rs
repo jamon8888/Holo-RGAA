@@ -192,6 +192,51 @@ fn outcome_is_allowed(outcome: &TestOutcome, coverage: CoverageLevel) -> bool {
     }
 }
 
+fn criterion_has_routed_mechanism(criterion_id: &str, mechanism_id: &str) -> bool {
+    RgaaCatalog::tests(criterion_id).is_some_and(|tests| {
+        tests.keys().any(|test_key| {
+            EnginePlan::route_test(criterion_id, test_key)
+                .is_some_and(|route| route.mechanisms.iter().any(|id| id == mechanism_id))
+        })
+    })
+}
+
+fn mechanism_id(prefix: &str, criterion_id: &str) -> String {
+    format!("{prefix}-{}", criterion_id.replace('.', "-"))
+}
+
+fn routed_gap_fix_snippets() -> HashMap<String, String> {
+    GapFixRules::snippets()
+        .iter()
+        .filter(|(criterion_id, _)| {
+            criterion_has_routed_mechanism(criterion_id, &mechanism_id("gapfix", criterion_id))
+        })
+        .map(|(criterion_id, snippet)| (criterion_id.clone(), (*snippet).to_owned()))
+        .collect()
+}
+
+fn admit_routed_results(
+    results: impl IntoIterator<Item = (String, CriterionResult)>,
+    mechanism_prefix: &str,
+) -> HashMap<String, CriterionResult> {
+    results
+        .into_iter()
+        .filter(|(criterion_id, _)| {
+            criterion_has_routed_mechanism(
+                criterion_id,
+                &mechanism_id(mechanism_prefix, criterion_id),
+            )
+        })
+        .collect()
+}
+
+fn pages_have_complete_automatic_coverage(pages: &[PageResult]) -> bool {
+    !pages.is_empty()
+        && pages
+            .iter()
+            .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok())
+}
+
 /// Materialize per-test `Pass` outcomes only when an executed complete
 /// mechanism explicitly returned a criterion-wide pass. A criterion-wide
 /// failure does not reveal which test failed, so it stays aggregate evidence.
@@ -209,15 +254,13 @@ fn attach_complete_mechanism_passes<'a>(
             let Some(route) = EnginePlan::route_test(&result.criterion_id, test_key) else {
                 continue;
             };
+            let mechanism = match result.source.as_str() {
+                "axe-core" => mechanism_id("axe", &result.criterion_id),
+                "gap-fix" => mechanism_id("gapfix", &result.criterion_id),
+                _ => continue,
+            };
             if route.coverage != CoverageLevel::Complete
-                || !route
-                    .mechanisms
-                    .iter()
-                    .any(|mechanism| match result.source.as_str() {
-                        "axe-core" => mechanism.starts_with("axe-"),
-                        "gap-fix" => mechanism.starts_with("gapfix-"),
-                        _ => false,
-                    })
+                || !route.mechanisms.iter().any(|id| id == &mechanism)
             {
                 continue;
             }
@@ -702,7 +745,6 @@ async fn audit_discovered_urls(
                     site_result.failed_pages
                 ));
                 existing.violations.clear();
-                existing.tests.clear();
             } else {
                 page.criteria.push(CriterionResult {
                     criterion_id: criterion.id.to_string(),
@@ -762,6 +804,8 @@ async fn audit_discovered_urls(
         .count();
     let compliance = calculate_compliance(&all_criteria);
 
+    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
+
     Ok(AuditResult {
         audit_id: uuid::Uuid::new_v4().to_string(),
         url: url.to_string(),
@@ -775,7 +819,7 @@ async fn audit_discovered_urls(
         coverage_percent,
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
-        audit_complete: false,
+        audit_complete,
     })
 }
 
@@ -1007,6 +1051,67 @@ mod routing_tests {
             .iter()
             .all(|test| { test.status == CriterionStatus::Pass && test.source == "axe-core" }));
         assert!(results["1.2"].tests.is_empty());
+    }
+
+    #[test]
+    fn route_plan_controls_mechanism_dispatch_and_result_admission() {
+        assert!(criterion_has_routed_mechanism("1.1", "axe-1-1"));
+        assert!(!criterion_has_routed_mechanism("1.2", "axe-1-2"));
+        assert!(criterion_has_routed_mechanism("1.2", "gapfix-1-2"));
+
+        let admitted = admit_routed_results(
+            [
+                (
+                    "1.1".to_string(),
+                    deterministic_result("1.1", CriterionStatus::Fail, "axe-core"),
+                ),
+                (
+                    "1.2".to_string(),
+                    deterministic_result("1.2", CriterionStatus::Fail, "axe-core"),
+                ),
+            ],
+            "axe",
+        );
+        assert_eq!(admitted.len(), 1);
+        assert!(admitted.contains_key("1.1"));
+
+        let snippets = routed_gap_fix_snippets();
+        assert!(snippets.contains_key("1.1"));
+        assert!(snippets.contains_key("1.2"));
+        assert!(!snippets.contains_key("10.1"));
+        assert!(!snippets.contains_key("1.9"));
+        assert!(!criterion_has_routed_mechanism("12.8", "keyboard-12-8"));
+    }
+
+    #[test]
+    fn multi_page_audit_is_complete_only_when_every_page_passes_coverage_gate() {
+        let complete = PageResult {
+            url: "https://example.test/complete".into(),
+            title: None,
+            criteria: complete_prediction_set(),
+            compliance_rate: 0.0,
+            crawl_depth: 0,
+        };
+        let mut incomplete = complete.clone();
+        incomplete.url = "https://example.test/incomplete".into();
+        incomplete
+            .criteria
+            .iter_mut()
+            .find(|result| result.criterion_id == "4.2")
+            .expect("criterion 4.2 exists")
+            .automated_verdict = None;
+
+        assert!(pages_have_complete_automatic_coverage(
+            std::slice::from_ref(&complete)
+        ));
+        assert!(pages_have_complete_automatic_coverage(&[
+            complete.clone(),
+            complete.clone()
+        ]));
+        assert!(!pages_have_complete_automatic_coverage(&[
+            complete, incomplete
+        ]));
+        assert!(!pages_have_complete_automatic_coverage(&[]));
     }
 
     #[test]
@@ -1265,13 +1370,13 @@ async fn audit_one(
         .remove(url.as_str())
         .ok_or_else(|| format!("axe-core produced no result for {url}"))?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
-    let mut axe_results = axe_results;
+    let mut axe_results = admit_routed_results(axe_results, "axe");
     attach_complete_mechanism_passes(axe_results.values_mut());
 
     // 2. Run gap-fix rules for 10 false negatives
     on_phase(AuditPhase::GapFix);
     info!("Running gap-fix rules");
-    let gap_snippets = GapFixRules::snippets();
+    let gap_snippets = routed_gap_fix_snippets();
     // clippy's `--all-targets` (dev-profile) check reports the `&` here as a
     // needless borrow, but the actual `[profile.test]` build (cargo test /
     // nextest, and thus CI) requires it — `gap_snippets` alone fails to
@@ -1289,30 +1394,38 @@ async fn audit_one(
     )
     .await?;
     let gap_js_results = gap_by_url.remove(url.as_str()).unwrap_or_default();
-    let mut gap_results = GapFixRules::parse_results(&gap_js_results);
+    let mut gap_results =
+        admit_routed_results(GapFixRules::parse_results(&gap_js_results), "gapfix");
     attach_complete_mechanism_passes(gap_results.values_mut());
 
     // Obscura keyboard actions are limited to Tab key-down/up events. The
     // observation is shared by criteria 12.8 and 12.9; no activation key or
     // pointer click is sent.
-    let keyboard_results = match bridge.observe_keyboard(&url).await {
-        Ok(observation) => {
-            let issue_rules: Vec<String> = observation
-                .keyboard
-                .issues
-                .iter()
-                .map(|issue| issue.rule.clone())
-                .collect();
-            GapFixRules::parse_keyboard_observation(
-                &observation.keyboard.status,
-                &issue_rules,
-                observation.keyboard.igt_elements.len(),
-            )
+    let keyboard_is_routed = ["12.8", "12.9"].iter().any(|criterion_id| {
+        criterion_has_routed_mechanism(criterion_id, &mechanism_id("keyboard", criterion_id))
+    });
+    let keyboard_results = if keyboard_is_routed {
+        match bridge.observe_keyboard(&url).await {
+            Ok(observation) => {
+                let issue_rules: Vec<String> = observation
+                    .keyboard
+                    .issues
+                    .iter()
+                    .map(|issue| issue.rule.clone())
+                    .collect();
+                GapFixRules::parse_keyboard_observation(
+                    &observation.keyboard.status,
+                    &issue_rules,
+                    observation.keyboard.igt_elements.len(),
+                )
+            }
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura keyboard probe failed; retain static review results");
+                HashMap::new()
+            }
         }
-        Err(error) => {
-            tracing::warn!(url, error = %error, "Obscura keyboard probe failed; retain static review results");
-            HashMap::new()
-        }
+    } else {
+        HashMap::new()
     };
 
     // 3. Extract page context for Holo3 prompts

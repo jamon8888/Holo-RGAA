@@ -271,7 +271,7 @@ mod tests {
             confidence: None,
             raw_confidence: Some(0.87),
             justification: Some("alternative absente".into()),
-            source: "holo3".into(),
+            source: "agent".into(),
             citations: vec![
                 Citation::referentiel("1.1.1", "2024.1"),
                 Citation::crawl(

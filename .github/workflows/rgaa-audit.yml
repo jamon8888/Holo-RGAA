@@ -116,7 +116,8 @@ jobs:
       - name: Run audit on changed routes
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
-          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+          RGAA_LLM_PROVIDER: myia
+          MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
         run: |
           chmod +x bin/rgaa-cli
           # Extract routes from changed files (simplified heuristic)
@@ -153,7 +154,8 @@ jobs:
       - name: Run smoke audit
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
-          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+          RGAA_LLM_PROVIDER: myia
+          MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
         run: |
           chmod +x bin/rgaa-cli
           # Smoke test: audit configured critical routes
@@ -196,7 +198,8 @@ jobs:
       - name: Run full audit (crawl + analyze)
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
-          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+          RGAA_LLM_PROVIDER: myia
+          MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
         run: |
           chmod +x bin/rgaa-cli
           ./bin/rgaa-cli audit analyze \
@@ -240,7 +243,8 @@ jobs:
       - name: Run current audit
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
-          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+          RGAA_LLM_PROVIDER: myia
+          MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
         run: |
           chmod +x bin/rgaa-cli
           ./bin/rgaa-cli audit analyze \
@@ -274,7 +278,8 @@ jobs:
       - name: Run audit for policy evaluation
         env:
           RGAA_OBSCURA_BIN: ${{ github.workspace }}/obscura
-          HOLO3_API_KEY: ${{ secrets.HOLO3_API_KEY }}
+          RGAA_LLM_PROVIDER: myia
+          MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
         run: |
           chmod +x bin/rgaa-cli
           ./bin/rgaa-cli audit analyze \

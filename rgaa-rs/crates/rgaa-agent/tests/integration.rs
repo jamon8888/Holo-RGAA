@@ -4,7 +4,18 @@ use rgaa_core::{Classification, Criterion};
 use rgaa_holo::PageContext;
 
 fn has_api_key() -> bool {
-    std::env::var("HOL3_API_KEY").is_ok() || std::env::var("HOLO3_API_KEY").is_ok()
+    [
+        "MYIA_API_KEY",
+        "RGAA_LLM_API_KEY",
+        "HOL3_API_KEY",
+        "HOLO3_API_KEY",
+    ]
+    .iter()
+    .any(|name| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty())
+    })
 }
 
 #[tokio::test]
@@ -21,7 +32,7 @@ async fn test_agent_creation() {
 async fn test_evaluate_criterion() {
     if !has_api_key() {
         eprintln!(
-            "Skipping test_evaluate_criterion: no API key set (HOL3_API_KEY or HOLO3_API_KEY)"
+            "Skipping test_evaluate_criterion: no API key set (MYIA_API_KEY or RGAA_LLM_API_KEY)"
         );
         return;
     }
@@ -48,10 +59,10 @@ async fn test_evaluate_criterion() {
     };
 
     let result = agent.evaluate_criterion(&criterion, &page_context).await;
-    // AgentConfig::default() has no API key, so this hits the real Holo3
+    // AgentConfig::default() has no API key, so this hits the configured LLM
     // endpoint with empty credentials and takes evaluate_criterion's error
     // path (NeedsReview / source "agent-error") in any environment without
-    // HOLO3_API_KEY set — including CI's default test job and local runs.
+    // provider without a key — including CI's default test job and local runs.
     // With a real key configured, it exercises the success path instead,
     // whose status depends on the model's verdict. Assert what holds in
     // both rather than hardcoding the network-dependent outcome.
@@ -62,7 +73,9 @@ async fn test_evaluate_criterion() {
 #[tokio::test]
 async fn test_run_ia_assiste() {
     if !has_api_key() {
-        eprintln!("Skipping test_run_ia_assiste: no API key set (HOL3_API_KEY or HOLO3_API_KEY)");
+        eprintln!(
+            "Skipping test_run_ia_assiste: no API key set (MYIA_API_KEY or RGAA_LLM_API_KEY)"
+        );
         return;
     }
     let config = AgentConfig::from_env().unwrap();

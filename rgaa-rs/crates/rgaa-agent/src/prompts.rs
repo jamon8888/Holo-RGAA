@@ -11,7 +11,7 @@ pub const MAX_CONTEXT_CHARS: usize = 8_000;
 
 const TRUNCATION_MARKER: &str = "\n\n[…page context truncated…]";
 
-/// Builds structured evaluation prompts for Holo3.
+/// Builds structured evaluation prompts for the configured LLM provider.
 ///
 /// The prompt includes the criterion definition, WCAG references,
 /// and the page context (headings, images, forms, etc.).
@@ -100,7 +100,7 @@ impl PromptBuilder {
     /// criteria against the same page.
     ///
     /// # Returns
-    /// A formatted prompt string ready to send to the Holo3 API.
+    /// A formatted prompt string ready to send to the configured LLM provider.
     pub fn build(criterion_id: &str, context: &PageContext) -> String {
         Self::build_from_rendered(criterion_id, &Self::render_context(context))
     }

@@ -1,8 +1,9 @@
 //! OpenAI-compatible chat-completions transport shared by every backend.
 //!
-//! Holo3 and Ollama speak the same wire format (`POST /v1/chat/completions`,
-//! `messages[]`, `choices[0].message.content`), so the request loop, retry,
-//! backoff and response extraction live here once.
+//! MyIA, other hosted providers, and local runtimes speak the same
+//! OpenAI-compatible wire format (`POST /v1/chat/completions`, `messages[]`,
+//! `choices[0].message.content`), so the request loop, retry, backoff and
+//! response extraction live here once.
 
 use base64::Engine;
 use reqwest::Client;
@@ -68,7 +69,7 @@ struct ChatChoiceMessage {
 
 #[derive(Clone)]
 pub(crate) struct ChatTransport {
-    /// Short backend label used in logs and error messages (`"holo3"`, `"ollama"`).
+    /// Short provider label used in logs and error messages (`"myia"`, `"ollama"`).
     pub label: &'static str,
     pub endpoint: String,
     pub model: String,

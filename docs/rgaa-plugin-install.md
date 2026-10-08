@@ -64,8 +64,8 @@ tree without installing it.
 ### 3. Configure environment
 
 ```bash
-# Required for AI-assisted remediation
-export HOLO3_API_KEY="your-holo3-api-key"
+# Required for MyIA-assisted evaluation and remediation
+export MYIA_API_KEY="your-myia-api-key"
 
 # Optional: Remote bundle service
 export REMOTE_API_KEY="your-remote-api-key"
@@ -219,11 +219,11 @@ The Obscura binary provides browser automation. If not available:
 - Use the `--skip-obscura` flag for basic analysis
 - Install Obscura separately for full functionality
 
-### "Holo3 API key required"
+### "MyIA API key required"
 
 For AI-assisted remediation:
-1. Get an API key from Holo3
-2. Set `HOLO3_API_KEY` environment variable
+1. Get an API key for the configured MyIA endpoint
+2. Set the `MYIA_API_KEY` environment variable, or `RGAA_LLM_API_KEY`
 3. Use `--remote` flag when remediating
 
 ### "Database connection failed"

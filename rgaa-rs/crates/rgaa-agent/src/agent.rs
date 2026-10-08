@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Consecutive Holo3 call failures (across the whole shared agent, not just
+/// Consecutive LLM call failures (across the whole shared agent, not just
 /// one audit) before the circuit breaker trips and further calls fail loud
 /// instead of being attempted.
 const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
@@ -324,7 +324,7 @@ impl RgaaAgent {
             return Err(AgentError::Config("agent_concurrency must be > 0".into()));
         }
         // 1. One OpenAI-compatible client for the configured provider —
-        //    Holo3, OpenAI, Groq, a local Ollama, anything in
+        //    MyIA, OpenAI, Groq, a local Ollama, anything in
         //    `rgaa_core::PROVIDERS`. Both tiers share it: they differ by
         //    model, not by endpoint.
         let client = openai::Client::builder()
@@ -460,7 +460,7 @@ impl RgaaAgent {
         }
     }
 
-    /// True when the shared circuit breaker is open — a real Holo3 outage has
+    /// True when the shared circuit breaker is open — repeated provider failures have
     /// already been observed, so further calls fail loud instead of piling
     /// more failed requests (and NeedsReview filler) onto a dead upstream.
     ///
@@ -500,7 +500,7 @@ impl RgaaAgent {
     /// Renders `page_context` and builds the evaluator prompt with
     /// [`PromptBuilder`]; prefer [`Self::run_ia_assiste`] when evaluating
     /// several criteria against the same page, which renders the context
-    /// once and reuses it. Queries the Holo3 model on the tier [`tier_for`]
+    /// once and reuses it. Queries the configured model on the tier [`tier_for`]
     /// picks for this criterion, and maps the structured [`HoloResponse`] to
     /// a [`CriterionStatus`] via [`map_verdict`]. On model failure the
     /// criterion is flagged [`CriterionStatus::NeedsReview`] with the error
@@ -529,7 +529,7 @@ impl RgaaAgent {
         if self.breaker_open() {
             tracing::warn!(
                 criterion = criterion.id,
-                "circuit breaker open; skipping Holo3 call"
+                "circuit breaker open; skipping LLM call"
             );
             return CriterionResult {
                 criterion_id: criterion.id.to_string(),
@@ -540,7 +540,7 @@ impl RgaaAgent {
                 confidence: None,
                 raw_confidence: None,
                 justification: Some(
-                    "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
+                    "Circuit breaker open: too many consecutive LLM failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
@@ -602,7 +602,7 @@ impl RgaaAgent {
                 if failures >= CIRCUIT_BREAKER_THRESHOLD {
                     tracing::warn!(
                         consecutive_failures = failures,
-                        "Holo3 circuit breaker tripped"
+                        "LLM circuit breaker tripped"
                     );
                 }
                 tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");
@@ -639,7 +639,7 @@ impl RgaaAgent {
     /// (rather than re-rendering per criterion) since all of them evaluate
     /// the same page. Uses bounded concurrency with the internal rate
     /// limiter, tiered per criterion by [`tier_for`], to avoid overwhelming
-    /// the Holo3 API while keeping evaluations parallel.
+    /// the configured LLM provider while keeping evaluations parallel.
     ///
     /// Criteria are evaluated in batches of `BATCH_SIZE` to reduce the number
     /// of LLM API calls.
@@ -805,7 +805,7 @@ impl RgaaAgent {
         if self.breaker_open() {
             tracing::warn!(
                 criterion = criterion.id,
-                "circuit breaker open; skipping Holo3 call"
+                "circuit breaker open; skipping LLM call"
             );
             return CriterionResult {
                 criterion_id: criterion.id.to_string(),
@@ -816,7 +816,7 @@ impl RgaaAgent {
                 confidence: None,
                 raw_confidence: None,
                 justification: Some(
-                    "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
+                    "Circuit breaker open: too many consecutive LLM failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
@@ -878,7 +878,7 @@ impl RgaaAgent {
                 if failures >= CIRCUIT_BREAKER_THRESHOLD {
                     tracing::warn!(
                         consecutive_failures = failures,
-                        "Holo3 circuit breaker tripped"
+                        "LLM circuit breaker tripped"
                     );
                 }
                 tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");

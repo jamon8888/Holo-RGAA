@@ -1,7 +1,7 @@
 //! Snapshot of every static lookup the audit path reads, dumped as text so two
 //! builds can be diffed byte for byte (#43).
 //!
-//! The pipeline's own end-to-end run needs a browser and a Holo3 key, so this
+//! The pipeline's own end-to-end run needs a browser and an LLM API key, so this
 //! harness stands in for it: it exercises the catalog, the criterion lists, the
 //! axe rule-to-criteria map, the gap-fix snippets and the applicability table —
 //! the tables #43 moves behind `OnceLock` — and prints their contents in a

@@ -203,7 +203,7 @@ impl CompletionParams {
 /// re-resolve later, which may have moved on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LlmProvenance {
-    /// Provider preset the route resolved to (`vllm`, `ollama`, `holo3`, …).
+    /// Provider preset the route resolved to (`myia`, `vllm`, `ollama`, …).
     pub provider: String,
     /// Model identifier sent on the wire.
     pub model: String,

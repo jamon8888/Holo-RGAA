@@ -5,7 +5,7 @@ use rgaa_core::{CompletionParams, LlmProvenance, RgaaError};
 use std::time::Duration;
 
 /// Local Ollama backend through its OpenAI-compatible endpoint. No API key,
-/// no outbound traffic: the privacy boundary the remote Holo3 path can't offer.
+/// no outbound traffic: the privacy boundary a hosted LLM path cannot offer.
 ///
 /// The model is deliberately not defaulted: pick a quantized ~7B instruct
 /// model for interactive use and ~14B for scheduled batch on a CPU-only host.

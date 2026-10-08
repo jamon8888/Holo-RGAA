@@ -75,7 +75,7 @@ Run a full RGAA 4.1.2 accessibility audit against a URL or local project. Return
 | Classification | Meaning | Test Method |
 |---------------|---------|-------------|
 | `Deterministe` | Fully automated | axe-core + gap-fix rules |
-| `IaAssiste` | AI-assisted | Holo3 LLM evaluation |
+| `IaAssiste` | AI-assisted | MyIA LLM evaluation |
 | `Manuel` | Manual testing | Guided test protocol |
 
 ## Compliance Status

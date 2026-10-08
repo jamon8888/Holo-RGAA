@@ -16,6 +16,11 @@ $Repo = "jamon8888/Holo-RGAA"
 $ObscuraRepo = "h4ckf0r0day/obscura"
 $ObscuraVersion = "0.2.2"
 $InstallDir = "$env:LOCALAPPDATA\rgaa\bin"
+$CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+$CodexMarketplaceDir = Join-Path $env:LOCALAPPDATA "rgaa\codex-marketplace"
+$CodexMarketplaceName = "holo-rgaa-codex"
+$CodexPluginName = "rgaa-accessibility-codex"
+$CodexPluginCache = Join-Path $CodexHome "plugins\cache\$CodexMarketplaceName\$CodexPluginName\local"
 $TmpDir = [System.IO.Path]::GetTempPath()
 $McpConfig = "$env:USERPROFILE\.claude\mcp.json"
 
@@ -24,12 +29,106 @@ function Write-Step([string]$msg) {
     Write-Host "==> $msg" -ForegroundColor Cyan
 }
 
+function Remove-CodexPluginRegistration {
+    $configPath = Join-Path $CodexHome "config.toml"
+    if (-not (Test-Path $configPath)) { return }
+    $targets = @(
+        "marketplaces.$CodexMarketplaceName",
+        "plugins.`"$CodexPluginName@$CodexMarketplaceName`""
+    )
+    $kept = [System.Collections.Generic.List[string]]::new()
+    $skip = $false
+    foreach ($line in (Get-Content -Path $configPath)) {
+        if ($line -match '^\[([^]]+)\]\s*(?:#.*)?$') { $skip = $targets -contains $Matches[1] }
+        if (-not $skip) { $kept.Add($line) }
+    }
+    [System.IO.File]::WriteAllText($configPath, (($kept -join "`n").TrimEnd() + "`n"), [System.Text.UTF8Encoding]::new($false))
+}
+
+function Register-CodexPlugin {
+    param([Parameter(Mandatory = $true)][string]$PluginSource)
+
+    $packageDir = Join-Path $CodexMarketplaceDir "rgaa-rs\plugins\rgaa-codex"
+    if (Test-Path $CodexMarketplaceDir) { Remove-Item $CodexMarketplaceDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+    Copy-Item (Join-Path $PluginSource "*") $packageDir -Recurse -Force
+
+    $marketplaceDir = Join-Path $CodexMarketplaceDir ".agents\plugins"
+    New-Item -ItemType Directory -Force -Path $marketplaceDir | Out-Null
+    $repoRoot = Split-Path (Split-Path (Split-Path $PluginSource -Parent) -Parent) -Parent
+    $marketplaceSource = Join-Path $repoRoot ".agents\plugins\marketplace.json"
+    if (Test-Path $marketplaceSource) {
+        Copy-Item $marketplaceSource (Join-Path $marketplaceDir "marketplace.json") -Force
+    } else {
+        $manifest = @{
+            name = $CodexMarketplaceName
+            interface = @{ displayName = "Holo RGAA Codex" }
+            plugins = @(@{
+                name = $CodexPluginName
+                source = @{ source = "local"; path = "./rgaa-rs/plugins/rgaa-codex" }
+                policy = @{ installation = "AVAILABLE"; authentication = "ON_INSTALL" }
+                category = "Accessibility"
+            })
+        }
+        $manifestJson = $manifest | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText((Join-Path $marketplaceDir "marketplace.json"), $manifestJson, [System.Text.UTF8Encoding]::new($false))
+    }
+
+    $mcpFile = Join-Path $packageDir ".mcp.json"
+    if (Test-Path $mcpFile) {
+        $mcpConfig = Get-Content -Raw -Path $mcpFile | ConvertFrom-Json
+        $server = $mcpConfig.mcpServers.'rgaa-mcp'
+        $server.command = Join-Path $InstallDir "rgaa-mcp.exe"
+        $server.type = "stdio"
+        if (-not $server.env) { $server | Add-Member -NotePropertyName env -NotePropertyValue ([PSCustomObject]@{}) }
+        $server.env | Add-Member -NotePropertyName RGAA_OBSCURA_BIN -NotePropertyValue (Join-Path $InstallDir "obscura.exe") -Force
+        $mcpJson = $mcpConfig | ConvertTo-Json -Depth 10
+        [System.IO.File]::WriteAllText($mcpFile, $mcpJson, [System.Text.UTF8Encoding]::new($false))
+    }
+
+    $configPath = Join-Path $CodexHome "config.toml"
+    New-Item -ItemType Directory -Force -Path $CodexHome | Out-Null
+    $text = if (Test-Path $configPath) { Get-Content -Raw -Path $configPath } else { "" }
+    $targets = @(
+        "marketplaces.$CodexMarketplaceName",
+        "plugins.`"$CodexPluginName@$CodexMarketplaceName`""
+    )
+    $kept = [System.Collections.Generic.List[string]]::new()
+    $skip = $false
+    foreach ($line in ($text -split "`r?`n")) {
+        if ($line -match '^\[([^]]+)\]\s*(?:#.*)?$') { $skip = $targets -contains $Matches[1] }
+        if (-not $skip) { $kept.Add($line) }
+    }
+    $quotedPath = $CodexMarketplaceDir | ConvertTo-Json -Compress
+    $block = @(
+        "[marketplaces.$CodexMarketplaceName]",
+        'source_type = "local"',
+        "source = $quotedPath",
+        "",
+        "[plugins.`"$CodexPluginName@$CodexMarketplaceName`"]",
+        "enabled = true"
+    )
+    $updated = ($kept -join "`n").TrimEnd() + "`n`n" + ($block -join "`n") + "`n"
+    [System.IO.File]::WriteAllText($configPath, $updated, [System.Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Directory -Force -Path (Split-Path $CodexPluginCache) | Out-Null
+    if (Test-Path $CodexPluginCache) { Remove-Item $CodexPluginCache -Recurse -Force }
+    Copy-Item $packageDir $CodexPluginCache -Recurse -Force
+    Write-Host "  Codex plugin registered and enabled: $configPath" -ForegroundColor Green
+}
+
 function Uninstall-Rgaa {
     Write-Step "Uninstalling rgaa-rs..."
     foreach ($bin in @("rgaa.exe", "rgaa-cli.exe", "rgaa-api.exe", "rgaa-mcp.exe", "rgaa-mcp-http.exe", "obscura.exe", "obscura-worker.exe")) {
         $p = Join-Path $InstallDir $bin
         if (Test-Path $p) { Remove-Item $p -Force; Write-Host "  Removed $bin" }
     }
+    if (Test-Path $CodexMarketplaceDir) {
+        Remove-Item $CodexMarketplaceDir -Recurse -Force
+        Write-Host "  Removed Codex plugin marketplace: $CodexMarketplaceDir"
+    }
+    $pluginCacheRoot = Split-Path $CodexPluginCache -Parent
+    if (Test-Path $pluginCacheRoot) { Remove-Item $pluginCacheRoot -Recurse -Force }
+    Remove-CodexPluginRegistration
     Write-Host "  Uninstall complete." -ForegroundColor Green
 }
 
@@ -105,7 +204,8 @@ try {
     $pluginTmp = Join-Path $TmpDir "rgaa-plugin-fetch"
     New-Item -ItemType Directory -Force -Path $pluginTmp | Out-Null
     $pluginTarball = Join-Path $pluginTmp "repo.tar.gz"
-    Invoke-WebRequest -Uri "https://codeload.github.com/${Repo}/tar.gz/${Version}" -OutFile $pluginTarball -UserAgent "rgaa-install"
+    $pluginRef = if ($Version -eq "latest") { "master" } else { $Version }
+    Invoke-WebRequest -Uri "https://codeload.github.com/${Repo}/tar.gz/${pluginRef}" -OutFile $pluginTarball -UserAgent "rgaa-install"
     tar -xzf $pluginTarball -C $pluginTmp
     $repoRoot = Get-ChildItem -Path $pluginTmp -Directory | Where-Object { $_.Name -like "Holo-RGAA-*" } | Select-Object -First 1
     # The canonical tree is rgaa-rs/plugins/rgaa-consultant. A tag from before
@@ -128,6 +228,13 @@ try {
         Write-Host "  Plugin installed: $PluginDir" -ForegroundColor Green
     } else {
         Write-Host "  WARNING: plugin not in tarball; continuing without plugin." -ForegroundColor Yellow
+    }
+    $codexPluginSource = if ($repoRoot) { Join-Path $repoRoot.FullName "rgaa-rs/plugins/rgaa-codex" } else { $null }
+    if ($codexPluginSource -and (Test-Path $codexPluginSource)) {
+        Register-CodexPlugin -PluginSource $codexPluginSource
+        Write-Host "  Codex plugin installed: $CodexMarketplaceDir" -ForegroundColor Green
+    } else {
+        Write-Host "  WARNING: Codex plugin not in tarball; continuing without Codex integration." -ForegroundColor Yellow
     }
 } catch {
     Write-Host "  WARNING: plugin download failed; continuing without plugin." -ForegroundColor Yellow

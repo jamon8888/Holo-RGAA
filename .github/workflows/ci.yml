@@ -48,6 +48,8 @@ jobs:
       # documented tool names against the ones `rgaa-mcp` registers, so that
       # drift fails here instead of reaching a plugin user.
       - run: bash rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
+      - run: bash -n rgaa-rs/plugins/rgaa-codex/tests/plugin-contract.sh
+      - run: bash rgaa-rs/plugins/rgaa-codex/tests/plugin-contract.sh
   ts-types:
     name: TypeScript types
     runs-on: ubuntu-latest

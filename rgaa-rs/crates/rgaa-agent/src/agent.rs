@@ -233,6 +233,10 @@ pub struct RgaaAgent {
     /// Agent for [`ModelTier::Reasoning`]; the same model as `tactical`
     /// unless the operator set a reasoning-specific one.
     reasoning: Agent,
+    /// One-shot agents for automatic estimates. The page context is already
+    /// supplied in the prompt, so these agents must not start a second crawl.
+    automatic_tactical: Agent,
+    automatic_reasoning: Agent,
     /// What a tactical-tier call records as having run with. Captured at
     /// build time from the same [`AgentConfig::params`] the agents were
     /// built from, so it cannot drift from what is on the wire.
@@ -292,7 +296,10 @@ impl RgaaAgent {
                     }
                     let prompt = PromptBuilder::build_automatic_from_rendered(&batch, &rendered, &prior_results);
                     self.rate_limiter.acquire(tier).await;
-                    match self.prompt_measured(tier, &prompt, &ids).await {
+                    match self
+                        .prompt_automatic_measured(tier, &prompt, &ids)
+                        .await
+                    {
                         Ok(response) => {
                             self.record_success();
                             map_automatic_response(&batch, &response)
@@ -376,9 +383,25 @@ impl RgaaAgent {
                 // call (see rig-agent's `default_max_turns` docs); a model that
                 // reaches for `crawl_site` instead of answering directly then
                 // has no turn left to read the tool result and produce a
-                // verdict, and fails with MaxTurnsError. 3 turns covers one
-                // tool call plus the follow-up answer, with a little slack.
-                .default_max_turns(3)
+                // verdict, and fails with MaxTurnsError. Use the configured
+                // budget so models that need more than one tool round can still
+                // return an evidence-based verdict.
+                .default_max_turns(config.max_turns)
+                .build()
+        };
+        let build_automatic_agent = |model: &str| {
+            let mut builder = client
+                .agent(model)
+                .temperature(params.temperature)
+                .max_tokens(u64::from(params.max_tokens));
+            if !extra_body.is_empty() {
+                builder = builder.additional_params(serde_json::Value::Object(extra_body.clone()));
+            }
+            builder
+                .preamble(
+                    "You are an RGAA accessibility expert. Evaluate only the supplied page evidence and criteria. Do not browse or crawl; return the requested JSON verdicts.",
+                )
+                .default_max_turns(1)
                 .build()
         };
 
@@ -409,6 +432,8 @@ impl RgaaAgent {
         Ok(Self {
             tactical: build_agent(config.model_tactical()),
             reasoning: build_agent(config.model_reasoning()),
+            automatic_tactical: build_automatic_agent(config.model_tactical()),
+            automatic_reasoning: build_automatic_agent(config.model_reasoning()),
             provenance_tactical,
             provenance_reasoning,
             rate_limiter,
@@ -452,11 +477,34 @@ impl RgaaAgent {
         crate::metrics::measured_prompt(self.agent_for(tier), tier_name, prompt, criteria).await
     }
 
+    /// Runs an automatic estimate on the one-shot agent that cannot launch a
+    /// redundant site crawl, while recording the same per-batch cost event.
+    async fn prompt_automatic_measured(
+        &self,
+        tier: ModelTier,
+        prompt: &str,
+        criteria: &str,
+    ) -> Result<String, rig_agent::completion::PromptError> {
+        let tier_name = match tier {
+            ModelTier::Tactical => "tactical",
+            ModelTier::Reasoning => "reasoning",
+        };
+        crate::metrics::measured_prompt(self.automatic_agent_for(tier), tier_name, prompt, criteria)
+            .await
+    }
+
     /// The agent bound to `tier`'s model.
     fn agent_for(&self, tier: ModelTier) -> &Agent {
         match tier {
             ModelTier::Tactical => &self.tactical,
             ModelTier::Reasoning => &self.reasoning,
+        }
+    }
+
+    fn automatic_agent_for(&self, tier: ModelTier) -> &Agent {
+        match tier {
+            ModelTier::Tactical => &self.automatic_tactical,
+            ModelTier::Reasoning => &self.automatic_reasoning,
         }
     }
 

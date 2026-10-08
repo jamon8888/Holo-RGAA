@@ -935,366 +935,6 @@ fn failed_page_result(url: &str, error: &str) -> PageResult {
     }
 }
 
-#[cfg(test)]
-mod routing_tests {
-    use super::*;
-    use rgaa_core::types::Violation;
-
-    fn deterministic_result(
-        criterion_id: &str,
-        status: CriterionStatus,
-        source: &str,
-    ) -> CriterionResult {
-        let criterion = RgaaCriteria::find(criterion_id).expect("criterion exists");
-        CriterionResult {
-            criterion_id: criterion_id.to_string(),
-            title: criterion.title.clone(),
-            classification: criterion.classification,
-            status,
-            violations: Vec::<Violation>::new(),
-            confidence: None,
-            justification: None,
-            source: source.to_string(),
-            citations: vec![],
-            considered_sources: vec![],
-            tests: vec![],
-            automated_verdict: None,
-            verdict_basis: Vec::new(),
-            evidence: Vec::new(),
-            confidence_calibration_version: None,
-            review_required: false,
-            review_reason: None,
-            verified_status: None,
-            review_events: Vec::new(),
-        }
-    }
-
-    fn complete_prediction_set() -> Vec<CriterionResult> {
-        let mut results: HashMap<String, CriterionResult> = RgaaCriteria::all()
-            .iter()
-            .map(|criterion| {
-                let mut result = deterministic_result(
-                    criterion.id,
-                    CriterionStatus::NeedsReview,
-                    "agent-estimate",
-                );
-                result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Pass);
-                (criterion.id.to_owned(), result)
-            })
-            .collect();
-
-        for (criterion_id, test_key) in RgaaCatalog::all_test_keys() {
-            let route = EnginePlan::route_test(&criterion_id, &test_key)
-                .expect("every canonical test has a route");
-            let source = if route.coverage == CoverageLevel::Complete {
-                "axe-core"
-            } else {
-                "agent-estimate"
-            };
-            results
-                .get_mut(&criterion_id)
-                .expect("criterion belongs to catalog")
-                .tests
-                .push(TestOutcome {
-                    test_key,
-                    status: CriterionStatus::Pass,
-                    source: source.into(),
-                    evidence: None,
-                });
-        }
-        results.into_values().collect()
-    }
-
-    #[test]
-    fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
-        let determined = [deterministic_result(
-            "1.2",
-            CriterionStatus::Fail,
-            "axe-core",
-        )];
-
-        let candidates = select_holo_candidates(&determined);
-        let ids: std::collections::HashSet<&str> =
-            candidates.iter().map(|criterion| criterion.id).collect();
-
-        assert_eq!(candidates.len(), 31);
-        assert_eq!(ids.len(), candidates.len());
-        assert!(!ids.contains("1.2"));
-        assert!(ids.contains("3.1"));
-        assert!(!ids.contains("4.2"));
-    }
-
-    #[test]
-    fn failed_page_is_retained_with_every_criterion_not_tested() {
-        let page = failed_page_result("https://example.test/forms", "navigation timed out");
-
-        assert_eq!(page.url, "https://example.test/forms");
-        assert_eq!(page.criteria.len(), 106);
-        assert!(page.criteria.iter().all(|criterion| {
-            criterion.status == CriterionStatus::NotTested
-                && criterion.source == "audit-error"
-                && criterion
-                    .justification
-                    .as_deref()
-                    .is_some_and(|reason| reason.contains("navigation timed out"))
-        }));
-    }
-
-    #[test]
-    fn automatic_verdict_coverage_requires_every_routed_test_outcome() {
-        let error = validate_automatic_verdict_coverage(&[])
-            .expect_err("an empty page result cannot cover the catalog");
-        assert_eq!(error.missing_criterion_ids.len(), RgaaCriteria::count());
-        assert!(error.missing_criterion_ids.iter().any(|id| id == "4.2"));
-    }
-
-    #[test]
-    fn complete_routes_require_deterministic_test_evidence() {
-        let mut results = complete_prediction_set();
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
-
-        let result = results
-            .iter_mut()
-            .find(|result| result.criterion_id == "1.1")
-            .expect("criterion 1.1 exists");
-        result.tests[0].source = "agent-estimate".into();
-
-        let error = validate_automatic_verdict_coverage(&results)
-            .expect_err("model estimates alone cannot close a complete route");
-        assert_eq!(error.missing_criterion_ids, vec!["1.1"]);
-    }
-
-    #[test]
-    fn aggregate_failure_without_a_test_key_keeps_the_audit_incomplete() {
-        let mut results = complete_prediction_set();
-        let result = results
-            .iter_mut()
-            .find(|result| result.criterion_id == "1.1")
-            .expect("criterion 1.1 exists");
-        result.status = CriterionStatus::Fail;
-
-        let error = validate_automatic_verdict_coverage(&results)
-            .expect_err("aggregate failure does not identify a test key");
-        assert!(error.missing_criterion_ids.iter().any(|id| id == "1.1"));
-    }
-
-    #[test]
-    fn every_criterion_needs_an_automatic_prediction() {
-        let mut results = complete_prediction_set();
-        results
-            .iter_mut()
-            .find(|result| result.criterion_id == "4.2")
-            .expect("criterion 4.2 exists")
-            .automated_verdict = None;
-
-        let error = validate_automatic_verdict_coverage(&results)
-            .expect_err("missing model output must stay incomplete");
-        assert_eq!(error.missing_criterion_ids, vec!["4.2"]);
-    }
-
-    #[test]
-    fn complete_mechanism_pass_materializes_routes_but_failure_does_not_guess_test_keys() {
-        let mut results: HashMap<String, CriterionResult> = HashMap::new();
-        let pass = deterministic_result("1.1", CriterionStatus::Pass, "axe-core");
-        results.insert("1.1".into(), pass);
-        let fail = deterministic_result("1.2", CriterionStatus::Fail, "gap-fix");
-        results.insert("1.2".into(), fail);
-
-        attach_complete_mechanism_passes(results.values_mut());
-
-        assert_eq!(results["1.1"].tests.len(), 8);
-        assert!(results["1.1"]
-            .tests
-            .iter()
-            .all(|test| { test.status == CriterionStatus::Pass && test.source == "axe-core" }));
-        assert!(results["1.2"].tests.is_empty());
-    }
-
-    #[test]
-    fn route_plan_controls_mechanism_dispatch_and_result_admission() {
-        assert!(criterion_has_routed_mechanism("1.1", "axe-1-1"));
-        assert!(!criterion_has_routed_mechanism("1.2", "axe-1-2"));
-        assert!(criterion_has_routed_mechanism("1.2", "gapfix-1-2"));
-
-        let admitted = admit_routed_results(
-            [
-                (
-                    "1.1".to_string(),
-                    deterministic_result("1.1", CriterionStatus::Fail, "axe-core"),
-                ),
-                (
-                    "1.2".to_string(),
-                    deterministic_result("1.2", CriterionStatus::Fail, "axe-core"),
-                ),
-            ],
-            "axe",
-        );
-        assert_eq!(admitted.len(), 1);
-        assert!(admitted.contains_key("1.1"));
-
-        let snippets = routed_gap_fix_snippets();
-        assert!(snippets.contains_key("1.1"));
-        assert!(snippets.contains_key("1.2"));
-        assert!(!snippets.contains_key("10.1"));
-        assert!(!snippets.contains_key("1.9"));
-        assert!(!criterion_has_routed_mechanism("12.8", "keyboard-12-8"));
-    }
-
-    #[test]
-    fn multi_page_audit_is_complete_only_when_every_page_passes_coverage_gate() {
-        let complete = PageResult {
-            url: "https://example.test/complete".into(),
-            title: None,
-            criteria: complete_prediction_set(),
-            compliance_rate: 0.0,
-            crawl_depth: 0,
-        };
-        let mut incomplete = complete.clone();
-        incomplete.url = "https://example.test/incomplete".into();
-        incomplete
-            .criteria
-            .iter_mut()
-            .find(|result| result.criterion_id == "4.2")
-            .expect("criterion 4.2 exists")
-            .automated_verdict = None;
-
-        assert!(pages_have_complete_automatic_coverage(
-            std::slice::from_ref(&complete)
-        ));
-        assert!(pages_have_complete_automatic_coverage(&[
-            complete.clone(),
-            complete.clone()
-        ]));
-        assert!(!pages_have_complete_automatic_coverage(&[
-            complete, incomplete
-        ]));
-        assert!(!pages_have_complete_automatic_coverage(&[]));
-    }
-
-    #[test]
-    fn keyed_site_failure_preserves_model_pass_and_is_counted_as_deterministic() {
-        let mut results = complete_prediction_set();
-        let result = results
-            .iter_mut()
-            .find(|result| result.criterion_id == "12.1")
-            .expect("criterion 12.1 exists");
-        let site_failure = site_comparison::SiteCriterionObservation {
-            criterion_id: "12.1",
-            status: CriterionStatus::Fail,
-            details: "one observed page lacks a navigation system".into(),
-            sampled_pages: 2,
-            failed_pages: 0,
-            sample_complete: true,
-        };
-
-        record_site_comparison_evidence(result, &site_failure);
-
-        assert_eq!(result.status, CriterionStatus::Fail);
-        assert_eq!(result.verified_status, Some(CriterionStatus::Fail));
-        assert_eq!(
-            result.automated_verdict,
-            Some(rgaa_core::AutomatedVerdict::Pass)
-        );
-        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
-        assert!(result
-            .considered_sources
-            .contains(&"site-comparison".into()));
-        assert!(result.tests.iter().any(|outcome| {
-            outcome.test_key == "1"
-                && outcome.source == "site-comparison"
-                && outcome.status == CriterionStatus::Fail
-        }));
-        assert_eq!(
-            rgaa_core::reduce_test_outcomes(&result.tests, &["1".to_string()]),
-            Some(CriterionStatus::Fail)
-        );
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
-    }
-
-    #[test]
-    fn unkeyed_site_failure_for_multi_test_criterion_keeps_coverage_incomplete() {
-        let mut results = complete_prediction_set();
-        let result = results
-            .iter_mut()
-            .find(|result| result.criterion_id == "12.4")
-            .expect("criterion 12.4 exists");
-        let site_failure = site_comparison::SiteCriterionObservation {
-            criterion_id: "12.4",
-            status: CriterionStatus::Fail,
-            details: "site-wide sitemap placement signatures differ".into(),
-            sampled_pages: 2,
-            failed_pages: 0,
-            sample_complete: true,
-        };
-
-        record_site_comparison_evidence(result, &site_failure);
-
-        assert_eq!(result.status, CriterionStatus::Fail);
-        assert_eq!(
-            result.automated_verdict,
-            Some(rgaa_core::AutomatedVerdict::Pass)
-        );
-        assert!(!result
-            .tests
-            .iter()
-            .any(|outcome| outcome.source == "site-comparison"));
-        let error = validate_automatic_verdict_coverage(&results)
-            .expect_err("an unkeyed site failure cannot be closed by model rows");
-        assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
-    }
-
-    #[test]
-    fn site_needs_review_does_not_block_an_existing_mechanism_failure() {
-        let mut results = complete_prediction_set();
-        let result = results
-            .iter_mut()
-            .find(|result| result.criterion_id == "12.4")
-            .expect("criterion 12.4 exists");
-        result.status = CriterionStatus::Fail;
-        result.source = "gap-fix".into();
-        result.considered_sources.push("gap-fix".into());
-        let site_review = site_comparison::SiteCriterionObservation {
-            criterion_id: "12.4",
-            status: CriterionStatus::NeedsReview,
-            details: "target relevance still requires review".into(),
-            sampled_pages: 2,
-            failed_pages: 0,
-            sample_complete: true,
-        };
-
-        record_site_comparison_evidence(result, &site_review);
-
-        assert_eq!(result.status, CriterionStatus::Fail);
-        assert!(result
-            .considered_sources
-            .contains(&"site-comparison".into()));
-        assert!(result
-            .justification
-            .as_deref()
-            .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
-    }
-
-    #[test]
-    fn deterministic_na_updates_verified_status_without_replacing_model_prediction() {
-        let mut result =
-            deterministic_result("4.2", CriterionStatus::NeedsReview, "agent-estimate");
-        result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Fail);
-        result.verdict_basis = vec![VerdictBasis::ModelEstimate];
-
-        mark_deterministically_not_applicable(&mut result);
-
-        assert_eq!(result.status, CriterionStatus::NotApplicable);
-        assert_eq!(result.verified_status, Some(CriterionStatus::NotApplicable));
-        assert_eq!(
-            result.automated_verdict,
-            Some(rgaa_core::AutomatedVerdict::Fail)
-        );
-        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
-        assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
-    }
-}
-
 /// Discover RGAA mandatory 7 sample pages.
 /// Returns URLs for: Accueil, Contact, Mentions légales, Accessibilité, Aide, Plan du site, Authentification (if exists).
 async fn discover_rgaa_sample_pages(
@@ -1810,4 +1450,364 @@ async fn audit_one(
         duration_ms: start.elapsed().as_millis() as u64,
         audit_complete: coverage_result.is_ok(),
     })
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+    use rgaa_core::types::Violation;
+
+    fn deterministic_result(
+        criterion_id: &str,
+        status: CriterionStatus,
+        source: &str,
+    ) -> CriterionResult {
+        let criterion = RgaaCriteria::find(criterion_id).expect("criterion exists");
+        CriterionResult {
+            criterion_id: criterion_id.to_string(),
+            title: criterion.title.clone(),
+            classification: criterion.classification,
+            status,
+            violations: Vec::<Violation>::new(),
+            confidence: None,
+            justification: None,
+            source: source.to_string(),
+            citations: vec![],
+            considered_sources: vec![],
+            tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
+        }
+    }
+
+    fn complete_prediction_set() -> Vec<CriterionResult> {
+        let mut results: HashMap<String, CriterionResult> = RgaaCriteria::all()
+            .iter()
+            .map(|criterion| {
+                let mut result = deterministic_result(
+                    criterion.id,
+                    CriterionStatus::NeedsReview,
+                    "agent-estimate",
+                );
+                result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Pass);
+                (criterion.id.to_owned(), result)
+            })
+            .collect();
+
+        for (criterion_id, test_key) in RgaaCatalog::all_test_keys() {
+            let route = EnginePlan::route_test(&criterion_id, &test_key)
+                .expect("every canonical test has a route");
+            let source = if route.coverage == CoverageLevel::Complete {
+                "axe-core"
+            } else {
+                "agent-estimate"
+            };
+            results
+                .get_mut(&criterion_id)
+                .expect("criterion belongs to catalog")
+                .tests
+                .push(TestOutcome {
+                    test_key,
+                    status: CriterionStatus::Pass,
+                    source: source.into(),
+                    evidence: None,
+                });
+        }
+        results.into_values().collect()
+    }
+
+    #[test]
+    fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
+        let determined = [deterministic_result(
+            "1.2",
+            CriterionStatus::Fail,
+            "axe-core",
+        )];
+
+        let candidates = select_holo_candidates(&determined);
+        let ids: std::collections::HashSet<&str> =
+            candidates.iter().map(|criterion| criterion.id).collect();
+
+        assert_eq!(candidates.len(), 31);
+        assert_eq!(ids.len(), candidates.len());
+        assert!(!ids.contains("1.2"));
+        assert!(ids.contains("3.1"));
+        assert!(!ids.contains("4.2"));
+    }
+
+    #[test]
+    fn failed_page_is_retained_with_every_criterion_not_tested() {
+        let page = failed_page_result("https://example.test/forms", "navigation timed out");
+
+        assert_eq!(page.url, "https://example.test/forms");
+        assert_eq!(page.criteria.len(), 106);
+        assert!(page.criteria.iter().all(|criterion| {
+            criterion.status == CriterionStatus::NotTested
+                && criterion.source == "audit-error"
+                && criterion
+                    .justification
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("navigation timed out"))
+        }));
+    }
+
+    #[test]
+    fn automatic_verdict_coverage_requires_every_routed_test_outcome() {
+        let error = validate_automatic_verdict_coverage(&[])
+            .expect_err("an empty page result cannot cover the catalog");
+        assert_eq!(error.missing_criterion_ids.len(), RgaaCriteria::count());
+        assert!(error.missing_criterion_ids.iter().any(|id| id == "4.2"));
+    }
+
+    #[test]
+    fn complete_routes_require_deterministic_test_evidence() {
+        let mut results = complete_prediction_set();
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "1.1")
+            .expect("criterion 1.1 exists");
+        result.tests[0].source = "agent-estimate".into();
+
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("model estimates alone cannot close a complete route");
+        assert_eq!(error.missing_criterion_ids, vec!["1.1"]);
+    }
+
+    #[test]
+    fn aggregate_failure_without_a_test_key_keeps_the_audit_incomplete() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "1.1")
+            .expect("criterion 1.1 exists");
+        result.status = CriterionStatus::Fail;
+
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("aggregate failure does not identify a test key");
+        assert!(error.missing_criterion_ids.iter().any(|id| id == "1.1"));
+    }
+
+    #[test]
+    fn every_criterion_needs_an_automatic_prediction() {
+        let mut results = complete_prediction_set();
+        results
+            .iter_mut()
+            .find(|result| result.criterion_id == "4.2")
+            .expect("criterion 4.2 exists")
+            .automated_verdict = None;
+
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("missing model output must stay incomplete");
+        assert_eq!(error.missing_criterion_ids, vec!["4.2"]);
+    }
+
+    #[test]
+    fn complete_mechanism_pass_materializes_routes_but_failure_does_not_guess_test_keys() {
+        let mut results: HashMap<String, CriterionResult> = HashMap::new();
+        let pass = deterministic_result("1.1", CriterionStatus::Pass, "axe-core");
+        results.insert("1.1".into(), pass);
+        let fail = deterministic_result("1.2", CriterionStatus::Fail, "gap-fix");
+        results.insert("1.2".into(), fail);
+
+        attach_complete_mechanism_passes(results.values_mut());
+
+        assert_eq!(results["1.1"].tests.len(), 8);
+        assert!(results["1.1"]
+            .tests
+            .iter()
+            .all(|test| { test.status == CriterionStatus::Pass && test.source == "axe-core" }));
+        assert!(results["1.2"].tests.is_empty());
+    }
+
+    #[test]
+    fn route_plan_controls_mechanism_dispatch_and_result_admission() {
+        assert!(criterion_has_routed_mechanism("1.1", "axe-1-1"));
+        assert!(!criterion_has_routed_mechanism("1.2", "axe-1-2"));
+        assert!(criterion_has_routed_mechanism("1.2", "gapfix-1-2"));
+
+        let admitted = admit_routed_results(
+            [
+                (
+                    "1.1".to_string(),
+                    deterministic_result("1.1", CriterionStatus::Fail, "axe-core"),
+                ),
+                (
+                    "1.2".to_string(),
+                    deterministic_result("1.2", CriterionStatus::Fail, "axe-core"),
+                ),
+            ],
+            "axe",
+        );
+        assert_eq!(admitted.len(), 1);
+        assert!(admitted.contains_key("1.1"));
+
+        let snippets = routed_gap_fix_snippets();
+        assert!(snippets.contains_key("1.1"));
+        assert!(snippets.contains_key("1.2"));
+        assert!(!snippets.contains_key("10.1"));
+        assert!(!snippets.contains_key("1.9"));
+        assert!(!criterion_has_routed_mechanism("12.8", "keyboard-12-8"));
+    }
+
+    #[test]
+    fn multi_page_audit_is_complete_only_when_every_page_passes_coverage_gate() {
+        let complete = PageResult {
+            url: "https://example.test/complete".into(),
+            title: None,
+            criteria: complete_prediction_set(),
+            compliance_rate: 0.0,
+            crawl_depth: 0,
+        };
+        let mut incomplete = complete.clone();
+        incomplete.url = "https://example.test/incomplete".into();
+        incomplete
+            .criteria
+            .iter_mut()
+            .find(|result| result.criterion_id == "4.2")
+            .expect("criterion 4.2 exists")
+            .automated_verdict = None;
+
+        assert!(pages_have_complete_automatic_coverage(
+            std::slice::from_ref(&complete)
+        ));
+        assert!(pages_have_complete_automatic_coverage(&[
+            complete.clone(),
+            complete.clone()
+        ]));
+        assert!(!pages_have_complete_automatic_coverage(&[
+            complete, incomplete
+        ]));
+        assert!(!pages_have_complete_automatic_coverage(&[]));
+    }
+
+    #[test]
+    fn keyed_site_failure_preserves_model_pass_and_is_counted_as_deterministic() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.1")
+            .expect("criterion 12.1 exists");
+        let site_failure = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.1",
+            status: CriterionStatus::Fail,
+            details: "one observed page lacks a navigation system".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_failure);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(result.verified_status, Some(CriterionStatus::Fail));
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
+        assert!(result
+            .considered_sources
+            .contains(&"site-comparison".into()));
+        assert!(result.tests.iter().any(|outcome| {
+            outcome.test_key == "1"
+                && outcome.source == "site-comparison"
+                && outcome.status == CriterionStatus::Fail
+        }));
+        assert_eq!(
+            rgaa_core::reduce_test_outcomes(&result.tests, &["1".to_string()]),
+            Some(CriterionStatus::Fail)
+        );
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+    }
+
+    #[test]
+    fn unkeyed_site_failure_for_multi_test_criterion_keeps_coverage_incomplete() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.4")
+            .expect("criterion 12.4 exists");
+        let site_failure = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.4",
+            status: CriterionStatus::Fail,
+            details: "site-wide sitemap placement signatures differ".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_failure);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(!result
+            .tests
+            .iter()
+            .any(|outcome| outcome.source == "site-comparison"));
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("an unkeyed site failure cannot be closed by model rows");
+        assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
+    }
+
+    #[test]
+    fn site_needs_review_does_not_block_an_existing_mechanism_failure() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.4")
+            .expect("criterion 12.4 exists");
+        result.status = CriterionStatus::Fail;
+        result.source = "gap-fix".into();
+        result.considered_sources.push("gap-fix".into());
+        let site_review = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.4",
+            status: CriterionStatus::NeedsReview,
+            details: "target relevance still requires review".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_review);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert!(result
+            .considered_sources
+            .contains(&"site-comparison".into()));
+        assert!(result
+            .justification
+            .as_deref()
+            .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+    }
+
+    #[test]
+    fn deterministic_na_updates_verified_status_without_replacing_model_prediction() {
+        let mut result =
+            deterministic_result("4.2", CriterionStatus::NeedsReview, "agent-estimate");
+        result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Fail);
+        result.verdict_basis = vec![VerdictBasis::ModelEstimate];
+
+        mark_deterministically_not_applicable(&mut result);
+
+        assert_eq!(result.status, CriterionStatus::NotApplicable);
+        assert_eq!(result.verified_status, Some(CriterionStatus::NotApplicable));
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Fail)
+        );
+        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
+        assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
+    }
 }

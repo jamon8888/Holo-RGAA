@@ -880,7 +880,6 @@ async fn audit_discovered_urls(
     })
 }
 
-#[cfg(test)]
 fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
     let settled: std::collections::HashSet<&str> = prior_results
         .iter()
@@ -1811,3 +1810,4 @@ mod routing_tests {
         assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
     }
 }
+

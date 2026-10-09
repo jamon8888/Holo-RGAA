@@ -880,26 +880,6 @@ async fn audit_discovered_urls(
     })
 }
 
-fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
-    let settled: std::collections::HashSet<&str> = prior_results
-        .iter()
-        .filter(|result| {
-            matches!(
-                result.status,
-                CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
-            )
-        })
-        .map(|result| result.criterion_id.as_str())
-        .collect();
-
-    RgaaCriteria::all()
-        .iter()
-        .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
-        .filter(|criterion| !settled.contains(criterion.id))
-        .cloned()
-        .collect()
-}
-
 fn failed_page_result(url: &str, error: &str) -> PageResult {
     let criteria = RgaaCriteria::all()
         .iter()
@@ -1808,5 +1788,25 @@ mod routing_tests {
         );
         assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
         assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
+    }
+
+    fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
+        let settled: std::collections::HashSet<&str> = prior_results
+            .iter()
+            .filter(|result| {
+                matches!(
+                    result.status,
+                    CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+                )
+            })
+            .map(|result| result.criterion_id.as_str())
+            .collect();
+
+        RgaaCriteria::all()
+            .iter()
+            .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
+            .filter(|criterion| !settled.contains(criterion.id))
+            .cloned()
+            .collect()
     }
 }

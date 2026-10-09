@@ -227,6 +227,36 @@ async fn automatic_estimator_accepts_human_routes_and_includes_prior_evidence() 
 }
 
 #[tokio::test]
+async fn automatic_estimator_accepts_a_fenced_json_array_reply() {
+    use rgaa_core::{AutomatedVerdict, CriterionStatus, RgaaCriteria};
+    // Models routinely wrap the array in a ```json fence or prefix it with a
+    // line of prose. The batch parser has always extracted it first; this pins
+    // the same contract for the single-batch estimator, which used to hand the
+    // raw reply to the parser and lose the whole batch to a fence.
+    let fenced = format!("Here is the result:\n```json\n{ESTIMATE_FAIL}\n```");
+    let (config, request, server) = estimate_provider(&fenced, 200);
+    let criteria = vec![RgaaCriteria::find("4.2").unwrap().clone()];
+    let agent = RgaaAgent::new(&config).await.unwrap();
+    let results = agent
+        .run_automatic_estimates(&criteria, &estimate_context(), &[])
+        .await;
+
+    assert_eq!(results.len(), 1);
+    assert_ne!(
+        results["4.2"].source, "agent-estimate-incomplete",
+        "a fenced array is a well-formed reply, not a provider failure"
+    );
+    assert_eq!(
+        results["4.2"].automated_verdict,
+        Some(AutomatedVerdict::Fail)
+    );
+    assert_eq!(results["4.2"].status, CriterionStatus::NeedsReview);
+    assert_eq!(results["4.2"].verified_status, None);
+    request.recv().unwrap();
+    server.join().unwrap();
+}
+
+#[tokio::test]
 async fn automatic_estimator_returns_unresolved_ids_on_provider_or_shape_failure() {
     use rgaa_core::{CriterionStatus, RgaaCriteria};
     let criteria = vec![RgaaCriteria::find("4.2").unwrap().clone()];

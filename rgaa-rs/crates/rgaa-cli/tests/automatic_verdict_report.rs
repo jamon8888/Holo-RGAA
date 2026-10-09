@@ -260,6 +260,31 @@ fn chosen_finding_route() -> (String, String) {
     (route.criterion_id.clone(), route.test_key.clone())
 }
 
+/// A criterion no complete mechanism can decide on its own.
+///
+/// The provider-outage fixture needs one of these. When the provider fails for
+/// a criterion a complete mechanism *can* close, the surviving deterministic
+/// evidence legitimately backfills `automated_verdict` inside `merge_candidates`,
+/// and the audit is complete after all — which is correct behaviour, not the leak
+/// this test guards against. Only a criterion whose every route is a partial
+/// observation plus the `holo_estimate` fallback leaves a real hole behind.
+///
+/// `1.1` is not such a criterion: it is also the first criterion with a complete
+/// route, so a deterministic candidate is injected for it and backfills the
+/// verdict. Hardcoding a replacement id would re-couple this fixture to the plan
+/// the same way, so derive it from `coverage` instead.
+fn chosen_provider_only_criterion() -> rgaa_core::Criterion {
+    let plan = TestRoutePlan::builtin();
+    RgaaCriteria::all()
+        .into_iter()
+        .find(|criterion| {
+            !plan.routes().iter().any(|route| {
+                route.criterion_id == criterion.id && route.coverage == CoverageLevel::Complete
+            })
+        })
+        .expect("catalog has a criterion with no complete route")
+}
+
 fn assert_cli_report_does_not_claim_conformance(audit: &AuditResult) {
     let directory = tempfile::tempdir().expect("temporary report directory");
     let input = directory.path().join("audit-bundle.json");
@@ -473,9 +498,7 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
         .values()
         .all(|result| result.automated_verdict.is_some()));
 
-    let missing = RgaaCriteria::find("1.1")
-        .expect("catalog criterion")
-        .clone();
+    let missing = chosen_provider_only_criterion();
     let outage = MockProvider::start("provider unavailable".to_owned(), 503);
     let outage_agent = RgaaAgent::new(&test_agent(outage.base_url.clone()))
         .await

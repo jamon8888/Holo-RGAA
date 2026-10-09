@@ -295,7 +295,15 @@ impl RgaaAgent {
                     match self.prompt_measured(tier, &prompt, &ids).await {
                         Ok(response) => {
                             self.record_success();
-                            map_automatic_response(&batch, &response)
+                            // Same contract as the batch path below: models wrap
+                            // the array in a ```json fence or a line of prose, so
+                            // parse the extracted array first and fall back to the
+                            // raw reply. Without this a fenced reply fails the
+                            // whole batch on ordinary provider output, not only
+                            // on an outage, and every criterion in it becomes
+                            // agent-estimate-incomplete with no verdict.
+                            let json = extract_json_array(&response).unwrap_or(&response);
+                            map_automatic_response(&batch, json)
                         }
                         Err(error) => {
                             self.record_failure();

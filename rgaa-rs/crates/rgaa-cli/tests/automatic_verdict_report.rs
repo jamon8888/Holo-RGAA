@@ -273,10 +273,10 @@ fn chosen_finding_route() -> (String, String) {
 /// route, so a deterministic candidate is injected for it and backfills the
 /// verdict. Hardcoding a replacement id would re-couple this fixture to the plan
 /// the same way, so derive it from `coverage` instead.
-fn chosen_provider_only_criterion() -> rgaa_core::Criterion {
+fn chosen_provider_only_criterion() -> &'static rgaa_core::Criterion {
     let plan = TestRoutePlan::builtin();
     RgaaCriteria::all()
-        .into_iter()
+        .iter()
         .find(|criterion| {
             !plan.routes().iter().any(|route| {
                 route.criterion_id == criterion.id && route.coverage == CoverageLevel::Complete
@@ -505,7 +505,7 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
         .expect("agent should initialize against outage mock");
     let failed = outage_agent
         .run_automatic_estimates(
-            std::slice::from_ref(&missing),
+            std::slice::from_ref(missing),
             &page_context("outage page"),
             &[],
         )

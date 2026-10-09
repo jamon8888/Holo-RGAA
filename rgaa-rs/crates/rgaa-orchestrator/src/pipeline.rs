@@ -637,68 +637,6 @@ fn failed_page_result(url: &str, error: &str) -> PageResult {
     }
 }
 
-#[cfg(test)]
-mod routing_tests {
-    use super::*;
-    use rgaa_core::types::Violation;
-
-    fn deterministic_result(
-        criterion_id: &str,
-        status: CriterionStatus,
-        source: &str,
-    ) -> CriterionResult {
-        let criterion = RgaaCriteria::find(criterion_id).expect("criterion exists");
-        CriterionResult {
-            criterion_id: criterion_id.to_string(),
-            title: criterion.title.clone(),
-            classification: criterion.classification,
-            status,
-            violations: Vec::<Violation>::new(),
-            confidence: None,
-            justification: None,
-            source: source.to_string(),
-            citations: vec![],
-            considered_sources: vec![],
-            tests: vec![],
-        }
-    }
-
-    #[test]
-    fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
-        let determined = [deterministic_result(
-            "1.2",
-            CriterionStatus::Fail,
-            "axe-core",
-        )];
-
-        let candidates = select_holo_candidates(&determined);
-        let ids: std::collections::HashSet<&str> =
-            candidates.iter().map(|criterion| criterion.id).collect();
-
-        assert_eq!(candidates.len(), 31);
-        assert_eq!(ids.len(), candidates.len());
-        assert!(!ids.contains("1.2"));
-        assert!(ids.contains("3.1"));
-        assert!(!ids.contains("4.2"));
-    }
-
-    #[test]
-    fn failed_page_is_retained_with_every_criterion_not_tested() {
-        let page = failed_page_result("https://example.test/forms", "navigation timed out");
-
-        assert_eq!(page.url, "https://example.test/forms");
-        assert_eq!(page.criteria.len(), 106);
-        assert!(page.criteria.iter().all(|criterion| {
-            criterion.status == CriterionStatus::NotTested
-                && criterion.source == "audit-error"
-                && criterion
-                    .justification
-                    .as_deref()
-                    .is_some_and(|reason| reason.contains("navigation timed out"))
-        }));
-    }
-}
-
 /// Discover RGAA mandatory 7 sample pages.
 /// Returns URLs for: Accueil, Contact, Mentions légales, Accessibilité, Aide, Plan du site, Authentification (if exists).
 async fn discover_rgaa_sample_pages(
@@ -1171,4 +1109,66 @@ async fn audit_one(
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
     })
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+    use rgaa_core::types::Violation;
+
+    fn deterministic_result(
+        criterion_id: &str,
+        status: CriterionStatus,
+        source: &str,
+    ) -> CriterionResult {
+        let criterion = RgaaCriteria::find(criterion_id).expect("criterion exists");
+        CriterionResult {
+            criterion_id: criterion_id.to_string(),
+            title: criterion.title.clone(),
+            classification: criterion.classification,
+            status,
+            violations: Vec::<Violation>::new(),
+            confidence: None,
+            justification: None,
+            source: source.to_string(),
+            citations: vec![],
+            considered_sources: vec![],
+            tests: vec![],
+        }
+    }
+
+    #[test]
+    fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
+        let determined = [deterministic_result(
+            "1.2",
+            CriterionStatus::Fail,
+            "axe-core",
+        )];
+
+        let candidates = select_holo_candidates(&determined);
+        let ids: std::collections::HashSet<&str> =
+            candidates.iter().map(|criterion| criterion.id).collect();
+
+        assert_eq!(candidates.len(), 31);
+        assert_eq!(ids.len(), candidates.len());
+        assert!(!ids.contains("1.2"));
+        assert!(ids.contains("3.1"));
+        assert!(!ids.contains("4.2"));
+    }
+
+    #[test]
+    fn failed_page_is_retained_with_every_criterion_not_tested() {
+        let page = failed_page_result("https://example.test/forms", "navigation timed out");
+
+        assert_eq!(page.url, "https://example.test/forms");
+        assert_eq!(page.criteria.len(), 106);
+        assert!(page.criteria.iter().all(|criterion| {
+            criterion.status == CriterionStatus::NotTested
+                && criterion.source == "audit-error"
+                && criterion
+                    .justification
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("navigation timed out"))
+        }));
+    }
 }

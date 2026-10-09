@@ -1810,4 +1810,3 @@ mod routing_tests {
         assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
     }
 }
-

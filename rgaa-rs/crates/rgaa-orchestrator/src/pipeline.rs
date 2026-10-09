@@ -1176,6 +1176,7 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
     // Group criterion results by criterion_id across all pages
     let mut criterion_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
     let mut criterion_raw_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
+    let mut criterion_classifications: HashMap<String, Classification> = HashMap::new();
     let mut validated_total = 0;
     let mut validated_executed = 0;
 
@@ -1189,6 +1190,8 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
                 .entry(criterion.criterion_id.clone())
                 .or_default()
                 .push(criterion.status.clone());
+            criterion_classifications
+                .insert(criterion.criterion_id.clone(), criterion.classification);
         }
     }
 
@@ -1197,6 +1200,20 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
     let mut non_conforme = 0;
 
     for (criterion_id, statuses) in criterion_statuses {
+        let classification = criterion_classifications
+            .get(&criterion_id)
+            .copied()
+            .unwrap_or(Classification::Manuel);
+
+        // Manuel criteria are decided by a human, never by an automated engine,
+        // so they must not move `taux_global` in either direction: a Fail or a
+        // Pass recorded on one is not machine evidence. Fall back to Manuel when
+        // the classification is unknown so an unmapped criterion cannot silently
+        // inflate or deflate the automated rate.
+        if classification == Classification::Manuel {
+            continue;
+        }
+
         // Count for coverage
         if let Some((_theme, cat)) = RgaaCatalog::by_id(&criterion_id) {
             if matches!(

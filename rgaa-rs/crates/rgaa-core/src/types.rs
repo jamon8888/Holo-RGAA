@@ -117,7 +117,10 @@ pub struct TestOutcome {
 /// on), not here, and changing it silently would alter every `IaAssiste` verdict.
 #[must_use]
 pub fn is_deterministic_source(source: &str) -> bool {
-    matches!(source, "axe-core" | "gap-fix" | "manual" | "automated")
+    matches!(
+        source,
+        "axe-core" | "gap-fix" | "manual" | "automated" | "site-comparison"
+    )
 }
 
 /// Derive a criterion's verdict from its per-test outcomes.
@@ -784,7 +787,13 @@ mod tests {
 
     #[test]
     fn only_reproducible_sources_are_deterministic() {
-        for source in ["axe-core", "gap-fix", "manual", "automated"] {
+        for source in [
+            "axe-core",
+            "gap-fix",
+            "manual",
+            "automated",
+            "site-comparison",
+        ] {
             assert!(is_deterministic_source(source), "{source}");
         }
         for source in [

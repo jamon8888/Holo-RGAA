@@ -316,6 +316,7 @@ mod tests {
             status,
             violations: Vec::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: "test".into(),
             citations: Vec::new(),

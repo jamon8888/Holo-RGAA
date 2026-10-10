@@ -419,6 +419,7 @@ mod tests {
                         nodes_affected: 2,
                     }],
                     confidence: None,
+                    raw_confidence: None,
                     justification: None,
                     source: "axe".into(),
                     citations: vec![],

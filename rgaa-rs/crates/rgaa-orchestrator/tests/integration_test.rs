@@ -18,6 +18,7 @@ fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> Criteri
         status,
         violations: vec![],
         confidence: None,
+        raw_confidence: None,
         justification: None,
         source: "test".to_string(),
         citations: vec![],

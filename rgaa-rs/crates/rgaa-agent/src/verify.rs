@@ -4,6 +4,10 @@ use rgaa_core::{
 };
 use rgaa_holo::HoloResponse;
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+const CALIBRATION_JSON: &str = include_str!("../data/verdict-calibration.json");
+const WILSON_Z_95: f64 = 1.959_963_984_540_054;
 
 /// Minimum confidence for a verdict to be accepted without human review.
 ///
@@ -34,7 +38,9 @@ pub fn map_verdict(response: &HoloResponse) -> CriterionStatus {
 ///
 /// Invalid, absent or duplicate answers remain unresolved. Model estimates never
 /// establish a verified status, including when the model claims inapplicability.
-/// Confidence is the raw model value; no calibration or threshold is applied.
+/// The model value is retained as raw confidence. A calibrated confidence is
+/// populated only when the built-in held-out calibration table has an eligible
+/// bin; either way, an estimate remains unresolved and requires review.
 #[must_use]
 pub fn map_automatic_response(
     criteria: &[Criterion],
@@ -159,7 +165,10 @@ fn validated_estimate(
     result.automated_verdict = Some(verdict);
     result.verdict_basis = vec![VerdictBasis::ModelEstimate];
     result.tests = tests;
-    result.confidence = Some(response.confidence);
+    result.raw_confidence = Some(response.confidence);
+    if let Some(table) = builtin_calibration() {
+        apply_calibration(&mut result, table);
+    }
     result.justification = Some(response.justification);
     result.evidence = evidence;
     result.review_reason = Some(reason.to_owned());
@@ -189,6 +198,7 @@ fn unresolved_automatic_result(criterion: &Criterion, reason: &str) -> Criterion
         status: CriterionStatus::NeedsReview,
         violations: Vec::new(),
         confidence: None,
+        raw_confidence: None,
         justification: Some(reason.to_owned()),
         source: "agent-estimate-incomplete".to_owned(),
         citations: Vec::new(),
@@ -205,6 +215,147 @@ fn unresolved_automatic_result(criterion: &Criterion, reason: &str) -> Criterion
         verified_status: None,
         review_events: Vec::new(),
     }
+}
+
+/// A versioned table mapping model-confidence ranges to held-out correctness.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CalibrationTable {
+    /// Identifier recorded on results only when a calibration bin was applied.
+    pub version: String,
+    /// Last date on which this table may be used, in `YYYY-MM-DD` format.
+    pub valid_until: String,
+    bins: Vec<CalibrationBin>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CalibrationBin {
+    criterion_family: String,
+    min_raw_confidence: f64,
+    max_raw_confidence: f64,
+    sample_count: usize,
+    correct_count: usize,
+    false_pass_count: usize,
+    false_fail_count: usize,
+    accuracy: f64,
+}
+
+/// Error raised when a calibration manifest is malformed, stale, or internally
+/// inconsistent.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("invalid confidence calibration manifest: {0}")]
+pub struct CalibrationError(String);
+
+impl CalibrationTable {
+    /// Parse and validate a calibration manifest against today's date.
+    pub fn from_json(raw: &str) -> Result<Self, CalibrationError> {
+        let today = chrono::Utc::now().date_naive();
+        Self::from_json_at(raw, today)
+    }
+
+    fn from_json_at(raw: &str, today: chrono::NaiveDate) -> Result<Self, CalibrationError> {
+        let table: Self =
+            serde_json::from_str(raw).map_err(|error| CalibrationError(error.to_string()))?;
+        if table.version.trim().is_empty() {
+            return Err(CalibrationError("version must not be empty".into()));
+        }
+        let valid_until = chrono::NaiveDate::parse_from_str(&table.valid_until, "%Y-%m-%d")
+            .map_err(|error| CalibrationError(format!("invalid valid_until date: {error}")))?;
+        if valid_until < today {
+            return Err(CalibrationError("calibration manifest is stale".into()));
+        }
+
+        let mut previous: Option<(&str, f64)> = None;
+        for bin in &table.bins {
+            if bin.criterion_family.trim().is_empty()
+                || !bin.min_raw_confidence.is_finite()
+                || !bin.max_raw_confidence.is_finite()
+                || bin.min_raw_confidence < 0.0
+                || bin.max_raw_confidence > 1.0
+                || bin.min_raw_confidence >= bin.max_raw_confidence
+            {
+                return Err(CalibrationError(
+                    "invalid confidence range or criterion family".into(),
+                ));
+            }
+            let reconciled_count = bin
+                .false_pass_count
+                .checked_add(bin.false_fail_count)
+                .and_then(|errors| errors.checked_add(bin.correct_count));
+            if bin.sample_count == 0
+                || bin.correct_count > bin.sample_count
+                || reconciled_count != Some(bin.sample_count)
+            {
+                return Err(CalibrationError("sample counts do not reconcile".into()));
+            }
+            let computed_accuracy = bin.correct_count as f64 / bin.sample_count as f64;
+            if !bin.accuracy.is_finite()
+                || !(0.0..=1.0).contains(&bin.accuracy)
+                || (bin.accuracy - computed_accuracy).abs() > 1e-9
+            {
+                return Err(CalibrationError(
+                    "accuracy does not match labeled counts".into(),
+                ));
+            }
+            if let Some((previous_family, previous_max)) = previous {
+                if bin.criterion_family.as_str() < previous_family
+                    || (bin.criterion_family == previous_family
+                        && bin.min_raw_confidence < previous_max)
+                {
+                    return Err(CalibrationError(
+                        "bins must be sorted and may not overlap within a criterion family".into(),
+                    ));
+                }
+            }
+            previous = Some((&bin.criterion_family, bin.max_raw_confidence));
+        }
+        Ok(table)
+    }
+}
+
+/// Return a conservative 95% Wilson lower confidence bound for an eligible
+/// criterion-family/raw-confidence bin. Bins need at least 30 held-out labels.
+#[must_use]
+pub fn calibrate_confidence(
+    criterion_id: &str,
+    raw_confidence: f64,
+    table: &CalibrationTable,
+) -> Option<f64> {
+    if !raw_confidence.is_finite() || !(0.0..=1.0).contains(&raw_confidence) {
+        return None;
+    }
+    let family = criterion_id.split('.').next()?;
+    let bin = table.bins.iter().find(|bin| {
+        bin.criterion_family == family
+            && raw_confidence >= bin.min_raw_confidence
+            && (raw_confidence < bin.max_raw_confidence
+                || (bin.max_raw_confidence == 1.0 && raw_confidence == 1.0))
+    })?;
+    if bin.sample_count < 30 {
+        return None;
+    }
+    let n = bin.sample_count as f64;
+    let p = bin.accuracy;
+    let z2 = WILSON_Z_95 * WILSON_Z_95;
+    let denominator = 1.0 + z2 / n;
+    let center = p + z2 / (2.0 * n);
+    let margin = WILSON_Z_95 * ((p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt());
+    Some(((center - margin) / denominator).clamp(0.0, 1.0))
+}
+
+fn apply_calibration(result: &mut CriterionResult, table: &CalibrationTable) {
+    result.confidence = result
+        .raw_confidence
+        .and_then(|raw| calibrate_confidence(&result.criterion_id, raw, table));
+    result.confidence_calibration_version = result.confidence.map(|_| table.version.clone());
+}
+
+fn builtin_calibration() -> Option<&'static CalibrationTable> {
+    static TABLE: OnceLock<Option<CalibrationTable>> = OnceLock::new();
+    TABLE
+        .get_or_init(|| CalibrationTable::from_json(CALIBRATION_JSON).ok())
+        .as_ref()
 }
 
 /// Evidence trace for a single action during act→verify loop.
@@ -250,6 +401,13 @@ mod tests {
            "confidence":0.72, "review_required":false})
     }
 
+    fn calibration_json(sample_count: usize, correct_count: usize, accuracy: f64) -> String {
+        let errors = sample_count - correct_count;
+        format!(
+            r#"{{"version":"eval-v1","valid_until":"2099-12-31","bins":[{{"criterion_family":"4","min_raw_confidence":0.7,"max_raw_confidence":0.9,"sample_count":{sample_count},"correct_count":{correct_count},"false_pass_count":{errors},"false_fail_count":0,"accuracy":{accuracy}}}]}}"#
+        )
+    }
+
     fn mapped(value: Value) -> rgaa_core::CriterionResult {
         let criteria = vec![RgaaCriteria::find("4.2").unwrap().clone()];
         map_automatic_response(&criteria, &value.to_string())
@@ -280,7 +438,8 @@ mod tests {
             assert_eq!(result.status, CriterionStatus::NeedsReview);
             assert_eq!(result.verified_status, None);
             assert_eq!(result.verdict_basis, vec![VerdictBasis::ModelEstimate]);
-            assert_eq!(result.confidence, Some(0.72));
+            assert_eq!(result.raw_confidence, Some(0.72));
+            assert_eq!(result.confidence, None);
             assert_eq!(result.confidence_calibration_version, None);
             assert!(result.review_required);
             assert!(result
@@ -383,5 +542,59 @@ mod tests {
         assert_eq!(result.evidence[0].hash, "sha256:abc");
         assert_eq!(result.verified_status, None);
         assert!(result.review_required);
+    }
+
+    #[test]
+    fn calibration_uses_the_wilson_lower_bound_and_held_out_threshold() {
+        let table = CalibrationTable::from_json(&calibration_json(100, 71, 0.71)).unwrap();
+        let calibrated = calibrate_confidence("4.2", 0.8, &table).unwrap();
+        assert!(calibrated > 0.0 && calibrated < 0.71);
+        assert_eq!(calibrate_confidence("13.7", 0.8, &table), None);
+
+        let undersized =
+            CalibrationTable::from_json(&calibration_json(29, 20, 20.0 / 29.0)).unwrap();
+        assert_eq!(calibrate_confidence("4.2", 0.8, &undersized), None);
+    }
+
+    #[test]
+    fn applied_calibration_keeps_raw_value_and_human_review_requirement() {
+        let table = CalibrationTable::from_json(&calibration_json(100, 71, 0.71)).unwrap();
+        let mut result = mapped(json!([response("pass")]));
+        apply_calibration(&mut result, &table);
+        assert_eq!(result.raw_confidence, Some(0.72));
+        assert!(result.confidence.unwrap() > 0.0);
+        assert_eq!(
+            result.confidence_calibration_version.as_deref(),
+            Some("eval-v1")
+        );
+        assert!(result.review_required);
+        assert_eq!(result.verified_status, None);
+    }
+
+    #[test]
+    fn calibration_rejects_stale_malformed_conflicting_and_out_of_range_data() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 7).unwrap();
+        let stale = r#"{"version":"old","valid_until":"2026-10-06","bins":[]}"#;
+        assert!(CalibrationTable::from_json_at(stale, today).is_err());
+        assert!(CalibrationTable::from_json("not json").is_err());
+
+        let duplicate_or_overlapping = r#"{"version":"v1","valid_until":"2099-12-31","bins":[
+          {"criterion_family":"4","min_raw_confidence":0.5,"max_raw_confidence":0.8,"sample_count":30,"correct_count":24,"false_pass_count":3,"false_fail_count":3,"accuracy":0.8},
+          {"criterion_family":"4","min_raw_confidence":0.7,"max_raw_confidence":0.9,"sample_count":30,"correct_count":24,"false_pass_count":3,"false_fail_count":3,"accuracy":0.8}] }"#;
+        assert!(CalibrationTable::from_json(duplicate_or_overlapping).is_err());
+
+        let invalid_range = r#"{"version":"v1","valid_until":"2099-12-31","bins":[{"criterion_family":"4","min_raw_confidence":-0.1,"max_raw_confidence":0.9,"sample_count":30,"correct_count":24,"false_pass_count":3,"false_fail_count":3,"accuracy":0.8}]}"#;
+        assert!(CalibrationTable::from_json(invalid_range).is_err());
+
+        let invalid_accuracy = calibration_json(30, 24, 0.81);
+        assert!(CalibrationTable::from_json(&invalid_accuracy).is_err());
+    }
+
+    #[test]
+    fn calibration_manifest_requires_sorted_non_overlapping_bins() {
+        let out_of_order = r#"{"version":"v1","valid_until":"2099-12-31","bins":[
+          {"criterion_family":"4","min_raw_confidence":0.7,"max_raw_confidence":0.9,"sample_count":30,"correct_count":24,"false_pass_count":3,"false_fail_count":3,"accuracy":0.8},
+          {"criterion_family":"3","min_raw_confidence":0.1,"max_raw_confidence":0.4,"sample_count":30,"correct_count":24,"false_pass_count":3,"false_fail_count":3,"accuracy":0.8}] }"#;
+        assert!(CalibrationTable::from_json(out_of_order).is_err());
     }
 }

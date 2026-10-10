@@ -95,6 +95,20 @@ Pour chaque critère, dans cet ordre :
 5. **Un outil absent est `NotTested`, jamais `Pass`.**
 6. Toute nouvelle sonde livre ses fixtures `<critère>-<nom>-pass.html` et `-fail.html` et passe les invariants.
 
+### 3.1 Pré-tri des critères sans verdict automatique complet
+
+Les critères **1.7, 7.2, 7.3, 8.1, 8.9, 8.10, 9.4, 10.4, 10.11, 10.12, 12.2, 12.5, 12.9, 12.10, 12.11, 13.1, 13.2, 13.7, 13.8, 13.9, 13.10, 13.11 et 13.12** disposent de sondes DOM/CSS
+qui collectent des indices propres à leur sujet. Ces sondes émettent `NeedsReview` lorsqu'elles ne peuvent pas
+conclure. Leurs résultats ne sont donc plus confondus avec `NotTested`, mais ne prouvent jamais à eux seuls la
+conformité. Les faux positifs sont limités aux signaux explicites (par exemple, restriction de zoom déclarée ou
+absence de doctype) ; les citations, la direction, l'équivalence en orientation, le comportement clavier, les
+limites de temps et l'analyse temporelle des animations nécessitent encore une vérification contextuelle.
+
+Les critères **10.11** et **13.9** requièrent en particulier plusieurs états du navigateur (reflow à 320 CSS px,
+portrait et paysage). Les contrôles actuels signalent la taille/les règles visibles dans l'état audité, sans
+prétendre avoir émuler ces états. Les critères **13.7** et **13.8** sont inventoriés (CSS, images et médias), mais
+la fréquence des flashes, la durée du mouvement et le fonctionnement de commandes de pause restent à vérifier.
+
 Détail des répartitions : [docs/research/couverture-repartition-106.md](research/couverture-repartition-106.md)
 (répartition portée dans `rgaa-core/data/rgaa-4.1.2/engine_plan.json`, API `EnginePlan`, PR [#280](https://github.com/jamon8888/Holo-RGAA/pull/280)).
 

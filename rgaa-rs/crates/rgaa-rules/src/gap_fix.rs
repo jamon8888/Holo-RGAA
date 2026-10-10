@@ -658,17 +658,23 @@ mod tests {
             .contains("4"));
     }
 
-    /// The snippet that compared `scrollWidth` to a hardcoded 320 at the unchanged
-    /// viewport is gone: on a desktop viewport it reported overflow for nearly every
-    /// page. 10.11 is carried by the `meta-viewport` axe rule (partial) until a real
-    /// device-metrics override lands (#202 item 3).
+    /// A snapshot inventory must not restore the old reflow verdict based on
+    /// comparing scrollWidth to a hardcoded 320 without resizing the viewport.
+    /// Actual JavaScript behavior is covered in tests/js/control_probe_regressions.js.
     #[test]
-    fn the_unsound_reflow_snippet_is_not_on_the_audit_path() {
-        assert!(
-            !GapFixRules::snippets().contains_key("10.11"),
-            "10.11's gap-fix snippet was unsound and must not be reinstated without a \
-             real Emulation.setDeviceMetricsOverride"
-        );
+    fn reflow_snapshot_is_registered_as_review_only() {
+        assert!(GapFixRules::snippets().contains_key("10.11"));
+        let probe = MechanismRegistry::builtin()
+            .probe_for("10.11")
+            .expect("reflow inventory must be registered");
+        assert_eq!(probe.coverage, rgaa_core::catalog::AxeCoverage::Partial);
+        assert_eq!(probe.outcomes, vec![rgaa_core::registry::Outcome::Review]);
+        let result = parse_one(
+            "10.11",
+            json!({"outcome": "review", "reason": "320px viewport not emulated", "nodes": 1}),
+        )
+        .expect("reflow inventory must remain reviewable");
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
     }
 
     /// A mechanism that covers part of a criterion may report a violation, and that

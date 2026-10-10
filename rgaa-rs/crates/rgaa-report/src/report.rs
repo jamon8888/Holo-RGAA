@@ -281,6 +281,14 @@ mod tests {
             ],
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         };
         let unsourced = rgaa_core::CriterionResult {
             criterion_id: "8.1".into(),
@@ -294,6 +302,14 @@ mod tests {
             citations: Vec::new(),
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         };
 
         let mut bundle =

@@ -340,6 +340,14 @@ mod tests {
             citations: Vec::new(),
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 
@@ -367,6 +375,7 @@ mod tests {
             coverage_percent: 0.0,
             etat_conformite: "non".to_string(),
             duration_ms: 0,
+            audit_complete: false,
         }
     }
 

@@ -123,6 +123,7 @@ mod tests {
             coverage_percent: 56.6,
             etat_conformite: "partielle".to_string(),
             duration_ms: 1000,
+            audit_complete: false,
         };
 
         let response = AuditResponse::from(result.clone());

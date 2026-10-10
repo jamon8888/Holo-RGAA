@@ -125,6 +125,14 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
                 citations: vec![],
                 considered_sources: vec![],
                 tests: vec![],
+                automated_verdict: None,
+                verdict_basis: Vec::new(),
+                evidence: Vec::new(),
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: Vec::new(),
             }],
             compliance_rate: 0.0,
             crawl_depth: 0,
@@ -138,5 +146,6 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
         coverage_percent: 56.6,
         etat_conformite: "partielle".into(),
         duration_ms: 1000,
+        audit_complete: false,
     }
 }

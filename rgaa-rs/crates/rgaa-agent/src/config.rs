@@ -11,7 +11,7 @@ use std::time::Duration;
 /// from the environment — see [`LlmSettings`] for the variables involved.
 #[derive(Clone, Deserialize)]
 pub struct AgentConfig {
-    /// Provider name the settings were resolved from (`holo3`, `openai`,
+    /// Provider name the settings were resolved from (`myia`, `openai`,
     /// `ollama`, …), recorded for provenance.
     #[serde(default = "default_provider")]
     pub provider: String,
@@ -73,7 +73,7 @@ fn default_reasoning_rpm() -> u32 {
 }
 
 fn default_provider() -> String {
-    "holo3".to_string()
+    "myia".to_string()
 }
 
 fn default_timeout() -> Duration {
@@ -202,9 +202,9 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             provider: default_provider(),
-            base_url: "https://api.hcompany.ai/v1".into(),
+            base_url: "https://api.medium.text-generation-webui.myia.io/v1".into(),
             api_key: String::new(),
-            model: "holo3-1-35b-a3b".into(),
+            model: "swift-1.5-27b".into(),
             model_tactical: String::new(),
             model_reasoning: String::new(),
             timeout: default_timeout(),
@@ -232,17 +232,21 @@ impl AgentConfig {
     /// The provider, models and credentials come from [`LlmSettings::from_env`]
     /// — one table of OpenAI-compatible providers shared with `rgaa-holo`, so
     /// `RGAA_LLM_PROVIDER=groq` (or `ollama`, `openrouter`, `custom`, …)
-    /// switches the whole app without a recompile. The legacy `HOLO3_*`
-    /// variables still work and select the `holo3` provider.
+    /// switches the whole app without a recompile. MyIA is the default;
+    /// legacy `HOLO3_*` variables select the historical Holo3 route only
+    /// when no provider has been explicitly selected.
     ///
     /// # Environment Variables
-    /// - `RGAA_LLM_PROVIDER` (optional, default `holo3`)
-    /// - `RGAA_LLM_MODEL` (required; legacy `HOLO3_MODEL`)
+    /// - `RGAA_LLM_PROVIDER` (optional, default `myia`)
+    /// - `RGAA_LLM_MODEL` (optional for providers with a default; MyIA uses
+    ///   `swift-1.5-27b`, with `qwen3.6-35b-a3b` also accepted)
     /// - `RGAA_LLM_MODEL_TACTICAL` / `RGAA_LLM_MODEL_REASONING` (optional,
     ///   each defaulting to `RGAA_LLM_MODEL`)
-    /// - `RGAA_LLM_API_KEY` or the provider's own key variable (legacy
-    ///   `HOLO3_API_KEY`)
-    /// - `RGAA_LLM_BASE_URL` (optional; legacy `HOLO3_BASE_URL`)
+    /// - `RGAA_LLM_API_KEY` or the provider's own key variable (`MYIA_API_KEY`
+    ///   for MyIA; legacy `HOLO3_API_KEY` selects Holo3 only when the provider
+    ///   is not explicitly set)
+    /// - `RGAA_LLM_BASE_URL` (optional; legacy `HOLO3_BASE_URL` applies only
+    ///   to the legacy Holo3 route)
     /// - `LANCEDB_PATH` (optional): LanceDB storage path. Defaults to
     ///   `./data/lancedb`.
     /// - `RGAA_TACTICAL_RPM` (optional): Tactical model requests per minute.

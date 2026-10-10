@@ -1,5 +1,5 @@
 [package]
-description = "LLM backends (Holo3 remote, Ollama local) for AI-assisted RGAA evaluation"
+description = "OpenAI-compatible LLM backends (MyIA remote, Ollama local) for AI-assisted RGAA evaluation"
 license = "MIT"
 name = "rgaa-holo"
 version = "0.1.0"

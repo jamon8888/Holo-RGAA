@@ -412,58 +412,89 @@ MCP_EOF
 
 # ── Codex plugin setup ────────────────────────────────────────────────────────
 
-configure_codex_plugin() {
-    local config_file="$CODEX_HOME_DIR/config.toml"
-    local marketplace_path="$CODEX_MARKETPLACE_DIR"
-
-    if ! command -v python3 &>/dev/null; then
-        warn "python3 is unavailable; skipped Codex plugin configuration."
-        return
-    fi
-
-    CODEX_CONFIG_FILE="$config_file" \
-    CODEX_MARKETPLACE_PATH="$marketplace_path" \
+codex_config() {
+    CODEX_CONFIG_ACTION="$1" \
+    CODEX_CONFIG_FILE="${CODEX_HOME_DIR}/config.toml" \
+    CODEX_MARKETPLACE_PATH="$CODEX_MARKETPLACE_DIR" \
     CODEX_MARKETPLACE_NAME="$CODEX_MARKETPLACE_NAME" \
     CODEX_PLUGIN_NAME="$CODEX_PLUGIN_NAME" \
     python3 - <<'PY'
 import json
 import os
-import re
 from pathlib import Path
 
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
 config = Path(os.environ["CODEX_CONFIG_FILE"])
-config.parent.mkdir(parents=True, exist_ok=True)
 text = config.read_text(encoding="utf-8") if config.exists() else ""
-tables = {
-    f'marketplaces.{os.environ["CODEX_MARKETPLACE_NAME"]}',
-    f'plugins."{os.environ["CODEX_PLUGIN_NAME"]}@{os.environ["CODEX_MARKETPLACE_NAME"]}"',
-}
-lines = text.splitlines()
+data = tomllib.loads(text)
+marketplace = os.environ["CODEX_MARKETPLACE_NAME"]
+plugin = f'{os.environ["CODEX_PLUGIN_NAME"]}@{marketplace}'
+action = os.environ["CODEX_CONFIG_ACTION"]
+if action == "remove" and not config.exists():
+    raise SystemExit(0)
+if action == "verify":
+    registered = data.get("plugins", {}).get(plugin, {}).get("enabled") is True
+    source = data.get("marketplaces", {}).get(marketplace, {})
+    registered = registered and source.get("source_type") == "local"
+    registered = registered and source.get("source") == os.environ["CODEX_MARKETPLACE_PATH"]
+    raise SystemExit(0 if registered else 1)
+
 kept = []
 skip = False
-for line in lines:
-    match = re.match(r"^\[([^]]+)\]\s*(?:#.*)?$", line)
-    if match:
-        skip = match.group(1) in tables
+prefix = []
+targets = [("marketplaces", marketplace), ("plugins", plugin)]
+for line in text.splitlines():
+    prefix.append(line)
+    if line.lstrip().startswith("["):
+        try:
+            header = tomllib.loads(line)
+            # A header-shaped line inside a multiline value is not a table.
+            tomllib.loads("\n".join(prefix))
+        except tomllib.TOMLDecodeError:
+            pass
+        else:
+            skip = any(header == {root: {key: {}}} for root, key in targets)
     if not skip:
         kept.append(line)
 
-marketplace_path = json.dumps(os.environ["CODEX_MARKETPLACE_PATH"])
-block = [
-    f'[marketplaces.{os.environ["CODEX_MARKETPLACE_NAME"]}]',
-    'source_type = "local"',
-    f"source = {marketplace_path}",
-    "",
-    f'[plugins."{os.environ["CODEX_PLUGIN_NAME"]}@{os.environ["CODEX_MARKETPLACE_NAME"]}"]',
-    "enabled = true",
-]
-result = "\n".join(kept).rstrip() + "\n\n" + "\n".join(block) + "\n"
+result = "\n".join(kept).rstrip() + "\n"
+if action == "register":
+    block = [
+        f'[marketplaces.{marketplace}]',
+        'source_type = "local"',
+        f'source = {json.dumps(os.environ["CODEX_MARKETPLACE_PATH"])}',
+        "",
+        f'[plugins.{json.dumps(plugin)}]',
+        "enabled = true",
+    ]
+    result += "\n" + "\n".join(block) + "\n"
+# Validate before touching the existing configuration.
+tomllib.loads(result)
+config.parent.mkdir(parents=True, exist_ok=True)
 config.write_text(result, encoding="utf-8")
 PY
-    ok "Codex plugin registered and enabled in ${config_file}"
+}
+
+codex_config_available() {
+    command -v python3 &>/dev/null && \
+        python3 -c 'import importlib.util; raise SystemExit(0 if importlib.util.find_spec("tomllib") or importlib.util.find_spec("tomli") else 1)'
+}
+
+configure_codex_plugin() {
+    codex_config register || return 1
+    ok "Codex plugin registered and enabled in ${CODEX_HOME_DIR}/config.toml"
 }
 
 install_codex_plugin() {
+    if ! codex_config_available; then
+        warn "Codex integration incomplete: python3 with tomllib (Python 3.11+) or tomli is required; skipped installation."
+        return
+    fi
+
     local script_dir plugin_source fetched_root="" repo_root=""
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     plugin_source="${script_dir}/rgaa-rs/plugins/rgaa-codex"
@@ -705,7 +736,11 @@ verify_install() {
 
     if [[ -d "${CODEX_MARKETPLACE_DIR}/rgaa-rs/plugins/rgaa-codex" && \
           -d "${CODEX_HOME_DIR}/plugins/cache/${CODEX_MARKETPLACE_NAME}/${CODEX_PLUGIN_NAME}/local" ]]; then
-        ok "  Codex plugin: installed"
+        if codex_config_available && codex_config verify; then
+            ok "  Codex plugin: installed"
+        else
+            warn "  Codex plugin: incomplete (registration missing, disabled, invalid, or unverifiable)"
+        fi
     else
         warn "  Codex plugin: not installed"
     fi
@@ -778,33 +813,11 @@ uninstall() {
         rm -rf "$cache_dir"
         ok "Removed Codex plugin cache (${cache_dir})"
     fi
-    if command -v python3 &>/dev/null; then
-        CODEX_CONFIG_FILE="${CODEX_HOME_DIR}/config.toml" \
-        CODEX_MARKETPLACE_NAME="$CODEX_MARKETPLACE_NAME" \
-        CODEX_PLUGIN_NAME="$CODEX_PLUGIN_NAME" \
-        python3 - <<'PY'
-import os
-import re
-from pathlib import Path
-
-config = Path(os.environ["CODEX_CONFIG_FILE"])
-if config.exists():
-    tables = {
-        f'marketplaces.{os.environ["CODEX_MARKETPLACE_NAME"]}',
-        f'plugins."{os.environ["CODEX_PLUGIN_NAME"]}@{os.environ["CODEX_MARKETPLACE_NAME"]}"',
-    }
-    lines = config.read_text(encoding="utf-8").splitlines()
-    kept = []
-    skip = False
-    for line in lines:
-        match = re.match(r"^\[([^]]+)\]\s*(?:#.*)?$", line)
-        if match:
-            skip = match.group(1) in tables
-        if not skip:
-            kept.append(line)
-    config.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
-PY
-        ok "Removed Codex plugin registration from ${CODEX_CONFIG_DIR:-${CODEX_HOME_DIR}/config.toml}"
+    if codex_config_available; then
+        codex_config remove || return 1
+        ok "Removed Codex plugin registration from ${CODEX_HOME_DIR}/config.toml"
+    else
+        warn "Codex registration removal incomplete: python3 with tomllib or tomli is required."
     fi
 
     # Remove MCP config entry

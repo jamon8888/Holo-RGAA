@@ -29,17 +29,47 @@ function Write-Step([string]$msg) {
     Write-Host "==> $msg" -ForegroundColor Cyan
 }
 
+# Parse TOML dotted key components rather than comparing their spelling.
+function Test-CodexRegistrationHeader {
+    param([string]$Line)
+
+    $key = '(?:[A-Za-z0-9_-]+|''[^''\r\n]*''|"(?:[^"\\\r\n]|\\(?:[btnfr"\\]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}))*")'
+    $pattern = '^\s*\[\s*(?<root>' + $key + ')\s*\.\s*(?<name>' + $key + ')\s*\]\s*(?:#.*)?$'
+    $header = [regex]::Match($Line, $pattern)
+    if (-not $header.Success) { return $false }
+
+    $parts = foreach ($group in @('root', 'name')) {
+        $value = $header.Groups[$group].Value
+        if ($value.StartsWith("'")) {
+            $value.Substring(1, $value.Length - 2)
+        } elseif ($value.StartsWith('"')) {
+            # JSON and TOML basic keys share escapes except TOML's \UXXXXXXXX.
+            $json = [regex]::Replace($value, '\\(?:[btnfr"\\]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})', {
+                param($escape)
+                if ($escape.Value.StartsWith('\U')) {
+                    $scalar = [Convert]::ToInt32($escape.Value.Substring(2), 16)
+                    [string]$encoded = [char]::ConvertFromUtf32($scalar) | ConvertTo-Json -Compress
+                    $encoded.Substring(1, $encoded.Length - 2)
+                } else {
+                    $escape.Value
+                }
+            })
+            ConvertFrom-Json -InputObject ('[' + $json + ']')
+        } else {
+            $value
+        }
+    }
+    return (($parts[0] -ceq 'marketplaces' -and $parts[1] -ceq $CodexMarketplaceName) -or
+        ($parts[0] -ceq 'plugins' -and $parts[1] -ceq "$CodexPluginName@$CodexMarketplaceName"))
+}
+
 function Remove-CodexPluginRegistration {
     $configPath = Join-Path $CodexHome "config.toml"
     if (-not (Test-Path $configPath)) { return }
-    $targets = @(
-        "marketplaces.$CodexMarketplaceName",
-        "plugins.`"$CodexPluginName@$CodexMarketplaceName`""
-    )
     $kept = [System.Collections.Generic.List[string]]::new()
     $skip = $false
     foreach ($line in (Get-Content -Path $configPath)) {
-        if ($line -match '^\[([^]]+)\]\s*(?:#.*)?$') { $skip = $targets -contains $Matches[1] }
+        if ($line -match '^\s*\[') { $skip = Test-CodexRegistrationHeader -Line $line }
         if (-not $skip) { $kept.Add($line) }
     }
     [System.IO.File]::WriteAllText($configPath, (($kept -join "`n").TrimEnd() + "`n"), [System.Text.UTF8Encoding]::new($false))
@@ -89,14 +119,10 @@ function Register-CodexPlugin {
     $configPath = Join-Path $CodexHome "config.toml"
     New-Item -ItemType Directory -Force -Path $CodexHome | Out-Null
     $text = if (Test-Path $configPath) { Get-Content -Raw -Path $configPath } else { "" }
-    $targets = @(
-        "marketplaces.$CodexMarketplaceName",
-        "plugins.`"$CodexPluginName@$CodexMarketplaceName`""
-    )
     $kept = [System.Collections.Generic.List[string]]::new()
     $skip = $false
     foreach ($line in ($text -split "`r?`n")) {
-        if ($line -match '^\[([^]]+)\]\s*(?:#.*)?$') { $skip = $targets -contains $Matches[1] }
+        if ($line -match '^\s*\[') { $skip = Test-CodexRegistrationHeader -Line $line }
         if (-not $skip) { $kept.Add($line) }
     }
     $quotedPath = $CodexMarketplaceDir | ConvertTo-Json -Compress

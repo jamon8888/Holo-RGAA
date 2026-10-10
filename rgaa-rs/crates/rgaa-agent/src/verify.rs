@@ -46,14 +46,14 @@ pub fn map_automatic_response(
     criteria: &[Criterion],
     response_json: &str,
 ) -> HashMap<String, CriterionResult> {
-    let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(response_json) else {
+    let Some(items) = parse_automatic_json_array(response_json) else {
         return unresolved_automatic_results(criteria, "malformed automatic estimate JSON");
     };
     let mut results = HashMap::with_capacity(criteria.len());
     for criterion in criteria {
-        let mut matches = items.iter().filter(|item| {
-            item.get("criterion_id").and_then(serde_json::Value::as_str) == Some(criterion.id)
-        });
+        let mut matches = items
+            .iter()
+            .filter(|item| automatic_criterion_id(item) == Some(criterion.id));
         let response = matches.next().filter(|_| matches.next().is_none());
         let result = response
             .and_then(|item| serde_json::from_value::<AutomaticResponse>(item.clone()).ok())
@@ -69,30 +69,111 @@ pub fn map_automatic_response(
     results
 }
 
+// All supplied aliases must identify the same criterion. A conflicting or
+// malformed alias cannot be used to fill more than one requested result.
+fn automatic_criterion_id(item: &serde_json::Value) -> Option<&str> {
+    let mut canonical = None;
+    for key in ["criterion_id", "criterion", "id"] {
+        if let Some(value) = item.get(key) {
+            let id = value.as_str()?;
+            if canonical.is_some_and(|existing| existing != id) {
+                return None;
+            }
+            canonical = Some(id);
+        }
+    }
+    canonical
+}
+
 #[derive(serde::Deserialize)]
 struct AutomaticResponse {
-    tests: Vec<AutomaticTestResponse>,
+    #[serde(default)]
+    tests: serde_json::Value,
+    #[serde(alias = "automated_verdict", alias = "status")]
     verdict: String,
+    confidence: serde_json::Value,
+    #[serde(default, alias = "reasoning", alias = "explanation")]
     justification: String,
-    confidence: f64,
     // Required by the wire contract, but cannot waive review of an estimate.
-    #[serde(rename = "review_required")]
+    #[serde(default = "default_review_required")]
     _review_required: bool,
     #[serde(default)]
-    evidence: Vec<EvidenceRef>,
+    evidence: serde_json::Value,
+}
+
+/// Accept a raw JSON array or one embedded in a fenced/prose-wrapped reply.
+/// The scanner respects quoted strings and escapes, and only returns a fully
+/// parsed array; truncated model output remains unresolved.
+fn parse_automatic_json_array(text: &str) -> Option<Vec<serde_json::Value>> {
+    if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(text.trim()) {
+        return Some(items);
+    }
+
+    let mut start = None;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, character) in text.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_string = true,
+            '[' => {
+                if depth == 0 {
+                    start = Some(index);
+                }
+                depth += 1;
+            }
+            ']' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    let array = &text[start?..index + character.len_utf8()];
+                    if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(array) {
+                        return Some(items);
+                    }
+                    start = None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 #[derive(serde::Deserialize)]
 struct AutomaticTestResponse {
+    #[serde(alias = "test_id", alias = "id")]
     test_key: String,
+    #[serde(alias = "status")]
     verdict: String,
+    #[serde(alias = "reasoning", alias = "explanation", alias = "evidence")]
     justification: String,
 }
 
+fn default_review_required() -> bool {
+    true
+}
+
 fn estimate_verdict(value: &str) -> Option<AutomatedVerdict> {
-    match value {
-        "pass" => Some(AutomatedVerdict::Pass),
-        "fail" => Some(AutomatedVerdict::Fail),
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-'], "_")
+        .as_str()
+    {
+        "pass" | "conforme" | "passed" => Some(AutomatedVerdict::Pass),
+        "fail" | "non_conforme" | "failed" => Some(AutomatedVerdict::Fail),
         _ => None,
     }
 }
@@ -102,34 +183,49 @@ fn validated_estimate(
     response: AutomaticResponse,
 ) -> Option<CriterionResult> {
     let verdict = estimate_verdict(&response.verdict)?;
-    if !response.confidence.is_finite()
-        || !(0.0..=1.0).contains(&response.confidence)
-        || response.justification.trim().is_empty()
-    {
-        return None;
-    }
+    let confidence = response
+        .confidence
+        .as_f64()
+        .or_else(|| response.confidence.as_str()?.trim().parse::<f64>().ok())
+        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
+    let justification = if response.justification.trim().is_empty() {
+        "Le modèle a fourni un verdict agrégé sans justification exploitable ; revue humaine requise."
+            .to_owned()
+    } else {
+        response.justification
+    };
     let routes = TestRoutePlan::builtin();
     let expected: Vec<_> = routes
         .routes()
         .iter()
         .filter(|route| route.criterion_id == criterion.id && route.fallback == "holo_estimate")
         .collect();
-    if expected.is_empty() || response.tests.len() != expected.len() {
-        return None;
-    }
     let mut seen = HashSet::with_capacity(expected.len());
     let mut tests = Vec::with_capacity(expected.len());
     let mut any_fail = false;
-    for test in response.tests {
+    let mut invalid_breakdown = false;
+    let test_values = match response.tests {
+        serde_json::Value::Array(values) => values,
+        object @ serde_json::Value::Object(_) => vec![object],
+        _ => Vec::new(),
+    };
+    for value in test_values {
+        let Ok(test) = serde_json::from_value::<AutomaticTestResponse>(value) else {
+            invalid_breakdown = true;
+            continue;
+        };
         if !seen.insert(test.test_key.clone())
             || !routes
                 .for_test(criterion.id, &test.test_key)
                 .is_some_and(|route| route.fallback == "holo_estimate")
-            || test.justification.trim().is_empty()
         {
-            return None;
+            invalid_breakdown = true;
+            continue;
         }
-        let test_verdict = estimate_verdict(&test.verdict)?;
+        let Some(test_verdict) = estimate_verdict(&test.verdict) else {
+            invalid_breakdown = true;
+            continue;
+        };
         any_fail |= test_verdict == AutomatedVerdict::Fail;
         tests.push(TestOutcome {
             test_key: test.test_key,
@@ -138,25 +234,47 @@ fn validated_estimate(
                 _ => CriterionStatus::Fail,
             },
             source: "agent-estimate".to_owned(),
-            evidence: Some(test.justification),
+            evidence: (!test.justification.trim().is_empty()).then_some(test.justification),
         });
     }
-    if (verdict == AutomatedVerdict::Fail) != any_fail {
-        return None;
+    // A sound aggregate prediction is useful even when the model omits or
+    // contradicts individual sub-tests. Keep only a complete, consistent
+    // test breakdown; otherwise retain the criterion verdict for human review
+    // and leave test-level coverage visibly incomplete.
+    let complete_test_breakdown = !invalid_breakdown
+        && !expected.is_empty()
+        && tests.len() == expected.len()
+        && (verdict == AutomatedVerdict::Fail) == any_fail;
+    if !complete_test_breakdown {
+        tests.clear();
     }
-    // Canonical route order makes reordered model responses reproducible.
-    tests.sort_by_key(|test| {
-        expected
-            .iter()
-            .position(|route| route.test_key == test.test_key)
-    });
-    let evidence: Vec<_> = response
-        .evidence
+    if complete_test_breakdown {
+        // Canonical route order makes reordered model responses reproducible.
+        tests.sort_by_key(|test| {
+            expected
+                .iter()
+                .position(|route| route.test_key == test.test_key)
+        });
+    }
+    // Model replies sometimes return evidence as prose strings instead of
+    // auditable {kind, hash} references. Keep only valid references; never
+    // promote prose into evidence or discard an otherwise usable verdict.
+    let evidence_values = match response.evidence {
+        serde_json::Value::Array(values) => values,
+        object @ serde_json::Value::Object(_) => vec![object],
+        _ => Vec::new(),
+    };
+    let evidence: Vec<EvidenceRef> = evidence_values
         .into_iter()
-        .filter(|reference| !reference.kind.trim().is_empty() && !reference.hash.trim().is_empty())
+        .filter_map(|value| serde_json::from_value(value).ok())
+        .filter(|reference: &EvidenceRef| {
+            !reference.kind.trim().is_empty() && !reference.hash.trim().is_empty()
+        })
         .collect();
     let reason = if evidence.is_empty() {
-        "model estimate has an evidence gap: no auditable evidence references were supplied"
+        "model estimate requires human review: no auditable evidence references were supplied"
+    } else if !complete_test_breakdown {
+        "model estimate requires human review: test-level breakdown is incomplete or inconsistent"
     } else {
         "model estimate requires independent review of the supplied evidence references"
     };
@@ -165,11 +283,13 @@ fn validated_estimate(
     result.automated_verdict = Some(verdict);
     result.verdict_basis = vec![VerdictBasis::ModelEstimate];
     result.tests = tests;
-    result.raw_confidence = Some(response.confidence);
-    if let Some(table) = builtin_calibration() {
-        apply_calibration(&mut result, table);
+    result.raw_confidence = confidence;
+    if confidence.is_some() {
+        if let Some(table) = builtin_calibration() {
+            apply_calibration(&mut result, table);
+        }
     }
-    result.justification = Some(response.justification);
+    result.justification = Some(justification);
     result.evidence = evidence;
     result.review_reason = Some(reason.to_owned());
     Some(result)
@@ -505,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_duplicate_unknown_or_invalid_test_keys_are_rejected() {
+    fn invalid_test_breakdowns_preserve_only_the_aggregate_estimate() {
         for tests in [
             json!([{"test_key":"1","verdict":"pass","justification":"ok"}]),
             json!([{"test_key":"1","verdict":"pass","justification":"ok"},{"test_key":"1","verdict":"pass","justification":"ok"},{"test_key":"3","verdict":"pass","justification":"ok"}]),
@@ -513,22 +633,91 @@ mod tests {
         ] {
             let mut item = response("pass");
             item["tests"] = tests;
-            assert_unresolved(&mapped(json!([item])));
+            assert_aggregate_only(&mapped(json!([item])));
         }
         let mut item = response("pass");
         item["tests"][0]["verdict"] = json!("not_applicable");
-        assert_unresolved(&mapped(json!([item])));
+        assert_aggregate_only(&mapped(json!([item])));
     }
 
     #[test]
-    fn inconsistent_aggregate_and_invalid_confidence_are_rejected() {
+    fn inconsistent_tests_and_invalid_confidence_do_not_discard_the_aggregate() {
         let mut item = response("pass");
         item["tests"][0]["verdict"] = json!("fail");
-        assert_unresolved(&mapped(json!([item])));
-        for confidence in [-0.1, 1.1] {
+        assert_aggregate_only(&mapped(json!([item])));
+        for confidence in [json!(-0.1), json!(1.1), json!("NaN"), json!("invalid")] {
             let mut item = response("pass");
-            item["confidence"] = json!(confidence);
-            assert_unresolved(&mapped(json!([item])));
+            item["confidence"] = confidence;
+            let result = mapped(json!([item]));
+            assert_eq!(result.automated_verdict, Some(AutomatedVerdict::Pass));
+            assert_eq!(result.raw_confidence, None);
+            assert_eq!(result.confidence, None);
+            assert_eq!(result.verified_status, None);
+            assert!(result.review_required);
+        }
+    }
+
+    fn assert_aggregate_only(result: &CriterionResult) {
+        assert_eq!(result.automated_verdict, Some(AutomatedVerdict::Pass));
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert_eq!(result.verified_status, None);
+        assert!(result.review_required);
+        assert!(result.tests.is_empty());
+    }
+
+    #[test]
+    fn fenced_response_preserves_strings_with_brackets_and_escaped_quotes() {
+        let mut item = response("pass");
+        item["justification"] = json!("observed [media] with \"caption\"");
+        let text = format!("Result:\n```json\n{}\n```", json!([item]));
+        let criteria = vec![RgaaCriteria::find("4.2").unwrap().clone()];
+        let results = map_automatic_response(&criteria, &text);
+        assert_eq!(
+            results["4.2"].automated_verdict,
+            Some(AutomatedVerdict::Pass)
+        );
+        assert_eq!(results["4.2"].tests.len(), 3);
+    }
+
+    #[test]
+    fn aliases_and_numeric_string_confidence_preserve_aggregate_only_results() {
+        for key in ["criterion_id", "criterion", "id"] {
+            let mut item =
+                json!({"status":" PASSED ", "confidence":"0.72", "reasoning":"estimate"});
+            item[key] = json!("4.2");
+            let result = mapped(json!([item]));
+            assert_aggregate_only(&result);
+            assert_eq!(result.raw_confidence, Some(0.72));
+        }
+    }
+
+    #[test]
+    fn conflicting_criterion_aliases_cannot_fill_multiple_results() {
+        let criteria = vec![
+            RgaaCriteria::find("4.2").unwrap().clone(),
+            RgaaCriteria::find("4.4").unwrap().clone(),
+        ];
+        let mut item = response("pass");
+        item["id"] = json!("4.4");
+        let results = map_automatic_response(&criteria, &json!([item]).to_string());
+        assert_unresolved(&results["4.2"]);
+        assert_unresolved(&results["4.4"]);
+        let mut item = response("pass");
+        item["id"] = json!("4.2");
+        assert_eq!(mapped(json!([item])).tests.len(), 3);
+    }
+
+    #[test]
+    fn complete_breakdown_with_duplicate_or_invalid_extra_test_is_incomplete() {
+        for extra in [
+            json!({"test_key":"1", "verdict":"fail", "justification":"contradiction"}),
+            json!({"test_key":"1", "verdict":"pass", "justification":"duplicate"}),
+            json!({"test_key":"99", "verdict":"pass", "justification":"unknown"}),
+            json!("malformed test"),
+        ] {
+            let mut item = response("pass");
+            item["tests"].as_array_mut().unwrap().push(extra);
+            assert_aggregate_only(&mapped(json!([item])));
         }
     }
 

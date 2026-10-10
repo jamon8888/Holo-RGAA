@@ -1358,7 +1358,7 @@ async fn audit_one(
         HashMap::new()
     };
 
-    // 3. Extract page context for Holo3 prompts
+    // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
     let mut context_by_url = ObscuraBridge::extract_page_context_batch(

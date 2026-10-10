@@ -377,9 +377,12 @@ mod tests {
     }
 
     #[test]
-    fn html_criteria_table_carries_a_sources_column() {
+    fn html_criteria_table_carries_an_assessment_column() {
         let output = render(&bundle_with_citations(), ReportFormat::Html).expect("html");
-        assert!(output.contains("<th>Sources</th>"), "{output}");
+        assert!(
+            output.contains("<th>Évaluation et preuves</th>"),
+            "{output}"
+        );
         assert!(output.contains("2024.1"), "{output}");
         assert!(output.contains("sha256:abc"), "{output}");
     }
@@ -401,7 +404,7 @@ mod tests {
             .expect("criteria table");
         let header = table.split("<tbody>").next().expect("criteria thead");
         let columns = header.matches("<th>").count();
-        assert_eq!(columns, 6, "criteria header is {columns} columns wide");
+        assert_eq!(columns, 8, "criteria header is {columns} columns wide");
 
         let body = table
             .split("<tbody>")

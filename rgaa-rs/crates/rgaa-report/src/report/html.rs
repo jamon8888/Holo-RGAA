@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use rgaa_core::{
-    AuditBundle, AuditSummary, CriterionResult, CriterionStatus, Finding, RgaaCriteria,
+    AuditBundle, AuditSummary, AutomatedVerdict, CriterionResult, CriterionStatus, Finding,
+    PageResult, RgaaCriteria, VerdictBasis,
 };
 
 pub fn generate_html_report(bundle: &AuditBundle) -> String {
@@ -77,11 +78,22 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
     // is incomplete — neither should be able to show "Conforme" any more
     // than an outright failed criterion can.
     let catalog_size = RgaaCriteria::all().len();
-    let is_complete = bundle
-        .pages
+    let metrics = bundle_metrics(bundle);
+    let expected_ids: std::collections::HashSet<&str> = RgaaCriteria::all()
         .iter()
-        .all(|page| page.criteria.len() >= catalog_size);
-    let is_conforme = bundle.summary.failed == 0 && bundle.summary.errors == 0 && is_complete;
+        .map(|criterion| criterion.id)
+        .collect();
+    let is_complete = !bundle.pages.is_empty()
+        && expected_ids.len() == catalog_size
+        && bundle.pages.iter().all(|page| {
+            page.criteria
+                .iter()
+                .map(|criterion| criterion.criterion_id.as_str())
+                .collect::<std::collections::HashSet<_>>()
+                .is_superset(&expected_ids)
+        });
+    let is_conforme =
+        metrics.verified_compliance_percent >= 100.0 && bundle.summary.errors == 0 && is_complete;
     let conformity_badge_class = if is_conforme { "pass" } else { "fail" };
     let conformity_text = if is_conforme {
         "Conforme"
@@ -93,16 +105,20 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
         html,
         r#"        <div class="summary">
             <div class="card">
-                <h3>Taux de Conformité</h3>
-                <div class="value {}">{}%</div>
+                <h3>Conformité vérifiée</h3>
+                <div class="value {}">{:.1}%</div>
             </div>
             <div class="card">
                 <h3>État de Conformité</h3>
                 <div class="value"><span class="status-badge {}">{}</span></div>
             </div>
             <div class="card">
-                <h3>Couverture</h3>
-                <div class="value neutral">{}%</div>
+                <h3>Couverture des verdicts automatiques</h3>
+                <div class="value neutral">{:.1}%</div>
+            </div>
+            <div class="card">
+                <h3>Couverture des tests avec preuve</h3>
+                <div class="value neutral">{:.1}%</div>
             </div>
             <div class="card">
                 <h3>Pages Auditées</h3>
@@ -110,10 +126,11 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
             </div>
         </div>"#,
         conformity_badge_class,
-        calculate_conformity_rate(&bundle.summary),
+        metrics.verified_compliance_percent,
         conformity_badge_class,
         conformity_text,
-        calculate_coverage(&bundle.summary),
+        metrics.automatic_verdict_coverage_percent,
+        metrics.test_evidence_coverage_percent,
         bundle.summary.completed_pages,
         bundle.summary.total_pages
     );
@@ -125,7 +142,7 @@ fn write_html_stats(html: &mut String, summary: &AuditSummary) {
         r#"        <table>
             <thead>
                 <tr>
-                    <th>Statut</th>
+                    <th>Statut brut</th>
                     <th>Nombre</th>
                 </tr>
             </thead>
@@ -233,9 +250,11 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <th>Critère</th>
                     <th>Titre</th>
                     <th>Classification</th>
-                    <th>Statut</th>
+                    <th>Statut brut</th>
+                    <th>Verdict automatique</th>
+                    <th>Statut vérifié</th>
                     <th>Détail</th>
-                    <th>Sources</th>
+                    <th>Évaluation et preuves</th>
                 </tr>
             </thead>
             <tbody>"#,
@@ -266,14 +285,21 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <td><span class="status-badge {}">{}</span></td>
                     <td>{}</td>
                     <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
                 </tr>"#,
                 escape_html(&criterion.criterion_id),
                 escape_html(title),
                 classification_label(criterion),
                 badge_class,
                 status_label,
+                automated_verdict_cell(criterion),
+                crate::verified_status_for(criterion)
+                    .as_ref()
+                    .map(status_text)
+                    .unwrap_or("Non vérifié"),
                 escape_html(&criterion_detail(criterion)),
-                sources_cell(criterion)
+                assessment_cell(criterion)
             );
         }
 
@@ -281,18 +307,120 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
     }
 }
 
-/// The `Sources` cell: the RAG evidence behind this verdict, or an em dash.
-///
-/// The em dash is not "no data" — it is "this verdict did not rely on
-/// retrieval", which is the normal and correct state for a deterministic
-/// rule, a manual review, or an untested criterion. Rendering it the same
-/// as a missing citation would be the more misleading choice, so the
-/// distinction is carried in the title attribute.
-fn sources_cell(criterion: &CriterionResult) -> String {
-    match crate::sources::sources_line(criterion) {
-        Some(line) => escape_html(&line),
-        None => r#"<span title="verdict reached without retrieval">&mdash;</span>"#.to_string(),
+fn bundle_metrics(bundle: &AuditBundle) -> crate::AuditMetrics {
+    let pages: Vec<PageResult> = bundle
+        .pages
+        .iter()
+        .map(|page| PageResult {
+            url: page.url.clone(),
+            title: page.title.clone(),
+            criteria: page.criteria.clone(),
+            compliance_rate: 0.0,
+            crawl_depth: 0,
+        })
+        .collect();
+    crate::compute_audit_metrics(&pages)
+}
+
+fn automated_verdict_cell(criterion: &CriterionResult) -> String {
+    let Some(verdict) = criterion.automated_verdict else {
+        return "—".into();
+    };
+    let label = match verdict {
+        AutomatedVerdict::Pass => "Conforme",
+        AutomatedVerdict::Fail => "Non conforme",
+        AutomatedVerdict::NotApplicable => "Non applicable",
+    };
+    let is_estimate = criterion
+        .verdict_basis
+        .contains(&VerdictBasis::ModelEstimate)
+        || crate::is_model_source(&criterion.source);
+    if is_estimate {
+        format!("{} <small>(estimation)</small>", label)
+    } else {
+        label.into()
     }
+}
+
+fn status_text(status: &CriterionStatus) -> &'static str {
+    match status {
+        CriterionStatus::Pass => "Conforme",
+        CriterionStatus::Fail => "Non conforme",
+        CriterionStatus::NotApplicable => "Non applicable",
+        CriterionStatus::Error => "Erreur",
+        CriterionStatus::NeedsReview => "À vérifier",
+        CriterionStatus::NotTested => "Non testé",
+    }
+}
+
+fn assessment_cell(criterion: &CriterionResult) -> String {
+    let mut parts = Vec::new();
+    if let Some(sources) = crate::sources::sources_line(criterion) {
+        parts.push(format!("Sources documentaires : {sources}"));
+    }
+    if !criterion.verdict_basis.is_empty() {
+        let basis = criterion
+            .verdict_basis
+            .iter()
+            .map(|basis| match basis {
+                VerdictBasis::Axe => "axe",
+                VerdictBasis::Deterministic => "déterministe",
+                VerdictBasis::Browser => "navigateur",
+                VerdictBasis::ModelEstimate => "estimation IA",
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        parts.push(format!("Fondement : {basis}"));
+    }
+    if let Some(confidence) = criterion.raw_confidence {
+        parts.push(format!("Confiance brute : {:.0}%", confidence * 100.0));
+    }
+    if let Some(confidence) = criterion.confidence {
+        parts.push(format!("Confiance calibrée : {:.0}%", confidence * 100.0));
+    }
+    parts.push(format!(
+        "Revue humaine requise : {}{}",
+        if criterion.review_required {
+            "oui"
+        } else {
+            "non"
+        },
+        criterion
+            .review_reason
+            .as_deref()
+            .filter(|_| criterion.review_required)
+            .map(|reason| format!(" — {reason}"))
+            .unwrap_or_default()
+    ));
+    for evidence in &criterion.evidence {
+        let location = evidence.location.as_deref().unwrap_or(&evidence.hash);
+        parts.push(format!("Preuve {} : {location}", evidence.kind));
+    }
+    for outcome in &criterion.tests {
+        if let Some(evidence) = outcome
+            .evidence
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            parts.push(format!(
+                "Test {} — {} : {evidence}",
+                outcome.test_key, outcome.source
+            ));
+        }
+    }
+    for event in &criterion.review_events {
+        parts.push(format!(
+            "Revue {} par {} le {} : {}",
+            status_text(&event.status),
+            event.author,
+            event.reviewed_at,
+            event.reason
+        ));
+    }
+    if parts.is_empty() {
+        parts.push("Aucune preuve ou métadonnée d’évaluation".into());
+    }
+    escape_html(&parts.join(" ; "))
 }
 
 /// Pads `results` against the full RGAA catalog so every one of the 106
@@ -411,22 +539,6 @@ fn write_html_footer(html: &mut String) {
     );
 }
 
-fn calculate_conformity_rate(summary: &AuditSummary) -> f64 {
-    let total = summary.passed + summary.failed + summary.needs_review;
-    if total == 0 {
-        return 0.0;
-    }
-    (summary.passed as f64 / total as f64) * 100.0
-}
-
-fn calculate_coverage(summary: &AuditSummary) -> f64 {
-    if summary.total_findings == 0 {
-        return 100.0;
-    }
-    let tested = summary.passed + summary.failed + summary.needs_review;
-    (tested as f64 / summary.total_findings as f64).min(1.0) * 100.0
-}
-
 fn all_findings(bundle: &AuditBundle) -> Vec<&Finding> {
     bundle
         .findings
@@ -446,7 +558,9 @@ fn escape_html(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::{AuditConfig, Classification, PageAudit};
+    use rgaa_core::{
+        AuditConfig, Classification, EvidenceRef, PageAudit, ReviewEvent, TestOutcome, VerdictBasis,
+    };
 
     fn criterion(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {
@@ -583,5 +697,75 @@ mod tests {
         assert!(completed
             .iter()
             .any(|c| c.criterion_id == "not-a-real-id" && c.status == CriterionStatus::Fail));
+    }
+
+    #[test]
+    fn report_separates_automatic_estimate_from_verified_review_and_shows_metrics() {
+        let mut bundle = AuditBundle::new(
+            "audit-assessment",
+            "https://example.test",
+            AuditConfig::default(),
+        );
+        let mut item = criterion("1.1", CriterionStatus::NeedsReview);
+        item.automated_verdict = Some(AutomatedVerdict::Pass);
+        item.verdict_basis = vec![VerdictBasis::ModelEstimate];
+        item.raw_confidence = Some(0.82);
+        item.confidence = Some(0.75);
+        item.review_required = true;
+        item.review_reason = Some("Vérifier l’équivalence".into());
+        item.evidence.push(EvidenceRef::new("dom", "sha256:test"));
+        item.verified_status = Some(CriterionStatus::Fail);
+        item.review_events.push(ReviewEvent {
+            status: CriterionStatus::Fail,
+            author: "auditrice".into(),
+            reviewed_at: "2026-10-07T12:00:00Z".into(),
+            reason: "Alternative incomplète".into(),
+        });
+        bundle.pages.push(PageAudit {
+            page_id: "p1".into(),
+            url: "https://example.test".into(),
+            title: None,
+            criteria: vec![item],
+            findings: vec![],
+            errors: vec![],
+            completed: true,
+            duration_ms: 0,
+        });
+
+        let html = generate_html_report(&bundle);
+        for label in [
+            "Couverture des verdicts automatiques",
+            "Couverture des tests avec preuve",
+            "Conformité vérifiée",
+            "Verdict automatique",
+            "Statut vérifié",
+            "Confiance brute",
+            "Confiance calibrée",
+            "Revue humaine requise",
+            "estimation",
+            "Alternative incomplète",
+            "sha256:test",
+            "auditrice",
+        ] {
+            assert!(html.contains(label), "missing {label}");
+        }
+        assert!(!html.contains("<h3>Couverture</h3>"));
+    }
+
+    #[test]
+    fn automatic_model_estimate_remains_labeled_with_non_model_evidence() {
+        let mut item = criterion("1.1", CriterionStatus::NeedsReview);
+        item.automated_verdict = Some(AutomatedVerdict::Pass);
+        item.verdict_basis = vec![VerdictBasis::ModelEstimate];
+        item.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "axe-core".into(),
+            evidence: Some("img#logo has an accessible name".into()),
+        });
+
+        let rendered = automated_verdict_cell(&item);
+        assert!(rendered.contains("Conforme"));
+        assert!(rendered.contains("estimation"));
     }
 }

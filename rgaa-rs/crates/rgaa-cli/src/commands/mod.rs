@@ -2,6 +2,7 @@ pub mod analyze;
 pub mod igt;
 pub mod policy;
 pub mod report;
+pub mod review;
 pub mod verify;
 
 use clap::Subcommand;
@@ -40,6 +41,8 @@ pub enum AuditCommand {
     Verify(verify::VerifyArgs),
     /// Render an audit bundle as a report.
     Report(report::ReportArgs),
+    /// Record a human review in a saved audit JSON.
+    Review(review::ReviewArgs),
     /// Check compliance against the configured policy.
     Policy(policy::PolicyArgs),
 }
@@ -53,6 +56,7 @@ impl AuditCommand {
             AuditCommand::Igt(args) => &args.common,
             AuditCommand::Verify(args) => &args.common,
             AuditCommand::Report(args) => &args.common,
+            AuditCommand::Review(args) => &args.common,
             AuditCommand::Policy(args) => &args.common,
         }
     }
@@ -77,6 +81,7 @@ pub async fn dispatch(command: AuditCommand) -> Result<i32, crate::CliError> {
         AuditCommand::Igt(args) => igt::run(args).await,
         AuditCommand::Verify(args) => verify::run(args),
         AuditCommand::Report(args) => report::run(args),
+        AuditCommand::Review(args) => review::run(args),
         AuditCommand::Policy(args) => policy::run(args),
     }
 }

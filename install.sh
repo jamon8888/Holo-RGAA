@@ -6,7 +6,7 @@
 #   curl -sSL .../install.sh | bash -s -- --build    # build from source
 #   curl -sSL .../install.sh | bash -s -- --uninstall    # uninstall
 #
-# Installs: rgaa-mcp, rgaa-cli, obscura browser binary, Claude Code plugin
+# Installs: rgaa-mcp, rgaa-cli, obscura browser binary, Claude Code and Codex plugins
 
 set -euo pipefail
 
@@ -14,6 +14,8 @@ set -euo pipefail
 
 REPO="jamon8888/Holo-RGAA"
 RELEASE_TAG="${RGAA_VERSION:-latest}"
+PLUGIN_REF="${RGAA_VERSION:-latest}"
+if [[ "$PLUGIN_REF" == "latest" ]]; then PLUGIN_REF="master"; fi
 INSTALL_DIR="${RGAA_INSTALL_DIR:-$HOME/.local/bin}"
 PLUGIN_DIR="${HOME}/.claude/plugins/rgaa-accessibility"
 # Installs before the plugin trees were deduplicated put the old `rgaa-audit`
@@ -22,6 +24,10 @@ LEGACY_PLUGIN_DIR="${HOME}/.claude/plugins/rgaa-audit"
 CANON_PLUGIN_SUBDIR="rgaa-rs/plugins/rgaa-consultant"
 CONFIG_DIR=".rgaa"
 MCP_CONFIG="${HOME}/.claude/mcp.json"
+CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
+CODEX_MARKETPLACE_DIR="${HOME}/.local/share/holo-rgaa-codex"
+CODEX_MARKETPLACE_NAME="holo-rgaa-codex"
+CODEX_PLUGIN_NAME="rgaa-accessibility-codex"
 
 # Pinned browser substrate: default-render variant. Keep in sync with the
 # version gate in .github/workflows/ci.yml (e2e Prepare step).
@@ -323,11 +329,11 @@ install_plugin() {
 
     local fetched_root=""
     if [[ -z "$plugin_source" ]]; then
-        info "Fetching plugin from GitHub (${RELEASE_TAG})..."
+        info "Fetching plugin from GitHub (${PLUGIN_REF})..."
         local plugtmp
         plugtmp=$(mktemp -d)
         if ! curl -fSL -o "${plugtmp}/repo.tar.gz" \
-            "https://codeload.github.com/${REPO}/tar.gz/${RELEASE_TAG}"; then
+            "https://codeload.github.com/${REPO}/tar.gz/${PLUGIN_REF}"; then
             warn "plugin download failed; continuing without plugin."
             return
         fi
@@ -395,12 +401,180 @@ configure_mcp() {
     }
   }
 }
+
 MCP_EOF
         ok "MCP config written to ${MCP_CONFIG}"
     else
         echo "$mcp_json" > "$MCP_CONFIG"
         ok "MCP config updated in ${MCP_CONFIG}"
     fi
+}
+
+# ── Codex plugin setup ────────────────────────────────────────────────────────
+
+codex_config() {
+    CODEX_CONFIG_ACTION="$1" \
+    CODEX_CONFIG_FILE="${CODEX_HOME_DIR}/config.toml" \
+    CODEX_MARKETPLACE_PATH="$CODEX_MARKETPLACE_DIR" \
+    CODEX_MARKETPLACE_NAME="$CODEX_MARKETPLACE_NAME" \
+    CODEX_PLUGIN_NAME="$CODEX_PLUGIN_NAME" \
+    python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
+config = Path(os.environ["CODEX_CONFIG_FILE"])
+text = config.read_text(encoding="utf-8") if config.exists() else ""
+data = tomllib.loads(text)
+marketplace = os.environ["CODEX_MARKETPLACE_NAME"]
+plugin = f'{os.environ["CODEX_PLUGIN_NAME"]}@{marketplace}'
+action = os.environ["CODEX_CONFIG_ACTION"]
+if action == "remove" and not config.exists():
+    raise SystemExit(0)
+if action == "verify":
+    registered = data.get("plugins", {}).get(plugin, {}).get("enabled") is True
+    source = data.get("marketplaces", {}).get(marketplace, {})
+    registered = registered and source.get("source_type") == "local"
+    registered = registered and source.get("source") == os.environ["CODEX_MARKETPLACE_PATH"]
+    raise SystemExit(0 if registered else 1)
+
+kept = []
+skip = False
+prefix = []
+targets = [("marketplaces", marketplace), ("plugins", plugin)]
+for line in text.splitlines():
+    prefix.append(line)
+    if line.lstrip().startswith("["):
+        try:
+            header = tomllib.loads(line)
+            # A header-shaped line inside a multiline value is not a table.
+            tomllib.loads("\n".join(prefix))
+        except tomllib.TOMLDecodeError:
+            pass
+        else:
+            skip = any(header == {root: {key: {}}} for root, key in targets)
+    if not skip:
+        kept.append(line)
+
+result = "\n".join(kept).rstrip() + "\n"
+if action == "register":
+    block = [
+        f'[marketplaces.{marketplace}]',
+        'source_type = "local"',
+        f'source = {json.dumps(os.environ["CODEX_MARKETPLACE_PATH"])}',
+        "",
+        f'[plugins.{json.dumps(plugin)}]',
+        "enabled = true",
+    ]
+    result += "\n" + "\n".join(block) + "\n"
+# Validate before touching the existing configuration.
+tomllib.loads(result)
+config.parent.mkdir(parents=True, exist_ok=True)
+config.write_text(result, encoding="utf-8")
+PY
+}
+
+codex_config_available() {
+    command -v python3 &>/dev/null && \
+        python3 -c 'import importlib.util; raise SystemExit(0 if importlib.util.find_spec("tomllib") or importlib.util.find_spec("tomli") else 1)'
+}
+
+configure_codex_plugin() {
+    codex_config register || return 1
+    ok "Codex plugin registered and enabled in ${CODEX_HOME_DIR}/config.toml"
+}
+
+install_codex_plugin() {
+    if ! codex_config_available; then
+        warn "Codex integration incomplete: python3 with tomllib (Python 3.11+) or tomli is required; skipped installation."
+        return
+    fi
+
+    local script_dir plugin_source fetched_root="" repo_root=""
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    plugin_source="${script_dir}/rgaa-rs/plugins/rgaa-codex"
+
+    if [[ ! -d "$plugin_source" ]]; then
+        plugin_source="$(pwd)/rgaa-rs/plugins/rgaa-codex"
+    fi
+    if [[ ! -d "$plugin_source" ]]; then
+        info "Fetching Codex plugin from GitHub (${PLUGIN_REF})..."
+        local codextmp
+        codextmp="$(mktemp -d)"
+        if curl -fSL -o "${codextmp}/repo.tar.gz" "https://codeload.github.com/${REPO}/tar.gz/${PLUGIN_REF}"; then
+            tar -xzf "${codextmp}/repo.tar.gz" -C "$codextmp"
+            repo_root="$(find "$codextmp" -maxdepth 1 -mindepth 1 -type d -name 'Holo-RGAA-*' | head -1)"
+            if [[ -n "$repo_root" && -d "${repo_root}/rgaa-rs/plugins/rgaa-codex" ]]; then
+                plugin_source="${repo_root}/rgaa-rs/plugins/rgaa-codex"
+                fetched_root="$codextmp"
+            fi
+        fi
+        if [[ -z "$fetched_root" ]]; then
+            rm -rf "$codextmp"
+            warn "Codex plugin package unavailable; continuing without Codex integration."
+            return
+        fi
+    fi
+
+    local package_dir="${CODEX_MARKETPLACE_DIR}/rgaa-rs/plugins/rgaa-codex"
+    rm -rf "$CODEX_MARKETPLACE_DIR"
+    mkdir -p "$(dirname "$package_dir")" "${CODEX_MARKETPLACE_DIR}/.agents/plugins"
+    cp -R "$plugin_source" "$package_dir"
+
+    if command -v python3 &>/dev/null; then
+        CODEX_MCP_FILE="${package_dir}/.mcp.json" \
+        RGAA_MCP_BIN="${INSTALL_DIR}/rgaa-mcp" \
+        RGAA_OBSCURA_BIN="${INSTALL_DIR}/obscura" \
+        python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["CODEX_MCP_FILE"])
+config = json.loads(path.read_text(encoding="utf-8"))
+servers = config.setdefault("mcpServers", {})
+server = servers.get("rgaa-mcp", {"type": "stdio"})
+server["command"] = os.environ["RGAA_MCP_BIN"]
+server.setdefault("type", "stdio")
+server["env"] = {**server.get("env", {}), "RGAA_OBSCURA_BIN": os.environ["RGAA_OBSCURA_BIN"]}
+servers["rgaa-mcp"] = server
+path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+PY
+    fi
+
+    local marketplace_manifest="${script_dir}/.agents/plugins/marketplace.json"
+    if [[ ! -f "$marketplace_manifest" && -n "$repo_root" ]]; then
+        marketplace_manifest="${repo_root}/.agents/plugins/marketplace.json"
+    fi
+    if [[ -f "$marketplace_manifest" ]]; then
+        cp "$marketplace_manifest" "${CODEX_MARKETPLACE_DIR}/.agents/plugins/marketplace.json"
+    else
+        cat > "${CODEX_MARKETPLACE_DIR}/.agents/plugins/marketplace.json" <<'JSON_EOF'
+{
+  "name": "holo-rgaa-codex",
+  "interface": { "displayName": "Holo RGAA Codex" },
+  "plugins": [{
+    "name": "rgaa-accessibility-codex",
+    "source": { "source": "local", "path": "./rgaa-rs/plugins/rgaa-codex" },
+    "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+    "category": "Accessibility"
+  }]
+}
+JSON_EOF
+    fi
+
+    if [[ -n "$fetched_root" ]]; then rm -rf "$fetched_root"; fi
+    local cache_dir="${CODEX_HOME_DIR}/plugins/cache/${CODEX_MARKETPLACE_NAME}/${CODEX_PLUGIN_NAME}/local"
+    mkdir -p "$(dirname "$cache_dir")"
+    rm -rf "$cache_dir"
+    cp -R "$package_dir" "$cache_dir"
+    configure_codex_plugin
+    ok "Codex plugin installed: ${package_dir}"
 }
 
 # ── Default config ────────────────────────────────────────────────────────────
@@ -553,11 +727,22 @@ verify_install() {
         warn "    export PATH=\"${INSTALL_DIR}:\$PATH\""
     fi
 
-    # Check plugin
+# Check Claude Code and Codex plugins
     if [[ -L "$PLUGIN_DIR" ]] || [[ -d "$PLUGIN_DIR" ]]; then
         ok "  Claude Code plugin: installed"
     else
         warn "  Claude Code plugin: not installed"
+    fi
+
+    if [[ -d "${CODEX_MARKETPLACE_DIR}/rgaa-rs/plugins/rgaa-codex" && \
+          -d "${CODEX_HOME_DIR}/plugins/cache/${CODEX_MARKETPLACE_NAME}/${CODEX_PLUGIN_NAME}/local" ]]; then
+        if codex_config_available && codex_config verify; then
+            ok "  Codex plugin: installed"
+        else
+            warn "  Codex plugin: incomplete (registration missing, disabled, invalid, or unverifiable)"
+        fi
+    else
+        warn "  Codex plugin: not installed"
     fi
 
     # Check MCP config
@@ -577,12 +762,13 @@ verify_install() {
     echo ""
     echo "  Binaries:  ${INSTALL_DIR}/"
     echo "  Plugin:    ${PLUGIN_DIR}"
+    echo "  Codex:     ${CODEX_MARKETPLACE_DIR}"
     echo "  MCP:       ${MCP_CONFIG}"
     echo "  Config:    ${CONFIG_DIR}/config.yaml"
     echo ""
     echo "  Next steps:"
     echo "    1. Ensure ${INSTALL_DIR} is in your PATH"
-    echo "    2. Restart Claude Code to load the MCP server"
+    echo "    2. Restart Claude Code and Codex to load the plugins and MCP server"
     echo "    3. Configure the LLM for AI-assisted evaluation"
     # Fetched from the default branch rather than ${RELEASE_TAG}: the installer
     # is normally run straight off a URL with no repository checkout, so there
@@ -617,6 +803,22 @@ uninstall() {
             rm -rf "$dir" && ok "Removed Claude Code plugin ($(basename "$dir"))"
         fi
     done
+
+    if [[ -d "$CODEX_MARKETPLACE_DIR" ]]; then
+        rm -rf "$CODEX_MARKETPLACE_DIR"
+        ok "Removed Codex plugin marketplace (${CODEX_MARKETPLACE_DIR})"
+    fi
+    local cache_dir="${CODEX_HOME_DIR}/plugins/cache/${CODEX_MARKETPLACE_NAME}/${CODEX_PLUGIN_NAME}"
+    if [[ -d "$cache_dir" ]]; then
+        rm -rf "$cache_dir"
+        ok "Removed Codex plugin cache (${cache_dir})"
+    fi
+    if codex_config_available; then
+        codex_config remove || return 1
+        ok "Removed Codex plugin registration from ${CODEX_HOME_DIR}/config.toml"
+    else
+        warn "Codex registration removal incomplete: python3 with tomllib or tomli is required."
+    fi
 
     # Remove MCP config entry
     if [[ -f "$MCP_CONFIG" ]] && command -v jq &>/dev/null; then
@@ -693,6 +895,7 @@ main() {
     fi
 
     install_plugin
+    install_codex_plugin
     create_default_config
     verify_install
 }

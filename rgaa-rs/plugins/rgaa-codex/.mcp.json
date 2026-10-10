@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rgaa-mcp": {
+      "type": "stdio",
+      "command": "rgaa-mcp",
+      "description": "Local RGAA audit engine. Install the rgaa-mcp binary and make it available on PATH."
+    }
+  }
+}

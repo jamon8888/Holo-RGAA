@@ -1,0 +1,13 @@
+{
+  "name": "rgaa-accessibility-codex",
+  "version": "1.0.0",
+  "description": "RGAA 4.1.2 accessibility auditing for Codex: audit sites, triage findings, propose remediations, verify fixes, and prepare reports.",
+  "author": {
+    "name": "RGAA Team",
+    "url": "https://github.com/jamon8888/Holo-RGAA"
+  },
+  "license": "MIT",
+  "keywords": ["accessibility", "rgaa", "wcag", "audit"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

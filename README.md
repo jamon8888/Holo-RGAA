@@ -72,7 +72,11 @@ irm https://raw.githubusercontent.com/jamon8888/Holo-RGAA/master/rgaa-rs/install
 
 The script detects your platform (Linux/macOS/Windows, x86_64/aarch64), downloads
 `rgaa`, `rgaa-cli`, `rgaa-api`, `rgaa-mcp` from the latest GitHub release,
-installs to `~/.local/bin/`, configures the Claude Code plugin, and verifies everything.
+installs to `~/.local/bin/`, configures the Claude Code and Codex plugins, and verifies everything.
+The Codex plugin is staged in a dedicated local marketplace and enabled in
+`CODEX_HOME/config.toml` (default `~/.codex/config.toml`). Restart Codex after
+installation. Details are in
+[`rgaa-rs/plugins/rgaa-codex/`](rgaa-rs/plugins/rgaa-codex/README.md).
 
 - Bleeding edge (rebuilt on every push to `master`):
   ```bash
@@ -95,8 +99,9 @@ installs to `~/.local/bin/`, configures the Claude Code plugin, and verifies eve
 | 3 | Install to `~/.local/bin/` |
 | 4 | Symlink Claude Code plugin |
 | 5 | Write MCP config to `~/.claude/mcp.json` |
-| 6 | Create `.rgaa/config.yaml` if missing |
-| 7 | Verify installation |
+| 6 | Stage and enable the Codex plugin marketplace |
+| 7 | Create `.rgaa/config.yaml` if missing |
+| 8 | Verify installation |
 
 </details>
 
@@ -173,6 +178,15 @@ Audit https://example.com for RGAA compliance and report the global rate.
 | `get_audit_result` | Retrieve a stored audit by ID |
 | `list_criteria` | List all 106 RGAA criteria |
 
+### Codex plugin
+
+The Codex plugin packages the same local `rgaa-mcp` server with seven skills
+for audits, triage, remediation, verification, reports, guided tests, and
+criterion reference. From the repository root, add the local marketplace with
+`codex plugin marketplace add .`, then install `rgaa-accessibility-codex` from
+Codex desktop's Plugin Directory. See the
+[Codex plugin README](rgaa-rs/plugins/rgaa-codex/README.md) for setup details.
+
 ### Python (API)
 
 ```python
@@ -201,7 +215,7 @@ print(f"Status: {result['etat_conformite']}")
 ### Interfaces
 - **TUI** — `rgaa` Ratatui app: audit wizard, history, install/setup wizards
 - **CLI** — `rgaa-cli` for terminal audits and CI integration
-- **MCP Server** — `rgaa-mcp` for AI assistant (Claude Code) workflows
+- **MCP Server** — `rgaa-mcp` for Claude Code and Codex workflows
 - **REST API** — `rgaa-api` for HTTP integration
 - **Rust Library** — direct integration via `rgaa-core`
 

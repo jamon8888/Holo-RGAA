@@ -1,0 +1,20 @@
+{
+  "name": "holo-rgaa-codex",
+  "interface": {
+    "displayName": "Holo RGAA Codex"
+  },
+  "plugins": [
+    {
+      "name": "rgaa-accessibility-codex",
+      "source": {
+        "source": "local",
+        "path": "./rgaa-rs/plugins/rgaa-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Accessibility"
+    }
+  ]
+}

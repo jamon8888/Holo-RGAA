@@ -7,8 +7,9 @@ The RGAA Accessibility Plugin provides a complete workflow for auditing, triagin
 ## Prerequisites
 
 - **Rust 1.80+** - Install from [rustup.rs](https://rustup.rs/)
-- **Claude Code** - Latest version with MCP support
-- **Node.js 18+** - For the plugin hooks
+- **Claude Code** - Latest version with MCP support, for the Claude plugin
+- **Node.js 18+** - For the Claude plugin hooks
+- **Codex desktop** - For the Codex plugin marketplace and installation
 
 ## Quick Start
 
@@ -22,15 +23,16 @@ cargo build --release
 
 The binaries will be in `target/release/`:
 - `rgaa-cli` - Local audit CLI
-- `rgaa-mcp` - MCP server for Claude Code
+- `rgaa-mcp` - MCP server for Claude Code and Codex
 - `rgaa-api` - Remote API server (optional)
 
 ### 2. Install the Claude Code plugin
 
-The plugin lives at `rgaa-rs/plugins/rgaa-consultant/` — that is the only plugin
-tree. The top-level `claude-plugin/` directory this guide used to install from is
-a deprecated pointer: it carries no manifest, and installing it gave you the
-stale `rgaa-audit` 0.1.0 fork instead of `rgaa-accessibility` 2.0.0.
+The Claude Code plugin lives at `rgaa-rs/plugins/rgaa-consultant/`. The
+top-level `claude-plugin/` directory this guide used to install from is a
+deprecated pointer: it carries no manifest, and installing it gave you the
+stale `rgaa-audit` 0.1.0 fork instead of `rgaa-accessibility` 2.0.0. Codex has a
+separate package at `rgaa-rs/plugins/rgaa-codex/`.
 
 The repository carries a marketplace manifest (`.claude-plugin/marketplace.json`),
 so the plugin installs through the normal plugin commands:
@@ -61,7 +63,30 @@ inside Claude Code: `rgaa-accessibility` should be listed, with the
 two hooks. `claude plugin validate rgaa-rs/plugins/rgaa-consultant` validates the
 tree without installing it.
 
-### 3. Configure environment
+### 3. Install the Codex plugin
+
+The Codex plugin reuses the local `rgaa-mcp` binary and provides seven skills.
+Install the binary from the repository root if it is not already on `PATH`:
+
+```bash
+cargo install --path rgaa-rs/crates/rgaa-mcp
+codex plugin marketplace add .
+codex plugin marketplace list
+```
+
+The one-command installer also stages the plugin in a dedicated local
+marketplace, registers it in `CODEX_HOME/config.toml` (or `~/.codex/config.toml`)
+and enables it. Restart Codex desktop after installation. To install manually,
+open Codex desktop's Plugin Directory, choose the `Holo RGAA Codex`
+marketplace, and install `rgaa-accessibility-codex`. The plugin README lists
+its MCP tools, skills and setup details:
+[`rgaa-rs/plugins/rgaa-codex/README.md`](../rgaa-rs/plugins/rgaa-codex/README.md).
+
+The `--uninstall` option removes this installer's Codex marketplace and its two
+Codex configuration entries while leaving other Codex marketplaces and plugins
+untouched.
+
+### 4. Configure environment
 
 ```bash
 # Required for AI-assisted remediation

@@ -1,0 +1,936 @@
+[
+  {
+    "criterion_id": "1.1",
+    "test_key": "1",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "2",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "3",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "4",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "5",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "6",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "7",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.1",
+    "test_key": "8",
+    "mechanisms": [
+      "axe-1-1",
+      "gapfix-1-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.2",
+    "test_key": "1",
+    "mechanisms": [
+      "gapfix-1-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.2",
+    "test_key": "2",
+    "mechanisms": [
+      "gapfix-1-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.2",
+    "test_key": "3",
+    "mechanisms": [
+      "gapfix-1-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.2",
+    "test_key": "4",
+    "mechanisms": [
+      "gapfix-1-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.2",
+    "test_key": "5",
+    "mechanisms": [
+      "gapfix-1-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.2",
+    "test_key": "6",
+    "mechanisms": [
+      "gapfix-1-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "6",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "7",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "8",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.3",
+    "test_key": "9",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "6",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.4",
+    "test_key": "7",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.5",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.5",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "6",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "7",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "8",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "9",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.6",
+    "test_key": "10",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.7",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.7",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.7",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.7",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.7",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.7",
+    "test_key": "6",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.8",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.8",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.8",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.8",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.8",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.8",
+    "test_key": "6",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.9",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.9",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.9",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.9",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "1.9",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "2.1",
+    "test_key": "1",
+    "mechanisms": [
+      "axe-2-1",
+      "gapfix-2-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "2.2",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.1",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.1",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.1",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.1",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.1",
+    "test_key": "5",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.1",
+    "test_key": "6",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.2",
+    "test_key": "1",
+    "mechanisms": [
+      "axe-3-2",
+      "gapfix-3-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.2",
+    "test_key": "2",
+    "mechanisms": [
+      "axe-3-2",
+      "gapfix-3-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.2",
+    "test_key": "3",
+    "mechanisms": [
+      "axe-3-2",
+      "gapfix-3-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.2",
+    "test_key": "4",
+    "mechanisms": [
+      "axe-3-2",
+      "gapfix-3-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.2",
+    "test_key": "5",
+    "mechanisms": [
+      "axe-3-2",
+      "gapfix-3-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.3",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.3",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.3",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "3.3",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.1",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.1",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.1",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.2",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.2",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.2",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.3",
+    "test_key": "1",
+    "mechanisms": [
+      "axe-4-3"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.3",
+    "test_key": "2",
+    "mechanisms": [
+      "axe-4-3"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.4",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.5",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.5",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.6",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.6",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.7",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.8",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.8",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.9",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.10",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.11",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.11",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.11",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.12",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.12",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.13",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "4.13",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.1",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.2",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.3",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.4",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.5",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.6",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.6",
+    "test_key": "2",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.6",
+    "test_key": "3",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.6",
+    "test_key": "4",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.7",
+    "test_key": "1",
+    "mechanisms": [
+      "axe-5-7"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.7",
+    "test_key": "2",
+    "mechanisms": [
+      "axe-5-7"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.7",
+    "test_key": "3",
+    "mechanisms": [
+      "axe-5-7"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.7",
+    "test_key": "4",
+    "mechanisms": [
+      "axe-5-7"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.7",
+    "test_key": "5",
+    "mechanisms": [
+      "axe-5-7"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "5.8",
+    "test_key": "1",
+    "mechanisms": [],
+    "coverage": "partial",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "6.1",
+    "test_key": "1",
+    "mechanisms": [
+      "gapfix-6-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "6.1",
+    "test_key": "2",
+    "mechanisms": [
+      "gapfix-6-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "6.1",
+    "test_key": "3",
+    "mechanisms": [
+      "gapfix-6-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "6.1",
+    "test_key": "4",
+    "mechanisms": [
+      "gapfix-6-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "6.1",
+    "test_key": "5",
+    "mechanisms": [
+      "gapfix-6-1"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  },
+  {
+    "criterion_id": "6.2",
+    "test_key": "1",
+    "mechanisms": [
+      "axe-6-2"
+    ],
+    "coverage": "complete",
+    "fallback": "holo_estimate"
+  }
+]

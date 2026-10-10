@@ -477,6 +477,62 @@ impl GapFixRules {
 
         results
     }
+
+    /// Convert Obscura's bounded Tab traversal into criterion outcomes.
+    /// The trap finding is actionable evidence for 12.9; a clean bounded path
+    /// remains review because a finite traversal cannot prove every state safe.
+    #[must_use]
+    pub fn parse_keyboard_observation(
+        status: &str,
+        issue_rules: &[String],
+        elements_observed: usize,
+    ) -> HashMap<String, CriterionResult> {
+        let trapped = issue_rules.iter().any(|rule| rule == "keyboard-trap");
+        let complete = status == "complete";
+        let reason = if trapped {
+            "Obscura detected that keyboard focus repeated on one element"
+        } else if complete {
+            "No trap was observed in the bounded Tab traversal; other page states still need review"
+        } else {
+            "The keyboard traversal was incomplete; inspect focus order and possible traps manually"
+        };
+        let status_12_9 = if trapped {
+            CriterionStatus::Fail
+        } else if complete {
+            CriterionStatus::NeedsReview
+        } else {
+            CriterionStatus::NotTested
+        };
+
+        [
+            (
+                "12.8",
+                CriterionStatus::NeedsReview,
+                format!("Obscura observed {elements_observed} keyboard-focusable element(s); compare the actual focus sequence with visual/reading order"),
+            ),
+            ("12.9", status_12_9, reason.to_string()),
+        ]
+        .into_iter()
+        .map(|(criterion_id, status, justification)| {
+            (
+                criterion_id.to_string(),
+                CriterionResult {
+                    criterion_id: criterion_id.to_string(),
+                    title: String::new(),
+                    classification: Classification::Deterministe,
+                    status,
+                    violations: vec![],
+                    confidence: None,
+                    justification: Some(justification),
+                    source: "gap-fix".to_string(),
+                    citations: vec![],
+                    considered_sources: vec![],
+                    tests: vec![],
+                },
+            )
+        })
+        .collect()
+    }
 }
 
 /// The three outcomes a probe can report (spec §2).
@@ -504,7 +560,11 @@ mod tests {
     #[test]
     fn the_new_mechanisms_are_on_the_audit_path() {
         let snippets = GapFixRules::snippets();
-        for criterion_id in ["10.1", "11.5", "1.9"] {
+        for criterion_id in [
+            "10.1", "11.5", "1.9", "1.6", "3.3", "8.7", "11.3", "11.8", "13.3", "4.12", "4.13",
+            "10.9", "10.12", "10.13", "11.11", "12.8", "12.9", "12.10", "12.11", "13.10", "13.11",
+            "13.12",
+        ] {
             let snippet = snippets
                 .get(criterion_id)
                 .unwrap_or_else(|| panic!("{criterion_id} must have a gap-fix snippet"));
@@ -517,6 +577,67 @@ mod tests {
                 "{criterion_id}'s snippet must report a pass flag"
             );
         }
+    }
+
+    #[test]
+    fn newly_added_static_probes_are_partial_and_never_claim_pass() {
+        let registry = MechanismRegistry::builtin();
+        for criterion_id in [
+            "1.6", "3.3", "4.12", "4.13", "8.7", "10.9", "10.12", "10.13", "11.3", "11.8", "11.11",
+            "12.8", "12.9", "12.10", "12.11", "13.3", "13.10", "13.11", "13.12",
+        ] {
+            let mechanism = registry
+                .probe_for(criterion_id)
+                .unwrap_or_else(|| panic!("{criterion_id} needs a registered probe"));
+            assert_eq!(
+                mechanism.coverage,
+                rgaa_core::catalog::AxeCoverage::Partial,
+                "{criterion_id}"
+            );
+            assert!(
+                !mechanism
+                    .outcomes
+                    .contains(&rgaa_core::registry::Outcome::Pass),
+                "{criterion_id} cannot pass on partial browser evidence"
+            );
+            assert!(GapFixRules::snippets().contains_key(criterion_id));
+        }
+    }
+
+    #[test]
+    fn review_outcome_is_kept_as_a_human_review_result() {
+        let result = parse_one(
+            "1.6",
+            json!({"outcome":"review", "details":"complex image candidate", "reason":"human judgement", "nodes":1}),
+        )
+        .expect("review observation should be retained");
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert_eq!(result.source, "gap-fix");
+        assert!(result
+            .justification
+            .as_deref()
+            .unwrap_or_default()
+            .contains("human judgement"));
+    }
+
+    #[test]
+    fn keyboard_trap_is_fail_but_a_clean_bounded_run_stays_review() {
+        let trapped = GapFixRules::parse_keyboard_observation(
+            "incomplete",
+            &["keyboard-trap".to_string()],
+            3,
+        );
+        assert_eq!(trapped["12.9"].status, CriterionStatus::Fail);
+        assert_eq!(trapped["12.8"].status, CriterionStatus::NeedsReview);
+
+        let clean = GapFixRules::parse_keyboard_observation("complete", &[], 4);
+        assert_eq!(clean["12.9"].status, CriterionStatus::NeedsReview);
+        assert_eq!(clean["12.8"].status, CriterionStatus::NeedsReview);
+        assert!(clean["12.8"]
+            .justification
+            .as_deref()
+            .unwrap_or_default()
+            .contains("4"));
     }
 
     /// The snippet that compared `scrollWidth` to a hardcoded 320 at the unchanged
@@ -631,7 +752,12 @@ mod tests {
         let orphans: Vec<&str> = registry
             .mechanisms()
             .iter()
-            .filter(|m| m.kind != rgaa_core::MechanismKind::AxeNative)
+            .filter(|m| {
+                !matches!(
+                    m.kind,
+                    rgaa_core::MechanismKind::AxeNative | rgaa_core::MechanismKind::Site
+                )
+            })
             .filter(|m| !snippets.contains_key(&m.criterion))
             .map(|m| m.id.as_str())
             .collect();

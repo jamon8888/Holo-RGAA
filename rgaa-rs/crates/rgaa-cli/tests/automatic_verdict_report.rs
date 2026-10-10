@@ -276,12 +276,13 @@ fn chosen_finding_route() -> (String, String) {
 fn chosen_provider_only_criterion() -> rgaa_core::Criterion {
     let plan = TestRoutePlan::builtin();
     RgaaCriteria::all()
-        .into_iter()
+        .iter()
         .find(|criterion| {
             !plan.routes().iter().any(|route| {
                 route.criterion_id == criterion.id && route.coverage == CoverageLevel::Complete
             })
         })
+        .cloned()
         .expect("catalog has a criterion with no complete route")
 }
 

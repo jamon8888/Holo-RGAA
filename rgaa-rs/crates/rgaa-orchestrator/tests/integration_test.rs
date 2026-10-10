@@ -23,6 +23,14 @@ fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> Criteri
         citations: vec![],
         considered_sources: vec![],
         tests: vec![],
+        automated_verdict: None,
+        verdict_basis: Vec::new(),
+        evidence: Vec::new(),
+        confidence_calibration_version: None,
+        review_required: false,
+        review_reason: None,
+        verified_status: None,
+        review_events: Vec::new(),
     }
 }
 
@@ -133,6 +141,7 @@ fn build_audit_result(criteria: Vec<CriterionResult>) -> AuditResult {
         coverage_percent,
         etat_conformite,
         duration_ms: 0,
+        audit_complete: false,
     }
 }
 

@@ -18,6 +18,45 @@ pub enum CriterionStatus {
     NotTested,
 }
 
+/// Automatic assessment of a criterion, independent of human verification.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomatedVerdict {
+    /// Automatically assessed as conforming.
+    Pass,
+    /// Automatically assessed as nonconforming.
+    Fail,
+    /// Automatically assessed as not applicable.
+    NotApplicable,
+}
+
+/// Mechanism supporting an automatic assessment.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerdictBasis {
+    /// An axe-core result.
+    Axe,
+    /// A deterministic rule or probe.
+    Deterministic,
+    /// A browser interaction or observation.
+    Browser,
+    /// A model estimate requiring separate verification.
+    ModelEstimate,
+}
+
+/// Human review recorded separately from the automatic assessment.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewEvent {
+    /// Status assigned by the reviewer.
+    pub status: CriterionStatus,
+    /// Identity of the reviewer.
+    pub author: String,
+    /// Timestamp of the review.
+    pub reviewed_at: String,
+    /// Reason supporting the reviewed status.
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ConformityStatus {
     Conforme,
@@ -197,6 +236,30 @@ pub struct CriterionResult {
     /// existed still load and unchanged reports stay byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tests: Vec<TestOutcome>,
+    /// Automatic verdict, absent for older or incomplete assessments.
+    #[serde(default)]
+    pub automated_verdict: Option<AutomatedVerdict>,
+    /// Mechanisms supporting the automatic verdict.
+    #[serde(default)]
+    pub verdict_basis: Vec<VerdictBasis>,
+    /// Evidence supporting the assessment.
+    #[serde(default)]
+    pub evidence: Vec<crate::EvidenceRef>,
+    /// Calibration version applied to confidence, independent of its raw value.
+    #[serde(default)]
+    pub confidence_calibration_version: Option<String>,
+    /// Whether a human review is required.
+    #[serde(default)]
+    pub review_required: bool,
+    /// Reason a human review is required.
+    #[serde(default)]
+    pub review_reason: Option<String>,
+    /// Verified status; a model estimate alone does not populate this field.
+    #[serde(default)]
+    pub verified_status: Option<CriterionStatus>,
+    /// History of human reviews of this criterion.
+    #[serde(default)]
+    pub review_events: Vec<ReviewEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -230,6 +293,9 @@ pub struct AuditResult {
     pub coverage_percent: f64,
     pub etat_conformite: String,
     pub duration_ms: u64,
+    /// True only after every page and criterion passes the completion gate.
+    #[serde(default)]
+    pub audit_complete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +320,115 @@ impl Default for CrawlConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const LEGACY_CRITERION_JSON: &str = r#"{"criterion_id":"1.1","title":"images","classification":"Deterministe","status":"pass","violations":[],"confidence":1.0,"justification":"alt present","source":"axe-core","citations":[],"considered_sources":[],"tests":[]}"#;
+    const LEGACY_AUDIT_JSON: &str = r#"{"audit_id":"old","url":"https://example.test","pages":[],"total_criteria":0,"passed":0,"failed":0,"na":0,"overall_compliance":0.0,"taux_global":0.0,"coverage_percent":0.0,"etat_conformite":"non conforme","duration_ms":0}"#;
+
+    #[test]
+    fn automatic_verdicts_round_trip_with_stable_json_names() -> serde_json::Result<()> {
+        for (verdict, json) in [
+            (AutomatedVerdict::Pass, r#""pass""#),
+            (AutomatedVerdict::Fail, r#""fail""#),
+            (AutomatedVerdict::NotApplicable, r#""not_applicable""#),
+        ] {
+            assert_eq!(serde_json::to_string(&verdict)?, json);
+            assert_eq!(serde_json::from_str::<AutomatedVerdict>(json)?, verdict);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn verdict_bases_round_trip_with_stable_json_names() -> serde_json::Result<()> {
+        for (basis, json) in [
+            (VerdictBasis::Axe, r#""axe""#),
+            (VerdictBasis::Deterministic, r#""deterministic""#),
+            (VerdictBasis::Browser, r#""browser""#),
+            (VerdictBasis::ModelEstimate, r#""model_estimate""#),
+        ] {
+            assert_eq!(serde_json::to_string(&basis)?, json);
+            assert_eq!(serde_json::from_str::<VerdictBasis>(json)?, basis);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn criterion_result_legacy_json_defaults_assessment_fields() -> serde_json::Result<()> {
+        let decoded: CriterionResult = serde_json::from_str(LEGACY_CRITERION_JSON)?;
+        assert_eq!(decoded.status, CriterionStatus::Pass);
+        assert_eq!(decoded.automated_verdict, None);
+        assert!(decoded.verdict_basis.is_empty());
+        assert!(decoded.evidence.is_empty());
+        assert_eq!(decoded.confidence_calibration_version, None);
+        assert!(!decoded.review_required);
+        assert_eq!(decoded.review_reason, None);
+        assert_eq!(decoded.verified_status, None);
+        assert!(decoded.review_events.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn audit_result_legacy_json_defaults_to_incomplete() -> serde_json::Result<()> {
+        let old_audit: AuditResult = serde_json::from_str(LEGACY_AUDIT_JSON)?;
+        assert!(!old_audit.audit_complete);
+        let decoded: AuditResult = serde_json::from_str(&serde_json::to_string(&old_audit)?)?;
+        assert!(!decoded.audit_complete);
+        Ok(())
+    }
+
+    #[test]
+    fn human_review_event_round_trips() -> serde_json::Result<()> {
+        let json = r#"{"status":"fail","author":"auditrice","reviewed_at":"2026-10-07T10:00:00Z","reason":"alternative absente"}"#;
+        let review: ReviewEvent = serde_json::from_str(json)?;
+        assert_eq!(review.status, CriterionStatus::Fail);
+        assert_eq!(review.author, "auditrice");
+        assert_eq!(review.reviewed_at, "2026-10-07T10:00:00Z");
+        assert_eq!(review.reason, "alternative absente");
+        assert_eq!(
+            serde_json::from_str::<ReviewEvent>(&serde_json::to_string(&review)?)?,
+            review
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn criterion_assessment_fields_round_trip_without_verifying_model_estimate(
+    ) -> serde_json::Result<()> {
+        let mut result: CriterionResult = serde_json::from_str(LEGACY_CRITERION_JSON)?;
+        result.automated_verdict = Some(AutomatedVerdict::Pass);
+        result.verdict_basis = vec![VerdictBasis::ModelEstimate];
+        result.evidence = vec![crate::EvidenceRef {
+            kind: "dom_snapshot".into(),
+            hash: "sha256:abc".into(),
+            location: Some("snapshots/page.html".into()),
+        }];
+        result.confidence_calibration_version = Some("v1".into());
+        result.review_required = true;
+        result.review_reason = Some("model estimate requires review".into());
+        let decoded: CriterionResult = serde_json::from_str(&serde_json::to_string(&result)?)?;
+        assert_eq!(decoded, result);
+        assert_eq!(decoded.verified_status, None);
+        Ok(())
+    }
+
+    #[test]
+    fn verified_review_history_round_trips_without_replacing_automatic_verdict(
+    ) -> serde_json::Result<()> {
+        let mut result: CriterionResult = serde_json::from_str(LEGACY_CRITERION_JSON)?;
+        result.automated_verdict = Some(AutomatedVerdict::Pass);
+        result.verified_status = Some(CriterionStatus::Fail);
+        result.review_events = vec![ReviewEvent {
+            status: CriterionStatus::Fail,
+            author: "auditrice".into(),
+            reviewed_at: "2026-10-07T10:00:00Z".into(),
+            reason: "alternative absente".into(),
+        }];
+        let decoded: CriterionResult = serde_json::from_str(&serde_json::to_string(&result)?)?;
+        assert_eq!(decoded, result);
+        assert_eq!(decoded.automated_verdict, Some(AutomatedVerdict::Pass));
+        assert_eq!(decoded.verified_status, Some(CriterionStatus::Fail));
+        assert_eq!(decoded.review_events[0].status, CriterionStatus::Fail);
+        Ok(())
+    }
 
     #[test]
     fn criterion_statuses_have_stable_json_names() {
@@ -317,6 +492,14 @@ mod tests {
             citations,
             considered_sources: vec![],
             tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 

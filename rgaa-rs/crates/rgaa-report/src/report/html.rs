@@ -321,6 +321,14 @@ fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
                 citations: vec![],
                 considered_sources: vec![],
                 tests: vec![],
+                automated_verdict: None,
+                verdict_basis: Vec::new(),
+                evidence: Vec::new(),
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: Vec::new(),
             },
         })
         .collect();
@@ -452,6 +460,14 @@ mod tests {
             citations: vec![],
             considered_sources: vec![],
             tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 

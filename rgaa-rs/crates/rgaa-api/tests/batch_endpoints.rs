@@ -32,6 +32,7 @@ fn audit(url: &str, taux: f64) -> AuditResult {
         coverage_percent: 56.6,
         etat_conformite: "partielle".to_string(),
         duration_ms: 1,
+        audit_complete: false,
     }
 }
 

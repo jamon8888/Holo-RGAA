@@ -69,13 +69,14 @@ pub(crate) fn compare_site(
 
     let nav_signatures = pages
         .iter()
+        // DOM order does not identify the primary menu. Compare the observed
+        // regions without treating additional contextual menus as movement.
         .map(|page| normalized_set(&page.navigation_positions))
         .collect::<Vec<_>>();
-    let nav_consistent = all_same_nonempty(&nav_signatures);
     results.push(site_result(
         "12.2",
-        nav_consistent,
-        "primary navigation position signatures are consistent; visual placement still needs confirmation",
+        &nav_signatures,
+        "a navigation region is shared across pages; primary-menu identity and visual placement still need confirmation",
         pages.len(),
         sampled_pages,
         failed_pages,
@@ -86,10 +87,9 @@ pub(crate) fn compare_site(
         .iter()
         .map(|page| normalized_set(&page.sitemap_access))
         .collect::<Vec<_>>();
-    let sitemap_consistent = all_same_nonempty(&sitemap_signatures);
     results.push(site_result(
         "12.4",
-        sitemap_consistent,
+        &sitemap_signatures,
         "sitemap access signatures are consistent; target relevance and actual reachability need confirmation",
         pages.len(),
         sampled_pages,
@@ -101,10 +101,9 @@ pub(crate) fn compare_site(
         .iter()
         .map(|page| normalized_set(&page.search_access))
         .collect::<Vec<_>>();
-    let search_consistent = all_same_nonempty(&search_signatures);
     results.push(site_result(
         "12.5",
-        search_consistent,
+        &search_signatures,
         "search access signatures are consistent; keyboard reachability and result quality need confirmation",
         pages.len(),
         sampled_pages,
@@ -149,22 +148,39 @@ fn all_same_nonempty(values: &[BTreeSet<String>]) -> bool {
 
 fn site_result(
     criterion_id: &'static str,
-    consistent: bool,
+    signatures: &[BTreeSet<String>],
     evidence: &str,
     observed_pages: usize,
     sampled_pages: usize,
     failed_pages: usize,
     sample_complete: bool,
 ) -> SiteCriterionObservation {
+    let consistent = if criterion_id == "12.2" {
+        signatures.first().is_some_and(|first| {
+            first
+                .iter()
+                .any(|region| signatures.iter().all(|set| set.contains(region)))
+        })
+    } else {
+        all_same_nonempty(signatures)
+    };
+    let missing_signal = signatures.iter().any(BTreeSet::is_empty);
     SiteCriterionObservation {
         criterion_id,
-        status: if observed_pages == 0 || consistent {
+        status: if observed_pages == 0 || consistent || missing_signal {
             CriterionStatus::NeedsReview
         } else {
             CriterionStatus::Fail
         },
         details: format!(
-            "{evidence}; signatures available for {observed_pages} of {sampled_pages} sampled pages"
+            "{}; observations available for {observed_pages} of {sampled_pages} sampled pages",
+            if missing_signal {
+                "no matching system was inferred on at least one page; applicability and alternate markup require review"
+            } else if consistent {
+                evidence
+            } else {
+                "access or primary-position signatures differ across pages; repeated-system identity and exceptions require confirmation"
+            }
         ),
         sampled_pages,
         failed_pages,
@@ -175,6 +191,51 @@ fn site_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn absent_access_signals_require_review_instead_of_proving_failure() {
+        let results = compare_site(
+            &[
+                page(&["nav"], &["top"], &[], &[]),
+                page(&["nav"], &["top"], &[], &[]),
+            ],
+            2,
+            0,
+            true,
+        );
+        assert!(results
+            .iter()
+            .all(|r| r.status == CriterionStatus::NeedsReview));
+        assert!(results[2].details.contains("no matching system"));
+    }
+
+    #[test]
+    fn extra_contextual_menu_does_not_prove_primary_navigation_moved() {
+        let results = compare_site(
+            &[
+                page(&["nav"], &["top"], &[], &[]),
+                page(&["nav"], &["top", "middle"], &[], &[]),
+            ],
+            2,
+            0,
+            true,
+        );
+        assert_eq!(results[1].status, CriterionStatus::NeedsReview);
+    }
+
+    #[test]
+    fn prepended_contextual_menu_does_not_prove_primary_navigation_moved() {
+        let results = compare_site(
+            &[
+                page(&["nav"], &["top"], &[], &[]),
+                page(&["nav"], &["middle", "top"], &[], &[]),
+            ],
+            2,
+            0,
+            true,
+        );
+        assert_eq!(results[1].status, CriterionStatus::NeedsReview);
+    }
 
     fn page(
         nav: &[&str],
@@ -217,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_inconsistent_site_signals_fail() {
+    fn observed_differences_fail_but_missing_signals_remain_review() {
         let results = compare_site(
             &[
                 page(
@@ -238,9 +299,9 @@ mod tests {
             true,
         );
         assert_eq!(results[0].status, CriterionStatus::NeedsReview);
-        assert!(results[1..]
-            .iter()
-            .all(|result| result.status == CriterionStatus::Fail));
+        assert_eq!(results[1].status, CriterionStatus::Fail);
+        assert_eq!(results[2].status, CriterionStatus::NeedsReview);
+        assert_eq!(results[3].status, CriterionStatus::Fail);
     }
 
     #[test]

@@ -65,7 +65,13 @@ pub async fn config_show() -> anyhow::Result<()> {
 
     let stored_key = crate::keyring::get_api_key().ok().flatten();
     if stored_key.is_some() {
-        println!("Keyring: a Holo3 key is stored (used only when exported as HOLO3_API_KEY)");
+        println!("Keyring: a MyIA key is stored (audits use MYIA_API_KEY from the environment)");
+    } else if crate::keyring::get_legacy_holo3_api_key()
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        println!("Keyring: a legacy Holo3 key is stored; it is not used for MyIA");
     }
     println!("Storage: ~/.rgaa/audits.db");
 

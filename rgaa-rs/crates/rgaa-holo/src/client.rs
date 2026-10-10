@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use rgaa_core::{CompletionParams, LlmProvenance, RgaaError};
 use std::time::Duration;
 
-const API_URL: &str = "https://api.hcompany.ai/v1/chat/completions";
-const MODEL: &str = "holo3-1-35b-a3b";
+const API_URL: &str = "https://api.medium.text-generation-webui.myia.io/v1/chat/completions";
+const MODEL: &str = "swift-1.5-27b";
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Remote Holo3 backend (H Company hosted API).
+/// Direct MyIA backend. The historical type name remains for API compatibility.
 #[derive(Debug, Clone)]
 pub struct HoloClient {
     transport: ChatTransport,
@@ -36,7 +36,7 @@ impl HoloClient {
     ///
     /// Returns `Err(RgaaError::Holo3)` if the HTTP client cannot be built.
     pub fn with_params(api_key: String, params: CompletionParams) -> Result<Self, RgaaError> {
-        let transport = ChatTransport::new("holo3", API_URL, MODEL, Some(api_key), TIMEOUT, params)
+        let transport = ChatTransport::new("myia", API_URL, MODEL, Some(api_key), TIMEOUT, params)
             .map_err(|e| RgaaError::Holo3(e.to_string()))?;
         Ok(Self { transport })
     }
@@ -53,7 +53,7 @@ impl HoloClient {
         self
     }
 
-    /// Sends a text-only evaluation prompt to the Holo3 API, retrying on
+    /// Sends a text-only evaluation prompt to the configured MyIA endpoint, retrying on
     /// transient failures (HTTP 429, network errors).
     pub async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, RgaaError> {
         self.transport
@@ -86,7 +86,7 @@ impl HoloClient {
 #[async_trait]
 impl LlmBackend for HoloClient {
     fn name(&self) -> &'static str {
-        "holo3"
+        "myia"
     }
 
     fn model(&self) -> &str {
@@ -218,7 +218,7 @@ mod tests {
                 .unwrap()
                 .with_base_url(server.url()),
         );
-        assert_eq!(backend.name(), "holo3");
+        assert_eq!(backend.name(), "myia");
         assert_eq!(backend.model(), MODEL);
         assert_eq!(backend.evaluate("p").await.unwrap().verdict, "pass");
     }

@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn holo3_stays_the_default_provider_and_needs_its_key() {
+    fn legacy_holo3_provider_remains_configurable() {
         let cfg = BackendConfig::from_env_with(env(&[
             ("HOLO3_API_KEY", "k"),
             ("HOLO3_MODEL", "holo3-1-35b-a3b"),

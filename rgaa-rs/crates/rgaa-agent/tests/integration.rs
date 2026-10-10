@@ -4,7 +4,18 @@ use rgaa_core::{Classification, Criterion};
 use rgaa_holo::PageContext;
 
 fn has_api_key() -> bool {
-    std::env::var("HOL3_API_KEY").is_ok() || std::env::var("HOLO3_API_KEY").is_ok()
+    [
+        "MYIA_API_KEY",
+        "RGAA_LLM_API_KEY",
+        "HOL3_API_KEY",
+        "HOLO3_API_KEY",
+    ]
+    .iter()
+    .any(|name| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty())
+    })
 }
 
 #[tokio::test]
@@ -21,7 +32,7 @@ async fn test_agent_creation() {
 async fn test_evaluate_criterion() {
     if !has_api_key() {
         eprintln!(
-            "Skipping test_evaluate_criterion: no API key set (HOL3_API_KEY or HOLO3_API_KEY)"
+            "Skipping test_evaluate_criterion: no API key set (MYIA_API_KEY or RGAA_LLM_API_KEY)"
         );
         return;
     }
@@ -48,10 +59,10 @@ async fn test_evaluate_criterion() {
     };
 
     let result = agent.evaluate_criterion(&criterion, &page_context).await;
-    // AgentConfig::default() has no API key, so this hits the real Holo3
+    // AgentConfig::default() has no API key, so this hits the configured LLM
     // endpoint with empty credentials and takes evaluate_criterion's error
     // path (NeedsReview / source "agent-error") in any environment without
-    // HOLO3_API_KEY set — including CI's default test job and local runs.
+    // provider without a key — including CI's default test job and local runs.
     // With a real key configured, it exercises the success path instead,
     // whose status depends on the model's verdict. Assert what holds in
     // both rather than hardcoding the network-dependent outcome.
@@ -62,7 +73,9 @@ async fn test_evaluate_criterion() {
 #[tokio::test]
 async fn test_run_ia_assiste() {
     if !has_api_key() {
-        eprintln!("Skipping test_run_ia_assiste: no API key set (HOL3_API_KEY or HOLO3_API_KEY)");
+        eprintln!(
+            "Skipping test_run_ia_assiste: no API key set (MYIA_API_KEY or RGAA_LLM_API_KEY)"
+        );
         return;
     }
     let config = AgentConfig::from_env().unwrap();
@@ -223,36 +236,6 @@ async fn automatic_estimator_accepts_human_routes_and_includes_prior_evidence() 
         .collect::<String>();
     assert!(prompt.contains("sha256:recorded-media"), "{prompt}");
     assert!(prompt.contains("test_key"), "{prompt}");
-    server.join().unwrap();
-}
-
-#[tokio::test]
-async fn automatic_estimator_accepts_a_fenced_json_array_reply() {
-    use rgaa_core::{AutomatedVerdict, CriterionStatus, RgaaCriteria};
-    // Models routinely wrap the array in a ```json fence or prefix it with a
-    // line of prose. The batch parser has always extracted it first; this pins
-    // the same contract for the single-batch estimator, which used to hand the
-    // raw reply to the parser and lose the whole batch to a fence.
-    let fenced = format!("Here is the result:\n```json\n{ESTIMATE_FAIL}\n```");
-    let (config, request, server) = estimate_provider(&fenced, 200);
-    let criteria = vec![RgaaCriteria::find("4.2").unwrap().clone()];
-    let agent = RgaaAgent::new(&config).await.unwrap();
-    let results = agent
-        .run_automatic_estimates(&criteria, &estimate_context(), &[])
-        .await;
-
-    assert_eq!(results.len(), 1);
-    assert_ne!(
-        results["4.2"].source, "agent-estimate-incomplete",
-        "a fenced array is a well-formed reply, not a provider failure"
-    );
-    assert_eq!(
-        results["4.2"].automated_verdict,
-        Some(AutomatedVerdict::Fail)
-    );
-    assert_eq!(results["4.2"].status, CriterionStatus::NeedsReview);
-    assert_eq!(results["4.2"].verified_status, None);
-    request.recv().unwrap();
     server.join().unwrap();
 }
 

@@ -177,7 +177,7 @@ mod tests {
         );
         let err = backend.evaluate("prompt").await.unwrap_err();
         let message = err.to_string();
-        assert!(message.contains("holo3"), "{message}");
+        assert!(message.contains("myia"), "{message}");
     }
 
     #[tokio::test]
@@ -204,6 +204,6 @@ mod tests {
             client_pointed_at("http://127.0.0.1:1".to_string()),
             client_pointed_at("http://127.0.0.1:1".to_string()),
         );
-        assert_eq!(backend.name(), "holo3");
+        assert_eq!(backend.name(), "myia");
     }
 }

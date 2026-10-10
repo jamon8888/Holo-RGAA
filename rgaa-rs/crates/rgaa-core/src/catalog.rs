@@ -194,6 +194,30 @@ impl RgaaCatalog {
         &Self::instance().themes
     }
 
+    /// Every canonical `(criterion_id, local_test_key)` pair, in catalog order.
+    ///
+    /// Keys within a criterion are sorted numerically; the catalog's test map does
+    /// not itself promise an iteration order.
+    pub fn all_test_keys() -> Vec<(String, String)> {
+        let mut keys = Vec::with_capacity(
+            Self::all()
+                .iter()
+                .flat_map(|theme| &theme.criteria)
+                .map(|wrapper| wrapper.criterium.test_count())
+                .sum(),
+        );
+        for theme in Self::all() {
+            for wrapper in &theme.criteria {
+                let criterion = &wrapper.criterium;
+                let id = criterion.id_for_theme(theme.number);
+                let mut local_keys: Vec<_> = criterion.tests.keys().collect();
+                local_keys.sort_by_key(|key| (key.parse::<u16>().ok(), key.as_str()));
+                keys.extend(local_keys.into_iter().map(|key| (id.clone(), key.clone())));
+            }
+        }
+        keys
+    }
+
     #[must_use]
     pub fn count() -> usize {
         Self::instance()

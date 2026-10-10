@@ -15,7 +15,7 @@ Holo-RGAA covers the full 106-criterion path:
 | Category | Count | Method |
 |----------|-------|--------|
 | **Deterministic** | 73 | axe-core + gap-fix heuristics, fully automated |
-| **LLM-assisted** | 32 | Holo3 vision model sees screenshot + DOM/AXTree (alt-text relevance, focus visibility, reading order, link purpose, media alternatives); low confidence escalates to `NeedsReview`, never a fake PASS |
+| **LLM-assisted** | 32 | MyIA LLM evaluates judgment-required criteria using page context (alt-text relevance, focus visibility, reading order, link purpose, media alternatives); low confidence escalates to `NeedsReview`, never a fake PASS |
 | **Manual (IGT)** | 1 | Guided keyboard test with trap detection (criterion 7.5) |
 
 Every finding ships with DOM node, AXTree path, screenshot hash, and justification. `rgaa-remediation` turns verdicts into framework-aware patches (React/Vue/Angular/vanilla) that the agent re-verifies against a fresh screenshot.
@@ -145,7 +145,7 @@ rgaa
 └──────────────────────────────────────┘
 ```
 
-The **Audit Wizard** runs the audit live with color-coded scores, per-criterion drill-down (violations, justification, confidence), install wizard, and settings wizard for the Holo3 key.
+The **Audit Wizard** runs the audit live with color-coded scores, per-criterion drill-down (violations, justification, confidence), install wizard, and settings wizard for the MyIA key.
 
 ### CLI
 
@@ -155,7 +155,7 @@ rgaa audit                            # audit wizard (interactive TUI)
 rgaa audit https://example.com --export results.json
 rgaa history                          # past audits
 rgaa config show                      # current configuration
-rgaa config set api-key "your-key"    # Holo3 API key
+rgaa config set api-key "your-key"    # MyIA API key
 rgaa config set base-url "https://api.example.com"
 
 # Policy gate — block CI if non-compliant
@@ -256,7 +256,7 @@ print(f"Status: {result['etat_conformite']}")
               │                  │
     ┌─────────▼──────┐  ┌──────▼──────┐  ┌────────────▼────────┐
     │   rgaa-rules   │  │  rgaa-holo  │  │   rgaa-obscura      │
-    │  axe-core 4.x   │  │   Holo3     │  │  CDP browser        │
+    │  axe-core 4.x   │  │   MyIA      │  │  CDP browser        │
     │  + gap-fix JS   │  │   LLM       │  │  automation         │
     └─────────┬──────┘  └──────┬──────┘  └────────────┬────────┘
               │                 │                      │
@@ -282,7 +282,7 @@ print(f"Status: {result['etat_conformite']}")
 |-------|---------------|
 | `rgaa-core` | Domain types, 106-criteria catalog, findings model |
 | `rgaa-rules` | axe-core integration + gap-fix JavaScript snippets |
-| `rgaa-holo` | Holo3 LLM client, prompt construction, response parsing |
+| `rgaa-holo` | OpenAI-compatible LLM clients, prompt construction, response parsing |
 | `rgaa-obscura` | CDP browser automation, cookie injection, IGT execution |
 | `rgaa-agent` | Agentic evaluator + RAG stack (router, verifier, citations) |
 | `rgaa-orchestrator` | Pipeline orchestration, result aggregation |
@@ -302,7 +302,7 @@ print(f"Status: {result['etat_conformite']}")
 2. **Navigation** — cookies injected first, then page load
 3. **Pre-scan Actions** — clicks, fills, wait-for states
 4. **axe-core Run** — in-page violations + gap-fix patches for RGAA false negatives
-5. **Holo3 Evaluation** — judgment-required criteria with DOM + screenshot context
+5. **MyIA Evaluation** — judgment-required criteria with page context
 6. **IGT Keyboard Test** — tab path capture, trap detection
 7. **Aggregation** — findings merged with evidence, compliance computed once in `rgaa-report`
 
@@ -347,9 +347,9 @@ cp .env.example .env
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `RGAA_LLM_PROVIDER` | LLM provider: `holo3`, `openai`, `openrouter`, `groq`, `mistral`, `deepseek`, `together`, `xai`, `ollama`, `lmstudio`, `vllm`, `custom` | No (default `holo3`) |
-| `RGAA_LLM_MODEL` | Model identifier sent to the provider | Yes |
-| `RGAA_LLM_API_KEY` | API key; the provider's native variable (`HOLO3_API_KEY`, `OPENAI_API_KEY`, …) is also accepted | Yes, except for local providers |
+| `RGAA_LLM_PROVIDER` | LLM provider: `myia`, `holo3` (legacy), `openai`, `openrouter`, `groq`, `mistral`, `deepseek`, `together`, `xai`, `ollama`, `lmstudio`, `vllm`, `custom` | No (default `myia`) |
+| `RGAA_LLM_MODEL` | Model identifier sent to the provider; MyIA defaults to `swift-1.5-27b` and accepts `qwen3.6-35b-a3b` | No for providers with a default |
+| `RGAA_LLM_API_KEY` | API key; the provider's native variable (`MYIA_API_KEY`, `OPENAI_API_KEY`, …) is also accepted | Yes, except for local providers |
 | `RGAA_LLM_BASE_URL` | Endpoint override, without `/chat/completions` | Only for `custom` |
 | `RGAA_LLM_MODEL_TACTICAL` | Model for the fast tier (most criteria) | No (defaults to `RGAA_LLM_MODEL`) |
 | `RGAA_LLM_MODEL_REASONING` | Model for the reasoning tier (visual/hard criteria, verifier) | No (defaults to `RGAA_LLM_MODEL`) |
@@ -359,8 +359,10 @@ cp .env.example .env
 | `DATABASE_URL` | PostgreSQL connection string | No (for storage) |
 | `RUST_LOG` | Logging level (`info`, `debug`, `trace`) | No |
 
-`HOLO3_API_KEY`, `HOLO3_BASE_URL` and `HOLO3_MODEL` still work and select the
-`holo3` provider.
+Legacy `HOLO3_API_KEY`, `HOLO3_BASE_URL` and `HOLO3_MODEL` remain available
+for migration. With no explicit provider and no `MYIA_API_KEY`, they select the
+historical `holo3` route; they do not override another explicitly selected
+provider.
 
 Cookie values can be injected from `RGAA_COOKIE_<NAME>` (e.g. `session` → `RGAA_COOKIE_SESSION`).
 
@@ -399,7 +401,7 @@ browser:
   viewport_height: 720
 llm:
   enabled: true
-  model: "holo3-tactical"
+  model: "swift-1.5-27b"
   timeout_ms: 60000
 ```
 
@@ -412,7 +414,7 @@ llm:
 | Language | Rust (pinned 1.98.1 via rust-toolchain.toml) |
 | Async runtime | Tokio |
 | Browser automation | Obscura (custom CDP client) |
-| LLM client | Holo3 |
+| LLM client | MyIA (OpenAI-compatible) |
 | MCP server | rmcp 3.1.3 |
 | CLI | Clap 4.0 |
 | HTTP API | Axum |
@@ -429,7 +431,7 @@ rgaa-rs/
   crates/
     rgaa-core/           # Domain types, 106-criteria catalog
     rgaa-rules/           # axe-core integration, gap-fix snippets
-    rgaa-holo/           # Holo3 LLM client
+    rgaa-holo/           # OpenAI-compatible LLM clients
     rgaa-browser-tools/  # Browser automation via CDP
     rgaa-obscura/        # CDP browser automation (Rust-native)
     rgaa-agent/          # Agentic evaluator + RAG stack

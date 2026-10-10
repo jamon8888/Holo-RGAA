@@ -21,7 +21,7 @@ rgaa-rs/
   crates/
     rgaa-core/            # Domain types + criteria catalog (106 RGAA criteria)
     rgaa-rules/           # axe-core violation mapping + gap-fix JS snippets
-    rgaa-holo/            # Holo3 LLM client for AI-assisted evaluation
+    rgaa-holo/            # MyIA LLM client for AI-assisted evaluation
     rgaa-browser-tools/   # Browser automation via CDP (AXTree, BrowserSession, MCP server)
     rgaa-agent/           # Rig-based agentic evaluator (dual model routing, rate limiter)
     rgaa-orchestrator/    # Pipeline orchestration (wires agent + browser + rules)
@@ -164,7 +164,7 @@ while the build is broken.
 ### Codebase-Specific
 
 - **`HoloClient::new()` uses `.expect()`** (`crates/rgaa-holo/src/client.rs:68`): `Client::builder().build().expect("Failed to create HTTP client")` will panic if TLS init fails. Change to return `Result<Self, RgaaError>`.
-- **`HoloClient::evaluate()` returns `Result<_, String>`** (`client.rs`): Should return `Result<HoloResponse, RgaaError>` using the defined error type. The `RgaaError::Holo3` variant exists but is unused.
+- **`HoloClient::evaluate()` returns `Result<_, String>`** (`client.rs`): Should return `Result<HoloResponse, RgaaError>` using the defined error type. The legacy `RgaaError::Holo3` variant is used by the direct client.
 - **`AxeMapper::map()` uses `.unwrap_or_default()`** (`axe_mapper.rs:13`): `serde_json::from_str(violations_json).unwrap_or_default()` silently returns empty vec on malformed JSON. Add logging or return `Result`.
 - **Add `From<reqwest::Error> for RgaaError`** to enable `?` in HoloClient methods.
 

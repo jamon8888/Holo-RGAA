@@ -84,7 +84,7 @@ export RGAA_OBSCURA_BIN=/path/to/obscura
 
 | Variable | Used By | Description |
 |----------|---------|-------------|
-| `HOLO3_API_KEY` | rgaa-holo | LLM API key for AI-assisted evaluation |
+| `MYIA_API_KEY` | rgaa-holo | LLM API key for AI-assisted evaluation |
 | `RGAA_OBSCURA_BIN` | rgaa-mcp, rgaa-cli | Path to Obscura browser binary |
 | `DATABASE_URL` | rgaa-api | PostgreSQL connection string |
 | `RUST_LOG` | All | Logging level (debug, info, warn) |

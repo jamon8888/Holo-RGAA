@@ -228,9 +228,9 @@ startup; variables already set in the real environment win. See
 
 | Variable | Description |
 |----------|-------------|
-| `RGAA_LLM_PROVIDER` | LLM provider (`holo3`, `openai`, `groq`, `ollama`, `custom`, ...); defaults to `holo3` |
-| `RGAA_LLM_MODEL` | Model identifier sent to the provider |
-| `RGAA_LLM_API_KEY` | API key; the provider's native variable (`HOLO3_API_KEY`, ...) also works |
+| `RGAA_LLM_PROVIDER` | LLM provider (`myia`, `holo3` legacy, `openai`, `groq`, `ollama`, `custom`, ...); defaults to `myia` |
+| `RGAA_LLM_MODEL` | Model identifier sent to the provider; MyIA defaults to `swift-1.5-27b` and accepts `qwen3.6-35b-a3b` |
+| `RGAA_LLM_API_KEY` | API key; the provider's native variable (`MYIA_API_KEY`, ...) also works |
 | `RGAA_LLM_MODEL_TACTICAL` / `RGAA_LLM_MODEL_REASONING` | Per-tier model overrides |
 | `RGAA_EVIDENCE_DIR` | Override evidence directory |
 | `OBSCURA_BIN` | Path to Obscura browser binary |

@@ -21,12 +21,12 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 |----|-------|-------|------------|
 | 1.1 | Each image has an alternative | Deterministe | axe-core: image-alt |
 | 1.2 | Decorative images are ignored | Deterministe | axe-core: image-alt |
-| 1.3 | Complex images have a detailed description | IaAssiste | Holo3 visual evaluation |
+| 1.3 | Complex images have a detailed description | IaAssiste | MyIA visual evaluation |
 | 1.4 | Images of text are avoided | Deterministe | Manual check |
-| 1.5 | When an image cannot be displayed, alternative is provided | IaAssiste | Holo3 evaluation |
+| 1.5 | When an image cannot be displayed, alternative is provided | IaAssiste | MyIA evaluation |
 | 1.6 | Image legends are grouped with their image | Deterministe | Manual check |
 | 1.7 | Images of text in an SVG have an alternative | Deterministe | axe-core check |
-| 1.8 | Animated images are avoided or provide controls | IaAssiste | Holo3 evaluation |
+| 1.8 | Animated images are avoided or provide controls | IaAssiste | MyIA evaluation |
 | 1.9 | Color is not the only means of conveying information | Deterministe | axe-core: color-contrast |
 
 **WCAG refs:** 1.1.1, 1.2.1, 1.4.3, 1.4.11
@@ -37,9 +37,9 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 |----|-------|-------|------------|
 | 2.1 | Foreground and background colors can be overridden | Deterministe | User stylesheet check |
 | 2.2 | Color contrast is sufficient | Deterministe | axe-core: color-contrast |
-| 2.3 | Moving or blinking content can be paused | IaAssiste | Holo3 evaluation |
+| 2.3 | Moving or blinking content can be paused | IaAssiste | MyIA evaluation |
 | 2.4 | Color is not the only means of conveying information | Deterministe | Same as 1.9 |
-| 2.5 | Text can be resized up to 200% | IaAssiste | Holo3 evaluation |
+| 2.5 | Text can be resized up to 200% | IaAssiste | MyIA evaluation |
 
 **WCAG refs:** 1.4.3, 2.2.1, 2.2.2, 2.3.1
 
@@ -62,7 +62,7 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 |----|-------|-------|------------|
 | 4.1 | Data tables have headers | Deterministe | axe-core: th-has-data-cells |
 | 4.2 | Data tables have a caption | Deterministe | axe-core: table-complex |
-| 4.3 | Complex data tables are simplified | IaAssiste | Holo3 evaluation |
+| 4.3 | Complex data tables are simplified | IaAssiste | MyIA evaluation |
 | 4.4 | Layout tables do not use data table markup | Deterministe | Manual check |
 
 **WCAG refs:** 1.3.1, 2.4.6
@@ -72,7 +72,7 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 | ID | Title | Class | Test Method |
 |----|-------|-------|------------|
 | 5.1 | Each link's purpose is clear from its text | Deterministe | axe-core: link-in-text-block |
-| 5.2 | Each link's purpose is clear from context | IaAssiste | Holo3 evaluation |
+| 5.2 | Each link's purpose is clear from context | IaAssiste | MyIA evaluation |
 | 5.3 | Links with same label have same destination | Deterministe | axe-core: identical-links |
 | 5.4 | Link text is not empty or "click here" | Deterministe | Manual check |
 
@@ -110,11 +110,11 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 | 8.1 | No duplicate content without reference | Deterministe | Manual check |
 | 8.2 | Page has a language | Deterministe | Same as 3.3 |
 | 8.3 | Blinking content can be stopped | Deterministe | axe-core: blink |
-| 8.4 | Content renders correctly at 320px width | IaAssiste | Holo3 evaluation |
+| 8.4 | Content renders correctly at 320px width | IaAssiste | MyIA evaluation |
 | 8.5 | Text spacing can be overridden | Deterministe | Stylesheet check |
 | 8.6 | Images of text are avoided | Deterministe | Same as 1.4 |
 | 8.7 | Interactive elements have visible labels | Deterministe | axe-core |
-| 8.8 | Content does not rely solely on hover/focus | IaAssiste | Holo3 evaluation |
+| 8.8 | Content does not rely solely on hover/focus | IaAssiste | MyIA evaluation |
 | 8.9 | Touch targets are large enough | Deterministe | axe-core: target-size |
 | 8.10 | Zoom is not disabled | Deterministe | viewport meta check |
 
@@ -130,9 +130,9 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 | 9.4 | Input type is appropriate | Deterministe | input type check |
 | 9.5 | Autocomplete attributes are used | IaAssiste | Manual check |
 | 9.6 | Required fields are indicated | Deterministe | axe-core: required-attr |
-| 9.7 | Error messages are helpful | IaAssiste | Holo3 evaluation |
+| 9.7 | Error messages are helpful | IaAssiste | MyIA evaluation |
 | 9.8 | Error prevention for legal/data entry | Deterministe | axe-core |
-| 9.9 | Help is available for form fields | IaAssiste | Holo3 evaluation |
+| 9.9 | Help is available for form fields | IaAssiste | MyIA evaluation |
 | 9.10 | Labels describe the input purpose | Deterministe | axe-core |
 | 9.11 | CAPTCHA alternatives are provided | Manuel | Manual check |
 
@@ -143,17 +143,17 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 | ID | Title | Class | Test Method |
 |----|-------|-------|------------|
 | 10.1 | Skip links are provided | Deterministe | axe-core: bypass |
-| 10.2 | Navigation is consistent across pages | IaAssiste | Holo3 evaluation |
+| 10.2 | Navigation is consistent across pages | IaAssiste | MyIA evaluation |
 | 10.3 | Navigation can be bypassed | Deterministe | axe-core: bypass |
 | 10.4 | Headings and labels describe the topic | Deterministe | Same as 3.5 |
 | 10.5 | Current page is indicated in navigation | Deterministe | aria-current check |
 | 10.6 | List structure is used for related items | Deterministe | axe-core: list |
 | 10.7 | Focus management is correct | Manuel | Guided test |
 | 10.8 | Tab order is logical | Deterministe | DOM order check |
-| 10.9 | Search is available if site has search | IaAssiste | Holo3 evaluation |
+| 10.9 | Search is available if site has search | IaAssiste | MyIA evaluation |
 | 10.10 | Sections have headings | Deterministe | axe-core: heading-order |
 | 10.11 | Navigation has no broken links | Deterministe | Link validation |
-| 10.12 | Breadcrumbs are provided | IaAssiste | Holo3 evaluation |
+| 10.12 | Breadcrumbs are provided | IaAssiste | MyIA evaluation |
 | 10.13 | Items in a menu are clearly separated | Deterministe | Visual check |
 
 **WCAG refs:** 2.4.1, 2.4.3, 2.4.6, 2.4.9
@@ -172,9 +172,9 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 |----|-------|-------|------------|
 | 12.1 | ARIA roles are valid | Deterministe | axe-core: aria-valid-attr |
 | 12.2 | ARIA properties are valid | Deterministe | axe-core: aria-valid-attr-value |
-| 12.3 | ARIA is used correctly | IaAssiste | Holo3 evaluation |
+| 12.3 | ARIA is used correctly | IaAssiste | MyIA evaluation |
 | 12.4 | Dynamic content is announced | Deterministe | axe-core: aria-alert-status |
-| 12.5 | No ARIA if native HTML equivalent | IaAssiste | Holo3 evaluation |
+| 12.5 | No ARIA if native HTML equivalent | IaAssiste | MyIA evaluation |
 
 **WCAG refs:** 4.1.2, 4.1.3
 
@@ -184,10 +184,10 @@ Complete reference for all 106 RGAA 4.1.2 criteria organized by topic. Each crit
 |----|-------|-------|------------|
 | 13.1 | Alternatives for prerecorded audio are provided | Deterministe | Transcript check |
 | 13.2 | Captions are provided for prerecorded video | Deterministe | Caption file check |
-| 13.3 | Audio description is provided for prerecorded video | IaAssiste | Holo3 evaluation |
+| 13.3 | Audio description is provided for prerecorded video | IaAssiste | MyIA evaluation |
 | 13.4 | Alternatives for live audio are provided | Deterministe | Live caption check |
 | 13.5 | Media player controls are accessible | Manuel | Guided test |
-| 13.6 | Sign language interpretation is provided | IaAssiste | Holo3 evaluation |
+| 13.6 | Sign language interpretation is provided | IaAssiste | MyIA evaluation |
 | 13.7 | Transcript is provided for audio-only content | Deterministe | Transcript check |
 | 13.8 | Controls for embedded media are keyboard accessible | Manuel | Guided test |
 | 13.9 | No content flashes more than 3 times/second | Deterministe | axe-core: blink |
@@ -210,7 +210,7 @@ RGAA criterion IDs use dotted notation:
 | Classification | Count | Description |
 |---------------|-------|-------------|
 | **Deterministe** | 77 | Fully automated testing with axe-core + gap-fix rules |
-| **IaAssiste** | 22+ | AI-assisted evaluation with Holo3 LLM |
+| **IaAssiste** | 22+ | AI-assisted evaluation with MyIA LLM |
 | **Manuel** | 7+ | Manual testing protocol required |
 
 Total: **106 criteria** across **13 topics**

@@ -171,7 +171,7 @@ Not all criteria are automated. The plugin reports which tier each finding belon
 | Tier | Count | How It's Tested |
 |------|-------|-----------------|
 | **Deterministe** | 77 | axe-core + gap-fix rules (fully automated) |
-| **IA-Assistee** | 22+ | Holo3 LLM visual evaluation (AI-assisted) |
+| **IA-Assistee** | 22+ | MyIA LLM visual evaluation (AI-assisted) |
 | **Manuel** | Remaining | Guided testing protocol (human judgment) |
 
 ## Compliance Calculation
@@ -267,6 +267,6 @@ rgaa-consultant/
 ## Notes
 
 - Automated testing covers ~77 criteria. Remaining criteria require guided manual testing.
-- AI-assisted evaluation (Holo3) provides additional coverage but requires LLM API configuration.
+- AI-assisted evaluation (MyIA) provides additional coverage but requires LLM API configuration.
 - All findings include stable fingerprints for deduplication across re-audits.
 - Remediation proposals require explicit approval before any source changes.

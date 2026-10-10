@@ -6,7 +6,7 @@ use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-const HOLO3_BASE_URL_DEFAULT: &str = "https://api.holo3.ai/v1";
+const MYIA_BASE_URL_DEFAULT: &str = "https://api.medium.text-generation-webui.myia.io/v1";
 
 #[derive(Debug, Clone)]
 pub enum SetupStep {
@@ -102,7 +102,7 @@ fn setup_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<bool> 
                 } => match key.code {
                     KeyCode::Enter => {
                         let base_url = if input_buffer.is_empty() {
-                            HOLO3_BASE_URL_DEFAULT.to_string()
+                            MYIA_BASE_URL_DEFAULT.to_string()
                         } else {
                             std::mem::take(&mut input_buffer)
                         };
@@ -182,7 +182,7 @@ fn render(wizard: &SetupWizard, frame: &mut Frame, input: &str) {
             let lines = vec![
                 Line::from("Welcome to rgaa setup!"),
                 Line::from(""),
-                Line::from("This will configure your Holo3 API key."),
+                Line::from("This will configure your MyIA API key."),
                 Line::from(""),
                 Line::from("Press ENTER to continue, ESC to cancel"),
             ];
@@ -202,10 +202,10 @@ fn render(wizard: &SetupWizard, frame: &mut Frame, input: &str) {
             let display = if input.is_empty() {
                 "".to_string()
             } else {
-                input.to_string()
+                "*".repeat(input.chars().count())
             };
             let lines = vec![
-                Line::from("Enter your Holo3 API key:"),
+                Line::from("Enter your MyIA API key:"),
                 Line::from(""),
                 Line::from(format!("> {}", display)),
             ];
@@ -248,12 +248,12 @@ fn render(wizard: &SetupWizard, frame: &mut Frame, input: &str) {
         }
         SetupStep::BaseUrlInput { api_key: _ } => {
             let display = if input.is_empty() {
-                HOLO3_BASE_URL_DEFAULT.to_string()
+                MYIA_BASE_URL_DEFAULT.to_string()
             } else {
                 input.to_string()
             };
             let lines = vec![
-                Line::from("Holo3 Base URL:"),
+                Line::from("MyIA Base URL:"),
                 Line::from("(press ENTER for default)"),
                 Line::from(format!("> {}", display)),
             ];

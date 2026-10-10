@@ -838,6 +838,7 @@ async fn audit_discovered_urls(
 
     // Site-wide aggregation
     let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
 
     // Flatten all criteria for totals
     let all_criteria: Vec<CriterionResult> =
@@ -875,6 +876,9 @@ async fn audit_discovered_urls(
         overall_compliance: compliance,
         taux_global,
         coverage_percent,
+        automatic_verdict_coverage_percent: audit_metrics.automatic_verdict_coverage_percent,
+        test_evidence_coverage_percent: audit_metrics.test_evidence_coverage_percent,
+        verified_compliance_percent: audit_metrics.verified_compliance_percent,
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
         audit_complete,
@@ -1035,10 +1039,12 @@ async fn discover_rgaa_sample_pages(
 /// A criterion is NonConforme for the entire site if it fails on ANY page of the sample.
 /// Returns (taux_global, coverage_percent, etat_conformite).
 pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
+    use rgaa_report::verified_status_for;
     use std::collections::HashMap;
 
     // Group criterion results by criterion_id across all pages
     let mut criterion_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
+    let mut criterion_raw_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
     let mut criterion_classifications: HashMap<String, Classification> = HashMap::new();
     let mut validated_total = 0;
     let mut validated_executed = 0;
@@ -1046,6 +1052,10 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
     for page in page_results {
         for criterion in &page.criteria {
             criterion_statuses
+                .entry(criterion.criterion_id.clone())
+                .or_default()
+                .push(verified_status_for(criterion).unwrap_or(CriterionStatus::NeedsReview));
+            criterion_raw_statuses
                 .entry(criterion.criterion_id.clone())
                 .or_default()
                 .push(criterion.status.clone());
@@ -1064,7 +1074,11 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
             .copied()
             .unwrap_or(Classification::Manuel);
 
-        // Skip Manuel criteria from taux calculation (they're NonTeste)
+        // Manuel criteria are decided by a human, never by an automated engine,
+        // so they must not move `taux_global` in either direction: a Fail or a
+        // Pass recorded on one is not machine evidence. Fall back to Manuel when
+        // the classification is unknown so an unmapped criterion cannot silently
+        // inflate or deflate the automated rate.
         if classification == Classification::Manuel {
             continue;
         }
@@ -1076,7 +1090,10 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if rgaa_report::is_validated(&statuses) {
+                if criterion_raw_statuses
+                    .get(&criterion_id)
+                    .is_some_and(|raw| rgaa_report::is_validated(raw))
+                {
                     validated_executed += 1;
                 }
             }
@@ -1419,6 +1436,13 @@ async fn audit_one(
     let total = RgaaCriteria::count();
     let compliance = calculate_compliance(&criteria);
     let (taux_global, coverage_percent, etat_conformite) = calculate_compliance_summary(&criteria);
+    let audit_metrics = rgaa_report::compute_audit_metrics(&[PageResult {
+        url: url.clone(),
+        title: page_context.title.clone(),
+        criteria: criteria.clone(),
+        compliance_rate: compliance,
+        crawl_depth: 0,
+    }]);
 
     info!(
         pass = pass_count,
@@ -1450,6 +1474,9 @@ async fn audit_one(
         overall_compliance: compliance,
         taux_global,
         coverage_percent,
+        automatic_verdict_coverage_percent: audit_metrics.automatic_verdict_coverage_percent,
+        test_evidence_coverage_percent: audit_metrics.test_evidence_coverage_percent,
+        verified_compliance_percent: audit_metrics.verified_compliance_percent,
         etat_conformite,
         duration_ms: start.elapsed().as_millis() as u64,
         audit_complete: coverage_result.is_ok(),

@@ -174,6 +174,17 @@ pub fn merge_candidates(candidates: Vec<CriterionResult>) -> Option<CriterionRes
         )
     {
         winner.verified_status = Some(winner.status.clone());
+        // Deterministic mechanisms provide an automatic criterion verdict.
+        // Keep it explicit even when no model estimate exists, so coverage
+        // metrics include axe-core and other deterministic winners.
+        if winner.automated_verdict.is_none() {
+            winner.automated_verdict = match winner.status {
+                CriterionStatus::Pass => Some(rgaa_core::AutomatedVerdict::Pass),
+                CriterionStatus::Fail => Some(rgaa_core::AutomatedVerdict::Fail),
+                CriterionStatus::NotApplicable => Some(rgaa_core::AutomatedVerdict::NotApplicable),
+                _ => None,
+            };
+        }
     }
     Some(winner)
 }
@@ -261,6 +272,30 @@ mod tests {
 
         assert_eq!(merged.source, "axe-core");
         assert_eq!(merged.status, CriterionStatus::Fail);
+    }
+
+    #[test]
+    fn deterministic_verdicts_populate_automatic_coverage_without_a_model() {
+        for source in DETERMINISTIC_SOURCES {
+            for (status, expected) in [
+                (CriterionStatus::Pass, rgaa_core::AutomatedVerdict::Pass),
+                (CriterionStatus::Fail, rgaa_core::AutomatedVerdict::Fail),
+                (
+                    CriterionStatus::NotApplicable,
+                    rgaa_core::AutomatedVerdict::NotApplicable,
+                ),
+            ] {
+                let merged = merge_candidates(vec![result(source, status.clone())])
+                    .expect("one candidate merges");
+                assert_eq!(merged.automated_verdict, Some(expected));
+                assert_eq!(merged.verified_status, Some(status));
+                assert!(!merged.verdict_basis.contains(&VerdictBasis::ModelEstimate));
+            }
+        }
+        let merged = merge_candidates(vec![result("gap-fix", CriterionStatus::NeedsReview)])
+            .expect("one candidate merges");
+        assert_eq!(merged.automated_verdict, None);
+        assert_eq!(merged.verified_status, None);
     }
 
     #[test]

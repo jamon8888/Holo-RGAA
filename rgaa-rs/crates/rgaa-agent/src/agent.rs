@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Consecutive Holo3 call failures (across the whole shared agent, not just
+/// Consecutive LLM call failures (across the whole shared agent, not just
 /// one audit) before the circuit breaker trips and further calls fail loud
 /// instead of being attempted.
 const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
@@ -233,6 +233,10 @@ pub struct RgaaAgent {
     /// Agent for [`ModelTier::Reasoning`]; the same model as `tactical`
     /// unless the operator set a reasoning-specific one.
     reasoning: Agent,
+    /// One-shot agents for automatic estimates. The page context is already
+    /// supplied in the prompt, so these agents must not start a second crawl.
+    automatic_tactical: Agent,
+    automatic_reasoning: Agent,
     /// What a tactical-tier call records as having run with. Captured at
     /// build time from the same [`AgentConfig::params`] the agents were
     /// built from, so it cannot drift from what is on the wire.
@@ -292,7 +296,10 @@ impl RgaaAgent {
                     }
                     let prompt = PromptBuilder::build_automatic_from_rendered(&batch, &rendered, &prior_results);
                     self.rate_limiter.acquire(tier).await;
-                    match self.prompt_measured(tier, &prompt, &ids).await {
+                    match self
+                        .prompt_automatic_measured(tier, &prompt, &ids)
+                        .await
+                    {
                         Ok(response) => {
                             self.record_success();
                             // Same contract as the batch path below: models wrap
@@ -332,7 +339,7 @@ impl RgaaAgent {
             return Err(AgentError::Config("agent_concurrency must be > 0".into()));
         }
         // 1. One OpenAI-compatible client for the configured provider —
-        //    Holo3, OpenAI, Groq, a local Ollama, anything in
+        //    MyIA, OpenAI, Groq, a local Ollama, anything in
         //    `rgaa_core::PROVIDERS`. Both tiers share it: they differ by
         //    model, not by endpoint.
         let client = openai::Client::builder()
@@ -384,9 +391,25 @@ impl RgaaAgent {
                 // call (see rig-agent's `default_max_turns` docs); a model that
                 // reaches for `crawl_site` instead of answering directly then
                 // has no turn left to read the tool result and produce a
-                // verdict, and fails with MaxTurnsError. 3 turns covers one
-                // tool call plus the follow-up answer, with a little slack.
-                .default_max_turns(3)
+                // verdict, and fails with MaxTurnsError. Use the configured
+                // budget so models that need more than one tool round can still
+                // return an evidence-based verdict.
+                .default_max_turns(config.max_turns)
+                .build()
+        };
+        let build_automatic_agent = |model: &str| {
+            let mut builder = client
+                .agent(model)
+                .temperature(params.temperature)
+                .max_tokens(u64::from(params.max_tokens));
+            if !extra_body.is_empty() {
+                builder = builder.additional_params(serde_json::Value::Object(extra_body.clone()));
+            }
+            builder
+                .preamble(
+                    "You are an RGAA accessibility expert. Evaluate only the supplied page evidence and criteria. Do not browse or crawl; return the requested JSON verdicts.",
+                )
+                .default_max_turns(1)
                 .build()
         };
 
@@ -417,6 +440,8 @@ impl RgaaAgent {
         Ok(Self {
             tactical: build_agent(config.model_tactical()),
             reasoning: build_agent(config.model_reasoning()),
+            automatic_tactical: build_automatic_agent(config.model_tactical()),
+            automatic_reasoning: build_automatic_agent(config.model_reasoning()),
             provenance_tactical,
             provenance_reasoning,
             rate_limiter,
@@ -460,6 +485,22 @@ impl RgaaAgent {
         crate::metrics::measured_prompt(self.agent_for(tier), tier_name, prompt, criteria).await
     }
 
+    /// Runs an automatic estimate on the one-shot agent that cannot launch a
+    /// redundant site crawl, while recording the same per-batch cost event.
+    async fn prompt_automatic_measured(
+        &self,
+        tier: ModelTier,
+        prompt: &str,
+        criteria: &str,
+    ) -> Result<String, rig_agent::completion::PromptError> {
+        let tier_name = match tier {
+            ModelTier::Tactical => "tactical",
+            ModelTier::Reasoning => "reasoning",
+        };
+        crate::metrics::measured_prompt(self.automatic_agent_for(tier), tier_name, prompt, criteria)
+            .await
+    }
+
     /// The agent bound to `tier`'s model.
     fn agent_for(&self, tier: ModelTier) -> &Agent {
         match tier {
@@ -468,7 +509,14 @@ impl RgaaAgent {
         }
     }
 
-    /// True when the shared circuit breaker is open — a real Holo3 outage has
+    fn automatic_agent_for(&self, tier: ModelTier) -> &Agent {
+        match tier {
+            ModelTier::Tactical => &self.automatic_tactical,
+            ModelTier::Reasoning => &self.automatic_reasoning,
+        }
+    }
+
+    /// True when the shared circuit breaker is open — repeated provider failures have
     /// already been observed, so further calls fail loud instead of piling
     /// more failed requests (and NeedsReview filler) onto a dead upstream.
     ///
@@ -508,7 +556,7 @@ impl RgaaAgent {
     /// Renders `page_context` and builds the evaluator prompt with
     /// [`PromptBuilder`]; prefer [`Self::run_ia_assiste`] when evaluating
     /// several criteria against the same page, which renders the context
-    /// once and reuses it. Queries the Holo3 model on the tier [`tier_for`]
+    /// once and reuses it. Queries the configured model on the tier [`tier_for`]
     /// picks for this criterion, and maps the structured [`HoloResponse`] to
     /// a [`CriterionStatus`] via [`map_verdict`]. On model failure the
     /// criterion is flagged [`CriterionStatus::NeedsReview`] with the error
@@ -537,7 +585,7 @@ impl RgaaAgent {
         if self.breaker_open() {
             tracing::warn!(
                 criterion = criterion.id,
-                "circuit breaker open; skipping Holo3 call"
+                "circuit breaker open; skipping LLM call"
             );
             return CriterionResult {
                 criterion_id: criterion.id.to_string(),
@@ -548,7 +596,7 @@ impl RgaaAgent {
                 confidence: None,
                 raw_confidence: None,
                 justification: Some(
-                    "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
+                    "Circuit breaker open: too many consecutive LLM failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
@@ -610,7 +658,7 @@ impl RgaaAgent {
                 if failures >= CIRCUIT_BREAKER_THRESHOLD {
                     tracing::warn!(
                         consecutive_failures = failures,
-                        "Holo3 circuit breaker tripped"
+                        "LLM circuit breaker tripped"
                     );
                 }
                 tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");
@@ -647,7 +695,7 @@ impl RgaaAgent {
     /// (rather than re-rendering per criterion) since all of them evaluate
     /// the same page. Uses bounded concurrency with the internal rate
     /// limiter, tiered per criterion by [`tier_for`], to avoid overwhelming
-    /// the Holo3 API while keeping evaluations parallel.
+    /// the configured LLM provider while keeping evaluations parallel.
     ///
     /// Criteria are evaluated in batches of `BATCH_SIZE` to reduce the number
     /// of LLM API calls.
@@ -813,7 +861,7 @@ impl RgaaAgent {
         if self.breaker_open() {
             tracing::warn!(
                 criterion = criterion.id,
-                "circuit breaker open; skipping Holo3 call"
+                "circuit breaker open; skipping LLM call"
             );
             return CriterionResult {
                 criterion_id: criterion.id.to_string(),
@@ -824,7 +872,7 @@ impl RgaaAgent {
                 confidence: None,
                 raw_confidence: None,
                 justification: Some(
-                    "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
+                    "Circuit breaker open: too many consecutive LLM failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
@@ -886,7 +934,7 @@ impl RgaaAgent {
                 if failures >= CIRCUIT_BREAKER_THRESHOLD {
                     tracing::warn!(
                         consecutive_failures = failures,
-                        "Holo3 circuit breaker tripped"
+                        "LLM circuit breaker tripped"
                     );
                 }
                 tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");

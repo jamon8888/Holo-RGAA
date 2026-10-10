@@ -120,6 +120,17 @@ class ReportMetricTests(unittest.TestCase):
         self.assertIn("Conformité vérifiée", legacy)
         self.assertIn("Statut vérifié</h4><p>Conforme", legacy)
 
+    def test_automatic_completion_state_renders_true_false_and_unknown(self):
+        base = {"audit_id": "state", "url": "https://example.test", "pages": []}
+        complete = REPORT.render({**base, "audit_complete": True})
+        incomplete = REPORT.render({**base, "audit_complete": False})
+        unknown = REPORT.render(base)
+
+        self.assertIn("Audit automatique complet", complete)
+        self.assertIn("Audit automatique incomplet", incomplete)
+        self.assertIn("Complétude non renseignée", unknown)
+        self.assertNotIn("Audit automatique complet", unknown)
+
 
 if __name__ == "__main__":
     unittest.main()

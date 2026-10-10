@@ -46,6 +46,7 @@ fn write_html_header(html: &mut String, audit_id: &str, url: &str) {
         .status-badge.fail {{ background: #f8d7da; color: #721c24; }}
         .status-badge.review {{ background: #fff3cd; color: #856404; }}
         .status-badge.na {{ background: #e2e3e5; color: #383d41; }}
+        .status-badge.neutral {{ background: #e2e3e5; color: #383d41; }}
         table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 2rem; }}
         th {{ background: #34495e; color: white; padding: 1rem; text-align: left; font-weight: 500; }}
         td {{ padding: 1rem; border-bottom: 1px solid #eee; }}
@@ -100,6 +101,11 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
     } else {
         "Non Conforme"
     };
+    let (audit_completion_class, audit_completion_text) = match bundle.audit_complete {
+        Some(true) => ("pass", "Audit automatique complet"),
+        Some(false) => ("fail", "Audit automatique incomplet"),
+        None => ("neutral", "Complétude non renseignée"),
+    };
 
     let _ = writeln!(
         html,
@@ -124,6 +130,10 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
                 <h3>Pages Auditées</h3>
                 <div class="value neutral">{}/{}</div>
             </div>
+            <div class="card">
+                <h3>État de l’audit automatique</h3>
+                <div class="value"><span class="status-badge {}">{}</span></div>
+            </div>
         </div>"#,
         conformity_badge_class,
         metrics.verified_compliance_percent,
@@ -132,7 +142,9 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
         metrics.automatic_verdict_coverage_percent,
         metrics.test_evidence_coverage_percent,
         bundle.summary.completed_pages,
-        bundle.summary.total_pages
+        bundle.summary.total_pages,
+        audit_completion_class,
+        audit_completion_text
     );
 }
 
@@ -648,6 +660,24 @@ mod tests {
         let bundle = sample_bundle();
         let html = generate_html_report(&bundle);
         assert!(html.contains("audit-1"));
+    }
+
+    #[test]
+    fn html_report_shows_known_unknown_automatic_completion_state() {
+        let mut bundle = sample_bundle();
+
+        bundle.audit_complete = Some(true);
+        let complete = generate_html_report(&bundle);
+        assert!(complete.contains("Audit automatique complet"));
+
+        bundle.audit_complete = Some(false);
+        let incomplete = generate_html_report(&bundle);
+        assert!(incomplete.contains("Audit automatique incomplet"));
+
+        bundle.audit_complete = None;
+        let unknown = generate_html_report(&bundle);
+        assert!(unknown.contains("Complétude non renseignée"));
+        assert!(!unknown.contains("Audit automatique complet"));
     }
 
     #[test]

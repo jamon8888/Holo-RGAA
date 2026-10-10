@@ -130,6 +130,7 @@ pub fn run(args: ReviewArgs) -> Result<i32, CliError> {
         &args.reason,
     )
     .map_err(|error| CliError::invalid_input(error.to_string()))?;
+    refresh_status_aggregates(&mut audit);
 
     let serialized = serde_json::to_vec_pretty(&audit).map_err(|error| {
         CliError::execution(format!("failed to serialize reviewed audit: {error}"))
@@ -142,6 +143,35 @@ pub fn run(args: ReviewArgs) -> Result<i32, CliError> {
         ))
     })?;
     Ok(0)
+}
+
+fn refresh_status_aggregates(audit: &mut AuditResult) {
+    let mut all_criteria = Vec::new();
+    for page in &mut audit.pages {
+        page.compliance_rate = rgaa_report::compliance_rate(&page.criteria);
+        all_criteria.extend(page.criteria.iter().cloned());
+    }
+
+    audit.passed = all_criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::Pass)
+        .count();
+    audit.failed = all_criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::Fail)
+        .count();
+    audit.na = all_criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
+        .count();
+    audit.overall_compliance = rgaa_report::compliance_rate(&all_criteria);
+
+    let metrics = rgaa_report::compute_metrics(&all_criteria, &rgaa_report::RGAA_41);
+    audit.taux_global = metrics.taux_global;
+    audit.coverage_percent = metrics.coverage_percent;
+    audit.etat_conformite = metrics.etat_conformite;
+    audit.verified_compliance_percent =
+        rgaa_report::compute_audit_metrics(&audit.pages).verified_compliance_percent;
 }
 
 fn locate_criterion(

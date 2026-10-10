@@ -309,6 +309,77 @@ fn command_writes_output_or_atomically_replaces_input() {
     }));
 }
 
+#[test]
+fn command_refreshes_status_aggregates_without_changing_automatic_coverage() {
+    let directory = TestDirectory::new();
+    let input = directory.path("review-metrics.json");
+    let mut original = audit(&["https://a.test"], &["1.1", "1.2", "1.3"]);
+    original.pages[0].criteria[1].status = CriterionStatus::Pass;
+    original.pages[0].criteria[1].verified_status = Some(CriterionStatus::Pass);
+    original.pages[0].criteria[2].status = CriterionStatus::NotApplicable;
+    original.pages[0].criteria[2].verified_status = Some(CriterionStatus::NotApplicable);
+    original.pages[0].compliance_rate = 12.0;
+    original.passed = 7;
+    original.failed = 8;
+    original.na = 9;
+    original.overall_compliance = 10.0;
+    original.taux_global = 11.0;
+    original.coverage_percent = 12.0;
+    original.automatic_verdict_coverage_percent = 73.0;
+    original.test_evidence_coverage_percent = 64.0;
+    original.verified_compliance_percent = 14.0;
+    original.etat_conformite = "stale".to_owned();
+    original.audit_complete = true;
+    fs::write(&input, serde_json::to_vec(&original).unwrap()).unwrap();
+
+    run(args(&input, "1.1", ReviewStatus::Fail)).unwrap();
+    let reviewed: AuditResult = serde_json::from_slice(&fs::read(&input).unwrap()).unwrap();
+    let all_criteria: Vec<_> = reviewed
+        .pages
+        .iter()
+        .flat_map(|page| page.criteria.iter().cloned())
+        .collect();
+    let expected_metrics = rgaa_report::compute_metrics(&all_criteria, &rgaa_report::RGAA_41);
+    let expected_audit_metrics = rgaa_report::compute_audit_metrics(&reviewed.pages);
+
+    assert_eq!((reviewed.passed, reviewed.failed, reviewed.na), (1, 1, 1));
+    assert_eq!(
+        reviewed.pages[0].compliance_rate,
+        rgaa_report::compliance_rate(&reviewed.pages[0].criteria)
+    );
+    assert_eq!(
+        reviewed.overall_compliance,
+        rgaa_report::compliance_rate(&all_criteria)
+    );
+    assert_eq!(reviewed.taux_global, expected_metrics.taux_global);
+    assert_eq!(reviewed.coverage_percent, expected_metrics.coverage_percent);
+    assert_eq!(reviewed.etat_conformite, expected_metrics.etat_conformite);
+    assert_eq!(
+        reviewed.verified_compliance_percent,
+        expected_audit_metrics.verified_compliance_percent
+    );
+    assert_eq!(reviewed.automatic_verdict_coverage_percent, 73.0);
+    assert_eq!(reviewed.test_evidence_coverage_percent, 64.0);
+    assert_eq!(reviewed.audit_complete, original.audit_complete);
+    assert_eq!(reviewed.total_criteria, original.total_criteria);
+    assert_eq!(
+        reviewed.pages[0].criteria[0].automated_verdict,
+        original.pages[0].criteria[0].automated_verdict
+    );
+    assert_eq!(
+        reviewed.pages[0].criteria[0].raw_confidence,
+        original.pages[0].criteria[0].raw_confidence
+    );
+    assert_eq!(
+        reviewed.pages[0].criteria[0].confidence,
+        original.pages[0].criteria[0].confidence
+    );
+    assert_eq!(
+        reviewed.pages[0].criteria[0].evidence,
+        original.pages[0].criteria[0].evidence
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn in_place_replacement_preserves_restrictive_file_permissions() {

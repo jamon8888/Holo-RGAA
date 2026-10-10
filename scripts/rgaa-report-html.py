@@ -386,6 +386,13 @@ def render(data: dict, titles: dict[str, str] | None = None,
          f"{metrics['automatic_count']} / {metrics['expected_automatic']} critères-page avec prédiction")
     card("Couverture des tests avec preuve", f"{metrics['evidence_percent']:.1f} %", "accent",
          f"{metrics['evidence_count']} / {metrics['expected_tests']} tests avec preuve non issue du modèle")
+    audit_complete = data.get("audit_complete")
+    completion_label, completion_class = {
+        True: ("Audit automatique complet", "pass"),
+        False: ("Audit automatique incomplet", "fail"),
+        None: ("Complétude non renseignée", "review"),
+    }[audit_complete if isinstance(audit_complete, bool) else None]
+    card("État de l’audit automatique", completion_label, completion_class)
     card("Statut brut : conformes", all_counts["pass"], "pass", "sur l’ensemble des pages")
     card("Statut brut : non conformes", all_counts["fail"], "fail", "à corriger en priorité")
     card("Statut brut : à vérifier", all_counts["needs_review"], "review", "revue manuelle requise")

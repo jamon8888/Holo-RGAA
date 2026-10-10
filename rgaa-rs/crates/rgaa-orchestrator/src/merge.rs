@@ -40,7 +40,7 @@
 
 use std::collections::HashMap;
 
-use rgaa_core::types::{CriterionResult, CriterionStatus};
+use rgaa_core::types::{CriterionResult, CriterionStatus, TestOutcome, VerdictBasis};
 
 /// Sources whose verdicts are reproducible evidence about the criterion.
 const DETERMINISTIC_SOURCES: [&str; 3] = ["axe-core", "gap-fix", "manual"];
@@ -84,6 +84,37 @@ fn conservatism(status: &CriterionStatus) -> u8 {
 pub fn merge_candidates(candidates: Vec<CriterionResult>) -> Option<CriterionResult> {
     let considered: Vec<String> = candidates.iter().map(|c| c.source.clone()).collect();
 
+    // Keep the estimate independently from the result that wins verified-status
+    // precedence. The prediction can disagree with deterministic evidence and
+    // both facts must remain visible to reports and later review.
+    let model_assessment = candidates
+        .iter()
+        .find(|candidate| {
+            candidate.automated_verdict.is_some()
+                && candidate
+                    .verdict_basis
+                    .contains(&VerdictBasis::ModelEstimate)
+        })
+        .cloned();
+    let all_tests: Vec<TestOutcome> = candidates
+        .iter()
+        .flat_map(|candidate| candidate.tests.iter().cloned())
+        .collect();
+    let mut all_basis = Vec::new();
+    let mut all_evidence = Vec::new();
+    for candidate in &candidates {
+        for basis in &candidate.verdict_basis {
+            if !all_basis.contains(basis) {
+                all_basis.push(*basis);
+            }
+        }
+        for evidence in &candidate.evidence {
+            if !all_evidence.contains(evidence) {
+                all_evidence.push(evidence.clone());
+            }
+        }
+    }
+
     let (_, mut winner) = candidates.into_iter().enumerate().reduce(|best, next| {
         let key = |(i, r): &(usize, CriterionResult)| {
             (
@@ -113,6 +144,36 @@ pub fn merge_candidates(candidates: Vec<CriterionResult>) -> Option<CriterionRes
     }
 
     winner.considered_sources = considered;
+    winner.tests = all_tests;
+    winner.verdict_basis = all_basis;
+    winner.evidence = all_evidence;
+    let source_basis = match winner.source.as_str() {
+        "axe-core" => Some(VerdictBasis::Axe),
+        "gap-fix" | "manual" | "automated" => Some(VerdictBasis::Deterministic),
+        _ => None,
+    };
+    if let Some(basis) = source_basis {
+        if !winner.verdict_basis.contains(&basis) {
+            winner.verdict_basis.push(basis);
+        }
+    }
+    if let Some(assessment) = model_assessment {
+        winner.automated_verdict = assessment.automated_verdict;
+        winner.confidence = assessment.confidence;
+        winner.confidence_calibration_version = assessment.confidence_calibration_version.clone();
+        winner.review_required |= assessment.review_required;
+        if assessment.review_reason.is_some() {
+            winner.review_reason = assessment.review_reason.clone();
+        }
+    }
+    if DETERMINISTIC_SOURCES.contains(&winner.source.as_str())
+        && matches!(
+            winner.status,
+            CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+        )
+    {
+        winner.verified_status = Some(winner.status.clone());
+    }
     Some(winner)
 }
 
@@ -198,6 +259,41 @@ mod tests {
 
         assert_eq!(merged.source, "axe-core");
         assert_eq!(merged.status, CriterionStatus::Fail);
+    }
+
+    #[test]
+    fn deterministic_fail_keeps_conflicting_model_prediction_separate() {
+        let mut model = result("agent-estimate", CriterionStatus::NeedsReview);
+        model.automated_verdict = Some(rgaa_core::AutomatedVerdict::Pass);
+        model.verdict_basis = vec![VerdictBasis::ModelEstimate];
+        model.review_required = true;
+        model.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "agent-estimate".into(),
+            evidence: Some("model observation".into()),
+        });
+        let mut deterministic = result("axe-core", CriterionStatus::Fail);
+        deterministic.verdict_basis = vec![VerdictBasis::Axe];
+        deterministic.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Fail,
+            source: "axe-core".into(),
+            evidence: Some("axe violation".into()),
+        });
+
+        let merged = merge_candidates(vec![deterministic, model]).expect("results merge");
+
+        assert_eq!(merged.status, CriterionStatus::Fail);
+        assert_eq!(merged.verified_status, Some(CriterionStatus::Fail));
+        assert_eq!(
+            merged.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(merged.verdict_basis.contains(&VerdictBasis::Axe));
+        assert!(merged.verdict_basis.contains(&VerdictBasis::ModelEstimate));
+        assert!(merged.review_required);
+        assert_eq!(merged.tests.len(), 2);
     }
 
     #[test]

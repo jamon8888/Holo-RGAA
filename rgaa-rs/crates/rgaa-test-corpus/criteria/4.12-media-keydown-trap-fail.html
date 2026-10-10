@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 4.12 - média non temporel piégeant le clavier</title>
+</head>
+<body>
+    <main>
+        <h1>Média piégé</h1>
+        <canvas id="anim" tabindex="0" aria-label="Animation interactive" width="200" height="100"></canvas>
+    </main>
+    <script>
+document.getElementById('anim').addEventListener('keydown', function (e) { if (e.key === 'Tab') e.preventDefault(); });
+    </script>
+</body>
+</html>

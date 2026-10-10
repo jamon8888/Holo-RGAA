@@ -547,6 +547,9 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
     // 4.12: non-time-based interactive graphics without keyboard semantics.
     (
         "4.12",
+        crate::keyboard_probes::with_keyboard_sweep!(
+            "(e => e.matches('object, embed, canvas, svg, [role=application]') || !!e.closest('object, embed, canvas, svg, [role=application]'))",
+            "non-temporal media",
         r#"
         (() => {
             const candidates = [...document.querySelectorAll('canvas, map area, svg [onclick], [onclick], [onpointerdown], [onmousedown]')];
@@ -556,7 +559,8 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
             return JSON.stringify({ pass:false, outcome:'review', details:`${candidates.length} non-time-media interaction candidate(s) found`, nodes:candidates.length,
                 reason:'L’équivalence réelle au clavier et au pointeur doit être vérifiée par interaction contrôlée' });
         })()
-    "#,
+    "#
+        ),
     ),
     // 4.13: expose media roles, names and native controls for a follow-up AT review.
     (
@@ -662,10 +666,14 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
     // 12.9: keyboard-trap conclusions come from the bounded CDP Tab traversal.
     (
         "12.9",
+        crate::keyboard_probes::with_keyboard_sweep!(
+            "(() => true)",
+            "focusable elements",
         r#"
         (() => JSON.stringify({ pass:false, outcome:'review', details:'Le parcours clavier CDP est exécuté séparément par Obscura', nodes:0,
             reason:'Une absence de piège sur un parcours borné ne prouve pas l’absence de piège dans tous les états' }))()
-    "#,
+    "#
+        ),
     ),
     // 12.10: enumerate author-declared single-key shortcuts; handlers need runtime review.
     (

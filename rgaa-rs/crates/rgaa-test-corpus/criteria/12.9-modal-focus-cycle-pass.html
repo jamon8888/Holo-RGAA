@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 12.9 - modale qui fait circuler le focus</title>
+</head>
+<body>
+    <main>
+        <h1>Focus circulaire</h1>
+        <div role="dialog" aria-label="Aide"><button id="a" type="button">Un</button><button id="b" type="button">Deux</button></div>
+    </main>
+    <script>
+var a=document.getElementById('a'),b=document.getElementById('b');a.addEventListener('keydown',function(e){if(e.key==='Tab'){e.preventDefault();b.focus();}});b.addEventListener('keydown',function(e){if(e.key==='Tab'){e.preventDefault();a.focus();}});
+    </script>
+</body>
+</html>

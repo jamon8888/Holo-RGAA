@@ -1183,3 +1183,25 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["12.5-site-search-pass", "12.5-site-search-fail"]
 legacy    = false
+
+[[mechanism]]
+id        = "probe-12-9-keydown-sweep"
+criterion = "12.9"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["12.9-no-trap-pass", "12.9-modal-escape-exit-pass", "12.9-escapable-trap-pass", "12.9-modal-focus-cycle-pass", "12.9-keydown-trap-autofocus-fail", "12.9-keydown-trap-no-autofocus-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-12-keydown-sweep"
+criterion = "4.12"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail"]
+fixtures  = ["4.12-media-no-trap-pass", "4.12-media-keydown-trap-fail"]
+legacy    = false

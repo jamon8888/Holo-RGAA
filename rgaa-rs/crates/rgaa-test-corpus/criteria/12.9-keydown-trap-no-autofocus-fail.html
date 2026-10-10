@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 12.9 - piège clavier (sans autofocus)</title>
+</head>
+<body>
+    <main>
+        <h1>Piège clavier sans autofocus</h1>
+        <a href="#haut">Lien libre</a>
+        <input id="champ" aria-label="Champ piégé">
+    </main>
+    <script>
+document.getElementById('champ').addEventListener('keydown', function (e) { if (e.key === 'Tab') e.preventDefault(); });
+    </script>
+</body>
+</html>

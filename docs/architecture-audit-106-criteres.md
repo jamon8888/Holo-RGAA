@@ -109,6 +109,8 @@ portrait et paysage). Les contrôles actuels signalent la taille/les règles vis
 prétendre avoir émuler ces états. Les critères **13.7** et **13.8** sont inventoriés (CSS, images et médias), mais
 la fréquence des flashes, la durée du mouvement et le fonctionnement de commandes de pause restent à vérifier.
 
+Les critères **12.9** et **4.12** disposent également d’un balayage des événements `keydown` annulables. Cette sonde peut signaler un piège explicite, sans établir de conformité ; les pièges par refocus asynchrone restent une limite connue.
+
 Détail des répartitions : [docs/research/couverture-repartition-106.md](research/couverture-repartition-106.md)
 (répartition portée dans `rgaa-core/data/rgaa-4.1.2/engine_plan.json`, API `EnginePlan`, PR [#280](https://github.com/jamon8888/Holo-RGAA/pull/280)).
 
@@ -146,7 +148,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 4.9 | 1 | Pour chaque média non temporel ayant une alternative, cette alternativ | Holo | — | oui | **Couvert** |  |
 | 4.10 | 1 | Chaque son déclenché automatiquement est-il contrôlable par l’utilisat | Déterministe | axe:partiel | — | **Couvert** |  |
 | 4.11 | 3 | La consultation de chaque média temporel est-elle, si nécessaire, cont | Déterministe | sonde JS:partiel | — | **Couvert** |  |
-| 4.12 | 2 | La consultation de chaque média non temporel est-elle contrôlable par  | Déterministe | — | — | **Sonde partielle** |  |
+| 4.12 | 2 | La consultation de chaque média non temporel est-elle contrôlable par  | Déterministe | sonde JS:partiel | — | **Sonde partielle** |  |
 | 4.13 | 2 | Chaque média temporel et non temporel est-il compatible avec les techn | Déterministe | — | — | **Sonde partielle** |  |
 | 5.1 | 1 | Chaque tableau de données complexe a-t-il un résumé ? | Déterministe | sonde JS:partiel | — | **Couvert** |  |
 | 5.2 | 1 | Pour chaque tableau de données complexe ayant un résumé, celui-ci est- | Holo | — | oui | **Couvert** |  |
@@ -212,7 +214,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 12.6 | 1 | Les zones de regroupement de contenus présentes dans plusieurs pages w | Déterministe | axe:partiel | oui | **Couvert** |  |
 | 12.7 | 2 | Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone  | axe-core | axe:complet, sonde JS:complet | oui | **Couvert** |  |
 | 12.8 | 2 | Dans chaque page web, l’ordre de tabulation est-il cohérent ? | Déterministe | — | oui | **Sonde partielle** | #263 #279 |
-| 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | — | — | **Sonde partielle** | #264 |
+| 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | sonde JS:partiel | — | **Sonde partielle** | #264 |
 | 12.10 | 1 | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule  | Déterministe | — | — | **Sonde partielle** | #272 |
 | 12.11 | 1 | Dans chaque page web, les contenus additionnels apparaissant au survol | Déterministe | — | — | **Sonde partielle** |  |
 | 13.1 | 4 | Pour chaque page web, l’utilisateur a-t-il le contrôle de chaque limit | Humain | axe:partiel | — | **Manuel** | #265 |

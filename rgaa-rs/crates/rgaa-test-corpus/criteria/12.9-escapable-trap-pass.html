@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 12.9 - Tab annulé mais sortie par Échap</title>
+</head>
+<body>
+    <main>
+        <h1>Sortie par Échap</h1>
+        <input id="champ" aria-label="Champ">
+    </main>
+    <script>
+var c=document.getElementById('champ');c.addEventListener('keydown',function(e){if(e.key==='Tab')e.preventDefault();if(e.key==='Escape')c.blur();});
+    </script>
+</body>
+</html>

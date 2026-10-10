@@ -77,12 +77,21 @@ mod tests {
             classification: Classification::IaAssiste,
             status: CriterionStatus::Fail,
             violations: Vec::new(),
-            confidence: Some(0.9),
+            confidence: None,
+            raw_confidence: Some(0.9),
             justification: Some("alt manquant".into()),
-            source: "holo3".into(),
+            source: "agent".into(),
             citations,
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 

@@ -3,7 +3,7 @@ use crate::criteria_defs::VISUAL_CRITERIA;
 use crate::error::AgentError;
 use crate::prompts::{page_discovery_preamble, PromptBuilder};
 use crate::ratelimit::{ModelTier, Ratelimiter};
-use crate::verify::map_verdict;
+use crate::verify::{map_automatic_response, map_verdict, unresolved_automatic_results};
 use rgaa_core::{
     Classification, Criterion, CriterionResult, CriterionStatus, LlmProvenance, ResponseFormat,
 };
@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Consecutive Holo3 call failures (across the whole shared agent, not just
+/// Consecutive LLM call failures (across the whole shared agent, not just
 /// one audit) before the circuit breaker trips and further calls fail loud
 /// instead of being attempted.
 const CIRCUIT_BREAKER_THRESHOLD: u32 = 5;
@@ -53,6 +53,128 @@ struct BatchEvaluationResponse {
     verdict: String,
     confidence: f64,
     justification: String,
+}
+
+/// Maps one batch reply onto exactly the requested criteria. Missing or
+/// duplicated IDs are unresolved; they must never trigger another Holo call.
+fn map_batch_responses(
+    criteria: &[Criterion],
+    responses: &[BatchEvaluationResponse],
+) -> HashMap<String, CriterionResult> {
+    let requested: std::collections::HashSet<&str> =
+        criteria.iter().map(|criterion| criterion.id).collect();
+    let mut by_id: HashMap<&str, &BatchEvaluationResponse> = HashMap::new();
+    let mut duplicated = std::collections::HashSet::new();
+
+    for response in responses {
+        let id = response.criterion_id.trim();
+        if !requested.contains(id) {
+            continue;
+        }
+        if by_id.insert(id, response).is_some() {
+            duplicated.insert(id);
+        }
+    }
+
+    let mut results = HashMap::with_capacity(criteria.len());
+    for criterion in criteria {
+        let response = by_id
+            .get(criterion.id)
+            .copied()
+            .filter(|_| !duplicated.contains(criterion.id));
+        let result = if let Some(response) = response {
+            let verdict = map_verdict(&HoloResponse {
+                verdict: response.verdict.clone(),
+                confidence: response.confidence,
+                justification: response.justification.clone(),
+            });
+            CriterionResult {
+                criterion_id: criterion.id.to_string(),
+                title: criterion.title.to_string(),
+                classification: criterion.classification,
+                status: verdict,
+                violations: vec![],
+                confidence: None,
+                raw_confidence: Some(response.confidence),
+                justification: Some(response.justification.clone()),
+                source: "agent-batch".to_string(),
+                citations: vec![],
+                considered_sources: vec![],
+                tests: vec![],
+                automated_verdict: None,
+                verdict_basis: Vec::new(),
+                evidence: Vec::new(),
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: Vec::new(),
+            }
+        } else {
+            CriterionResult {
+                criterion_id: criterion.id.to_string(),
+                title: criterion.title.to_string(),
+                classification: criterion.classification,
+                status: CriterionStatus::NeedsReview,
+                violations: vec![],
+                confidence: None,
+                raw_confidence: None,
+                justification: Some(
+                    "Holo batch response has no unique answer for this criterion".to_string(),
+                ),
+                source: "agent-batch-incomplete".to_string(),
+                citations: vec![],
+                considered_sources: vec![],
+                tests: vec![],
+                automated_verdict: None,
+                verdict_basis: Vec::new(),
+                evidence: Vec::new(),
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: Vec::new(),
+            }
+        };
+        results.insert(criterion.id.to_string(), result);
+    }
+    results
+}
+
+fn unresolved_batch_results(
+    criteria: &[Criterion],
+    reason: &str,
+) -> HashMap<String, CriterionResult> {
+    criteria
+        .iter()
+        .map(|criterion| {
+            (
+                criterion.id.to_string(),
+                CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification,
+                    status: CriterionStatus::NotTested,
+                    violations: vec![],
+                    confidence: None,
+                    raw_confidence: None,
+                    justification: Some(reason.to_string()),
+                    source: "agent-error".to_string(),
+                    citations: vec![],
+                    considered_sources: vec![],
+                    tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
+                },
+            )
+        })
+        .collect()
 }
 
 /// Extracts the outermost JSON array from `text`.
@@ -111,6 +233,10 @@ pub struct RgaaAgent {
     /// Agent for [`ModelTier::Reasoning`]; the same model as `tactical`
     /// unless the operator set a reasoning-specific one.
     reasoning: Agent,
+    /// One-shot agents for automatic estimates. The page context is already
+    /// supplied in the prompt, so these agents must not start a second crawl.
+    automatic_tactical: Agent,
+    automatic_reasoning: Agent,
     /// What a tactical-tier call records as having run with. Captured at
     /// build time from the same [`AgentConfig::params`] the agents were
     /// built from, so it cannot drift from what is on the wire.
@@ -130,6 +256,78 @@ pub struct RgaaAgent {
 }
 
 impl RgaaAgent {
+    /// Estimate every supplied criterion, including human routes, in bounded batches.
+    ///
+    /// Borrows the input and renders page context once. Transport failures and
+    /// invalid responses return unresolved entries for every affected ID; model
+    /// predictions remain separate from verified verdicts and raw confidence
+    /// remains uncalibrated. Prior results provide context, never default verdicts.
+    #[tracing::instrument(skip_all, fields(criteria_count = criteria.len()))]
+    pub async fn run_automatic_estimates(
+        &self,
+        criteria: &[Criterion],
+        page_context: &PageContext,
+        prior_results: &[CriterionResult],
+    ) -> HashMap<String, CriterionResult> {
+        use futures::stream::{self, StreamExt};
+        let rendered = Arc::new(PromptBuilder::render_context(page_context));
+        let prior_results = Arc::new(prior_results.to_vec());
+        let batches: Vec<Vec<Criterion>> = criteria
+            .chunks(BATCH_SIZE)
+            .map(<[Criterion]>::to_vec)
+            .collect();
+        stream::iter(batches)
+            .map(|batch| {
+                let rendered = Arc::clone(&rendered);
+                let prior_results = Arc::clone(&prior_results);
+                async move {
+                    let ids = batch
+                        .iter()
+                        .map(|criterion| criterion.id)
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let tier = if batch.iter().any(|criterion| matches!(tier_for(criterion.id), ModelTier::Reasoning)) {
+                        ModelTier::Reasoning
+                    } else {
+                        ModelTier::Tactical
+                    };
+                    if self.breaker_open() {
+                        return unresolved_automatic_results(&batch, "automatic estimate circuit breaker is open");
+                    }
+                    let prompt = PromptBuilder::build_automatic_from_rendered(&batch, &rendered, &prior_results);
+                    self.rate_limiter.acquire(tier).await;
+                    match self
+                        .prompt_automatic_measured(tier, &prompt, &ids)
+                        .await
+                    {
+                        Ok(response) => {
+                            self.record_success();
+                            // Same contract as the batch path below: models wrap
+                            // the array in a ```json fence or a line of prose, so
+                            // parse the extracted array first and fall back to the
+                            // raw reply. Without this a fenced reply fails the
+                            // whole batch on ordinary provider output, not only
+                            // on an outage, and every criterion in it becomes
+                            // agent-estimate-incomplete with no verdict.
+                            let json = extract_json_array(&response).unwrap_or(&response);
+                            map_automatic_response(&batch, json)
+                        }
+                        Err(error) => {
+                            self.record_failure();
+                            tracing::warn!(criteria = %ids, error = %error, "automatic estimate failed");
+                            unresolved_automatic_results(&batch, "automatic estimate provider call failed")
+                        }
+                    }
+                }
+            })
+            .buffer_unordered(self.agent_concurrency)
+            .fold(HashMap::with_capacity(criteria.len()), |mut results, batch| async move {
+                results.extend(batch);
+                results
+            })
+            .await
+    }
+
     /// Builds the agent and rate limiter.
     ///
     /// # Errors
@@ -141,7 +339,7 @@ impl RgaaAgent {
             return Err(AgentError::Config("agent_concurrency must be > 0".into()));
         }
         // 1. One OpenAI-compatible client for the configured provider —
-        //    Holo3, OpenAI, Groq, a local Ollama, anything in
+        //    MyIA, OpenAI, Groq, a local Ollama, anything in
         //    `rgaa_core::PROVIDERS`. Both tiers share it: they differ by
         //    model, not by endpoint.
         let client = openai::Client::builder()
@@ -193,9 +391,25 @@ impl RgaaAgent {
                 // call (see rig-agent's `default_max_turns` docs); a model that
                 // reaches for `crawl_site` instead of answering directly then
                 // has no turn left to read the tool result and produce a
-                // verdict, and fails with MaxTurnsError. 3 turns covers one
-                // tool call plus the follow-up answer, with a little slack.
-                .default_max_turns(3)
+                // verdict, and fails with MaxTurnsError. Use the configured
+                // budget so models that need more than one tool round can still
+                // return an evidence-based verdict.
+                .default_max_turns(config.max_turns)
+                .build()
+        };
+        let build_automatic_agent = |model: &str| {
+            let mut builder = client
+                .agent(model)
+                .temperature(params.temperature)
+                .max_tokens(u64::from(params.max_tokens));
+            if !extra_body.is_empty() {
+                builder = builder.additional_params(serde_json::Value::Object(extra_body.clone()));
+            }
+            builder
+                .preamble(
+                    "You are an RGAA accessibility expert. Evaluate only the supplied page evidence and criteria. Do not browse or crawl; return the requested JSON verdicts.",
+                )
+                .default_max_turns(1)
                 .build()
         };
 
@@ -226,6 +440,8 @@ impl RgaaAgent {
         Ok(Self {
             tactical: build_agent(config.model_tactical()),
             reasoning: build_agent(config.model_reasoning()),
+            automatic_tactical: build_automatic_agent(config.model_tactical()),
+            automatic_reasoning: build_automatic_agent(config.model_reasoning()),
             provenance_tactical,
             provenance_reasoning,
             rate_limiter,
@@ -269,6 +485,22 @@ impl RgaaAgent {
         crate::metrics::measured_prompt(self.agent_for(tier), tier_name, prompt, criteria).await
     }
 
+    /// Runs an automatic estimate on the one-shot agent that cannot launch a
+    /// redundant site crawl, while recording the same per-batch cost event.
+    async fn prompt_automatic_measured(
+        &self,
+        tier: ModelTier,
+        prompt: &str,
+        criteria: &str,
+    ) -> Result<String, rig_agent::completion::PromptError> {
+        let tier_name = match tier {
+            ModelTier::Tactical => "tactical",
+            ModelTier::Reasoning => "reasoning",
+        };
+        crate::metrics::measured_prompt(self.automatic_agent_for(tier), tier_name, prompt, criteria)
+            .await
+    }
+
     /// The agent bound to `tier`'s model.
     fn agent_for(&self, tier: ModelTier) -> &Agent {
         match tier {
@@ -277,7 +509,14 @@ impl RgaaAgent {
         }
     }
 
-    /// True when the shared circuit breaker is open — a real Holo3 outage has
+    fn automatic_agent_for(&self, tier: ModelTier) -> &Agent {
+        match tier {
+            ModelTier::Tactical => &self.automatic_tactical,
+            ModelTier::Reasoning => &self.automatic_reasoning,
+        }
+    }
+
+    /// True when the shared circuit breaker is open — repeated provider failures have
     /// already been observed, so further calls fail loud instead of piling
     /// more failed requests (and NeedsReview filler) onto a dead upstream.
     ///
@@ -317,7 +556,7 @@ impl RgaaAgent {
     /// Renders `page_context` and builds the evaluator prompt with
     /// [`PromptBuilder`]; prefer [`Self::run_ia_assiste`] when evaluating
     /// several criteria against the same page, which renders the context
-    /// once and reuses it. Queries the Holo3 model on the tier [`tier_for`]
+    /// once and reuses it. Queries the configured model on the tier [`tier_for`]
     /// picks for this criterion, and maps the structured [`HoloResponse`] to
     /// a [`CriterionStatus`] via [`map_verdict`]. On model failure the
     /// criterion is flagged [`CriterionStatus::NeedsReview`] with the error
@@ -346,7 +585,7 @@ impl RgaaAgent {
         if self.breaker_open() {
             tracing::warn!(
                 criterion = criterion.id,
-                "circuit breaker open; skipping Holo3 call"
+                "circuit breaker open; skipping LLM call"
             );
             return CriterionResult {
                 criterion_id: criterion.id.to_string(),
@@ -355,13 +594,22 @@ impl RgaaAgent {
                 status: CriterionStatus::Error,
                 violations: vec![],
                 confidence: None,
+                raw_confidence: None,
                 justification: Some(
-                    "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
+                    "Circuit breaker open: too many consecutive LLM failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
                 considered_sources: vec![],
                 tests: vec![],
+                automated_verdict: None,
+                verdict_basis: Vec::new(),
+                evidence: Vec::new(),
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: Vec::new(),
             };
         }
 
@@ -388,12 +636,21 @@ impl RgaaAgent {
                     classification: Classification::IaAssiste,
                     status,
                     violations: vec![],
-                    confidence: Some(parsed.confidence),
+                    confidence: None,
+                    raw_confidence: Some(parsed.confidence),
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 }
             }
             Err(e) => {
@@ -401,7 +658,7 @@ impl RgaaAgent {
                 if failures >= CIRCUIT_BREAKER_THRESHOLD {
                     tracing::warn!(
                         consecutive_failures = failures,
-                        "Holo3 circuit breaker tripped"
+                        "LLM circuit breaker tripped"
                     );
                 }
                 tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");
@@ -412,11 +669,20 @@ impl RgaaAgent {
                     status: CriterionStatus::NeedsReview,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 }
             }
         }
@@ -429,7 +695,7 @@ impl RgaaAgent {
     /// (rather than re-rendering per criterion) since all of them evaluate
     /// the same page. Uses bounded concurrency with the internal rate
     /// limiter, tiered per criterion by [`tier_for`], to avoid overwhelming
-    /// the Holo3 API while keeping evaluations parallel.
+    /// the configured LLM provider while keeping evaluations parallel.
     ///
     /// Criteria are evaluated in batches of `BATCH_SIZE` to reduce the number
     /// of LLM API calls.
@@ -502,7 +768,7 @@ impl RgaaAgent {
         // ever tripped it, so other callers kept hammering it.
         if self.breaker_open() {
             tracing::warn!(criteria = ?criterion_ids, "circuit breaker open; skipping batch call");
-            return self.evaluate_individually(criteria, rendered_context).await;
+            return unresolved_batch_results(&criteria, "Holo circuit breaker is open");
         }
 
         // Rate limit
@@ -523,8 +789,10 @@ impl RgaaAgent {
                     tracing::warn!(consecutive_failures = failures, "circuit breaker tripped");
                 }
                 tracing::warn!(criteria = ?criterion_ids, error = %e, "batch evaluation failed");
-                // Fall back to individual evaluation on error
-                return self.evaluate_individually(criteria, rendered_context).await;
+                return unresolved_batch_results(
+                    &criteria,
+                    &format!("Holo batch call failed: {e}"),
+                );
             }
         };
 
@@ -536,98 +804,18 @@ impl RgaaAgent {
             .or_else(|| serde_json::from_str(&response).ok())
             .unwrap_or_default();
 
-        let mut by_id: HashMap<&str, &BatchEvaluationResponse> = HashMap::new();
-        let mut duplicated: Vec<&str> = Vec::new();
-        for r in &batch_responses {
-            let id = r.criterion_id.trim();
-            if id.is_empty() {
-                continue;
-            }
-            if by_id.insert(id, r).is_some() {
-                // Two results for one criterion: neither can be trusted, so
-                // the criterion goes to the individual path below.
-                duplicated.push(id);
-            }
-        }
-        for id in duplicated {
-            by_id.remove(id);
-        }
-
-        // Map responses to results
-        let mut results = HashMap::new();
-        let mut unmatched: Vec<Criterion> = Vec::new();
-        for criterion in &criteria {
-            let Some(response) = by_id.get(criterion.id) else {
-                // No usable result for this criterion. Evaluating it on its own
-                // is the only honest option — defaulting it to "na" would
-                // record a verdict the model never gave.
-                unmatched.push(criterion.clone());
-                continue;
-            };
-
-            let status = map_verdict(&HoloResponse {
-                verdict: response.verdict.clone(),
-                confidence: response.confidence,
-                justification: response.justification.clone(),
-            });
-
-            results.insert(
-                criterion.id.to_string(),
-                CriterionResult {
-                    criterion_id: criterion.id.to_string(),
-                    title: criterion.title.clone(),
-                    classification: criterion.classification,
-                    status,
-                    violations: vec![],
-                    confidence: Some(response.confidence),
-                    justification: Some(response.justification.clone()),
-                    source: "agent-batch".to_string(),
-                    citations: vec![],
-                    considered_sources: vec![],
-                    tests: vec![],
-                },
-            );
-        }
-
-        if !unmatched.is_empty() {
+        let results = map_batch_responses(&criteria, &batch_responses);
+        let incomplete = results
+            .values()
+            .filter(|result| result.source == "agent-batch-incomplete")
+            .count();
+        if incomplete > 0 {
             tracing::warn!(
-                missing = unmatched.len(),
+                missing_or_ambiguous = incomplete,
                 of = criteria.len(),
-                "batch response did not cover every criterion; evaluating the rest individually"
+                "Holo batch response was incomplete; unresolved criteria need review"
             );
-            let fallback = self
-                .evaluate_individually(unmatched, rendered_context)
-                .await;
-            results.extend(fallback);
         }
-
-        results
-    }
-
-    /// Fallback: evaluate criteria individually when batch fails
-    async fn evaluate_individually(
-        self: std::sync::Arc<Self>,
-        criteria: Vec<Criterion>,
-        rendered_context: Arc<String>,
-    ) -> HashMap<String, CriterionResult> {
-        use futures::stream::{self, StreamExt};
-
-        let results = stream::iter(criteria)
-            .map(|criterion| {
-                let self_ = self.clone();
-                let rendered_context = rendered_context.clone();
-                let criterion_id = criterion.id;
-                async move {
-                    let result = self_
-                        .evaluate_criterion_rendered(&criterion, &rendered_context)
-                        .await;
-                    (criterion_id.to_string(), result)
-                }
-            })
-            .buffer_unordered(1) // Sequential for fallback
-            .collect::<HashMap<_, _>>()
-            .await;
-
         results
     }
 
@@ -673,7 +861,7 @@ impl RgaaAgent {
         if self.breaker_open() {
             tracing::warn!(
                 criterion = criterion.id,
-                "circuit breaker open; skipping Holo3 call"
+                "circuit breaker open; skipping LLM call"
             );
             return CriterionResult {
                 criterion_id: criterion.id.to_string(),
@@ -682,13 +870,22 @@ impl RgaaAgent {
                 status: CriterionStatus::Error,
                 violations: vec![],
                 confidence: None,
+                raw_confidence: None,
                 justification: Some(
-                    "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
+                    "Circuit breaker open: too many consecutive LLM failures".to_string(),
                 ),
                 source: "agent-circuit-breaker".to_string(),
                 citations: vec![],
                 considered_sources: vec![],
                 tests: vec![],
+                automated_verdict: None,
+                verdict_basis: Vec::new(),
+                evidence: Vec::new(),
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: Vec::new(),
             };
         }
 
@@ -715,12 +912,21 @@ impl RgaaAgent {
                     classification: criterion.classification,
                     status: CriterionStatus::NeedsReview,
                     violations: vec![],
-                    confidence: Some(parsed.confidence),
+                    confidence: None,
+                    raw_confidence: Some(parsed.confidence),
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 }
             }
             Err(e) => {
@@ -728,7 +934,7 @@ impl RgaaAgent {
                 if failures >= CIRCUIT_BREAKER_THRESHOLD {
                     tracing::warn!(
                         consecutive_failures = failures,
-                        "Holo3 circuit breaker tripped"
+                        "LLM circuit breaker tripped"
                     );
                 }
                 tracing::warn!(criterion = criterion.id, error = %e, "evaluation failed");
@@ -739,11 +945,20 @@ impl RgaaAgent {
                     status: CriterionStatus::NeedsReview,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 }
             }
         }
@@ -834,5 +1049,49 @@ mod batch_tests {
         // what stops a batch from being billed and answered on the wrong one.
         assert_eq!(tier_for("3.1"), ModelTier::Reasoning);
         assert_eq!(tier_for("1.1"), ModelTier::Tactical);
+    }
+
+    #[test]
+    fn missing_batch_answers_become_review_results_without_individual_fallback() {
+        let criteria = [
+            rgaa_core::RgaaCriteria::find("1.1")
+                .expect("1.1 is in the catalog")
+                .clone(),
+            rgaa_core::RgaaCriteria::find("3.1")
+                .expect("3.1 is in the catalog")
+                .clone(),
+        ];
+        let responses = parse(
+            r#"[{"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"alt présent"}]"#,
+        );
+
+        let results = map_batch_responses(&criteria, &responses);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results["1.1"].status, CriterionStatus::Pass);
+        assert_eq!(results["3.1"].status, CriterionStatus::NeedsReview);
+        assert_eq!(results["3.1"].source, "agent-batch-incomplete");
+        assert!(results["3.1"]
+            .justification
+            .as_deref()
+            .is_some_and(|reason| reason.contains("no unique answer")));
+    }
+
+    #[test]
+    fn duplicate_batch_answers_are_unresolved_instead_of_retried_individually() {
+        let criteria = [rgaa_core::RgaaCriteria::find("1.1")
+            .expect("1.1 is in the catalog")
+            .clone()];
+        let responses = parse(
+            r#"[
+                {"criterion_id":"1.1","verdict":"pass","confidence":0.9,"justification":"first"},
+                {"criterion_id":"1.1","verdict":"fail","confidence":0.9,"justification":"second"}
+            ]"#,
+        );
+
+        let results = map_batch_responses(&criteria, &responses);
+
+        assert_eq!(results["1.1"].status, CriterionStatus::NeedsReview);
+        assert_eq!(results["1.1"].source, "agent-batch-incomplete");
     }
 }

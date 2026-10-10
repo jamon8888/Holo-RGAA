@@ -15,6 +15,11 @@ pub struct AnalyzeArgs {
     pub url: Option<String>,
     #[clap(
         long,
+        help = "Audit exactly the URLs in this file (one HTTP(S) URL per line)"
+    )]
+    pub urls_file: Option<std::path::PathBuf>,
+    #[clap(
+        long,
         conflicts_with = "url",
         help = "Name of a configured URL profile"
     )]
@@ -39,7 +44,23 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
         eprintln!("Running accessibility audit...");
     }
 
-    let result = match std::env::var("RGAA_SITEMAP_URL")
+    let result = if let Some(path) = args.urls_file {
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|error| CliError::invalid_input(format!("cannot read {}: {error}", path.display())))?;
+        let pages = parse_page_urls(&content)?;
+        if pages.len() > crawl_config.max_pages {
+            return Err(CliError::invalid_input(format!(
+                "URL list has {} pages but RGAA_MAX_PAGES is {}; increase the limit to audit the entire list",
+                pages.len(), crawl_config.max_pages
+            )));
+        }
+        if args.verbose {
+            eprintln!("Auditing {} explicit page(s): {}", pages.len(), pages.join(", "));
+        }
+        orchestrator.run_explicit_audit(&url, pages, &crawl_config).await
+    } else {
+        match std::env::var("RGAA_SITEMAP_URL")
         .ok()
         .filter(|s| !s.is_empty())
     {
@@ -63,6 +84,7 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
                 .await
         }
         None => orchestrator.run_crawl_and_audit(&url, &crawl_config).await,
+        }
     }
     .map_err(|error| CliError::execution(error.to_string()))?;
 
@@ -75,6 +97,35 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
     let rendered = render_output(&result, format)?;
     write_output(&args.common.output, &rendered)?;
     Ok(0)
+}
+
+/// Validate and deduplicate an explicit page list, preserving input order.
+fn parse_page_urls(content: &str) -> Result<Vec<String>, CliError> {
+    let mut pages = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (index, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let parsed = reqwest::Url::parse(line).map_err(|error| {
+            CliError::invalid_input(format!("invalid URL on line {}: {error}", index + 1))
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+            return Err(CliError::invalid_input(format!(
+                "line {} must contain an HTTP(S) URL with a host",
+                index + 1
+            )));
+        }
+        let normalized = parsed.to_string();
+        if seen.insert(normalized.clone()) {
+            pages.push(normalized);
+        }
+    }
+    if pages.is_empty() {
+        return Err(CliError::invalid_input("URL list contains no pages"));
+    }
+    Ok(pages)
 }
 
 fn render_output(result: &rgaa_core::AuditResult, format: &str) -> Result<String, CliError> {
@@ -200,6 +251,24 @@ fn crawl_config(_config: &Config) -> Result<CrawlConfig, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_page_list_preserves_order_and_deduplicates() {
+        assert_eq!(
+            parse_page_urls(
+                "# requested pages\nhttps://a.test/b\n\nhttps://a.test/\nhttps://a.test/b\n"
+            )
+            .unwrap(),
+            vec!["https://a.test/b", "https://a.test/"]
+        );
+    }
+
+    #[test]
+    fn explicit_page_list_rejects_empty_and_non_http_urls() {
+        for content in ["# empty\n", "file:///tmp/page.html", "not a URL"] {
+            assert!(parse_page_urls(content).is_err());
+        }
+    }
 
     #[test]
     fn resolves_explicit_url_over_profiles() {

@@ -230,8 +230,12 @@ mod tests {
             overall_compliance: taux,
             taux_global: taux,
             coverage_percent: 0.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
             etat_conformite: "partielle".to_string(),
             duration_ms: 12,
+            audit_complete: false,
         }
     }
 

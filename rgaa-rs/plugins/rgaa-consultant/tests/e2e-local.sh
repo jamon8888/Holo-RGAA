@@ -77,7 +77,7 @@ else
 fi
 
 section "8. No secrets in source code"
-if grep -r "sk-\|api_key.*=.*\"[a-zA-Z0-9]" "$PLUGIN_ROOT" --include="*.json" --include="*.yaml" --include="*.yml" --include="*.sh" --include="*.md" 2>/dev/null | grep -v "your-api-key" | grep -v "REDACTED" | grep -v "example" | grep -v "placeholder" | grep -v "HOLO3_API_KEY" | grep -v "REMOTE_API_KEY" | grep -v "RGAA_API_KEY" | head -1; then
+if grep -r "sk-\|api_key.*=.*\"[a-zA-Z0-9]" "$PLUGIN_ROOT" --include="*.json" --include="*.yaml" --include="*.yml" --include="*.sh" --include="*.md" 2>/dev/null | grep -v "your-api-key" | grep -v "REDACTED" | grep -v "example" | grep -v "placeholder" | grep -v "MYIA_API_KEY" | grep -v "REMOTE_API_KEY" | grep -v "RGAA_API_KEY" | head -1; then
   fail "Potential secrets found in plugin files"
 else
   pass "No secrets in plugin files"

@@ -60,7 +60,9 @@ pub struct Mechanism {
     pub kind: MechanismKind,
     pub engine: Engine,
     pub coverage: AxeCoverage,
-    /// RGAA tests covered, e.g. `["11.6.1"]`. May stay empty for legacy entries.
+    /// RGAA tests covered, e.g. `["11.6.1"]` (or local key `"1"`). An explicit
+    /// list restricts test routes. When empty, only `complete` coverage declares
+    /// all tests of the criterion covered; partial coverage declares no test route.
     #[serde(default)]
     pub tests: Vec<String>,
     pub outcomes: Vec<Outcome>,
@@ -145,7 +147,18 @@ impl MechanismRegistry {
     ///   `-pass` and a `-fail` one, or such a pair per test when `complete`;
     /// * every cited axe rule is in `known_axe_rules`;
     /// * an `axe-native` mechanism cites at least one rule.
+    /// * every catalog test has exactly one valid route in the embedded test plan.
     pub fn check(&self, fixtures_dir: &Path, known_axe_rules: &HashSet<String>) -> Vec<String> {
+        let mut problems = self.check_mechanisms(fixtures_dir, known_axe_rules);
+        problems.extend(crate::test_plan::TestRoutePlan::builtin().check(self));
+        problems
+    }
+
+    fn check_mechanisms(
+        &self,
+        fixtures_dir: &Path,
+        known_axe_rules: &HashSet<String>,
+    ) -> Vec<String> {
         let mut problems = Vec::new();
         let mut seen = BTreeSet::new();
         for m in &self.mechanisms {
@@ -230,7 +243,7 @@ mod tests {
     fn check(toml: &str, dir: &Path) -> Vec<String> {
         MechanismRegistry::from_toml_str(toml)
             .expect("test registry parses")
-            .check(dir, &known(&["image-alt"]))
+            .check_mechanisms(dir, &known(&["image-alt"]))
     }
 
     fn tmp_dir(tag: &str, files: &[&str]) -> PathBuf {

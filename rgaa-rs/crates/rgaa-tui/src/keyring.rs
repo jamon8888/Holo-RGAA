@@ -1,6 +1,8 @@
 const SERVICE: &str = "rgaa";
 
-const DEFAULT_BASE_URL: &str = "https://api.hcompany.ai/v1/chat/completions";
+const API_KEY_ITEM: &str = "myia_api_key";
+const BASE_URL_ITEM: &str = "myia_base_url";
+const DEFAULT_BASE_URL: &str = "https://api.medium.text-generation-webui.myia.io/v1";
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeyringError {
@@ -11,7 +13,7 @@ pub enum KeyringError {
 }
 
 pub fn store_api_key(key: &str) -> Result<(), KeyringError> {
-    let entry = keyring::Entry::new(SERVICE, "holo3_api_key")
+    let entry = keyring::Entry::new(SERVICE, API_KEY_ITEM)
         .map_err(|e| KeyringError::Keyring(e.to_string()))?;
     if entry.set_password(key).is_ok() {
         return Ok(());
@@ -31,6 +33,16 @@ pub fn get_api_key() -> Result<Option<String>, KeyringError> {
     fallback_get_api_key()
 }
 
+/// Reads a stored Holo3 key without treating it as a MyIA credential.
+pub fn get_legacy_holo3_api_key() -> Result<Option<String>, KeyringError> {
+    if let Ok(key) = os_keyring_get_legacy_holo3_api_key() {
+        if !key.is_empty() {
+            return Ok(Some(key));
+        }
+    }
+    fallback_get_legacy_holo3_api_key()
+}
+
 pub fn get_base_url() -> Option<String> {
     os_keyring_get_base_url()
         .ok()
@@ -38,7 +50,7 @@ pub fn get_base_url() -> Option<String> {
 }
 
 pub fn store_base_url(url: &str) -> Result<(), KeyringError> {
-    let entry = keyring::Entry::new(SERVICE, "holo3_base_url")
+    let entry = keyring::Entry::new(SERVICE, BASE_URL_ITEM)
         .map_err(|e| KeyringError::Keyring(e.to_string()))?;
     if entry.set_password(url).is_ok() {
         return Ok(());
@@ -50,6 +62,14 @@ pub fn store_base_url(url: &str) -> Result<(), KeyringError> {
 }
 
 fn os_keyring_get_api_key() -> Result<String, KeyringError> {
+    let entry = keyring::Entry::new(SERVICE, API_KEY_ITEM)
+        .map_err(|e| KeyringError::Keyring(e.to_string()))?;
+    entry
+        .get_password()
+        .map_err(|e| KeyringError::Keyring(e.to_string()))
+}
+
+fn os_keyring_get_legacy_holo3_api_key() -> Result<String, KeyringError> {
     let entry = keyring::Entry::new(SERVICE, "holo3_api_key")
         .map_err(|e| KeyringError::Keyring(e.to_string()))?;
     entry
@@ -58,7 +78,7 @@ fn os_keyring_get_api_key() -> Result<String, KeyringError> {
 }
 
 fn os_keyring_get_base_url() -> Result<String, KeyringError> {
-    let entry = keyring::Entry::new(SERVICE, "holo3_base_url")
+    let entry = keyring::Entry::new(SERVICE, BASE_URL_ITEM)
         .map_err(|e| KeyringError::Keyring(e.to_string()))?;
     entry
         .get_password()
@@ -74,7 +94,20 @@ fn fallback_store_api_key_and_url(key: &str, base_url: &str) -> Result<(), Keyri
     })?;
     let env_path = home.join(".rgaa").join("env");
     std::fs::create_dir_all(env_path.parent().unwrap())?;
-    let content = format!("HOLO3_API_KEY={}\nHOLO3_BASE_URL={}\n", key, base_url);
+    let existing = match std::fs::read_to_string(&env_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let mut content = existing
+        .lines()
+        .filter(|line| !line.starts_with("MYIA_API_KEY=") && !line.starts_with("MYIA_BASE_URL="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !content.is_empty() {
+        content.push('\n');
+    }
+    content.push_str(&format!("MYIA_API_KEY={key}\nMYIA_BASE_URL={base_url}\n"));
     std::fs::write(&env_path, content)?;
     eprintln!("WARNING: OS keyring unavailable. Config stored in plain text at ~/.rgaa/env");
     Ok(())
@@ -85,6 +118,23 @@ fn fallback_store(key: &str, base_url: &str) -> Result<(), KeyringError> {
 }
 
 fn fallback_get_api_key() -> Result<Option<String>, KeyringError> {
+    if let Some(home) = dirs::home_dir() {
+        let env_path = home.join(".rgaa").join("env");
+        if env_path.exists() {
+            let content = std::fs::read_to_string(&env_path)?;
+            for line in content.lines() {
+                if let Some(val) = line.strip_prefix("MYIA_API_KEY=") {
+                    if !val.is_empty() {
+                        return Ok(Some(val.to_string()));
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn fallback_get_legacy_holo3_api_key() -> Result<Option<String>, KeyringError> {
     if let Some(home) = dirs::home_dir() {
         let env_path = home.join(".rgaa").join("env");
         if env_path.exists() {
@@ -106,7 +156,7 @@ fn get_base_url_from_fallback() -> Option<String> {
     let env_path = home.join(".rgaa").join("env");
     let content = std::fs::read_to_string(&env_path).ok()?;
     for line in content.lines() {
-        if let Some(val) = line.strip_prefix("HOLO3_BASE_URL=") {
+        if let Some(val) = line.strip_prefix("MYIA_BASE_URL=") {
             if !val.is_empty() {
                 return Some(val.to_string());
             }
@@ -120,7 +170,7 @@ fn get_api_key_from_fallback() -> Option<String> {
     let env_path = home.join(".rgaa").join("env");
     let content = std::fs::read_to_string(&env_path).ok()?;
     for line in content.lines() {
-        if let Some(val) = line.strip_prefix("HOLO3_API_KEY=") {
+        if let Some(val) = line.strip_prefix("MYIA_API_KEY=") {
             if !val.is_empty() {
                 return Some(val.to_string());
             }

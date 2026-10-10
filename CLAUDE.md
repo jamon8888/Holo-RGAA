@@ -6,7 +6,7 @@ RGAA 4.1.2 accessibility audit platform — Rust workspace with 7 crates.
 
 - **rgaa-core**: Domain types + 106 RGAA criteria catalog
 - **rgaa-rules**: axe-core violation mapping + gap-fix JS snippets
-- **rgaa-holo**: Holo3 LLM client for AI-assisted evaluation
+- **rgaa-holo**: MyIA LLM client for AI-assisted evaluation
 - **rgaa-browser**, **rgaa-orchestrator**, **rgaa-storage**, **rgaa-api**: Empty stubs
 
 ## Codebase-Specific Fixes
@@ -114,8 +114,8 @@ pub enum RgaaError {
     Crawl(String),
     #[error("Browser error: {0}")]
     Browser(String),
-    #[error("Holo3 API error: {0}")]
-    Holo3(String),
+    #[error("LLM API error: {0}")]
+    Holo3(String), // legacy public variant name
     // ... 5 more variants
 }
 pub type Result<T> = std::result::Result<T, RgaaError>;
@@ -185,7 +185,7 @@ criterion_main!(benches);
 
 ```rust
 // Use structured tracing (already done in rgaa-holo)
-info!(attempt, max_retries = MAX_RETRIES, "Calling Holo3 API");
+info!(attempt, max_retries = MAX_RETRIES, "Calling MyIA API");
 warn!(attempt, backoff_ms = backoff, "Rate limited, backing off");
 error!(status = status.as_u16(), body = %body, "API error");
 

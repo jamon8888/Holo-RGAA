@@ -93,7 +93,7 @@ The **Referentiel General d'Amelioration de l'Accessibilite** is France's access
 | Tier | Count | Method | Automation |
 |------|-------|--------|------------|
 | **Deterministe** | 77 | axe-core + gap-fix rules | Fully automated |
-| **IA-Assistee** | 22+ | Holo3 LLM evaluation | AI-assisted judgment |
+| **IA-Assistee** | 22+ | MyIA LLM evaluation | AI-assisted judgment |
 | **PartiellementAutomatable** | 45 | Automated + human review | Hybrid |
 | **Manuel** | Remaining | Guided testing | Manual verification |
 
@@ -126,7 +126,7 @@ Every audit captures:
 rgaa-orchestrator (Pipeline)
     │
     ├── rgaa-rules (axe-core + gap-fix)
-    ├── rgaa-holo (Holo3 LLM)
+    ├── rgaa-holo (OpenAI-compatible LLM clients)
     ├── rgaa-obscura (Browser CDP)
     │
     └── rgaa-core (Domain Model)
@@ -228,7 +228,7 @@ CMD ["rgaa-api"]
 | Issue | Solution |
 |-------|----------|
 | `browser unavailable` | Install Obscura and set `RGAA_OBSCURA_BIN` |
-| `rate limit exceeded` | Wait and retry; Holo3 has per-minute limits |
+| `rate limit exceeded` | Wait and retry; hosted LLM providers may apply per-minute limits |
 | `timeout` | Increase timeout via `--timeout` flag or config |
 | `missing alt text` | Add `alt` attributes to images |
 

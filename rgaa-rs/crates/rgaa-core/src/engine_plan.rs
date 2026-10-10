@@ -38,6 +38,14 @@ pub struct EnginePlan;
 static PLAN: OnceLock<HashMap<String, EnginePlanEntry>> = OnceLock::new();
 
 impl EnginePlan {
+    /// The executable route for a canonical catalog test, including its estimate fallback.
+    pub fn route_test(
+        criterion_id: &str,
+        test_key: &str,
+    ) -> Option<&'static crate::test_plan::TestRoute> {
+        crate::test_plan::TestRoutePlan::builtin().for_test(criterion_id, test_key)
+    }
+
     fn map() -> &'static HashMap<String, EnginePlanEntry> {
         PLAN.get_or_init(|| {
             let entries: Vec<EnginePlanEntry> = serde_json::from_str(ENGINE_PLAN_JSON)
@@ -93,6 +101,40 @@ mod tests {
         .sum();
         assert_eq!(total, 106);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Human).len(), 8);
+    }
+
+    #[test]
+    fn engine_assignments_match_the_audited_criterion_map() {
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 13);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 53);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
+
+        let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)
+            .into_iter()
+            .collect();
+        let expected: std::collections::HashSet<&str> =
+            ["4.2", "4.4", "4.6", "7.5", "11.12", "13.1", "13.4", "13.7"]
+                .into_iter()
+                .collect();
+        assert_eq!(human, expected);
+    }
+
+    #[test]
+    fn raw_plan_has_exactly_one_route_for_each_catalog_criterion() {
+        let entries: Vec<EnginePlanEntry> =
+            serde_json::from_str(ENGINE_PLAN_JSON).expect("embedded engine plan must parse");
+        let route_ids: std::collections::HashSet<&str> = entries
+            .iter()
+            .map(|entry| entry.criterion_id.as_str())
+            .collect();
+        let catalog_ids: std::collections::HashSet<&str> = RgaaCriteria::all()
+            .iter()
+            .map(|criterion| criterion.id)
+            .collect();
+
+        assert_eq!(entries.len(), 106, "the raw plan must contain 106 rows");
+        assert_eq!(route_ids.len(), entries.len(), "route IDs must be unique");
+        assert_eq!(route_ids, catalog_ids, "routes must match the catalog IDs");
     }
 
     /// axe-core may only own a criterion it decides completely: with partial coverage its

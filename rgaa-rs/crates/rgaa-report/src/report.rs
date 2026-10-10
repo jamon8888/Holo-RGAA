@@ -268,9 +268,10 @@ mod tests {
             classification: Classification::IaAssiste,
             status: CriterionStatus::Fail,
             violations: Vec::new(),
-            confidence: Some(0.87),
+            confidence: None,
+            raw_confidence: Some(0.87),
             justification: Some("alternative absente".into()),
-            source: "holo3".into(),
+            source: "agent".into(),
             citations: vec![
                 Citation::referentiel("1.1.1", "2024.1"),
                 Citation::crawl(
@@ -281,6 +282,14 @@ mod tests {
             ],
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         };
         let unsourced = rgaa_core::CriterionResult {
             criterion_id: "8.1".into(),
@@ -289,11 +298,20 @@ mod tests {
             status: CriterionStatus::Pass,
             violations: Vec::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: "axe-core".into(),
             citations: Vec::new(),
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         };
 
         let mut bundle =
@@ -359,9 +377,12 @@ mod tests {
     }
 
     #[test]
-    fn html_criteria_table_carries_a_sources_column() {
+    fn html_criteria_table_carries_an_assessment_column() {
         let output = render(&bundle_with_citations(), ReportFormat::Html).expect("html");
-        assert!(output.contains("<th>Sources</th>"), "{output}");
+        assert!(
+            output.contains("<th>Évaluation et preuves</th>"),
+            "{output}"
+        );
         assert!(output.contains("2024.1"), "{output}");
         assert!(output.contains("sha256:abc"), "{output}");
     }
@@ -383,7 +404,7 @@ mod tests {
             .expect("criteria table");
         let header = table.split("<tbody>").next().expect("criteria thead");
         let columns = header.matches("<th>").count();
-        assert_eq!(columns, 6, "criteria header is {columns} columns wide");
+        assert_eq!(columns, 8, "criteria header is {columns} columns wide");
 
         let body = table
             .split("<tbody>")

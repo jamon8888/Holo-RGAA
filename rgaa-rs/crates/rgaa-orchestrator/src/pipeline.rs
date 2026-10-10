@@ -1,11 +1,13 @@
-use crate::merge;
+use crate::{merge, site_comparison};
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::catalog::Automatable;
 use rgaa_core::na_detection;
+use rgaa_core::test_plan::CoverageLevel;
+use rgaa_core::types::{is_deterministic_source, TestOutcome, VerdictBasis};
 use rgaa_core::{
-    AuditResult, Classification, CrawlConfig, CriterionResult, CriterionStatus, PageResult,
-    RgaaCatalog, RgaaCriteria,
+    AuditResult, Classification, CrawlConfig, Criterion, CriterionResult, CriterionStatus,
+    EnginePlan, PageResult, PlanEngine, RgaaCatalog, RgaaCriteria,
 };
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
@@ -83,9 +85,488 @@ fn calculate_compliance(criteria: &[CriterionResult]) -> f64 {
     rgaa_report::compliance_rate(criteria)
 }
 
-fn calculate_compliance_summary(criteria: &[CriterionResult]) -> (f64, f64, String) {
-    let m = rgaa_report::compute_metrics(criteria, &rgaa_report::RGAA_41);
-    (m.taux_global, m.coverage_percent, m.etat_conformite)
+/// Catalog criteria whose automatic estimate or routed test outcome is missing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoverageError {
+    pub missing_criterion_ids: Vec<String>,
+}
+
+impl std::fmt::Display for CoverageError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "automatic verdict coverage is incomplete for {} criterion(s): {}",
+            self.missing_criterion_ids.len(),
+            self.missing_criterion_ids.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for CoverageError {}
+
+/// Ensure every catalog criterion has a prediction and every routed test has
+/// an outcome from an allowed source. Complete routes require actual
+/// deterministic evidence; model estimates may cover partial routes only.
+pub fn validate_automatic_verdict_coverage(
+    results: &[CriterionResult],
+) -> Result<(), CoverageError> {
+    let mut by_id = HashMap::with_capacity(results.len());
+    let mut duplicate_ids = std::collections::HashSet::new();
+    for result in results {
+        if by_id.insert(result.criterion_id.as_str(), result).is_some() {
+            duplicate_ids.insert(result.criterion_id.as_str());
+        }
+    }
+
+    let mut missing = Vec::new();
+    for criterion in RgaaCriteria::all() {
+        let id = criterion.id;
+        let Some(result) = by_id.get(id).copied() else {
+            missing.push(id.to_owned());
+            continue;
+        };
+        let mut complete = !duplicate_ids.contains(id) && result.automated_verdict.is_some();
+        if let Some(test_map) = RgaaCatalog::tests(id) {
+            let mut has_complete_route = false;
+            for test_key in test_map.keys() {
+                let Some(route) = EnginePlan::route_test(id, test_key) else {
+                    complete = false;
+                    continue;
+                };
+                has_complete_route |= route.coverage == CoverageLevel::Complete;
+                let outcome_present = result.tests.iter().any(|outcome| {
+                    outcome.test_key == *test_key && outcome_is_allowed(outcome, route.coverage)
+                });
+                complete &= outcome_present;
+            }
+            // A criterion-wide deterministic failure is valid verified
+            // evidence, but it does not identify which complete-route test
+            // failed. Keep the audit open until a mechanism supplies that key.
+            if has_complete_route
+                && result.status == CriterionStatus::Fail
+                && !result.tests.iter().any(|outcome| {
+                    outcome.status == CriterionStatus::Fail
+                        && is_deterministic_source(&outcome.source)
+                })
+            {
+                complete = false;
+            }
+            let site_comparison_failed = (result.source == "site-comparison"
+                && result.status == CriterionStatus::Fail)
+                || result
+                    .justification
+                    .as_deref()
+                    .is_some_and(|justification| {
+                        justification.contains("Site-level comparison returned Fail:")
+                    });
+            if result.status == CriterionStatus::Fail
+                && site_comparison_failed
+                && !result.tests.iter().any(|outcome| {
+                    outcome.status == CriterionStatus::Fail && outcome.source == "site-comparison"
+                })
+            {
+                complete = false;
+            }
+        } else {
+            complete = false;
+        }
+        if !complete {
+            missing.push(id.to_owned());
+        }
+    }
+
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(CoverageError {
+            missing_criterion_ids: missing,
+        })
+    }
+}
+
+/// Merge page-level candidates, complete the catalog, apply deterministic
+/// inapplicability observations, and build the same audited result used by the
+/// production page pipeline.
+///
+/// This is the final page assembly boundary shared by `audit_one` and tests
+/// with mocked browser observations. Candidates must already contain outputs
+/// from the evaluators that actually ran; missing model estimates remain
+/// unresolved and prevent `audit_complete`.
+pub fn assemble_page_audit(
+    url: String,
+    title: Option<String>,
+    candidates: impl IntoIterator<Item = (String, CriterionResult)>,
+    na_map: &HashMap<&'static str, bool>,
+    duration_ms: u64,
+) -> AuditResult {
+    let mut all_results = merge::merge_results(candidates);
+
+    // Preserve a row for every catalog criterion, while keeping silence
+    // unresolved rather than turning it into an automatic pass.
+    for criterion in RgaaCriteria::all() {
+        if criterion.classification == Classification::Manuel {
+            all_results
+                .entry(criterion.id.to_string())
+                .or_insert_with(|| CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: Classification::Manuel,
+                    status: manual_status(),
+                    violations: vec![],
+                    confidence: None,
+                    raw_confidence: None,
+                    justification: Some("Manual verification required".into()),
+                    source: "manual".into(),
+                    citations: vec![],
+                    considered_sources: vec![],
+                    tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
+                });
+        } else if !all_results.contains_key(criterion.id) {
+            let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
+                .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable);
+
+            let (status, justification, source) = if is_partially_automatable {
+                (
+                    partially_automatable_status(),
+                    "Partially automatable — human review required for uncovered portions".into(),
+                    "partially-automatable".into(),
+                )
+            } else {
+                (
+                    CriterionStatus::NotTested,
+                    "Not tested — no automated check covered this criterion".into(),
+                    "automated".into(),
+                )
+            };
+
+            all_results
+                .entry(criterion.id.to_string())
+                .or_insert_with(|| CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification,
+                    status,
+                    violations: vec![],
+                    confidence: None,
+                    raw_confidence: None,
+                    justification: Some(justification),
+                    source,
+                    citations: vec![],
+                    considered_sources: vec![],
+                    tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
+                });
+        }
+    }
+
+    let mut criteria: Vec<CriterionResult> = all_results.into_values().collect();
+    for criterion in &mut criteria {
+        if let Some(&false) = na_map.get(criterion.criterion_id.as_str()) {
+            mark_deterministically_not_applicable(criterion);
+        }
+    }
+
+    let coverage_result = validate_automatic_verdict_coverage(&criteria);
+    if let Err(error) = &coverage_result {
+        tracing::warn!(missing = ?error.missing_criterion_ids, "automatic verdict coverage is incomplete");
+    }
+
+    let compliance = calculate_compliance(&criteria);
+    let page = PageResult {
+        url: url.clone(),
+        title,
+        criteria,
+        compliance_rate: compliance,
+        crawl_depth: 0,
+    };
+
+    assemble_site_audit(url, vec![page], duration_ms)
+}
+
+/// Aggregate assembled page results into the persisted site audit shape.
+///
+/// Shared by the single-page pipeline, the crawl pipeline, and offline
+/// integration tests that inject browser observations at the evaluator
+/// boundary. Metric and completion values are always derived here.
+pub fn assemble_site_audit(
+    url: String,
+    all_pages: Vec<PageResult>,
+    duration_ms: u64,
+) -> AuditResult {
+    let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
+    let all_criteria: Vec<CriterionResult> = all_pages
+        .iter()
+        .flat_map(|page| page.criteria.clone())
+        .collect();
+    let total = RgaaCriteria::count();
+    let pass_count = all_criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::Pass)
+        .count();
+    let fail_count = all_criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::Fail)
+        .count();
+    let na_count = all_criteria
+        .iter()
+        .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
+        .count();
+    let compliance = calculate_compliance(&all_criteria);
+    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
+
+    info!(
+        pass = pass_count,
+        fail = fail_count,
+        na = na_count,
+        total,
+        compliance = format!("{:.1}%", compliance),
+        taux_global = format!("{:.1}%", taux_global),
+        coverage_percent = format!("{:.1}%", coverage_percent),
+        etat_conformite,
+        "Audit finished"
+    );
+
+    AuditResult {
+        audit_id: uuid::Uuid::new_v4().to_string(),
+        url,
+        pages: all_pages,
+        total_criteria: total,
+        passed: pass_count,
+        failed: fail_count,
+        na: na_count,
+        overall_compliance: compliance,
+        taux_global,
+        coverage_percent,
+        automatic_verdict_coverage_percent: audit_metrics.automatic_verdict_coverage_percent,
+        test_evidence_coverage_percent: audit_metrics.test_evidence_coverage_percent,
+        verified_compliance_percent: audit_metrics.verified_compliance_percent,
+        etat_conformite,
+        duration_ms,
+        audit_complete,
+    }
+}
+
+fn outcome_is_allowed(outcome: &TestOutcome, coverage: CoverageLevel) -> bool {
+    let decided = matches!(
+        outcome.status,
+        CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+    );
+    if !decided {
+        return false;
+    }
+    if outcome.status == CriterionStatus::NotApplicable {
+        return is_deterministic_source(&outcome.source);
+    }
+    match coverage {
+        CoverageLevel::Complete => is_deterministic_source(&outcome.source),
+        CoverageLevel::Partial => {
+            is_deterministic_source(&outcome.source) || outcome.source == "agent-estimate"
+        }
+    }
+}
+
+fn criterion_has_routed_mechanism(criterion_id: &str, mechanism_id: &str) -> bool {
+    RgaaCatalog::tests(criterion_id).is_some_and(|tests| {
+        tests.keys().any(|test_key| {
+            EnginePlan::route_test(criterion_id, test_key)
+                .is_some_and(|route| route.mechanisms.iter().any(|id| id == mechanism_id))
+        })
+    })
+}
+
+fn mechanism_id(prefix: &str, criterion_id: &str) -> String {
+    format!("{prefix}-{}", criterion_id.replace('.', "-"))
+}
+
+fn routed_gap_fix_snippets() -> HashMap<String, String> {
+    GapFixRules::snippets()
+        .iter()
+        .filter(|(criterion_id, _)| {
+            criterion_has_routed_mechanism(criterion_id, &mechanism_id("gapfix", criterion_id))
+        })
+        .map(|(criterion_id, snippet)| (criterion_id.clone(), (*snippet).to_owned()))
+        .collect()
+}
+
+fn admit_routed_results(
+    results: impl IntoIterator<Item = (String, CriterionResult)>,
+    mechanism_prefix: &str,
+) -> HashMap<String, CriterionResult> {
+    results
+        .into_iter()
+        .filter(|(criterion_id, _)| {
+            criterion_has_routed_mechanism(
+                criterion_id,
+                &mechanism_id(mechanism_prefix, criterion_id),
+            )
+        })
+        .collect()
+}
+
+fn pages_have_complete_automatic_coverage(pages: &[PageResult]) -> bool {
+    !pages.is_empty()
+        && pages
+            .iter()
+            .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok())
+}
+
+fn record_site_comparison_evidence(
+    result: &mut CriterionResult,
+    site_result: &site_comparison::SiteCriterionObservation,
+) {
+    let details = format!(
+        "{}; sample_complete={}, sampled_pages={}, failed_pages={}",
+        site_result.details,
+        site_result.sample_complete,
+        site_result.sampled_pages,
+        site_result.failed_pages
+    );
+    let existing_failure = result.status == CriterionStatus::Fail;
+    let site_finding = format!(
+        "Site-level comparison returned {:?}: {details}",
+        site_result.status
+    );
+    if existing_failure {
+        result
+            .justification
+            .get_or_insert_with(String::new)
+            .push_str(&format!("; {site_finding}"));
+    } else {
+        result.status = site_result.status.clone();
+        result.source = "site-comparison".to_string();
+        result.justification = Some(site_finding);
+    }
+
+    if !result
+        .considered_sources
+        .iter()
+        .any(|source| source == "site-comparison")
+    {
+        result
+            .considered_sources
+            .push("site-comparison".to_string());
+    }
+    let evidence = format!("site-comparison: {details}");
+    if !result.verdict_basis.contains(&VerdictBasis::Deterministic) {
+        result.verdict_basis.push(VerdictBasis::Deterministic);
+    }
+    if matches!(
+        site_result.status,
+        CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+    ) {
+        result.verified_status = Some(site_result.status.clone());
+
+        // The site comparison can identify a test outcome only when the
+        // catalog has one key for this criterion. For multi-test criteria,
+        // preserve the aggregate evidence and let the coverage gate stay open
+        // on a Fail rather than attributing it to every test.
+        if let Some(test_map) = RgaaCatalog::tests(&result.criterion_id) {
+            if test_map.len() == 1 {
+                let test_key = test_map.keys().next().expect("a single test key exists");
+                if !result.tests.iter().any(|outcome| {
+                    outcome.test_key == *test_key
+                        && outcome.source == "site-comparison"
+                        && outcome.status == site_result.status
+                }) {
+                    result.tests.push(TestOutcome {
+                        test_key: test_key.clone(),
+                        status: site_result.status.clone(),
+                        source: "site-comparison".into(),
+                        evidence: Some(evidence),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Materialize per-test `Pass` outcomes only when an executed complete
+/// mechanism explicitly returned a criterion-wide pass. A criterion-wide
+/// failure does not reveal which test failed, so it stays aggregate evidence.
+fn attach_complete_mechanism_passes<'a>(
+    results: impl IntoIterator<Item = &'a mut CriterionResult>,
+) {
+    for result in results {
+        if result.status != CriterionStatus::Pass {
+            continue;
+        }
+        let Some(test_map) = RgaaCatalog::tests(&result.criterion_id) else {
+            continue;
+        };
+        for test_key in test_map.keys() {
+            let Some(route) = EnginePlan::route_test(&result.criterion_id, test_key) else {
+                continue;
+            };
+            let mechanism = match result.source.as_str() {
+                "axe-core" => mechanism_id("axe", &result.criterion_id),
+                "gap-fix" => mechanism_id("gapfix", &result.criterion_id),
+                _ => continue,
+            };
+            if route.coverage != CoverageLevel::Complete
+                || !route.mechanisms.iter().any(|id| id == &mechanism)
+            {
+                continue;
+            }
+            if !result
+                .tests
+                .iter()
+                .any(|test| test.test_key == *test_key && test.source == result.source)
+            {
+                result.tests.push(TestOutcome {
+                    test_key: test_key.clone(),
+                    status: CriterionStatus::Pass,
+                    source: result.source.clone(),
+                    evidence: Some(format!(
+                        "{} returned a pass under its complete-coverage contract",
+                        result.source
+                    )),
+                });
+            }
+        }
+    }
+}
+
+fn mark_deterministically_not_applicable(result: &mut CriterionResult) {
+    result.status = CriterionStatus::NotApplicable;
+    result.verified_status = Some(CriterionStatus::NotApplicable);
+    if !result.verdict_basis.contains(&VerdictBasis::Deterministic) {
+        result.verdict_basis.push(VerdictBasis::Deterministic);
+    }
+    if let Some(test_map) = RgaaCatalog::tests(&result.criterion_id) {
+        for test_key in test_map.keys() {
+            if !result.tests.iter().any(|test| {
+                test.test_key == *test_key
+                    && test.status == CriterionStatus::NotApplicable
+                    && is_deterministic_source(&test.source)
+            }) {
+                result.tests.push(TestOutcome {
+                    test_key: test_key.clone(),
+                    status: CriterionStatus::NotApplicable,
+                    source: "automated".into(),
+                    evidence: Some(
+                        "deterministic applicability detector marked criterion not applicable"
+                            .into(),
+                    ),
+                });
+            }
+        }
+    }
 }
 
 pub struct Orchestrator {
@@ -398,6 +879,7 @@ async fn audit_discovered_urls(
     config: &CrawlConfig,
     start: std::time::Instant,
 ) -> Result<AuditResult, String> {
+    let discovered_count = urls.len();
     // Cap at max_pages
     let urls: Vec<String> = urls.into_iter().take(config.max_pages).collect();
 
@@ -405,14 +887,22 @@ async fn audit_discovered_urls(
         return Err("no pages to audit".to_string());
     }
 
-    let mut batch_results = orchestrator.run_batch(&urls, config).await?;
-
-    if batch_results.is_empty() {
-        return Err(format!(
-            "audit failed for all {} discovered page(s); see warnings above for per-page errors",
-            urls.len()
-        ));
-    }
+    let failures = Arc::new(std::sync::Mutex::new(HashMap::<String, String>::new()));
+    let observed_failures = Arc::clone(&failures);
+    let observer: BatchObserver = Arc::new(move |page_url, outcome| {
+        if let Err(error) = outcome {
+            if let Ok(mut failures) = observed_failures.lock() {
+                failures.insert(page_url.to_string(), error.to_string());
+            }
+        }
+    });
+    let mut batch_results = orchestrator
+        .run_batch_observed(&urls, config, observer)
+        .await?;
+    let failures = failures
+        .lock()
+        .map(|failures| failures.clone())
+        .unwrap_or_default();
 
     // Extract PageResults in the caller's requested order — run_batch
     // returns a HashMap, whose iteration order is arbitrary and would
@@ -422,49 +912,143 @@ async fn audit_discovered_urls(
     for page_url in &urls {
         if let Some(audit) = batch_results.remove(page_url) {
             all_pages.extend(audit.pages);
+        } else if let Some(error) = failures.get(page_url) {
+            all_pages.push(failed_page_result(page_url, error));
+        } else {
+            all_pages.push(failed_page_result(
+                page_url,
+                "audit did not return a result or an error callback",
+            ));
         }
     }
 
-    // Site-wide aggregation
-    let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    // RGAA 12.1/12.2/12.4/12.5 are scoped to a set of pages. Capture their
+    // normalized signals in one Obscura scrape for this exact crawl sample.
+    // This is local browser instrumentation; it does not create Holo requests.
+    let site_context = ObscuraBridge::extract_page_context_batch(
+        ObscuraBridge::from_env().binary_path().to_string(),
+        urls.clone(),
+        1,
+    )
+    .await;
+    let site_contexts = match site_context {
+        Ok(contexts) => contexts,
+        Err(error) => {
+            tracing::warn!(error = %error, "site-level Obscura observation failed; criteria remain unresolved");
+            HashMap::new()
+        }
+    };
+    let page_observations: Vec<site_comparison::PageObservation> = urls
+        .iter()
+        .filter_map(|page_url| site_contexts.get(page_url))
+        .filter_map(|value| serde_json::from_value(value.clone()).ok())
+        .collect();
+    let failed_pages = urls
+        .iter()
+        .filter(|page_url| {
+            failures.contains_key(*page_url) || !site_contexts.contains_key(*page_url)
+        })
+        .count();
+    let sample_complete = discovered_count < config.max_pages
+        && failed_pages == 0
+        && page_observations.len() == urls.len();
+    let site_results = site_comparison::compare_site(
+        &page_observations,
+        urls.len(),
+        failed_pages,
+        sample_complete,
+    );
+    for site_result in site_results {
+        let Some(criterion) = RgaaCriteria::all()
+            .iter()
+            .find(|criterion| criterion.id == site_result.criterion_id)
+        else {
+            continue;
+        };
+        for page in &mut all_pages {
+            if let Some(existing) = page
+                .criteria
+                .iter_mut()
+                .find(|result| result.criterion_id == site_result.criterion_id)
+            {
+                record_site_comparison_evidence(existing, &site_result);
+                existing.violations.clear();
+            } else {
+                let mut result = CriterionResult {
+                    criterion_id: criterion.id.to_string(),
+                    title: criterion.title.to_string(),
+                    classification: criterion.classification,
+                    status: site_result.status.clone(),
+                    violations: vec![],
+                    confidence: None,
+                    raw_confidence: None,
+                    justification: Some(format!(
+                        "{}; sample_complete={}, sampled_pages={}, failed_pages={}",
+                        site_result.details,
+                        site_result.sample_complete,
+                        site_result.sampled_pages,
+                        site_result.failed_pages
+                    )),
+                    source: "site-comparison".to_string(),
+                    citations: vec![],
+                    considered_sources: vec![],
+                    tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
+                };
+                record_site_comparison_evidence(&mut result, &site_result);
+                page.criteria.push(result);
+            }
+            page.compliance_rate = calculate_compliance(&page.criteria);
+        }
+    }
 
-    // Flatten all criteria for totals
-    let all_criteria: Vec<CriterionResult> =
-        all_pages.iter().flat_map(|p| p.criteria.clone()).collect();
+    Ok(assemble_site_audit(
+        url.to_string(),
+        all_pages,
+        start.elapsed().as_millis() as u64,
+    ))
+}
 
-    let total = RgaaCriteria::count();
-    let pass_count = all_criteria
+fn failed_page_result(url: &str, error: &str) -> PageResult {
+    let criteria = RgaaCriteria::all()
         .iter()
-        .filter(|c| c.status == CriterionStatus::Pass)
-        .count();
-    let fail_count = all_criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Fail)
-        .count();
-    let na_count = all_criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::NotApplicable)
-        .count();
-    let _error_count = all_criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Error)
-        .count();
-    let compliance = calculate_compliance(&all_criteria);
-
-    Ok(AuditResult {
-        audit_id: uuid::Uuid::new_v4().to_string(),
+        .map(|criterion| CriterionResult {
+            criterion_id: criterion.id.to_string(),
+            title: criterion.title.to_string(),
+            classification: criterion.classification,
+            status: CriterionStatus::NotTested,
+            violations: vec![],
+            confidence: None,
+            raw_confidence: None,
+            justification: Some(format!("Page audit failed: {error}")),
+            source: "audit-error".to_string(),
+            citations: vec![],
+            considered_sources: vec![],
+            tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
+        })
+        .collect();
+    PageResult {
         url: url.to_string(),
-        pages: all_pages,
-        total_criteria: total,
-        passed: pass_count,
-        failed: fail_count,
-        na: na_count,
-        overall_compliance: compliance,
-        taux_global,
-        coverage_percent,
-        etat_conformite,
-        duration_ms: start.elapsed().as_millis() as u64,
-    })
+        title: None,
+        criteria,
+        compliance_rate: 0.0,
+        crawl_depth: 0,
+    }
 }
 
 /// Discover RGAA mandatory 7 sample pages.
@@ -565,10 +1149,12 @@ async fn discover_rgaa_sample_pages(
 /// A criterion is NonConforme for the entire site if it fails on ANY page of the sample.
 /// Returns (taux_global, coverage_percent, etat_conformite).
 pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
+    use rgaa_report::verified_status_for;
     use std::collections::HashMap;
 
     // Group criterion results by criterion_id across all pages
     let mut criterion_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
+    let mut criterion_raw_statuses: HashMap<String, Vec<CriterionStatus>> = HashMap::new();
     let mut criterion_classifications: HashMap<String, Classification> = HashMap::new();
     let mut validated_total = 0;
     let mut validated_executed = 0;
@@ -576,6 +1162,10 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
     for page in page_results {
         for criterion in &page.criteria {
             criterion_statuses
+                .entry(criterion.criterion_id.clone())
+                .or_default()
+                .push(verified_status_for(criterion).unwrap_or(CriterionStatus::NeedsReview));
+            criterion_raw_statuses
                 .entry(criterion.criterion_id.clone())
                 .or_default()
                 .push(criterion.status.clone());
@@ -594,7 +1184,11 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
             .copied()
             .unwrap_or(Classification::Manuel);
 
-        // Skip Manuel criteria from taux calculation (they're NonTeste)
+        // Manuel criteria are decided by a human, never by an automated engine,
+        // so they must not move `taux_global` in either direction: a Fail or a
+        // Pass recorded on one is not machine evidence. Fall back to Manuel when
+        // the classification is unknown so an unmapped criterion cannot silently
+        // inflate or deflate the automated rate.
         if classification == Classification::Manuel {
             continue;
         }
@@ -606,7 +1200,10 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
                 Automatable::FullyAutomatable | Automatable::PartiallyAutomatable
             ) {
                 validated_total += 1;
-                if rgaa_report::is_validated(&statuses) {
+                if criterion_raw_statuses
+                    .get(&criterion_id)
+                    .is_some_and(|raw| rgaa_report::is_validated(raw))
+                {
                     validated_executed += 1;
                 }
             }
@@ -703,11 +1300,13 @@ async fn audit_one(
         .remove(url.as_str())
         .ok_or_else(|| format!("axe-core produced no result for {url}"))?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
+    let mut axe_results = admit_routed_results(axe_results, "axe");
+    attach_complete_mechanism_passes(axe_results.values_mut());
 
     // 2. Run gap-fix rules for 10 false negatives
     on_phase(AuditPhase::GapFix);
     info!("Running gap-fix rules");
-    let gap_snippets = GapFixRules::snippets();
+    let gap_snippets = routed_gap_fix_snippets();
     // clippy's `--all-targets` (dev-profile) check reports the `&` here as a
     // needless borrow, but the actual `[profile.test]` build (cargo test /
     // nextest, and thus CI) requires it — `gap_snippets` alone fails to
@@ -725,9 +1324,41 @@ async fn audit_one(
     )
     .await?;
     let gap_js_results = gap_by_url.remove(url.as_str()).unwrap_or_default();
-    let gap_results = GapFixRules::parse_results(&gap_js_results);
+    let mut gap_results =
+        admit_routed_results(GapFixRules::parse_results(&gap_js_results), "gapfix");
+    attach_complete_mechanism_passes(gap_results.values_mut());
 
-    // 3. Extract page context for Holo3 prompts
+    // Obscura keyboard actions are limited to Tab key-down/up events. The
+    // observation is shared by criteria 12.8 and 12.9; no activation key or
+    // pointer click is sent.
+    let keyboard_is_routed = ["12.8", "12.9"].iter().any(|criterion_id| {
+        criterion_has_routed_mechanism(criterion_id, &mechanism_id("keyboard", criterion_id))
+    });
+    let keyboard_results = if keyboard_is_routed {
+        match bridge.observe_keyboard(&url).await {
+            Ok(observation) => {
+                let issue_rules: Vec<String> = observation
+                    .keyboard
+                    .issues
+                    .iter()
+                    .map(|issue| issue.rule.clone())
+                    .collect();
+                GapFixRules::parse_keyboard_observation(
+                    &observation.keyboard.status,
+                    &issue_rules,
+                    observation.keyboard.igt_elements.len(),
+                )
+            }
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura keyboard probe failed; retain static review results");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
     let mut context_by_url = ObscuraBridge::extract_page_context_batch(
@@ -748,41 +1379,42 @@ async fn audit_one(
         format!("malformed page context for {url}: {e}")
     })?;
 
-    // 4. Run agentic evaluation for all IA_ASSISTE criteria
+    // 4. Request an automatic estimate for every catalog criterion, including
+    // criteria owned by a deterministic engine or a human. The plan grouping
+    // keeps each primary route visible while the estimator still covers every
+    // routed test key, not just unresolved criterion-level leftovers.
     on_phase(AuditPhase::AgentIaAssiste);
-    let ia_criteria = RgaaCriteria::ia_assiste();
-    info!(
-        criteria = ia_criteria.len(),
-        "Running agentic IA_ASSISTE evaluation"
-    );
-
-    // The list itself is built once per process; `run_ia_assiste` consumes an
-    // owned `Vec`, so only that hand-off copies it.
-    let agent_results = agent
-        .clone()
-        .run_ia_assiste(ia_criteria.to_vec(), page_context.clone())
+    let prior_results: Vec<CriterionResult> = axe_results
+        .values()
+        .chain(gap_results.values())
+        .chain(keyboard_results.values())
+        .cloned()
+        .collect();
+    let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
+    for criterion in RgaaCriteria::all() {
+        if let Some(engine) = EnginePlan::primary(criterion.id) {
+            by_engine.entry(engine).or_default().push(criterion.clone());
+        }
+    }
+    let mut ordered_criteria = Vec::with_capacity(RgaaCriteria::count());
+    for engine in [
+        PlanEngine::AxeCore,
+        PlanEngine::Deterministic,
+        PlanEngine::Holo,
+        PlanEngine::Human,
+    ] {
+        if let Some(criteria) = by_engine.remove(&engine) {
+            info!(engine = ?engine, criteria = criteria.len(), "Queueing automatic estimates");
+            ordered_criteria.extend(criteria);
+        }
+    }
+    let estimate_results = agent
+        .run_automatic_estimates(&ordered_criteria, &page_context, &prior_results)
         .await;
 
-    let mut holo_results = HashMap::new();
-    for (criterion_id, result) in agent_results {
-        holo_results.insert(criterion_id, result);
-    }
-
-    // 4b. Run agentic evaluation for PartiallyAutomatable criteria
+    // Retain the progress event for consumers expecting six ordered phases;
+    // this is bookkeeping only and intentionally issues no second Holo call.
     on_phase(AuditPhase::AgentPartial);
-    let partial_criteria = RgaaCriteria::partiellement_automatique();
-    info!(
-        criteria = partial_criteria.len(),
-        "Running agentic PartiallyAutomatable evaluation"
-    );
-
-    let partial_results = agent
-        .clone()
-        .run_partially_automatable(partial_criteria.to_vec(), page_context.clone())
-        .await;
-    for (criterion_id, result) in partial_results {
-        holo_results.insert(criterion_id, result);
-    }
 
     // 5. Merge results
     //
@@ -791,137 +1423,397 @@ async fn audit_one(
     // verdict, and deterministic evidence outranks an LLM verdict. The order
     // below only fixes the order of `considered_sources` on each winner.
     on_phase(AuditPhase::Merging);
-    let mut all_results: HashMap<String, CriterionResult> = merge::merge_results(
-        axe_results
-            .into_iter()
-            .chain(gap_results)
-            .chain(holo_results),
-    );
+    let candidates = axe_results
+        .into_iter()
+        .chain(gap_results)
+        .chain(keyboard_results)
+        .chain(estimate_results);
+    Ok(assemble_page_audit(
+        url,
+        page_context.title,
+        candidates,
+        &na_map,
+        start.elapsed().as_millis() as u64,
+    ))
+}
 
-    // 6. Ensure every criterion has an entry, so the result always spans the
-    // full 106-criterion catalog.
-    //
-    // Silence is not evidence: a Déterministe criterion that no mechanism
-    // flagged (and that Holo3 did not decide) is `NotTested`, never `Pass`.
-    // Only a mechanism that can actually fail the criterion may pass it (#199,
-    // #201). `NotTested` and `NeedsReview` are both left out of `taux_global`,
-    // so the rate is optimistic by exactly the criteria nobody decided.
-    // Manuel criteria always require human review -> NeedsReview.
-    // PartiallyAutomatable criteria need human review for un-covered portions
-    // -> NeedsReview.
-    let all_criteria = RgaaCriteria::all();
-    for criterion in all_criteria {
-        if criterion.classification == Classification::Manuel {
-            all_results
-                .entry(criterion.id.to_string())
-                .or_insert_with(|| CriterionResult {
-                    criterion_id: criterion.id.to_string(),
-                    title: criterion.title.to_string(),
-                    classification: Classification::Manuel,
-                    status: manual_status(),
-                    violations: vec![],
-                    confidence: None,
-                    justification: Some("Manual verification required".into()),
-                    source: "manual".into(),
-                    citations: vec![],
-                    considered_sources: vec![],
-                    tests: vec![],
-                });
-        } else if !all_results.contains_key(criterion.id) {
-            let is_partially_automatable = RgaaCatalog::by_id(criterion.id)
-                .is_some_and(|(_, cat)| cat.automatable == Automatable::PartiallyAutomatable);
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+    use rgaa_core::types::Violation;
 
-            let (status, justification, source) = if is_partially_automatable {
-                (
-                    partially_automatable_status(),
-                    "Partially automatable — human review required for uncovered portions".into(),
-                    "partially-automatable".into(),
-                )
+    fn deterministic_result(
+        criterion_id: &str,
+        status: CriterionStatus,
+        source: &str,
+    ) -> CriterionResult {
+        let criterion = RgaaCriteria::find(criterion_id).expect("criterion exists");
+        CriterionResult {
+            criterion_id: criterion_id.to_string(),
+            title: criterion.title.clone(),
+            classification: criterion.classification,
+            status,
+            violations: Vec::<Violation>::new(),
+            confidence: None,
+            raw_confidence: None,
+            justification: None,
+            source: source.to_string(),
+            citations: vec![],
+            considered_sources: vec![],
+            tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
+        }
+    }
+
+    fn complete_prediction_set() -> Vec<CriterionResult> {
+        let mut results: HashMap<String, CriterionResult> = RgaaCriteria::all()
+            .iter()
+            .map(|criterion| {
+                let mut result = deterministic_result(
+                    criterion.id,
+                    CriterionStatus::NeedsReview,
+                    "agent-estimate",
+                );
+                result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Pass);
+                (criterion.id.to_owned(), result)
+            })
+            .collect();
+
+        for (criterion_id, test_key) in RgaaCatalog::all_test_keys() {
+            let route = EnginePlan::route_test(&criterion_id, &test_key)
+                .expect("every canonical test has a route");
+            let source = if route.coverage == CoverageLevel::Complete {
+                "axe-core"
             } else {
-                (
-                    CriterionStatus::NotTested,
-                    "Not tested — no automated check covered this criterion".into(),
-                    "automated".into(),
-                )
+                "agent-estimate"
             };
-
-            all_results
-                .entry(criterion.id.to_string())
-                .or_insert_with(|| CriterionResult {
-                    criterion_id: criterion.id.to_string(),
-                    title: criterion.title.to_string(),
-                    classification: criterion.classification,
-                    status,
-                    violations: vec![],
-                    confidence: None,
-                    justification: Some(justification),
-                    source,
-                    citations: vec![],
-                    considered_sources: vec![],
-                    tests: vec![],
+            results
+                .get_mut(&criterion_id)
+                .expect("criterion belongs to catalog")
+                .tests
+                .push(TestOutcome {
+                    test_key,
+                    status: CriterionStatus::Pass,
+                    source: source.into(),
+                    evidence: None,
                 });
         }
+        results.into_values().collect()
     }
 
-    // 7. Apply NA detection
-    let mut criteria: Vec<CriterionResult> = all_results.into_values().collect();
-    for criterion in &mut criteria {
-        if let Some(&false) = na_map.get(criterion.criterion_id.as_str()) {
-            criterion.status = CriterionStatus::NotApplicable;
-        }
+    #[test]
+    fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
+        let determined = [deterministic_result(
+            "1.2",
+            CriterionStatus::Fail,
+            "axe-core",
+        )];
+
+        let candidates = select_holo_candidates(&determined);
+        let ids: std::collections::HashSet<&str> =
+            candidates.iter().map(|criterion| criterion.id).collect();
+
+        assert_eq!(candidates.len(), 31);
+        assert_eq!(ids.len(), candidates.len());
+        assert!(!ids.contains("1.2"));
+        assert!(ids.contains("3.1"));
+        assert!(!ids.contains("4.2"));
     }
 
-    let pass_count = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Pass)
-        .count();
-    let fail_count = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Fail)
-        .count();
-    let na_count = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::NotApplicable)
-        .count();
-    let error_count = criteria
-        .iter()
-        .filter(|c| c.status == CriterionStatus::Error)
-        .count();
-    let total = RgaaCriteria::count();
-    let compliance = calculate_compliance(&criteria);
-    let (taux_global, coverage_percent, etat_conformite) = calculate_compliance_summary(&criteria);
+    #[test]
+    fn failed_page_is_retained_with_every_criterion_not_tested() {
+        let page = failed_page_result("https://example.test/forms", "navigation timed out");
 
-    info!(
-        pass = pass_count,
-        fail = fail_count,
-        na = na_count,
-        errors = error_count,
-        total,
-        compliance = format!("{:.1}%", compliance),
-        taux_global = format!("{:.1}%", taux_global),
-        coverage_percent = format!("{:.1}%", coverage_percent),
-        etat_conformite,
-        "Audit complete"
-    );
+        assert_eq!(page.url, "https://example.test/forms");
+        assert_eq!(page.criteria.len(), 106);
+        assert!(page.criteria.iter().all(|criterion| {
+            criterion.status == CriterionStatus::NotTested
+                && criterion.source == "audit-error"
+                && criterion
+                    .justification
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("navigation timed out"))
+        }));
+    }
 
-    Ok(AuditResult {
-        audit_id: uuid::Uuid::new_v4().to_string(),
-        url: url.clone(),
-        pages: vec![PageResult {
-            url: url.clone(),
-            title: page_context.title,
-            criteria,
-            compliance_rate: compliance,
+    #[test]
+    fn automatic_verdict_coverage_requires_every_routed_test_outcome() {
+        let error = validate_automatic_verdict_coverage(&[])
+            .expect_err("an empty page result cannot cover the catalog");
+        assert_eq!(error.missing_criterion_ids.len(), RgaaCriteria::count());
+        assert!(error.missing_criterion_ids.iter().any(|id| id == "4.2"));
+    }
+
+    #[test]
+    fn complete_routes_require_deterministic_test_evidence() {
+        let mut results = complete_prediction_set();
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "1.1")
+            .expect("criterion 1.1 exists");
+        result.tests[0].source = "agent-estimate".into();
+
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("model estimates alone cannot close a complete route");
+        assert_eq!(error.missing_criterion_ids, vec!["1.1"]);
+    }
+
+    #[test]
+    fn aggregate_failure_without_a_test_key_keeps_the_audit_incomplete() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "1.1")
+            .expect("criterion 1.1 exists");
+        result.status = CriterionStatus::Fail;
+
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("aggregate failure does not identify a test key");
+        assert!(error.missing_criterion_ids.iter().any(|id| id == "1.1"));
+    }
+
+    #[test]
+    fn every_criterion_needs_an_automatic_prediction() {
+        let mut results = complete_prediction_set();
+        results
+            .iter_mut()
+            .find(|result| result.criterion_id == "4.2")
+            .expect("criterion 4.2 exists")
+            .automated_verdict = None;
+
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("missing model output must stay incomplete");
+        assert_eq!(error.missing_criterion_ids, vec!["4.2"]);
+    }
+
+    #[test]
+    fn complete_mechanism_pass_materializes_routes_but_failure_does_not_guess_test_keys() {
+        let mut results: HashMap<String, CriterionResult> = HashMap::new();
+        let pass = deterministic_result("1.1", CriterionStatus::Pass, "axe-core");
+        results.insert("1.1".into(), pass);
+        let fail = deterministic_result("1.2", CriterionStatus::Fail, "gap-fix");
+        results.insert("1.2".into(), fail);
+
+        attach_complete_mechanism_passes(results.values_mut());
+
+        assert_eq!(results["1.1"].tests.len(), 8);
+        assert!(results["1.1"]
+            .tests
+            .iter()
+            .all(|test| { test.status == CriterionStatus::Pass && test.source == "axe-core" }));
+        assert!(results["1.2"].tests.is_empty());
+    }
+
+    #[test]
+    fn route_plan_controls_mechanism_dispatch_and_result_admission() {
+        assert!(criterion_has_routed_mechanism("1.1", "axe-1-1"));
+        assert!(!criterion_has_routed_mechanism("1.2", "axe-1-2"));
+        assert!(criterion_has_routed_mechanism("1.2", "gapfix-1-2"));
+
+        let admitted = admit_routed_results(
+            [
+                (
+                    "1.1".to_string(),
+                    deterministic_result("1.1", CriterionStatus::Fail, "axe-core"),
+                ),
+                (
+                    "1.2".to_string(),
+                    deterministic_result("1.2", CriterionStatus::Fail, "axe-core"),
+                ),
+            ],
+            "axe",
+        );
+        assert_eq!(admitted.len(), 1);
+        assert!(admitted.contains_key("1.1"));
+
+        let snippets = routed_gap_fix_snippets();
+        assert!(snippets.contains_key("1.1"));
+        assert!(snippets.contains_key("1.2"));
+        assert!(!snippets.contains_key("10.1"));
+        assert!(!snippets.contains_key("1.9"));
+        assert!(!criterion_has_routed_mechanism("12.8", "keyboard-12-8"));
+    }
+
+    #[test]
+    fn multi_page_audit_is_complete_only_when_every_page_passes_coverage_gate() {
+        let complete = PageResult {
+            url: "https://example.test/complete".into(),
+            title: None,
+            criteria: complete_prediction_set(),
+            compliance_rate: 0.0,
             crawl_depth: 0,
-        }],
-        total_criteria: total,
-        passed: pass_count,
-        failed: fail_count,
-        na: na_count,
-        overall_compliance: compliance,
-        taux_global,
-        coverage_percent,
-        etat_conformite,
-        duration_ms: start.elapsed().as_millis() as u64,
-    })
+        };
+        let mut incomplete = complete.clone();
+        incomplete.url = "https://example.test/incomplete".into();
+        incomplete
+            .criteria
+            .iter_mut()
+            .find(|result| result.criterion_id == "4.2")
+            .expect("criterion 4.2 exists")
+            .automated_verdict = None;
+
+        assert!(pages_have_complete_automatic_coverage(
+            std::slice::from_ref(&complete)
+        ));
+        assert!(pages_have_complete_automatic_coverage(&[
+            complete.clone(),
+            complete.clone()
+        ]));
+        assert!(!pages_have_complete_automatic_coverage(&[
+            complete, incomplete
+        ]));
+        assert!(!pages_have_complete_automatic_coverage(&[]));
+    }
+
+    #[test]
+    fn keyed_site_failure_preserves_model_pass_and_is_counted_as_deterministic() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.1")
+            .expect("criterion 12.1 exists");
+        let site_failure = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.1",
+            status: CriterionStatus::Fail,
+            details: "one observed page lacks a navigation system".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_failure);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(result.verified_status, Some(CriterionStatus::Fail));
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
+        assert!(result
+            .considered_sources
+            .contains(&"site-comparison".into()));
+        assert!(result.tests.iter().any(|outcome| {
+            outcome.test_key == "1"
+                && outcome.source == "site-comparison"
+                && outcome.status == CriterionStatus::Fail
+        }));
+        assert_eq!(
+            rgaa_core::reduce_test_outcomes(&result.tests, &["1".to_string()]),
+            Some(CriterionStatus::Fail)
+        );
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+    }
+
+    #[test]
+    fn unkeyed_site_failure_for_multi_test_criterion_keeps_coverage_incomplete() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.4")
+            .expect("criterion 12.4 exists");
+        let site_failure = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.4",
+            status: CriterionStatus::Fail,
+            details: "site-wide sitemap placement signatures differ".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_failure);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Pass)
+        );
+        assert!(!result
+            .tests
+            .iter()
+            .any(|outcome| outcome.source == "site-comparison"));
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("an unkeyed site failure cannot be closed by model rows");
+        assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
+    }
+
+    #[test]
+    fn site_needs_review_does_not_block_an_existing_mechanism_failure() {
+        let mut results = complete_prediction_set();
+        let result = results
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.4")
+            .expect("criterion 12.4 exists");
+        result.status = CriterionStatus::Fail;
+        result.source = "gap-fix".into();
+        result.considered_sources.push("gap-fix".into());
+        let site_review = site_comparison::SiteCriterionObservation {
+            criterion_id: "12.4",
+            status: CriterionStatus::NeedsReview,
+            details: "target relevance still requires review".into(),
+            sampled_pages: 2,
+            failed_pages: 0,
+            sample_complete: true,
+        };
+
+        record_site_comparison_evidence(result, &site_review);
+
+        assert_eq!(result.status, CriterionStatus::Fail);
+        assert!(result
+            .considered_sources
+            .contains(&"site-comparison".into()));
+        assert!(result
+            .justification
+            .as_deref()
+            .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
+        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+    }
+
+    #[test]
+    fn deterministic_na_updates_verified_status_without_replacing_model_prediction() {
+        let mut result =
+            deterministic_result("4.2", CriterionStatus::NeedsReview, "agent-estimate");
+        result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Fail);
+        result.verdict_basis = vec![VerdictBasis::ModelEstimate];
+
+        mark_deterministically_not_applicable(&mut result);
+
+        assert_eq!(result.status, CriterionStatus::NotApplicable);
+        assert_eq!(result.verified_status, Some(CriterionStatus::NotApplicable));
+        assert_eq!(
+            result.automated_verdict,
+            Some(rgaa_core::AutomatedVerdict::Fail)
+        );
+        assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
+        assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
+    }
+
+    fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
+        let settled: std::collections::HashSet<&str> = prior_results
+            .iter()
+            .filter(|result| {
+                matches!(
+                    result.status,
+                    CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+                )
+            })
+            .map(|result| result.criterion_id.as_str())
+            .collect();
+
+        RgaaCriteria::all()
+            .iter()
+            .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
+            .filter(|criterion| !settled.contains(criterion.id))
+            .cloned()
+            .collect()
+    }
 }

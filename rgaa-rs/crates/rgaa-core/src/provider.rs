@@ -8,9 +8,9 @@
 //! concrete settings both [`rgaa-agent`](../../rgaa_agent) (through `rig`)
 //! and [`rgaa-holo`](../../rgaa_holo) (through its own transport) consume.
 //!
-//! Nothing here hardcodes a credential and nothing guesses a model: an
-//! unconfigured environment fails closed with a message naming the missing
-//! variable.
+//! Nothing here hardcodes a credential. Hosted providers with a stable
+//! workspace default may provide a model; an unconfigured environment still
+//! fails closed with a message naming the missing credential variable.
 
 use crate::completion::{CompletionParams, LlmProvenance, ResponseFormat};
 use crate::error::RgaaError;
@@ -30,11 +30,9 @@ pub struct Provider {
     /// Whether a key is mandatory. Local runtimes (Ollama, LM Studio, vLLM)
     /// accept requests without one.
     pub requires_key: bool,
-    /// Model used when none is configured. Only `holo3` carries one: it is
-    /// the historical default this workspace shipped with, kept so a
-    /// deployment that only sets `HOLO3_API_KEY` keeps working. Every other
-    /// provider serves a catalog no preset can sensibly guess from, so it
-    /// requires an explicit `RGAA_LLM_MODEL`.
+    /// Model used when none is configured. MyIA is the current default;
+    /// `holo3` retains its historical model for legacy deployments. Other
+    /// providers require an explicit `RGAA_LLM_MODEL`.
     pub default_model: Option<&'static str>,
     /// Whether the endpoint is a local inference runtime. CPU inference of a
     /// 7B-14B model can take minutes per call, so local providers get a far
@@ -53,6 +51,14 @@ const LOCAL_TIMEOUT_SECS: u64 = 600;
 /// Anthropic is deliberately absent: its Messages API is not OpenAI-compatible,
 /// so reach Claude models through `openrouter` instead.
 pub const PROVIDERS: &[Provider] = &[
+    Provider {
+        name: "myia",
+        base_url: "https://api.medium.text-generation-webui.myia.io/v1",
+        key_var: "MYIA_API_KEY",
+        default_model: Some("swift-1.5-27b"),
+        requires_key: true,
+        local: false,
+    },
     Provider {
         name: "holo3",
         base_url: "https://api.hcompany.ai/v1",
@@ -228,14 +234,19 @@ impl LlmSettings {
     /// Reads the primary route from the process environment.
     ///
     /// # Environment
-    /// - `RGAA_LLM_PROVIDER` (default `holo3`): a name from [`PROVIDERS`].
-    /// - `RGAA_LLM_MODEL` (required, legacy `HOLO3_MODEL`): the model id.
+    /// - `RGAA_LLM_PROVIDER` (default `myia`): a name from [`PROVIDERS`].
+    /// - `RGAA_LLM_MODEL` (optional for providers with a default; legacy
+    ///   `HOLO3_MODEL` on the legacy Holo3 route): the model id. MyIA defaults
+    ///   to `swift-1.5-27b`; `qwen3.6-35b-a3b` is also accepted by that API.
     /// - `RGAA_LLM_MODEL_TACTICAL` / `RGAA_LLM_MODEL_REASONING` (optional):
     ///   per-tier overrides, each defaulting to `RGAA_LLM_MODEL`.
     /// - `RGAA_LLM_API_KEY`, or the provider's own `key_var` (legacy
-    ///   `HOLO3_API_KEY`): required unless the provider is local.
-    /// - `RGAA_LLM_BASE_URL` (optional, legacy `HOLO3_BASE_URL`): overrides
-    ///   the preset; required when the provider is `custom`.
+    ///   `MYIA_API_KEY`; legacy `HOLO3_API_KEY` selects the historical Holo3
+    ///   route only when no provider is selected): required unless the
+    ///   provider is local.
+    /// - `RGAA_LLM_BASE_URL` (optional; `MYIA_BASE_URL` on the MyIA route and
+    ///   legacy `HOLO3_BASE_URL` on the Holo3 route): overrides the preset;
+    ///   required for `custom`.
     /// - `RGAA_LLM_TIMEOUT_SECS` (optional): per-request timeout; defaults to
     ///   30s remote / 600s local.
     /// - `RGAA_LLM_TEMPERATURE` (optional, default
@@ -262,10 +273,13 @@ impl LlmSettings {
     /// for a second, independently-configured route
     /// (`RGAA_LLM_FALLBACK_PROVIDER`, `RGAA_LLM_FALLBACK_MODEL`, …).
     ///
-    /// The legacy `HOLO3_*` variables and the generic `RGAA_LLM_API_KEY`
-    /// apply to the primary route only: a fallback route must be configured
-    /// explicitly, so a key meant for the primary provider is never silently
-    /// sent to a different one.
+    /// The legacy `HOLO3_*` variables and generic `RGAA_LLM_API_KEY` apply to
+    /// the primary route only. With no explicit provider, legacy Holo3
+    /// variables select the Holo3 migration route unless `MYIA_API_KEY` is
+    /// present. An explicitly selected provider remains authoritative; legacy
+    /// Holo3 base URL/model values cannot override it. A fallback route must
+    /// be configured explicitly, so a primary key is never silently sent to
+    /// another provider.
     ///
     /// # Errors
     /// See [`Self::from_env`].
@@ -283,21 +297,52 @@ impl LlmSettings {
         // hiding the provider's own, a blank timeout failing to parse).
         let non_empty = |v: String| Some(v).filter(|v| !v.trim().is_empty());
         let get = |name: &str| var(name).and_then(non_empty);
-        // Legacy `HOLO3_*` fallback, primary route only.
-        let legacy = |name: &'static str| if is_primary { get(name) } else { None };
-
         let provider_var = key("PROVIDER");
-        let name = get(&provider_var).unwrap_or_else(|| "holo3".to_string());
+        let explicitly_selected_provider = get(&provider_var);
+        let has_myia_key = get("MYIA_API_KEY").is_some();
+        let legacy_holo3_route = is_primary
+            && explicitly_selected_provider.is_none()
+            && !has_myia_key
+            && ["HOLO3_API_KEY", "HOLO3_BASE_URL", "HOLO3_MODEL"]
+                .iter()
+                .any(|name| get(name).is_some());
+        let name = explicitly_selected_provider.unwrap_or_else(|| {
+            if legacy_holo3_route {
+                "holo3".to_string()
+            } else {
+                "myia".to_string()
+            }
+        });
         let provider = provider(&name).ok_or_else(|| {
             config_error(format!(
                 "unknown {provider_var} `{name}` (expected one of: {})",
                 provider_names()
             ))
         })?;
+        // Provider-native URL/model settings are recognized only for their
+        // matching provider. This includes explicit provider selection, but
+        // never lets one provider's settings override another provider.
+        let legacy_holo3 = is_primary && provider.name == "holo3";
+        let myia_native = is_primary && provider.name == "myia";
+        let holo3_setting = |name: &'static str| {
+            if legacy_holo3 {
+                get(name)
+            } else {
+                None
+            }
+        };
+        let myia_setting = |name: &'static str| {
+            if myia_native {
+                get(name)
+            } else {
+                None
+            }
+        };
 
         let base_url_var = key("BASE_URL");
         let base_url = get(&base_url_var)
-            .or_else(|| legacy("HOLO3_BASE_URL"))
+            .or_else(|| myia_setting("MYIA_BASE_URL"))
+            .or_else(|| holo3_setting("HOLO3_BASE_URL"))
             .unwrap_or_else(|| provider.base_url.to_string());
         if base_url.is_empty() {
             return Err(config_error(format!(
@@ -306,31 +351,28 @@ impl LlmSettings {
         }
 
         let api_key_var = key("API_KEY");
-        // The generic `RGAA_LLM_API_KEY` belongs to the primary route only.
-        // `custom`'s `key_var` *is* that generic variable, so without this a
-        // prefixed `custom` route would inherit the primary provider's key and
-        // `ChatBackend` would send it as a bearer token to an arbitrary host,
-        // possibly over plain HTTP.
-        let native_key = |name: &str| {
-            if !is_primary && name == "RGAA_LLM_API_KEY" {
-                None
-            } else {
-                get(name)
-            }
-        };
+        // Provider-native keys belong to the primary route only. A fallback
+        // must use its own prefixed `RGAA_LLM_FALLBACK_API_KEY`; otherwise a
+        // primary credential could be sent to a different host.
+        let native_key = |name: &str| if is_primary { get(name) } else { None };
         let api_key = get(&api_key_var)
             .or_else(|| native_key(provider.key_var))
             .unwrap_or_default();
         if provider.requires_key && api_key.is_empty() {
+            let required_var = if is_primary {
+                format!("{} or {api_key_var}", provider.key_var)
+            } else {
+                api_key_var.clone()
+            };
             return Err(config_error(format!(
-                "{} is not set (or {api_key_var}), required by provider `{}`",
-                provider.key_var, provider.name
+                "{required_var} is not set, required by provider `{}`",
+                provider.name
             )));
         }
 
         let model_var = key("MODEL");
         let model = get(&model_var)
-            .or_else(|| legacy("HOLO3_MODEL"))
+            .or_else(|| holo3_setting("HOLO3_MODEL"))
             .or_else(|| provider.default_model.map(str::to_string))
             .ok_or_else(|| {
                 config_error(format!(
@@ -512,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_holo3_and_requires_its_key() {
+    fn legacy_holo3_environment_stays_supported_and_myia_is_the_default() {
         let s = LlmSettings::from_env_with(env(&[
             ("HOLO3_API_KEY", "k"),
             ("RGAA_LLM_MODEL", "holo3-1-35b-a3b"),
@@ -525,8 +567,16 @@ mod tests {
             "https://api.hcompany.ai/v1/chat/completions"
         );
 
+        let s = LlmSettings::from_env_with(env(&[("MYIA_API_KEY", "myia-key")])).unwrap();
+        assert_eq!(s.provider.name, "myia");
+        assert_eq!(
+            s.base_url,
+            "https://api.medium.text-generation-webui.myia.io/v1"
+        );
+        assert_eq!(s.model, "swift-1.5-27b");
+
         let err = LlmSettings::from_env_with(env(&[("RGAA_LLM_MODEL", "m")])).unwrap_err();
-        assert!(err.to_string().contains("HOLO3_API_KEY"), "{err}");
+        assert!(err.to_string().contains("MYIA_API_KEY"), "{err}");
     }
 
     #[test]
@@ -539,6 +589,33 @@ mod tests {
         .unwrap();
         assert_eq!(s.base_url, "https://api.groq.com/openai/v1");
         assert_eq!(s.api_key, "gsk-x");
+    }
+
+    #[test]
+    fn myia_native_base_url_is_used_below_the_generic_override() {
+        let native = LlmSettings::from_env_with(env(&[
+            ("MYIA_API_KEY", "myia-key"),
+            ("MYIA_BASE_URL", "https://myia-proxy.example/v1"),
+        ]))
+        .unwrap();
+        assert_eq!(native.base_url, "https://myia-proxy.example/v1");
+
+        let generic = LlmSettings::from_env_with(env(&[
+            ("MYIA_API_KEY", "myia-key"),
+            ("MYIA_BASE_URL", "https://myia-proxy.example/v1"),
+            ("RGAA_LLM_BASE_URL", "https://generic.example/v1"),
+        ]))
+        .unwrap();
+        assert_eq!(generic.base_url, "https://generic.example/v1");
+
+        let other_provider = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "groq"),
+            ("RGAA_LLM_API_KEY", "groq-key"),
+            ("RGAA_LLM_MODEL", "llama"),
+            ("MYIA_BASE_URL", "https://myia-proxy.example/v1"),
+        ]))
+        .unwrap();
+        assert_eq!(other_provider.base_url, "https://api.groq.com/openai/v1");
     }
 
     #[test]
@@ -673,6 +750,20 @@ mod tests {
         .unwrap();
         assert_eq!(s.base_url, "https://staging.hcompany.ai/v1");
         assert_eq!(s.model, "holo3-1-35b-a3b");
+
+        let selected_myia = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "myia"),
+            ("MYIA_API_KEY", "myia-key"),
+            ("HOLO3_BASE_URL", "https://staging.hcompany.ai/v1"),
+            ("HOLO3_MODEL", "holo3-1-35b-a3b"),
+        ]))
+        .unwrap();
+        assert_eq!(selected_myia.provider.name, "myia");
+        assert_eq!(
+            selected_myia.base_url,
+            "https://api.medium.text-generation-webui.myia.io/v1"
+        );
+        assert_eq!(selected_myia.model, "swift-1.5-27b");
     }
 
     #[test]
@@ -820,7 +911,8 @@ mod tests {
             ("HOLO3_API_KEY", "holo-key"),
         ]))
         .unwrap();
-        // Blank provider → the default, not "unknown provider ``".
+        // Blank provider plus a legacy Holo3 key → the migration route, not
+        // "unknown provider ``".
         assert_eq!(s.provider.name, "holo3");
         // Blank base URL → the preset, not an empty endpoint.
         assert_eq!(s.base_url, "https://api.hcompany.ai/v1");

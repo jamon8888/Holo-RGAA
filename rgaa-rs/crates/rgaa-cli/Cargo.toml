@@ -25,3 +25,8 @@ tracing-subscriber = { workspace = true, features = ["json"] }
 tracing-appender = "0.2"
 reqwest = { workspace = true, features = ["stream"] }
 futures = { workspace = true }
+
+[dev-dependencies]
+rgaa-agent = { path = "../rgaa-agent" }
+rgaa-holo = { path = "../rgaa-holo" }
+tempfile = "3"

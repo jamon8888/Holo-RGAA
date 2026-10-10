@@ -23,6 +23,9 @@ pub struct AuditResponse {
     pub url: String,
     pub taux_global: f64,
     pub coverage_percent: f64,
+    pub automatic_verdict_coverage_percent: f64,
+    pub test_evidence_coverage_percent: f64,
+    pub verified_compliance_percent: f64,
     pub etat_conformite: String,
     pub passed: usize,
     pub failed: usize,
@@ -36,6 +39,9 @@ impl From<AuditResult> for AuditResponse {
             url: result.url,
             taux_global: result.taux_global,
             coverage_percent: result.coverage_percent,
+            automatic_verdict_coverage_percent: result.automatic_verdict_coverage_percent,
+            test_evidence_coverage_percent: result.test_evidence_coverage_percent,
+            verified_compliance_percent: result.verified_compliance_percent,
             etat_conformite: result.etat_conformite,
             passed: result.passed,
             failed: result.failed,
@@ -121,8 +127,12 @@ mod tests {
             overall_compliance: 83.33,
             taux_global: 83.33,
             coverage_percent: 56.6,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
             etat_conformite: "partielle".to_string(),
             duration_ms: 1000,
+            audit_complete: false,
         };
 
         let response = AuditResponse::from(result.clone());

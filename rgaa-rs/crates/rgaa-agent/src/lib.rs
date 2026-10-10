@@ -2,7 +2,7 @@
 //!
 //! This crate provides an agentic evaluator for RGAA IA-assistée criteria.
 //! It combines:
-//! - A single Holo3 model for criterion evaluation (configurable via `AgentConfig::model`)
+//! - A single configured LLM model for criterion evaluation (configurable via `AgentConfig::model`)
 //! - Token-bucket rate limiting to protect the API
 //! - LanceDB-backed conversation memory and vector retrieval (optional, feature "vector-store")
 //! - Structured prompts enriched with criterion definitions and WCAG references

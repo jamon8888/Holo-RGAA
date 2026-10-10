@@ -18,11 +18,20 @@ fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> Criteri
         status,
         violations: vec![],
         confidence: None,
+        raw_confidence: None,
         justification: None,
         source: "test".to_string(),
         citations: vec![],
         considered_sources: vec![],
         tests: vec![],
+        automated_verdict: None,
+        verdict_basis: Vec::new(),
+        evidence: Vec::new(),
+        confidence_calibration_version: None,
+        review_required: false,
+        review_reason: None,
+        verified_status: None,
+        review_events: Vec::new(),
     }
 }
 
@@ -131,8 +140,12 @@ fn build_audit_result(criteria: Vec<CriterionResult>) -> AuditResult {
         overall_compliance: compliance,
         taux_global,
         coverage_percent,
+        automatic_verdict_coverage_percent: 0.0,
+        test_evidence_coverage_percent: 0.0,
+        verified_compliance_percent: 0.0,
         etat_conformite,
         duration_ms: 0,
+        audit_complete: false,
     }
 }
 

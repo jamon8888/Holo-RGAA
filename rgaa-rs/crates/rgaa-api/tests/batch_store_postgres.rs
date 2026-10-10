@@ -23,8 +23,12 @@ fn audit(url: &str) -> AuditResult {
         overall_compliance: 77.0,
         taux_global: 77.0,
         coverage_percent: 56.6,
+        automatic_verdict_coverage_percent: 0.0,
+        test_evidence_coverage_percent: 0.0,
+        verified_compliance_percent: 0.0,
         etat_conformite: "partielle".to_string(),
         duration_ms: 1,
+        audit_complete: false,
     }
 }
 

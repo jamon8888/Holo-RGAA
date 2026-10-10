@@ -335,11 +335,20 @@ mod tests {
             status,
             violations: Vec::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: "test".to_string(),
             citations: Vec::new(),
             considered_sources: Vec::new(),
             tests: Vec::new(),
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 
@@ -365,8 +374,12 @@ mod tests {
             overall_compliance: 0.0,
             taux_global: 0.0,
             coverage_percent: 0.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
             etat_conformite: "non".to_string(),
             duration_ms: 0,
+            audit_complete: false,
         }
     }
 

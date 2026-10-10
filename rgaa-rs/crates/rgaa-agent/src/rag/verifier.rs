@@ -271,12 +271,21 @@ mod tests {
             classification: Classification::IaAssiste,
             status: CriterionStatus::Fail,
             violations: vec![],
-            confidence: Some(0.8),
+            confidence: None,
+            raw_confidence: Some(0.8),
             justification: Some("Image sans alt".into()),
             source: "agent".into(),
             citations: vec![],
             considered_sources: vec![],
             tests: vec![],
+            automated_verdict: None,
+            verdict_basis: Vec::new(),
+            evidence: Vec::new(),
+            confidence_calibration_version: None,
+            review_required: false,
+            review_reason: None,
+            verified_status: None,
+            review_events: Vec::new(),
         }
     }
 

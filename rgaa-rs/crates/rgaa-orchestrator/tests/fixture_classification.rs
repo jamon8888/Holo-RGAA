@@ -3,8 +3,8 @@
 //! CDN); skipped unless `RUN_E2E=1`.
 //!
 //! For every fixture a registry mechanism names:
-//! * a `-fail` fixture must make axe-core or a gap-fix probe emit a `Fail` for the
-//!   fixture's criterion;
+//! * where the mechanism declares `fail` as an outcome, a `-fail` fixture must make
+//!   axe-core or a gap-fix probe emit a `Fail` for the fixture's criterion;
 //! * a `-pass` fixture must not (for a `partial` mechanism "conforming" means "emits no
 //!   `fail`" — silence never counts as `pass`).
 //!
@@ -12,7 +12,7 @@
 //! fixture files is checked separately, without a browser, in
 //! `rgaa-test-corpus/tests/registry_invariants.rs`.
 
-use rgaa_core::{CriterionStatus, MechanismRegistry};
+use rgaa_core::{CriterionStatus, MechanismKind, MechanismRegistry};
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::{AxeMapper, GapFixRules};
 use std::collections::HashMap;
@@ -76,8 +76,21 @@ struct Case {
 fn cases() -> Vec<Case> {
     let mut out = Vec::new();
     for m in MechanismRegistry::builtin().mechanisms() {
+        // Site mechanisms are evaluated by the crawl-level comparator, not by
+        // axe/gap-fix on an isolated page. Their paired page observations are
+        // covered by `site_comparison` tests instead of this single-page harness.
+        if m.kind == MechanismKind::Site {
+            continue;
+        }
         for f in &m.fixtures {
             let expect_fail = f.ends_with("-fail");
+            // A review-only inventory can show a candidate, but by contract it
+            // cannot classify even a deliberately adverse single-page fixture.
+            // Its non-failing signal is checked through the normal `-pass` case;
+            // site mechanisms use the separate crawl-level comparator tests.
+            if expect_fail && !m.outcomes.contains(&rgaa_core::registry::Outcome::Fail) {
+                continue;
+            }
             if !expect_fail && !f.ends_with("-pass") {
                 continue;
             }
@@ -155,23 +168,40 @@ async fn registry_fixtures_are_classified_under_obscura() {
         let url = url_of(case);
         let axe_json = axe_by_url.remove(&url).unwrap_or_else(|| "[]".to_string());
         let mut statuses: Vec<CriterionStatus> = Vec::new();
-        if let Ok(axe) = AxeMapper::map(&axe_json) {
-            statuses.extend(axe.get(&case.criterion).map(|r| r.status.clone()));
+        let mut evidence = Vec::new();
+        match AxeMapper::map(&axe_json) {
+            Ok(axe) => {
+                if let Some(result) = axe.get(&case.criterion) {
+                    statuses.push(result.status.clone());
+                    evidence.push(format!(
+                        "axe: {:?} {:?}",
+                        result.status, result.justification
+                    ));
+                } else {
+                    evidence.push(format!(
+                        "axe had no mapped result; raw violations: {axe_json}"
+                    ));
+                }
+            }
+            Err(error) => evidence.push(format!("axe parse error: {error}; raw: {axe_json}")),
         }
         let gap_js = gap_by_url.remove(&url).unwrap_or_default();
-        statuses.extend(
-            GapFixRules::parse_results(&gap_js)
-                .get(&case.criterion)
-                .map(|r| r.status.clone()),
-        );
+        if let Some(result) = GapFixRules::parse_results(&gap_js).get(&case.criterion) {
+            statuses.push(result.status.clone());
+            evidence.push(format!(
+                "gap-fix: {:?} {:?}",
+                result.status, result.justification
+            ));
+        }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
         if failed != case.expect_fail {
             wrong.push(format!(
-                "{} / {}: expected {}, mechanisms said {:?}",
+                "{} / {}: expected {}, mechanisms said {:?} ({})",
                 case.mechanism,
                 case.fixture,
                 if case.expect_fail { "fail" } else { "no fail" },
-                statuses
+                statuses,
+                evidence.join("; ")
             ));
         }
     }

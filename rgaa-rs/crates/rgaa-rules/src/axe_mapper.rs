@@ -40,11 +40,20 @@ impl AxeMapper {
                     status: CriterionStatus::Pass,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: None,
                     source: "axe-core".to_string(),
                     citations: vec![],
                     considered_sources: vec![],
                     tests: vec![],
+                    automated_verdict: None,
+                    verdict_basis: Vec::new(),
+                    evidence: Vec::new(),
+                    confidence_calibration_version: None,
+                    review_required: false,
+                    review_reason: None,
+                    verified_status: None,
+                    review_events: Vec::new(),
                 },
             );
         }
@@ -65,6 +74,7 @@ impl AxeMapper {
                         status: CriterionStatus::Fail,
                         violations: vec![],
                         confidence: None,
+                        raw_confidence: None,
                         justification: Some(
                             "Partial axe coverage: a violation was found, but axe does not \
                              decide every test of this criterion"
@@ -74,6 +84,14 @@ impl AxeMapper {
                         citations: vec![],
                         considered_sources: vec![],
                         tests: vec![],
+                        automated_verdict: None,
+                        verdict_basis: Vec::new(),
+                        evidence: Vec::new(),
+                        confidence_calibration_version: None,
+                        review_required: false,
+                        review_reason: None,
+                        verified_status: None,
+                        review_events: Vec::new(),
                     });
                 result.status = CriterionStatus::Fail;
                 result.violations.push(Violation {

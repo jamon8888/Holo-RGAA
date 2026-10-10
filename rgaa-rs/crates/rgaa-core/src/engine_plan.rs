@@ -38,6 +38,14 @@ pub struct EnginePlan;
 static PLAN: OnceLock<HashMap<String, EnginePlanEntry>> = OnceLock::new();
 
 impl EnginePlan {
+    /// The executable route for a canonical catalog test, including its estimate fallback.
+    pub fn route_test(
+        criterion_id: &str,
+        test_key: &str,
+    ) -> Option<&'static crate::test_plan::TestRoute> {
+        crate::test_plan::TestRoutePlan::builtin().for_test(criterion_id, test_key)
+    }
+
     fn map() -> &'static HashMap<String, EnginePlanEntry> {
         PLAN.get_or_init(|| {
             let entries: Vec<EnginePlanEntry> = serde_json::from_str(ENGINE_PLAN_JSON)

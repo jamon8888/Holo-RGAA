@@ -808,6 +808,7 @@ async fn audit_discovered_urls(
                     status: site_result.status.clone(),
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(format!(
                         "{}; sample_complete={}, sampled_pages={}, failed_pages={}",
                         site_result.details,
@@ -880,6 +881,27 @@ async fn audit_discovered_urls(
     })
 }
 
+#[cfg(test)]
+fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
+    let settled: std::collections::HashSet<&str> = prior_results
+        .iter()
+        .filter(|result| {
+            matches!(
+                result.status,
+                CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+            )
+        })
+        .map(|result| result.criterion_id.as_str())
+        .collect();
+
+    RgaaCriteria::all()
+        .iter()
+        .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
+        .filter(|criterion| !settled.contains(criterion.id))
+        .cloned()
+        .collect()
+}
+
 fn failed_page_result(url: &str, error: &str) -> PageResult {
     let criteria = RgaaCriteria::all()
         .iter()
@@ -890,6 +912,7 @@ fn failed_page_result(url: &str, error: &str) -> PageResult {
             status: CriterionStatus::NotTested,
             violations: vec![],
             confidence: None,
+            raw_confidence: None,
             justification: Some(format!("Page audit failed: {error}")),
             source: "audit-error".to_string(),
             citations: vec![],
@@ -1304,6 +1327,7 @@ async fn audit_one(
                     status: manual_status(),
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some("Manual verification required".into()),
                     source: "manual".into(),
                     citations: vec![],
@@ -1345,6 +1369,7 @@ async fn audit_one(
                     status,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(justification),
                     source,
                     citations: vec![],
@@ -1449,6 +1474,7 @@ mod routing_tests {
             status,
             violations: Vec::<Violation>::new(),
             confidence: None,
+            raw_confidence: None,
             justification: None,
             source: source.to_string(),
             citations: vec![],
@@ -1788,25 +1814,5 @@ mod routing_tests {
         );
         assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
         assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
-    }
-
-    fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
-        let settled: std::collections::HashSet<&str> = prior_results
-            .iter()
-            .filter(|result| {
-                matches!(
-                    result.status,
-                    CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
-                )
-            })
-            .map(|result| result.criterion_id.as_str())
-            .collect();
-
-        RgaaCriteria::all()
-            .iter()
-            .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
-            .filter(|criterion| !settled.contains(criterion.id))
-            .cloned()
-            .collect()
     }
 }

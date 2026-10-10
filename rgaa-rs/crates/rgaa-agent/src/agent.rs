@@ -94,7 +94,8 @@ fn map_batch_responses(
                 classification: criterion.classification,
                 status: verdict,
                 violations: vec![],
-                confidence: Some(response.confidence),
+                confidence: None,
+                raw_confidence: Some(response.confidence),
                 justification: Some(response.justification.clone()),
                 source: "agent-batch".to_string(),
                 citations: vec![],
@@ -117,6 +118,7 @@ fn map_batch_responses(
                 status: CriterionStatus::NeedsReview,
                 violations: vec![],
                 confidence: None,
+                raw_confidence: None,
                 justification: Some(
                     "Holo batch response has no unique answer for this criterion".to_string(),
                 ),
@@ -155,6 +157,7 @@ fn unresolved_batch_results(
                     status: CriterionStatus::NotTested,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(reason.to_string()),
                     source: "agent-error".to_string(),
                     citations: vec![],
@@ -292,15 +295,7 @@ impl RgaaAgent {
                     match self.prompt_measured(tier, &prompt, &ids).await {
                         Ok(response) => {
                             self.record_success();
-                            // Same contract as the batch path below: models wrap
-                            // the array in a ```json fence or a line of prose, so
-                            // parse the extracted array first and fall back to the
-                            // raw reply. Without this a fenced reply fails the
-                            // whole batch on ordinary provider output, not only
-                            // on an outage, and every criterion in it becomes
-                            // agent-estimate-incomplete with no verdict.
-                            let json = extract_json_array(&response).unwrap_or(&response);
-                            map_automatic_response(&batch, json)
+                            map_automatic_response(&batch, &response)
                         }
                         Err(error) => {
                             self.record_failure();
@@ -543,6 +538,7 @@ impl RgaaAgent {
                 status: CriterionStatus::Error,
                 violations: vec![],
                 confidence: None,
+                raw_confidence: None,
                 justification: Some(
                     "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
                 ),
@@ -584,7 +580,8 @@ impl RgaaAgent {
                     classification: Classification::IaAssiste,
                     status,
                     violations: vec![],
-                    confidence: Some(parsed.confidence),
+                    confidence: None,
+                    raw_confidence: Some(parsed.confidence),
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
                     citations: vec![],
@@ -616,6 +613,7 @@ impl RgaaAgent {
                     status: CriterionStatus::NeedsReview,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
                     citations: vec![],
@@ -816,6 +814,7 @@ impl RgaaAgent {
                 status: CriterionStatus::Error,
                 violations: vec![],
                 confidence: None,
+                raw_confidence: None,
                 justification: Some(
                     "Circuit breaker open: too many consecutive Holo3 failures".to_string(),
                 ),
@@ -857,7 +856,8 @@ impl RgaaAgent {
                     classification: criterion.classification,
                     status: CriterionStatus::NeedsReview,
                     violations: vec![],
-                    confidence: Some(parsed.confidence),
+                    confidence: None,
+                    raw_confidence: Some(parsed.confidence),
                     justification: Some(parsed.justification),
                     source: "agent".to_string(),
                     citations: vec![],
@@ -889,6 +889,7 @@ impl RgaaAgent {
                     status: CriterionStatus::NeedsReview,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: Some(format!("Erreur: {e}")),
                     source: "agent-error".to_string(),
                     citations: vec![],

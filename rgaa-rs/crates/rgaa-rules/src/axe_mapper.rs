@@ -40,6 +40,7 @@ impl AxeMapper {
                     status: CriterionStatus::Pass,
                     violations: vec![],
                     confidence: None,
+                    raw_confidence: None,
                     justification: None,
                     source: "axe-core".to_string(),
                     citations: vec![],
@@ -73,6 +74,7 @@ impl AxeMapper {
                         status: CriterionStatus::Fail,
                         violations: vec![],
                         confidence: None,
+                        raw_confidence: None,
                         justification: Some(
                             "Partial axe coverage: a violation was found, but axe does not \
                              decide every test of this criterion"

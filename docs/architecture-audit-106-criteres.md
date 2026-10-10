@@ -112,7 +112,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 1.3 | 9 | Pour chaque image porteuse d’information ayant une alternative textuel | Holo | — | oui | **Couvert** |  |
 | 1.4 | 7 | Pour chaque image utilisée comme CAPTCHA ou comme image-test, ayant un | Holo | — | oui | **Couvert** |  |
 | 1.5 | 2 | Pour chaque image utilisée comme CAPTCHA, une solution d’accès alterna | Holo | — | oui | **Couvert** |  |
-| 1.6 | 10 | Chaque image porteuse d’information a-t-elle, si nécessaire, une descr | Déterministe | — | oui | **Non testé** |  |
+| 1.6 | 10 | Chaque image porteuse d’information a-t-elle, si nécessaire, une descr | Déterministe | — | oui | **Sonde partielle** |  |
 | 1.7 | 6 | Pour chaque image porteuse d’information ayant une description détaill | Holo | — | oui | **Couvert** |  |
 | 1.8 | 6 | Chaque image texte porteuse d’information, en l’absence d’un mécanisme | Holo | — | oui | **Couvert** |  |
 | 1.9 | 5 | Chaque légende d’image est-elle, si nécessaire, correctement reliée à  | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
@@ -120,7 +120,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 2.2 | 1 | Pour chaque cadre ayant un titre de cadre, ce titre de cadre est-il pe | Holo | — | oui | **Couvert** |  |
 | 3.1 | 6 | Dans chaque page web, l’information ne doit pas être donnée uniquement | Holo | — | oui | **Couvert** |  |
 | 3.2 | 5 | Dans chaque page web, le contraste entre la couleur du texte et la cou | axe-core | axe:complet, sonde JS:complet | — | **Couvert** |  |
-| 3.3 | 4 | Dans chaque page web, les couleurs utilisées dans les composants d’int | Déterministe | axe:partiel | — | **Couvert** |  |
+| 3.3 | 4 | Dans chaque page web, les couleurs utilisées dans les composants d’int | Déterministe | axe:partiel | — | **Sonde partielle** |  |
 | 4.1 | 3 | Chaque média temporel pré-enregistré a-t-il, si nécessaire, une transc | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
 | 4.2 | 3 | Pour chaque média temporel pré-enregistré ayant une transcription text | Humain | — | oui | **Manuel** |  |
 | 4.3 | 2 | Chaque média temporel synchronisé pré-enregistré a-t-il, si nécessaire | axe-core | axe:complet | oui | **Couvert** |  |
@@ -132,8 +132,8 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 4.9 | 1 | Pour chaque média non temporel ayant une alternative, cette alternativ | Holo | — | oui | **Couvert** |  |
 | 4.10 | 1 | Chaque son déclenché automatiquement est-il contrôlable par l’utilisat | Déterministe | axe:partiel | — | **Couvert** |  |
 | 4.11 | 3 | La consultation de chaque média temporel est-elle, si nécessaire, cont | Déterministe | sonde JS:partiel | — | **Couvert** |  |
-| 4.12 | 2 | La consultation de chaque média non temporel est-elle contrôlable par  | Déterministe | — | — | **Non testé** |  |
-| 4.13 | 2 | Chaque média temporel et non temporel est-il compatible avec les techn | Déterministe | — | — | **Non testé** |  |
+| 4.12 | 2 | La consultation de chaque média non temporel est-elle contrôlable par  | Déterministe | — | — | **Sonde partielle** |  |
+| 4.13 | 2 | Chaque média temporel et non temporel est-il compatible avec les techn | Déterministe | — | — | **Sonde partielle** |  |
 | 5.1 | 1 | Chaque tableau de données complexe a-t-il un résumé ? | Déterministe | sonde JS:partiel | — | **Couvert** |  |
 | 5.2 | 1 | Pour chaque tableau de données complexe ayant un résumé, celui-ci est- | Holo | — | oui | **Couvert** |  |
 | 5.3 | 1 | Pour chaque tableau de mise en forme, le contenu linéarisé reste-t-il  | Holo | — | oui | **Couvert** |  |
@@ -155,7 +155,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 8.4 | 1 | Pour chaque page web ayant une langue par défaut, le code de langue es | Holo | axe:partiel | oui | **Couvert** |  |
 | 8.5 | 1 | Chaque page web a-t-elle un titre de page ? | axe-core | sonde JS:complet, axe:complet | — | **Couvert** |  |
 | 8.6 | 1 | Pour chaque page web ayant un titre de page, ce titre est-il pertinent | Holo | — | oui | **Couvert** |  |
-| 8.7 | 1 | Dans chaque page web, chaque changement de langue est-il indiqué dans  | Déterministe | — | oui | **Non testé** |  |
+| 8.7 | 1 | Dans chaque page web, chaque changement de langue est-il indiqué dans  | Déterministe | — | oui | **Sonde partielle** |  |
 | 8.8 | 1 | Dans chaque page web, le code de langue de chaque changement de langue | Holo | axe:partiel | oui | **Couvert** |  |
 | 8.9 | 1 | Dans chaque page web, les balises ne doivent pas être utilisées unique | Déterministe | sonde JS:partiel | — | **Couvert** |  |
 | 8.10 | 2 | Dans chaque page web, les changements du sens de lecture sont-ils sign | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
@@ -171,50 +171,50 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 10.6 | 1 | Dans chaque page web, chaque lien dont la nature n’est pas évidente es | axe-core | axe:complet | oui | **Couvert** |  |
 | 10.7 | 1 | Dans chaque page web, pour chaque élément recevant le focus, la prise  | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
 | 10.8 | 1 | Pour chaque page web, les contenus cachés ont-ils vocation à être igno | axe-core | axe:complet | — | **Couvert** |  |
-| 10.9 | 4 | Dans chaque page web, l’information ne doit pas être donnée uniquement | Holo | — | — | **Non testé** |  |
+| 10.9 | 4 | Dans chaque page web, l’information ne doit pas être donnée uniquement | Holo | — | — | **Sonde partielle** |  |
 | 10.10 | 4 | Dans chaque page web, l’information ne doit pas être donnée par la for | Holo | — | oui | **Couvert** |  |
 | 10.11 | 2 | Pour chaque page web, les contenus peuvent-ils être présentés sans per | Déterministe | axe:partiel | — | **Couvert** |  |
-| 10.12 | 1 | Dans chaque page web, les propriétés d’espacement du texte peuvent-ell | Déterministe | — | — | **Non testé** |  |
-| 10.13 | 3 | Dans chaque page web, les contenus additionnels apparaissant à la pris | Déterministe | — | oui | **Non testé** |  |
+| 10.12 | 1 | Dans chaque page web, les propriétés d’espacement du texte peuvent-ell | Déterministe | — | — | **Sonde partielle** |  |
+| 10.13 | 3 | Dans chaque page web, les contenus additionnels apparaissant à la pris | Déterministe | — | oui | **Sonde partielle** |  |
 | 10.14 | 2 | Dans chaque page web, les contenus additionnels apparaissant via les s | Déterministe | sonde JS:complet | — | **Couvert** |  |
 | 11.1 | 3 | Chaque champ de formulaire a-t-il une étiquette ? | axe-core | axe:complet, sonde JS:complet | oui | **Couvert** |  |
 | 11.2 | 6 | Chaque étiquette associée à un champ de formulaire est-elle pertinente | Holo | axe:partiel | oui | **Couvert** |  |
-| 11.3 | 2 | Dans chaque formulaire, chaque étiquette associée à un champ de formul | Déterministe | — | oui | **Non testé** |  |
+| 11.3 | 2 | Dans chaque formulaire, chaque étiquette associée à un champ de formul | Déterministe | — | oui | **Sonde partielle** |  |
 | 11.4 | 3 | Dans chaque formulaire, chaque étiquette de champ et son champ associé | Déterministe | sonde JS:complet | oui | **Couvert** |  |
 | 11.5 | 1 | Dans chaque formulaire, les champs de même nature sont-ils regroupés,  | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
 | 11.6 | 1 | Dans chaque formulaire, chaque regroupement de champs de même nature a | Déterministe | sonde JS:partiel | — | **Couvert** |  |
 | 11.7 | 1 | Dans chaque formulaire, chaque légende associée à un regroupement de c | Holo | — | oui | **Couvert** |  |
-| 11.8 | 3 | Dans chaque formulaire, les items de même nature d’une liste de choix  | Déterministe | — | oui | **Non testé** |  |
+| 11.8 | 3 | Dans chaque formulaire, les items de même nature d’une liste de choix  | Déterministe | — | oui | **Sonde partielle** |  |
 | 11.9 | 2 | Dans chaque formulaire, l’intitulé de chaque bouton est-il pertinent ( | Holo | axe:partiel | oui | **Couvert** |  |
 | 11.10 | 7 | Dans chaque formulaire, le contrôle de saisie est-il utilisé de manièr | Holo | — | oui | **Couvert** |  |
-| 11.11 | 2 | Dans chaque formulaire, le contrôle de saisie est-il accompagné, si né | Holo | — | — | **Non testé** |  |
+| 11.11 | 2 | Dans chaque formulaire, le contrôle de saisie est-il accompagné, si né | Holo | — | — | **Sonde partielle** |  |
 | 11.12 | 2 | Pour chaque formulaire qui modifie ou supprime des données, ou qui tr | Humain | — | oui | **Manuel** |  |
 | 11.13 | 1 | La finalité d’un champ de saisie peut-elle être déduite pour faciliter | Holo | axe:partiel | oui | **Couvert** |  |
-| 12.1 | 1 | Chaque ensemble de pages dispose-t-il de deux systèmes de navigation d | Déterministe | axe:partiel | — | **Couvert** | #269 |
-| 12.2 | 1 | Dans chaque ensemble de pages, le menu et les barres de navigation son | Déterministe | — | — | **Non testé** | #270 |
+| 12.1 | 1 | Chaque ensemble de pages dispose-t-il de deux systèmes de navigation d | Déterministe | axe:partiel | — | **Sonde partielle** | #269 |
+| 12.2 | 1 | Dans chaque ensemble de pages, le menu et les barres de navigation son | Déterministe | — | — | **Sonde partielle** | #270 |
 | 12.3 | 3 | La page « plan du site » est-elle pertinente ? | Holo | — | oui | **Couvert** | #271 |
-| 12.4 | 3 | Dans chaque ensemble de pages, la page « plan du site » est-elle acces | Déterministe | axe:partiel | — | **Couvert** | #269 |
-| 12.5 | 3 | Dans chaque ensemble de pages, le moteur de recherche est-il atteignab | Déterministe | — | — | **Non testé** | #270 |
+| 12.4 | 3 | Dans chaque ensemble de pages, la page « plan du site » est-elle acces | Déterministe | axe:partiel | — | **Sonde partielle** | #269 |
+| 12.5 | 3 | Dans chaque ensemble de pages, le moteur de recherche est-il atteignab | Déterministe | — | — | **Sonde partielle** | #270 |
 | 12.6 | 1 | Les zones de regroupement de contenus présentes dans plusieurs pages w | Déterministe | axe:partiel | oui | **Couvert** |  |
 | 12.7 | 2 | Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone  | axe-core | axe:complet, sonde JS:complet | oui | **Couvert** |  |
-| 12.8 | 2 | Dans chaque page web, l’ordre de tabulation est-il cohérent ? | Déterministe | — | oui | **Non testé** | #263 #279 |
-| 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | — | — | **Non testé** | #264 |
-| 12.10 | 1 | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule  | Déterministe | — | — | **Non testé** | #272 |
-| 12.11 | 1 | Dans chaque page web, les contenus additionnels apparaissant au survol | Déterministe | — | — | **Non testé** |  |
+| 12.8 | 2 | Dans chaque page web, l’ordre de tabulation est-il cohérent ? | Déterministe | — | oui | **Sonde partielle** | #263 #279 |
+| 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | — | — | **Sonde partielle** | #264 |
+| 12.10 | 1 | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule  | Déterministe | — | — | **Sonde partielle** | #272 |
+| 12.11 | 1 | Dans chaque page web, les contenus additionnels apparaissant au survol | Déterministe | — | — | **Sonde partielle** |  |
 | 13.1 | 4 | Pour chaque page web, l’utilisateur a-t-il le contrôle de chaque limit | Humain | axe:partiel | — | **Manuel** | #265 |
 | 13.2 | 1 | Dans chaque page web, l’ouverture d’une nouvelle fenêtre ne doit pas ê | Déterministe | sonde JS:partiel | — | **Couvert** | #266 |
-| 13.3 | 1 | Dans chaque page web, chaque document bureautique en téléchargement po | Déterministe | — | — | **Non testé** |  |
+| 13.3 | 1 | Dans chaque page web, chaque document bureautique en téléchargement po | Déterministe | — | — | **Sonde partielle** |  |
 | 13.4 | 1 | Pour chaque document bureautique ayant une version accessible, cette v | Humain | — | oui | **Manuel** |  |
 | 13.5 | 1 | Dans chaque page web, chaque contenu cryptique (art ASCII, émoticône,  | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
 | 13.6 | 1 | Dans chaque page web, pour chaque contenu cryptique (art ASCII, émotic | Holo | — | oui | **Couvert** |  |
 | 13.7 | 3 | Dans chaque page web, les changements brusques de luminosité ou les ef | Humain | — | — | **Manuel** | #273 |
 | 13.8 | 2 | Dans chaque page web, chaque contenu en mouvement ou clignotant est-il | Déterministe | axe:partiel | — | **Couvert** | #267 |
 | 13.9 | 1 | Dans chaque page web, le contenu proposé est-il consultable quelle que | Déterministe | axe:partiel | — | **Couvert** | #268 |
-| 13.10 | 2 | Dans chaque page web, les fonctionnalités utilisables ou disponibles a | Déterministe | — | — | **Non testé** | #272 |
-| 13.11 | 1 | Dans chaque page web, les actions déclenchées au moyen d’un dispositif | Déterministe | — | — | **Non testé** | #272 |
-| 13.12 | 3 | Dans chaque page web, les fonctionnalités qui impliquent un mouvement  | Déterministe | — | — | **Non testé** | #272 |
+| 13.10 | 2 | Dans chaque page web, les fonctionnalités utilisables ou disponibles a | Déterministe | — | — | **Sonde partielle** | #272 |
+| 13.11 | 1 | Dans chaque page web, les actions déclenchées au moyen d’un dispositif | Déterministe | — | — | **Sonde partielle** | #272 |
+| 13.12 | 3 | Dans chaque page web, les fonctionnalités qui impliquent un mouvement  | Déterministe | — | — | **Sonde partielle** | #272 |
 
-**Totaux :** 78 couverts · 20 non testés · 8 manuels (4.2, 4.4, 4.6, 7.5, 11.12, 13.1, 13.4, 13.7). Moteurs prévus : axe-core 13 · déterministe 53 · Holo 32 · humain 8.
+**État après raccordement :** 75 critères disposent des mécanismes décrits dans l’audit initial ; les 23 critères ci-dessous disposent maintenant d’une sonde partielle ou d’une comparaison site raccordée. Ces 23 résultats restent `Fail` ou `NeedsReview` : aucun mécanisme incomplet ne peut les passer. Les 8 critères humains restent manuels (4.2, 4.4, 4.6, 7.5, 11.12, 13.1, 13.4, 13.7). Moteurs principaux : axe-core 13 · déterministe 53 · Holo 32 · humain 8.
 
 ## 5. Historique : ce qui a déjà été fait (PR mergées)
 
@@ -241,21 +241,18 @@ Neuf critères déclaraient `axe-native / complete` alors que la règle ne véri
 `document-title` à 8.5 et ajouté `button-name` pour 11.9. Reste la règle de fond : **un mécanisme `partial` ne peut
 jamais émettre `Pass`** (invariant du registre). Les critères 10.2 et 11.4 gardent leur sonde JS.
 
-### 6.2 Les 20 critères non testés
+### 6.2 Les 23 critères désormais sondés partiellement
 
-1.6, 4.12, 4.13, 8.7, 10.9, 10.12, 10.13, 11.3, 11.8, 11.11, 12.2, 12.5, 12.8, 12.9, 12.10, 12.11, 13.3, 13.10, 13.11, 13.12.
+1.6, 3.3, 4.12, 4.13, 8.7, 10.9, 10.12, 10.13, 11.3, 11.8, 11.11, 12.1, 12.2, 12.4, 12.5, 12.8, 12.9, 12.10, 12.11, 13.3, 13.10, 13.11, 13.12.
 
-Par nature de ce qui manque (les 17 sondes DOM statiques de #280 — 8.1, 8.9, 8.10, 9.4, 5.1, 5.8, 4.1, 4.5, 4.7, 4.8, 4.11, 7.4, 10.5, 10.7, 11.6, 13.2, 13.5 — sont enregistrées avec leurs fixtures ; elles sont partielles : elles prouvent des échecs, jamais la conformité) :
+Les résultats uniformes ou sans défaut détecté restent à revoir : le rendu exact, la pertinence sémantique, les exceptions RGAA, la compatibilité avec les technologies d’assistance et l’exhaustivité d’un crawl ne sont pas établis par ces signaux.
 
-| Besoin (certains critères sont déjà couverts partiellement, ex. 10.7, 10.4, 3.3 ; le besoin est la couverture complète) | Critères | Suivi |
+| Contrôle raccordé | Critères | Limite du contrôle |
 |---|---|---|
-| Interaction clavier / pointeur (Obscura `press_key`, `get_tab_order`) | 12.9 piège clavier, 12.8 ordre de tabulation, 4.12, 12.11, 10.13, 10.7 | #264, #263/#279 |
-| Inventaire des listeners (hook `addEventListener`) | 12.10, 13.10, 13.11, 13.12 | #272 |
-| Mise en page réelle (reflow, espacement du texte, contraste des composants) | 10.4, 10.11, 10.12, 3.3 | #194 (mode C), spec §3 |
-| Niveau **site** (plusieurs pages) | 12.1, 12.2, 12.4, 12.5, 12.3 (liens du plan en HEAD) | #269, #270, #271 |
-| Médias | 13.7 (flashs), 4.x | #273 |
-| Détection de langue / validateur | 8.7, 8.4/8.8 (`whatlang`), 8.2 (validateur Nu, optionnel) | spec §1, §7 |
-| Jugement | 1.6, 10.9, 11.3, 11.8, 11.11, 4.13 | Holo, après détection déterministe |
+| Sondes DOM, média et formulaire | 1.6, 3.3, 4.13, 8.7, 10.9, 11.3, 11.8, 11.11, 13.3 | indices candidats seulement ; analyse visuelle et sémantique humaine/Holo encore requise |
+| Interactions bornées Obscura | 4.12, 10.12, 10.13, 12.8, 12.9, 12.10, 12.11, 13.10, 13.11, 13.12 | Tab limité pour 12.8/12.9 ; autres gestes, annulation, persistances et équivalences restent en `NeedsReview` |
+| Comparaison du même échantillon multi-pages | 12.1, 12.2, 12.4, 12.5 | les signaux contradictoires peuvent échouer ; un échantillon incomplet ou cohérent ne peut pas établir un `Pass` |
+| Métadonnées de médias | 4.12, 4.13 | le test réel avec technologie d’assistance reste manuel |
 
 ### 6.3 Chantiers transverses
 
@@ -271,8 +268,8 @@ Par nature de ce qui manque (les 17 sondes DOM statiques de #280 — 8.1, 8.9, 8
 
 1. Vérifier sur le job E2E Obscura que les fixtures de #280 (dont 8.5 et 11.9 pour axe) se classent correctement sous
    le vrai navigateur ; c'est leur seule validation hors jsdom.
-2. Sondes comportementales Obscura (clavier : 12.9, 12.8, 4.12, 12.11) puis inventaire de listeners (#272).
-3. Niveau site (#269) puis 12.2, 12.5 ; 12.1, 12.3, 12.4 et 13.3 selon #270, #271.
+2. Étendre les sondes comportementales Obscura pour couvrir les gestes non destructifs, le survol, l’annulation et les alternatives tactiles sans déclencher d’action métier.
+3. Remplacer les signatures heuristiques inter-pages par une observation validée des composants et destinations, sans convertir un crawl échantillonné en preuve de conformité de tout le site.
 4. Mesures dépendant de la mise en page (preuve Obscura vs Chrome).
 5. Routage par moteur (`EnginePlan::primary`) et coûts Holo : change les verdicts, passe par #180 et #183.
 

@@ -831,3 +831,256 @@ fixtures  = ["11.9-button-name-pass", "11.9-button-name-fail"]
 legacy    = false
 axe_rules = ["button-name", "input-button-name"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json)", validated_by = "rule id cross-checked against axe_rules.json", validated_at = "2026-10-05", notes = "button-name is tagged RGAA-11.9.1 by axe-core; catches an empty name, not a pertinent one." }
+
+[[mechanism]]
+id        = "probe-1-6-long-description-candidates"
+criterion = "1.6"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["1.6-long-description-pass", "1.6-long-description-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-3-3-graphic-contrast"
+criterion = "3.3"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["3.3-graphic-contrast-pass", "3.3-graphic-contrast-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-8-7-language-change-candidates"
+criterion = "8.7"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["8.7-language-change-pass", "8.7-language-change-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-11-3-visible-accessible-labels"
+criterion = "11.3"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["11.3-label-match-pass", "11.3-label-match-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-11-8-list-grouping"
+criterion = "11.8"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["11.8-list-groups-pass", "11.8-list-groups-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-3-document-download-inventory"
+criterion = "13.3"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.3-document-download-pass", "13.3-document-download-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-12-nontemporal-keyboard-control"
+criterion = "4.12"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["4.12-keyboard-control-pass", "4.12-keyboard-control-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-4-13-media-accessibility-inventory"
+criterion = "4.13"
+kind      = "media-analysis"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["4.13-media-accessibility-pass", "4.13-media-accessibility-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-9-visual-cue-inventory"
+criterion = "10.9"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["10.9-visual-cues-pass", "10.9-visual-cues-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-12-text-spacing-override"
+criterion = "10.12"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["10.12-spacing-pass", "10.12-spacing-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-13-focus-hover-disclosure"
+criterion = "10.13"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["10.13-disclosure-pass", "10.13-disclosure-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-11-11-form-validation-guidance"
+criterion = "11.11"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["11.11-validation-guidance-pass", "11.11-validation-guidance-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-12-8-tab-order"
+criterion = "12.8"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["12.8-tab-order-pass", "12.8-tab-order-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-12-9-keyboard-trap"
+criterion = "12.9"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["12.9-keyboard-trap-pass", "12.9-keyboard-trap-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-12-10-single-key-shortcuts"
+criterion = "12.10"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["12.10-shortcuts-pass", "12.10-shortcuts-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-12-11-supplemental-keyboard-access"
+criterion = "12.11"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["12.11-keyboard-access-pass", "12.11-keyboard-access-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-10-gesture-alternatives"
+criterion = "13.10"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.10-gesture-alternative-pass", "13.10-gesture-alternative-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-11-pointer-cancellation"
+criterion = "13.11"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.11-pointer-cancel-pass", "13.11-pointer-cancel-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-12-motion-alternative"
+criterion = "13.12"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.12-motion-alternative-pass", "13.12-motion-alternative-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "site-12-1-navigation-systems"
+criterion = "12.1"
+kind      = "site"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["12.1-site-navigation-pass", "12.1-site-navigation-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "site-12-2-navigation-position"
+criterion = "12.2"
+kind      = "site"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["12.2-site-position-pass", "12.2-site-position-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "site-12-4-sitemap-access"
+criterion = "12.4"
+kind      = "site"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["12.4-site-sitemap-pass", "12.4-site-sitemap-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "site-12-5-search-access"
+criterion = "12.5"
+kind      = "site"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["12.5-site-search-pass", "12.5-site-search-fail"]
+legacy    = false

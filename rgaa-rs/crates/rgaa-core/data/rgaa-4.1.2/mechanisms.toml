@@ -620,13 +620,35 @@ fixtures  = []
 legacy    = true
 
 [[mechanism]]
+id        = "probe-1-7-description-relevance"
+criterion = "1.7"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["1.7-image-description-pass", "1.7-image-description-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-7-2-script-alternative"
+criterion = "7.2"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["7.2-script-alternative-pass", "7.2-script-alternative-fail"]
+legacy    = false
+
+[[mechanism]]
 id        = "probe-8-1"
 criterion = "8.1"
 kind      = "js-static"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-outcomes  = ["fail"]
+outcomes  = ["fail", "review"]
 fixtures  = ["8.1-doctype-pass", "8.1-doctype-fail"]
 legacy    = false
 
@@ -637,7 +659,7 @@ kind      = "js-static"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-outcomes  = ["fail"]
+outcomes  = ["fail", "review"]
 fixtures  = ["8.9-presentational-tags-pass", "8.9-presentational-tags-fail"]
 legacy    = false
 
@@ -648,7 +670,7 @@ kind      = "js-static"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-outcomes  = ["fail"]
+outcomes  = ["fail", "review"]
 fixtures  = ["8.10-reading-direction-pass", "8.10-reading-direction-fail"]
 legacy    = false
 
@@ -659,8 +681,85 @@ kind      = "js-static"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-outcomes  = ["fail"]
+outcomes  = ["review"]
 fixtures  = ["9.4-quotation-pass", "9.4-quotation-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-7-3"
+criterion = "7.3"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["7.3-scripted-interaction-pass", "7.3-scripted-interaction-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-4"
+criterion = "10.4"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["fail", "review"]
+fixtures  = ["10.4-text-resize-pass", "10.4-text-resize-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-10-11"
+criterion = "10.11"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["10.11-reflow-pass", "10.11-reflow-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-1"
+criterion = "13.1"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.1-time-limits-pass", "13.1-time-limits-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-7"
+criterion = "13.7"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.7-flashes-pass", "13.7-flashes-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-8"
+criterion = "13.8"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.8-movement-pass", "13.8-movement-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-9"
+criterion = "13.9"
+kind      = "js-static"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["13.9-orientation-pass", "13.9-orientation-fail"]
 legacy    = false
 
 [[mechanism]]
@@ -791,7 +890,7 @@ kind      = "js-static"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-outcomes  = ["fail"]
+outcomes  = ["review"]
 fixtures  = ["13.2-new-window-warning-pass", "13.2-new-window-warning-fail"]
 legacy    = false
 

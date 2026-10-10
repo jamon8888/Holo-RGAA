@@ -2,19 +2,22 @@
 //! deterministic engine but that had no mechanism (see
 //! `docs/research/criteres-traites-vs-non-testes.md`).
 //!
-//! Every snippet here is **partial**: it may report a violation (which stands as
-//! evidence) but a clean run never yields a criterion-level `Pass` — see
-//! `GapFixRules::covers_whole_criterion`. Heuristics are written to prefer silence
-//! over a false `Fail`.
+//! Coverage is declared per criterion in `mechanisms.toml`; clean partial probes
+//! cannot produce a criterion-level `Pass` (`GapFixRules::covers_whole_criterion`).
+//! Triage probes return `review` on clean or ambiguous runs so the report
+//! distinguishes an executed control from a criterion that was not examined.
 
 pub(crate) const SNIPPETS: &[(&str, &str)] = &[
-    // 8.1: no doctype in the document.
+    // 8.1: document type declaration. A present doctype does not prove that the
+    // source conforms to the HTML syntax rules, so a clean result needs review.
     (
         "8.1",
         r#"
         (() => {
             const bad = document.doctype ? 0 : 1;
-            return JSON.stringify({ pass: bad === 0, details: bad ? 'page has no doctype' : 'doctype present', nodes: bad });
+            return JSON.stringify(bad
+                ? { outcome: 'fail', details: 'page has no document type declaration', nodes: 1 }
+                : { outcome: 'review', reason: 'source syntax validation is not available in the rendered DOM', details: `document type declaration present: ${document.doctype.name}`, nodes: 0 });
         })()
     "#,
     ),
@@ -23,8 +26,10 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
         "8.9",
         r#"
         (() => {
-            const n = document.querySelectorAll('font, center, basefont, big, strike, tt, blink, marquee').length;
-            return JSON.stringify({ pass: n === 0, details: `${n} presentation-only element(s) (font, center, big, strike, tt, blink, marquee)`, nodes: n });
+            const legacy = [...document.querySelectorAll('font, center, basefont, big, strike, tt, blink, marquee')];
+            const ambiguous = [...document.querySelectorAll('b, i, br')];
+            if (legacy.length) return JSON.stringify({ outcome: 'fail', details: `${legacy.length} obsolete presentation element(s) found`, nodes: legacy.length });
+            return JSON.stringify({ outcome: 'review', reason: 'visual intent cannot be inferred from markup alone', details: `${ambiguous.length} b/i/br element(s) need a presentation-use check; no obsolete presentation element found`, nodes: ambiguous.length });
         })()
     "#,
     ),
@@ -38,9 +43,9 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
                 if (!['ltr', 'rtl', 'auto'].includes((el.getAttribute('dir') || '').toLowerCase())) bad++;
             });
             const rtl = /[֐-׿؀-ۿݐ-ݿ]/.test(document.body ? document.body.innerText : '');
-            const anyDir = document.querySelector('[dir=rtl], [dir=auto], bdo, bdi') || document.documentElement.dir;
-            if (rtl && !anyDir) bad++;
-            return JSON.stringify({ pass: bad === 0, details: `${bad} invalid or missing reading-direction declaration(s)`, nodes: bad });
+            const directionNodes = document.querySelectorAll('[dir], bdo, bdi').length;
+            if (bad) return JSON.stringify({ outcome: 'fail', details: `${bad} invalid dir attribute value(s)`, nodes: bad });
+            return JSON.stringify({ outcome: 'review', reason: 'language and reading direction require contextual review', details: `RTL characters ${rtl ? 'detected' : 'not detected'}; ${directionNodes} explicit direction marker(s); computed direction and local text runs need review`, nodes: directionNodes });
         })()
     "#,
     ),
@@ -49,13 +54,152 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
         "9.4",
         r#"
         (() => {
-            let bad = 0;
+            let candidates = 0;
             document.querySelectorAll('p').forEach(p => {
                 if (p.closest('blockquote, q')) return;
                 const t = (p.textContent || '').trim();
-                if (t.length > 40 && /^[«“"][\s\S]+[»”"]$/.test(t)) bad++;
+                if (t.length > 40 && /^[«“"][\s\S]+[»”"]$/.test(t)) candidates++;
             });
-            return JSON.stringify({ pass: bad === 0, details: `${bad} quoted paragraph(s) not marked up with blockquote/q`, nodes: bad });
+            const semantic = document.querySelectorAll('blockquote, q').length;
+            return JSON.stringify({ outcome: 'review', reason: 'quotation meaning cannot be established from punctuation alone', details: `${candidates} paragraph(s) look quoted by punctuation; ${semantic} semantic q/blockquote element(s) found`, nodes: candidates + semantic });
+        })()
+    "#,
+    ),
+    // 1.7: detailed image descriptions require a relevance judgment.
+    (
+        "1.7",
+        r#"
+        (() => {
+            const images = [...document.querySelectorAll('img, input[type="image"], svg[role="img"]')];
+            const described = images.filter(el => el.hasAttribute('longdesc') || el.hasAttribute('aria-describedby') || el.closest('figure')?.querySelector('figcaption'));
+            return JSON.stringify({ outcome: 'review', reason: 'the relevance of a detailed image description is a semantic judgment', details: `${images.length} image(s) inspected; ${described.length} with a long description, description reference or figure caption candidate`, nodes: described.length });
+        })()
+    "#,
+    ),
+    (
+        "7.2",
+        r#"
+        (() => {
+            const scripts = [...document.querySelectorAll('script:not([type="application/ld+json"]), [onclick], [onchange], [oninput]')];
+            const alternatives = document.querySelectorAll('noscript, [aria-describedby], [data-script-alternative]');
+            return JSON.stringify({ outcome: 'review', reason: 'the relevance and functional equivalence of a script alternative require contextual review', details: `${scripts.length} script/handler candidate(s); ${alternatives.length} alternative or description candidate(s)`, nodes: scripts.length });
+        })()
+    "#,
+    ),
+    // 12.2 and 12.5: collect per-page candidates; consistency is compared at site scope.
+    (
+        "12.2",
+        r#"
+        (() => {
+            const nav = [...document.querySelectorAll('header, nav, [role="navigation"]')];
+            return JSON.stringify({ outcome: 'review', reason: 'menu and navigation placement must be compared across the whole page set and visually confirmed', details: `${nav.length} navigation/header region(s) observed on this page`, nodes: nav.length });
+        })()
+    "#,
+    ),
+    (
+        "12.5",
+        r#"
+        (() => {
+            const search = [...document.querySelectorAll('form[role="search"], form input[type="search"], input[type="search"], [role="search"]')];
+            return JSON.stringify({ outcome: 'review', reason: 'search availability and access must be compared across the page set and keyboard-tested', details: `${search.length} internal search candidate(s) observed on this page`, nodes: search.length });
+        })()
+    "#,
+    ),
+    (
+        "7.3",
+        r#"
+        (() => {
+            const candidates = [...document.querySelectorAll('[onclick], [onmousedown], [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="checkbox"], [role="switch"], [role="slider"]')];
+            const suspicious = candidates.filter(el => !el.matches('a[href], button, input, select, textarea') && (el.tabIndex < 0 || !el.hasAttribute('role')));
+            return JSON.stringify({ outcome: 'review', reason: 'keyboard activation and assistive-technology behavior require interaction testing', details: `${candidates.length} scripted/custom interactive candidate(s), ${suspicious.length} without an obvious keyboard entry point`, nodes: suspicious.length });
+        })()
+    "#,
+    ),
+    // 10.4: 200% text resize. The rendered snapshot cannot reliably emulate user zoom.
+    (
+        "10.4",
+        r#"
+        (() => {
+            const meta = document.querySelector('meta[name="viewport"]');
+            const content = (meta && meta.content || '').toLowerCase();
+            const directives = new Map(content.split(/[,;]/).map(part => {
+                const [key, ...value] = part.split('=');
+                return [key.trim(), value.join('=').trim()];
+            }));
+            const limit = directives.get('maximum-scale');
+            const maximumScale = limit && /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(limit) ? Number(limit) : NaN;
+            const blocked = ['no', '0'].includes(directives.get('user-scalable')) || (Number.isFinite(maximumScale) && maximumScale < 2);
+            if (blocked) return JSON.stringify({ outcome: 'fail', details: `viewport disables or restricts user scaling: ${content}`, nodes: 1 });
+            const smallText = [...document.querySelectorAll('body *')].filter(el => {
+                const s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.fontSize) <= 12;
+            }).length;
+            return JSON.stringify({ outcome: 'review', reason: 'actual 200% text resizing and resulting content loss were not emulated', details: `no restrictive viewport directive found; ${smallText} visible element(s) use text at or below 12px`, nodes: smallText });
+        })()
+    "#,
+    ),
+    // 10.11: reflow at 320 CSS px requires a viewport resize and exemption review.
+    (
+        "10.11",
+        r#"
+        (() => {
+            const overflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+            const wide = [...document.querySelectorAll('table, video, canvas, pre, iframe')].filter(el => el.getBoundingClientRect().width > document.documentElement.clientWidth).length;
+            return JSON.stringify({ outcome: 'review', reason: 'the page was not resized to 320 CSS px and two-dimensional content exemptions need review', details: `current viewport ${document.documentElement.clientWidth}px; horizontal overflow ${overflow ? 'present' : 'not observed'}; ${wide} potentially wide table/media/code/frame element(s)`, nodes: (overflow ? 1 : 0) + wide });
+        })()
+    "#,
+    ),
+    // 13.1: detect time-limit and redirect clues; server/session timing needs live testing.
+    (
+        "13.1",
+        r#"
+        (() => {
+            const meta = [...document.querySelectorAll('meta[http-equiv="refresh" i]')];
+            const text = (document.body && document.body.innerText || '').slice(0, 200000);
+            const words = /\b(?:session|session expires|time(?:out|r limit)|countdown|redirect|expire|expiration|déconnexion|délai|compte à rebours|expiration)\b/i.test(text);
+            const scripts = [...document.scripts].filter(s => /setTimeout|setInterval|location\.(?:href|assign|replace)|logout|expire/i.test(s.textContent || '')).length;
+            return JSON.stringify({ outcome: 'review', reason: 'server-side/session time limits and available extensions cannot be determined from a post-load snapshot', details: `${meta.length} refresh directive(s), ${scripts} timer/redirect-like inline script(s), time-limit wording ${words ? 'detected' : 'not detected'}`, nodes: meta.length + scripts + (words ? 1 : 0) });
+        })()
+    "#,
+    ),
+    // 13.7: flash frequency requires temporal frame sampling and luminance analysis.
+    (
+        "13.7",
+        r#"
+        (() => {
+            const media = [...document.querySelectorAll('video, canvas, svg animate, svg animateTransform')];
+            const animatedImages = [...document.querySelectorAll('img')].filter(el => /\.gif(?:[?#]|$)/i.test(el.currentSrc || el.src));
+            const css = [...document.querySelectorAll('*')].filter(el => {
+                const s = getComputedStyle(el); return s.animationName !== 'none' || s.transitionDuration.split(',').some(v => parseFloat(v) > 0);
+            }).length;
+            return JSON.stringify({ outcome: 'review', reason: 'flash frequency and affected screen area require temporal frame sampling', details: `${animatedImages.length} GIF(s), ${media.length} video/canvas/SVG animation candidate(s), ${css} element(s) with CSS animation/transition`, nodes: animatedImages.length + media.length + css });
+        })()
+    "#,
+    ),
+    // 13.8: identify movement/auto-start candidates; duration and pause controls need interaction.
+    (
+        "13.8",
+        r#"
+        (() => {
+            const moving = [...document.querySelectorAll('body *')].filter(el => {
+                const s = getComputedStyle(el), rect = el.getBoundingClientRect();
+                if (s.display === 'none' || s.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0) return false;
+                return el.matches('marquee, blink, video[autoplay], audio[autoplay], svg animate, svg animateTransform') || (el.tagName === 'IMG' && /\.gif(?:[?#]|$)/i.test(el.currentSrc || el.src)) || s.animationName !== 'none';
+            });
+            const controls = [...document.querySelectorAll('button, [role="button"], input[type="button"]')].filter(el => /pause|stop|arr[êe]ter|suspend/i.test(el.innerText || el.getAttribute('aria-label') || el.value || '')).length;
+            return JSON.stringify({ outcome: 'review', reason: 'movement duration, auto-start behavior and whether pause controls work require timed interaction', details: `${moving.length} movement/animation candidate(s), ${controls} pause/stop control candidate(s)`, nodes: moving.length + controls });
+        })()
+    "#,
+    ),
+    // 13.9: rotating the viewport and checking equivalent content requires CDP emulation.
+    (
+        "13.9",
+        r#"
+        (() => {
+            const lock = [...document.styleSheets].some(sheet => {
+                try { return [...sheet.cssRules].some(rule => /orientation\s*:\s*portrait/i.test(rule.conditionText || rule.cssText || '')); } catch (_) { return false; }
+            });
+            const orientationScripts = [...document.scripts].filter(s => /screen\.orientation\.lock|orientationchange|matchMedia\s*\([^)]*orientation/i.test(s.textContent || '')).length;
+            return JSON.stringify({ outcome: 'review', reason: 'portrait and landscape rendering/functionality were not compared in separate viewport states', details: `portrait-specific media rule ${lock ? 'detected' : 'not detected'}; ${orientationScripts} orientation-related inline script(s)`, nodes: (lock ? 1 : 0) + orientationScripts });
         })()
     "#,
     ),
@@ -231,17 +375,14 @@ pub(crate) const SNIPPETS: &[(&str, &str)] = &[
         })()
     "#,
     ),
-    // 13.2: target=_blank link not announcing the new window.
+    // 13.2: inspect likely window-opening paths; triggering context is runtime behavior.
     (
         "13.2",
         r#"
         (() => {
-            let bad = 0;
-            document.querySelectorAll('a[target=_blank], area[target=_blank]').forEach(a => {
-                const label = [a.textContent, a.getAttribute('title'), a.getAttribute('aria-label'), ...[...a.querySelectorAll('img[alt], [aria-label]')].map(x => x.getAttribute('alt') || x.getAttribute('aria-label'))].join(' ');
-                if (!/nouvelle fen[êe]tre|nouvel onglet|new (window|tab)|ouvre dans/i.test(label)) bad++;
-            });
-            return JSON.stringify({ pass: bad === 0, details: `${bad} link(s) opening a new window without warning`, nodes: bad });
+            const targets = document.querySelectorAll('a[target], area[target]').length;
+            const scripts = [...document.scripts].filter(s => /window\.open\s*\(/i.test(s.textContent || '')).length;
+            return JSON.stringify({ outcome: 'review', reason: 'a static DOM scan cannot establish whether a new context opens without a user action', details: `${targets} explicit link/area target(s), ${scripts} inline script(s) mention window.open; trigger timing requires interaction testing`, nodes: targets + scripts });
         })()
     "#,
     ),

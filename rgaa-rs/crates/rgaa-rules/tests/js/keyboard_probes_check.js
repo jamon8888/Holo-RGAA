@@ -12,7 +12,14 @@ const scopes = { '12.9': ['(() => true)', 'focusable elements'], '4.12': ["(e =>
 const code = id => head + scopes[id][0] + mid + scopes[id][1] + tail;
 const dir = root + '/rgaa-test-corpus/criteria';
 let bad = 0;
-for (const f of fs.readdirSync(dir).filter(n => /^(12\.9|4\.12)-.*-(pass|fail)\.html$/.test(n))) {
+// These are the keydown-sweep fixtures; other probes share the criterion IDs.
+const fixtures = [
+  '12.9-no-trap-pass.html', '12.9-modal-escape-exit-pass.html',
+  '12.9-escapable-trap-pass.html', '12.9-modal-focus-cycle-pass.html',
+  '12.9-keydown-trap-autofocus-fail.html', '12.9-keydown-trap-no-autofocus-fail.html',
+  '4.12-media-no-trap-pass.html', '4.12-media-keydown-trap-fail.html',
+];
+for (const f of fixtures) {
   const id = f.split('-')[0], want = f.endsWith('-fail.html') ? 'fail' : 'pass';
   const dom = new JSDOM(fs.readFileSync(dir + '/' + f, 'utf8'), { runScripts: 'dangerously' });
   const r = JSON.parse(dom.window.eval(code(id)));

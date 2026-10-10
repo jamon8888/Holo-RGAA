@@ -332,11 +332,6 @@ impl GapFixRules {
             })()
         "#);
 
-        for (id, snippet) in crate::keyboard_probes::SNIPPETS {
-            let previous = m.insert((*id).into(), snippet);
-            debug_assert!(previous.is_none(), "{id} already has a gap-fix snippet");
-        }
-
         for (id, snippet) in crate::plan_snippets::SNIPPETS {
             let previous = m.insert((*id).into(), snippet);
             debug_assert!(previous.is_none(), "{id} already has a gap-fix snippet");

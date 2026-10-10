@@ -47,6 +47,28 @@ macro_rules! sweep {
     };
 }
 
+// Keep the inventory and behavioural evidence in one snippet per criterion.
+macro_rules! with_keyboard_sweep {
+    ($scope:literal, $what:literal, $inventory:literal) => {
+        concat!(
+            r#"(() => { const inventory = JSON.parse("#,
+            $inventory,
+            r#"); const keyboard = JSON.parse("#,
+            crate::keyboard_probes::sweep!($scope, $what),
+            r#");
+                const failed = [inventory, keyboard].filter(r => r.outcome === 'fail');
+                return JSON.stringify({ pass:false, outcome:failed.length ? 'fail' : 'review',
+                    details:[inventory.details, keyboard.details].filter(Boolean).join('; '),
+                    nodes:failed.length ? failed.reduce((n,r) => n + (r.nodes || 0), 0) : inventory.nodes || 0,
+                    reason:failed.length ? undefined : inventory.reason });
+            })()"#
+        )
+    };
+}
+
+pub(crate) use {sweep, with_keyboard_sweep};
+
+#[cfg(test)]
 pub(crate) const SNIPPETS: &[(&str, &str)] = &[
     // 12.9: any focusable element.
     ("12.9", sweep!("(() => true)", "focusable elements")),

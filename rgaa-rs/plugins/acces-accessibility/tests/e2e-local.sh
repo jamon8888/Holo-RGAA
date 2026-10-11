@@ -18,23 +18,90 @@ FAILURES=0
 ok()   { echo "✅ $1"; }
 fail() { echo "❌ $1"; FAILURES=$((FAILURES + 1)); }
 
-for bin in rgaa-mcp jq; do
+for bin in rgaa-mcp jq python3; do
   command -v "$bin" >/dev/null || { echo "SKIP: $bin not on PATH"; exit 0; }
 done
 
 # One JSON-RPC session per call: initialize, notify, then the request.
+#
+# stdin must stay OPEN until the response arrives. Piping the three lines in
+# with printf closes it immediately; the server logs "input stream terminated",
+# starts shutting down, and gives in-flight work only about five seconds to
+# drain. Fast calls complete inside that window, so the bug hides — but
+# `analyze` takes ~20s and its response never arrives, which this script
+# previously reported as a cheerful "findings: 0".
 rpc() {
   local method="$1" params="$2"
-  printf '%s\n' \
-    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0"}}}' \
-    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"${method}\",\"params\":${params}}" \
-    | timeout 180 rgaa-mcp 2>/dev/null | tail -1
+  METHOD="$method" PARAMS="$params" TIMEOUT="${RPC_TIMEOUT:-300}" python3 - <<'PYEOF'
+import json, os, subprocess, sys
+
+method, params = os.environ["METHOD"], os.environ["PARAMS"]
+deadline = float(os.environ["TIMEOUT"])
+
+proc = subprocess.Popen(
+    ["rgaa-mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL, text=True, bufsize=1,
+)
+
+def send(obj):
+    proc.stdin.write(json.dumps(obj) + "\n")
+    proc.stdin.flush()
+
+try:
+    send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2024-11-05", "capabilities": {},
+        "clientInfo": {"name": "e2e", "version": "0"}}})
+    proc.stdout.readline()                      # initialize result
+    send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    send({"jsonrpc": "2.0", "id": 2, "method": method,
+          "params": json.loads(params)})
+
+    # Read until the response carrying our id. stdin stays open throughout.
+    import threading
+    out = {}
+    def reader():
+        for line in proc.stdout:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if msg.get("id") == 2:
+                out["msg"] = line.strip()
+                return
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
+    t.join(deadline)
+    if "msg" not in out:
+        print(json.dumps({"error": {"message": f"no response within {deadline:.0f}s"}}))
+        sys.exit(0)
+    print(out["msg"])
+finally:
+    try:
+        proc.stdin.close()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        proc.kill()
+PYEOF
 }
 
 call_tool() {
   rpc "tools/call" "{\"name\":\"$1\",\"arguments\":$2}"
 }
+
+# Name the binary under test. Two install mechanisms write to different
+# prefixes (install.sh -> ~/.local/bin from a release tarball, cargo install ->
+# ~/.cargo/bin from source) and ~/.local/bin usually wins on PATH, so a
+# reinstall can appear to do nothing. A failure below must name the binary.
+RESOLVED=$(command -v rgaa-mcp)
+echo "— binary under test: $RESOLVED"
+for alt in "$HOME/.local/bin/rgaa-mcp" "$HOME/.cargo/bin/rgaa-mcp"; do
+  if [[ -f "$alt" && "$alt" != "$RESOLVED" ]]; then
+    echo "   note: a second binary exists and is shadowed: $alt"
+  fi
+done
 
 echo "— the advertised tool set"
 # A short list means a stale binary. This is the check that would have caught
@@ -47,7 +114,7 @@ else
   ok "tools/list answered: $TOOLS"
   for t in analyze remediate igt audit_url get_audit_result list_criteria lint_static source_map verify_fix; do
     if [[ " $TOOLS " == *" $t "* ]]; then ok "advertises $t"
-    else fail "MISSING $t — the installed binary is stale; reinstall with: cargo install --path rgaa-rs/crates/rgaa-mcp --force"; fi
+    else fail "MISSING $t — $RESOLVED is stale. Note a plain 'cargo install' writes to ~/.cargo/bin, which ~/.local/bin usually shadows; install into the winning prefix: cargo install --path rgaa-rs/crates/rgaa-mcp --root \"\$HOME/.local\" --force"; fi
   done
 fi
 
@@ -95,7 +162,13 @@ if [[ -n "$URL" ]]; then
     || fail "no top-level findings — shape may have switched"
 
   NF=$(printf '%s' "$AB" | jq '[.. | objects | select(has("findings")) | .findings] | first | length' 2>/dev/null)
-  ok "findings: ${NF:-0}"
+  # Zero findings on an arbitrary page is far more likely to mean the call did
+  # not complete than a flawless page. Never report it as a pass.
+  if [[ "${NF:-0}" -gt 0 ]]; then
+    ok "findings: $NF"
+  else
+    fail "findings: 0 — treat as a failed call, not a clean page. Check the raw response: $(printf '%s' "$A" | head -c 200)"
+  fi
 
   # The fingerprint defect: one dom_snapshot hash per scan, shared by every
   # finding. While this holds, verify_fix's diff cannot be trusted after an

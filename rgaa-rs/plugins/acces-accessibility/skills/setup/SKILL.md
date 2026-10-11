@@ -78,15 +78,39 @@ installed server predating `source_map` cannot run the remediation loop at all:
 below all still succeed on such a server, which is exactly why this check comes
 first — a stale binary passes every other test.
 
-This happens: a binary installed from an earlier checkout stays on `PATH`
-indefinitely, and nothing warns. Fix it with:
+**This happens, and a plain `cargo install` does not fix it.** There are two
+install mechanisms that disagree, and they write to different directories:
+
+| Mechanism | Writes to | Source of the binary |
+|---|---|---|
+| `install.sh` | `~/.local/bin` | a **prebuilt release tarball** |
+| `cargo install --path …` | `~/.cargo/bin` | the **local source tree** |
+
+On a typical setup `~/.local/bin` comes **first** on `PATH`, so if `install.sh`
+has ever run, its release binary shadows anything `cargo install` builds. A
+release that lags the source then stays in charge, and `cargo install --force`
+appears to succeed while changing nothing.
+
+So always check **which** binary answers:
 
 ```bash
-cargo install --path rgaa-rs/crates/rgaa-mcp --force
+command -v rgaa-mcp          # the one PATH resolves
+ls -l ~/.local/bin/rgaa-mcp ~/.cargo/bin/rgaa-mcp 2>/dev/null
 ```
 
+To replace the one that actually wins, install into that prefix explicitly:
+
+```bash
+cargo install --path rgaa-rs/crates/rgaa-mcp --root "$HOME/.local" --force
+```
+
+Then **re-run stage 0** rather than assuming it worked. Do not move or delete a
+binary on the user's machine without asking — tell them what shadows what and
+let them choose.
+
 `tests/e2e-local.sh` in this plugin performs this check along with the rest of
-the contract; run it when a user reports that something "worked yesterday".
+the contract, and reports which binary it reached. Run it when a user says
+something "worked yesterday", or when a reinstall seems to have had no effect.
 
 **Stage 1 — `list_criteria`.** No arguments, no browser, no network, no LLM.
 Proves the server starts and its catalogue loads. Expect 106 criteria.

@@ -42,6 +42,18 @@ skipping this step fails every issue.
 - **No framework** — plain HTML, PHP templates, anything else: **write the fix
   yourself.** `remediate` cannot touch it; there is no HTML framework variant.
 
+**Inspect every patch before applying it. Some are not applicable.**
+`remediate` currently emits syntactically invalid code for **self-closing**
+tags — the attribute lands after the `/`, so `<img … />` becomes
+`<img … / alt="">`, which does not compile. `outcome` is `"ok"` and
+`confidence` is `"high"` regardless, so the response gives no warning. It also
+proposed the same `alt=""` for criteria 1.1 and 1.2, which are opposite
+requirements. Full detail in
+[field-mapping](../usage/references/field-mapping.md).
+
+Refusing a broken patch is the approval gate working, not a loop failure.
+Report it as **refused (not applicable)**, distinct from a human declining.
+
 **Always state which path each fix came from.** A policy-checked patch and your
 own edit do not carry the same guarantee, and a report that blurs them
 overstates its own reliability.
@@ -144,6 +156,12 @@ per-scan DOM hash, so it moves whenever the page changes — and on a dynamic pa
 between any two scans — which means "the fingerprint changed" tells you nothing
 about whether a fix worked.
 
+This has been measured on a controlled edit where the true answer was known. One
+patch was applied to a 9-finding page, fixing exactly two findings. Matching on
+`rule` + `target` + `criterion_id` returned **2 fixed, 7 remaining, 0 new** —
+correct. The evidence hash moved, so a fingerprint-based diff would have
+returned **all 9 fixed and all 7 new** — wrong about every single finding.
+
 The check is free, but it is only precise if you kept `target` verbatim.
 Restated selectors make every round look like progress.
 
@@ -177,6 +195,7 @@ Five categories, never merged:
 | **out of reach** | the 40, plus anything the coverage map shows as undecidable here |
 | **outside the referential** | axe-core findings whose `criterion_id` is `null` — real defects, but not RGAA criteria. On a live WordPress/Elementor homepage this was 7 of 22 findings, so do not treat it as a corner case. |
 | **unstable** | findings on a positional or runtime-generated selector, which move between scans with no edit. 4 of 24 on the page tested. Never report one as fixed. |
+| **unmappable** | document-level findings — `html-has-lang`, `document-title`, `page-has-heading-one` — which `source_map` returns as `no_distinguishing_literal` because they live in the HTML shell, not a component. 4 of 9 on a small React fixture. Fix by hand; they are not loop failures. |
 
 Also state: how many rounds ran and why it stopped; which fixes were
 `remediate` patches and which you wrote yourself; and that no tokens were spent.

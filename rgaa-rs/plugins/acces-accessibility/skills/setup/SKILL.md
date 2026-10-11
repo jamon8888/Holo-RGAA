@@ -148,6 +148,42 @@ falls through to `.env` rather than shadowing it. Setting the plugin's
 If the user only wants the remediation loop, they need **no key at all**: say so
 instead of walking them through credentials they will never use.
 
+## Running against a local project needs two environment variables
+
+Neither is documented anywhere else, and the loop **cannot run locally** without
+them. Both were established by driving the real loop, not by reading code.
+
+**`OBSCURA_ALLOW_PRIVATE_NETWORK=1`** — `obscura` blocks loopback, RFC1918 and
+link-local addresses by default, as a deliberate SSRF fix. Without it, `analyze`
+on `http://localhost:…` returns `completed: false` and
+`cdp_transport: Access to private/internal IP address 127.0.0.1 is not allowed`.
+
+There is a trap on top of it. `rgaa-obscura` starts its CDP server on a
+**hardcoded port 9222** and **reuses a server already listening there**, and it
+never passes `--allow-private-network` itself — the flag only arrives through the
+inherited environment of a server it spawns. So if any obscura server is already
+running (they outlive their parent and get reparented to `init`), your variable
+has **no effect at all** and the block persists with no hint as to why.
+
+Diagnose it before concluding the variable is wrong:
+
+```bash
+ss -ltnp | grep 9222        # is a server already bound?
+pgrep -ax obscura           # started with which flags, by whom?
+```
+
+An idle pool with no established connections can be retired, and the next call
+spawns a fresh server that inherits the variable. Never kill one that is in use,
+and never match on `obscura serve` with `pkill -f` — the pattern matches your own
+shell.
+
+**`RGAA_SOURCE_MAP_ROOTS`** — `source_map` confines `source_root` to a list of
+allowed roots, defaulting to the **server's own current working directory**
+(`source_map.rs:840-848`). A project outside it is refused with
+`INVALID_INPUT: … resolves outside the allowed roots`. For a plugin-launched
+server, that cwd is wherever the client started it, which is often not the
+project you want to map.
+
 ## Confirm before you change anything
 
 This plugin gates its own patches on human approval. Setup is held to the same

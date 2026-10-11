@@ -49,6 +49,21 @@ a no-op storage service whose lookup returns nothing unconditionally. Nothing in
 `rgaa-mcp` persists an audit, so this is always empty. Do not build a flow that
 depends on retrieving an audit later; keep what `audit_url` returned.
 
+**`source_map` maps on literals, and says so.** Each mapped finding carries
+`confidence` (`high`/`medium`) and `matched_on` naming the literal it matched —
+`src="…/logo.png"` scores high, a `class token "submit-btn"` only medium. Read
+both before editing; the tool is explicit that there is no exact inverse of
+rendering.
+
+**Document-level findings are unmappable, by nature.** Findings on `<html>` —
+`html-has-lang` (8.2, 8.3), `document-title` (8.5), `page-has-heading-one` —
+come back in `unmappable` with `no_distinguishing_literal`, because `<html>`
+carries no literal to search for and those defects live in the HTML shell or
+layout, not in a component. On a small React fixture this was **4 of 9
+findings**. They are real defects that the loop structurally cannot reach: fix
+them by hand in the shell, and report them separately rather than as loop
+failures.
+
 **Nothing produces `verify_fix.reference_audit`.** Nothing needs to — **you
 construct it**. See "Building a reference bundle".
 
@@ -296,6 +311,59 @@ Serde specifics worth knowing:
 ```
 
 ---
+
+## `remediate`'s response, and why you must read the patch before applying it
+
+The response is `{"outcomes": [...]}`. Each outcome carries `outcome`,
+`issue_id`, `explanation`, `steps`, `confidence`, `criteria` and a `proposal`:
+
+```json
+{"proposal": {
+  "proposal_id": "<issue_id>-proposal",
+  "finding_ids": ["<issue_id>"],
+  "diff": "<the replacement source line>",
+  "files": ["App.jsx"],
+  "rationale": "…", "risks": ["…"], "validation_commands": ["…"],
+  "expected_effect": "…",
+  "proposal_hash": "rgaa-proposal-v1-<hex>",
+  "approval_state": "required",
+  "approval_token": "rgaa-approval-v1-<proposal_id>-<proposal_hash>"
+}}
+```
+
+Two things to know about it:
+
+- **`diff` is a replacement line, not a unified diff.** You apply it yourself.
+- **`files` is a bare basename** (`App.jsx`), not the path you passed in
+  `source_locations`. Resolve it against your own mapping, not against the repo.
+
+### The patch can be syntactically invalid. Check it.
+
+`insert_attribute` (`rgaa-remediation/src/adapters.rs:216-243`) inserts the new
+attribute immediately before the opening tag's first `>`. For a **self-closing**
+tag the character before `>` is `/`, so the attribute lands after the slash and
+the tag loses its self-closing form. Measured against a React fixture:
+
+| Source | Emitted `diff` | Valid |
+|---|---|---|
+| `<img className="logo" src="/logo.png" />` | `<img className="logo" src="/logo.png" / alt="">` | **no** |
+| `<input … name="email" />` | `<input … name="email" / aria-label="email">` | **no** |
+| `<button …></button>` | `<button … aria-label="Submit"></button>` | yes |
+
+Self-closing tags are the norm in JSX and Vue, and the two broken cases are the
+most common RGAA defects there. `outcome` is `"ok"` and `confidence` is `"high"`
+on all three, so **nothing in the response flags the problem**. Applying these
+breaks the build.
+
+### The patch can also be semantically wrong for its criterion
+
+Criteria **1.1** and **1.2** received the *identical* `alt=""` patch. They are
+opposite requirements: 1.1 asks an informative image to carry a text
+alternative, 1.2 asks a decorative one to be ignored. `alt=""` satisfies 1.2 and
+defeats 1.1.
+
+So read `criteria` on the outcome and judge the patch against it. Remember
+`confidence` is the hardcoded string `"high"` and carries no signal.
 
 ## `remediate` batching
 

@@ -226,20 +226,62 @@ fn insert_attribute(
             issue_id: issue_id.into(),
             reason: "opening tag is missing".into(),
         })?;
-    let end = source[start..]
-        .find('>')
-        .map(|offset| offset + start)
-        .ok_or_else(|| RemediationError::NeedsReview {
-            issue_id: issue_id.into(),
-            reason: "opening tag is incomplete".into(),
-        })?;
-    Ok(format!(
-        "{}{}{}{}",
-        &source[..end],
-        attribute,
-        &source[end..end + 1],
-        &source[end + 1..]
-    ))
+    let end = opening_tag_end(source, start).ok_or_else(|| RemediationError::NeedsReview {
+        issue_id: issue_id.into(),
+        reason: "opening tag is incomplete".into(),
+    })?;
+    let at = attribute_insertion_point(source, start, end);
+    Ok(format!("{}{}{}", &source[..at], attribute, &source[at..]))
+}
+
+/// Byte index of the `>` that closes the opening tag starting at `start`.
+///
+/// Scans for it rather than taking the first `>`, because a `>` inside a quoted
+/// attribute value does not end the tag: `<img alt="a > b" src="x" />` would
+/// otherwise be cut after `a `, and the attribute inserted into the middle of a
+/// value.
+///
+/// Scanning bytes is safe here and lands on a character boundary: the markers
+/// are ASCII, and a UTF-8 continuation byte is never an ASCII byte.
+fn opening_tag_end(source: &str, start: usize) -> Option<usize> {
+    let mut quote: Option<u8> = None;
+    for (offset, byte) in source.as_bytes().iter().enumerate().skip(start) {
+        match quote {
+            Some(open) if *byte == open => quote = None,
+            Some(_) => {}
+            None => match *byte {
+                b'"' | b'\'' => quote = Some(*byte),
+                b'>' => return Some(offset),
+                _ => {}
+            },
+        }
+    }
+    None
+}
+
+/// Where to insert a new attribute in the opening tag spanning `start..=end`.
+///
+/// Before a self-closing `/` and the whitespace that precedes it, so
+/// `<img … />` becomes `<img … alt="" />`. Inserting before the `>` instead —
+/// which is what this did originally — yields `<img … / alt="">`: the slash is
+/// orphaned, the tag is no longer self-closing, and the result does not
+/// compile. JSX and Vue self-close by default, so that hit the two most common
+/// RGAA defects in exactly the sources this crate exists to patch.
+///
+/// A `/` inside a quoted value is not a self-closing marker. The last
+/// non-whitespace byte before `>` is the only candidate, and in `src="/x.png">`
+/// that is the closing quote, so the common case is safe. An *unquoted* value
+/// ending in a slash is not distinguishable here, but JSX and Vue always quote
+/// or brace their attribute values, so it cannot arise in the sources reached
+/// through these adapters.
+fn attribute_insertion_point(source: &str, start: usize, end: usize) -> usize {
+    let inner = &source[start..end];
+    match inner.rfind(|c: char| !c.is_whitespace()) {
+        Some(offset) if inner.as_bytes()[offset] == b'/' => {
+            start + inner[..offset].trim_end().len()
+        }
+        _ => end,
+    }
 }
 
 fn attribute_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
@@ -321,3 +363,118 @@ adapter_impl!(ReactAdapter, Framework::React);
 adapter_impl!(NextAdapter, Framework::Next);
 adapter_impl!(VueAdapter, Framework::Vue);
 adapter_impl!(AngularAdapter, Framework::Angular);
+
+#[cfg(test)]
+mod insert_attribute_tests {
+    use super::insert_attribute;
+
+    fn insert(source: &str, name: &str, attribute: &str) -> String {
+        insert_attribute(source, name, attribute, "issue-1").expect("insertion succeeds")
+    }
+
+    /// The case that shipped broken: inserting before the opening tag's first
+    /// `>` puts the attribute after a self-closing `/`, so the tag stops
+    /// compiling. JSX and Vue self-close by default, and the two call sites
+    /// this affects are the most common RGAA defects there.
+    #[test]
+    fn keeps_a_self_closing_jsx_tag_self_closing() {
+        assert_eq!(
+            insert(
+                r#"<img className="logo" src="/logo.png" />"#,
+                "img",
+                r#" alt="""#
+            ),
+            r#"<img className="logo" src="/logo.png" alt="" />"#
+        );
+    }
+
+    #[test]
+    fn keeps_a_self_closing_input_self_closing() {
+        assert_eq!(
+            insert(
+                r#"<input className="email-field" id="email" type="email" name="email" />"#,
+                "input",
+                r#" aria-label="email""#
+            ),
+            r#"<input className="email-field" id="email" type="email" name="email" aria-label="email" />"#
+        );
+    }
+
+    #[test]
+    fn handles_a_self_closing_tag_with_no_space_before_the_slash() {
+        assert_eq!(insert("<img/>", "img", r#" alt="""#), r#"<img alt=""/>"#);
+    }
+
+    #[test]
+    fn handles_whitespace_between_the_slash_and_the_bracket() {
+        assert_eq!(
+            insert(r#"<img src="a.png" / >"#, "img", r#" alt="""#),
+            r#"<img src="a.png" alt="" / >"#
+        );
+    }
+
+    /// Plain HTML does not self-close, and must keep behaving as before.
+    #[test]
+    fn appends_before_the_bracket_when_the_tag_does_not_self_close() {
+        assert_eq!(
+            insert(r#"<img class="logo" src="/logo.png">"#, "img", r#" alt="""#),
+            r#"<img class="logo" src="/logo.png" alt="">"#
+        );
+    }
+
+    #[test]
+    fn leaves_a_non_void_element_untouched_apart_from_the_attribute() {
+        assert_eq!(
+            insert(
+                r#"<button className="submit-btn" type="submit"></button>"#,
+                "button",
+                r#" aria-label="Submit""#
+            ),
+            r#"<button className="submit-btn" type="submit" aria-label="Submit"></button>"#
+        );
+    }
+
+    /// A `/` inside a quoted value is not a self-closing marker. `src="/x.png"`
+    /// is the overwhelmingly common shape, so getting this wrong would corrupt
+    /// the attribute value rather than the tag.
+    #[test]
+    fn does_not_mistake_a_slash_inside_a_quoted_value_for_self_closing() {
+        assert_eq!(
+            insert(r#"<img src="/assets/logo.png">"#, "img", r#" alt="""#),
+            r#"<img src="/assets/logo.png" alt="">"#
+        );
+    }
+
+    /// A `>` inside a quoted value does not end the opening tag.
+    #[test]
+    fn does_not_end_the_tag_at_a_bracket_inside_a_quoted_value() {
+        assert_eq!(
+            insert(
+                r#"<img alt="a > b" src="x.png" />"#,
+                "img",
+                r#" role="img""#
+            ),
+            r#"<img alt="a > b" src="x.png" role="img" />"#
+        );
+    }
+
+    #[test]
+    fn needs_review_when_the_opening_tag_is_absent() {
+        let err = insert_attribute("<span></span>", "img", r#" alt="""#, "issue-1")
+            .expect_err("no img tag");
+        assert!(
+            format!("{err:?}").contains("opening tag is missing"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn needs_review_when_the_opening_tag_never_closes() {
+        let err = insert_attribute(r#"<img class="logo""#, "img", r#" alt="""#, "issue-1")
+            .expect_err("unterminated tag");
+        assert!(
+            format!("{err:?}").contains("opening tag is incomplete"),
+            "{err:?}"
+        );
+    }
+}

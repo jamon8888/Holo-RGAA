@@ -91,6 +91,13 @@ if [[ -f "$MKT" ]]; then
     ok "marketplace entry present (source: $src)"
     [[ -d "$REPO_ROOT/${src#./}" ]] && ok "marketplace source path resolves" \
       || fail "marketplace source path does not exist: $src"
+    # Existence is not enough: an entry pointing at a *different* plugin
+    # directory would still resolve, and users installing this entry would get
+    # the wrong plugin under this name.
+    EXPECTED_SRC="./rgaa-rs/plugins/${PLUGIN_NAME}"
+    [[ "$src" == "$EXPECTED_SRC" ]] \
+      && ok "marketplace source points at this plugin" \
+      || fail "marketplace source is $src, expected $EXPECTED_SRC"
   fi
   mkt_ver=$(jq -r --arg n "$PLUGIN_NAME" '.plugins[] | select(.name==$n) | .version // empty' "$MKT" 2>/dev/null)
   man_ver=$(jq -r '.version // empty' "$MANIFEST" 2>/dev/null)

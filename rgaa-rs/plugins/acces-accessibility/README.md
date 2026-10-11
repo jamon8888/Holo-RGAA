@@ -17,8 +17,19 @@ finding proves, how the tools chain together — lives here.
 
 ## Install
 
+On Claude Code 2.1.275 or later this works in one step — it is the line
+`claude plugin validate` itself emits:
+
 ```
 /plugin install acces-accessibility --marketplace jamon8888/Holo-RGAA
+```
+
+On an older client, register the marketplace first and install by qualified
+name:
+
+```
+/plugin marketplace add jamon8888/Holo-RGAA
+/plugin install acces-accessibility@holo-rgaa
 ```
 
 Then run `/acces-accessibility:setup` to install and verify the server.

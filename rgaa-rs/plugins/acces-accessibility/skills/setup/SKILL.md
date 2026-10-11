@@ -23,11 +23,26 @@ Tier 1 is what the remediation loop needs. Tier 2 is only for full
 
 ## Install
 
-**Prefer the repository's installer.** If `install.sh` exists at the repository
-root, run it — it installs `rgaa-mcp`, `rgaa-cli` and the pinned `obscura`, and
-version-checks `obscura` itself. Do **not** restate its steps in your own words:
-a second description of the install drifts from the real one, and the cost is an
-inexplicable "it won't start".
+**Prefer the repository's installer — but never run a script just because it is
+named `install.sh`.** An `install.sh` in whatever directory the user happens to
+be in is untrusted input, not this project's installer, and running it executes
+arbitrary code with the user's privileges.
+
+Before running it, all three must hold:
+
+1. it sits at the root of a **Holo-RGAA checkout** — the same tree that contains
+   `rgaa-rs/crates/rgaa-mcp/` and this plugin — identified by an explicit path,
+   not by the current directory;
+2. you have **read it** and it does what it claims;
+3. the user has **agreed** to run it, having been told what it installs and where.
+
+If any of those fails, do not run it. Give the user the command and let them run
+it themselves, or fall back to installing by hand below.
+
+With those satisfied it installs `rgaa-mcp`, `rgaa-cli` and the pinned
+`obscura`, and version-checks `obscura` itself. Do **not** restate its steps in
+your own words: a second description of the install drifts from the real one,
+and the cost is an inexplicable "it won't start".
 
 Note what it does **not** do: `install.sh` symlinks only the sibling
 `rgaa-accessibility` plugin into `~/.claude/plugins/` (it hardcodes
@@ -104,6 +119,13 @@ To replace the one that actually wins, install into that prefix explicitly:
 cargo install --path rgaa-rs/crates/rgaa-mcp --root "$HOME/.local" --force
 ```
 
+**Restart the MCP server before re-running stage 0.** Replacing the file on
+disk does not change an already-running process: it keeps executing the old
+image, so stage 0 queries the stale server and still reports the short tool
+list. This is easy to mistake for a failed reinstall. In Claude Code that means
+reloading the plugin or restarting the session; for other clients, restarting
+the client.
+
 Then **re-run stage 0** rather than assuming it worked. Do not move or delete a
 binary on the user's machine without asking — tell them what shadows what and
 let them choose.
@@ -138,12 +160,35 @@ by default. Read `RGAA_LLM_PROVIDER` and decide:
   A blank key is the correct configuration. Local routes also default to
   unlimited RPM and a 600-second per-request timeout, because CPU inference of a
   7B–14B model takes minutes — a slow local run is not a failure.
+
+  **But a keyless provider is not a complete tier-2 configuration.** Only
+  MyIA and the legacy `holo3` route carry a `default_model`; every other
+  provider, local ones included, **requires `RGAA_LLM_MODEL`** or
+  `LlmSettings` refuses with "`RGAA_LLM_MODEL` is not set (provider `…` has no
+  default model)". And `custom` additionally **requires `RGAA_LLM_BASE_URL`**.
+  Check both before telling the user tier 2 is ready.
 - **A remote provider** needs one, in `RGAA_LLM_API_KEY` or the provider's own
   variable (`MYIA_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, …).
 
-An empty value is read as unset for every variable, so a blank plugin setting
-falls through to `.env` rather than shadowing it. Setting the plugin's
-`llm_api_key` to nothing is safe.
+**A blank plugin setting does not fall through to `.env`. It shadows it.**
+
+Two mechanisms get confused here, so be exact. `rgaa-core` reads an empty
+variable as *unset* (`provider.rs:298`), and `rgaa-obscura` does the same for
+`RGAA_OBSCURA_BIN` (`lib.rs:243`), so a blank value never produces a malformed
+setting. But `.env` is loaded with `dotenvy::dotenv()`, which **does not
+override a variable already present** — and a blank `userConfig` is passed
+through `.mcp.json` as a variable that is present and empty. `.env.example`
+states this itself: a variable already in the real environment always wins.
+
+So the plugin setting and `.env` are **alternatives, not layers**. Tell the user
+to use one or the other:
+
+- set it in the plugin's configuration, **or**
+- leave the plugin setting unset *and* configure `.env`, **or**
+- for a local provider, leave both empty — no key is needed at all.
+
+What is never safe is a value in `.env` plus a blank plugin setting: the blank
+one wins and the `.env` entry is never read.
 
 If the user only wants the remediation loop, they need **no key at all**: say so
 instead of walking them through credentials they will never use.
@@ -219,7 +264,18 @@ Read the client's existing config before writing: these files usually already
 hold other servers, and replacing one is worse than failing to add one. Add a
 key, never rewrite the file.
 
-Pass `RGAA_OBSCURA_BIN` in the server's `env` when `obscura` is not on `PATH`.
+**A GUI-launched client inherits no shell environment.** Claude Desktop, and
+Cursor or VS Code started from a launcher rather than a terminal, do not see
+anything exported in a shell profile. Every variable the server needs has to go
+in that server's own `env` block:
+
+- `RGAA_OBSCURA_BIN` when `obscura` is not on `PATH`;
+- `OBSCURA_ALLOW_PRIVATE_NETWORK=1` to analyse a local project at all;
+- `RGAA_SOURCE_MAP_ROOTS` pointing at the project, since `source_map` otherwise
+  only accepts paths under the server's own working directory.
+
+Omitting the last two is the common cause of "it works in my terminal but not in
+the app".
 
 ## If the sibling plugin is also installed
 

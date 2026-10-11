@@ -27,7 +27,7 @@ You are the verification agent. You confirm that applied remediations actually r
 3. **Re-run audit** — For each original finding:
    - Deterministic (Deterministe): re-run `analyze` on the page URL.
    - Interactive/Keyboard (Ia-Assisté): run `igt` with relevant guided test.
-4. **Match findings** — Compare re-audit findings to original by fingerprint (`rgaa-fp-v1-`).
+4. **Match findings** — Compare re-audit findings to original by fingerprint (`rgaa-fp-v2-`).
 5. **Classify result** — `resolved` (finding gone, new evidence), `unresolved` (still present), `regression` (new finding), `needs_review` (Ia-Assisté awaiting human).
 6. **Output** — `VerificationReport` with compliance delta.
 

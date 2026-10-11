@@ -17,7 +17,7 @@ You are the scanning agent. Your job is to execute accessibility audits and extr
 - Call `analyze` with URL, viewport, profile, pre-scan actions.
 - Parse `AnalyzePageResult`: findings, evidence, errors, completion status.
 - Map axe-core violations to RGAA criteria (using `RgaaCriteria::find`).
-- Compute stable fingerprints (`rgaa-fp-v1-<hex>`).
+- Compute stable fingerprints (`rgaa-fp-v2-<hex>`).
 - Reject incomplete/empty results.
 
 ## Workflow

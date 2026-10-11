@@ -230,9 +230,23 @@ jobs:
         if: runner.os != 'Windows'
         run: tar xzf artifact/*.tar.gz -C artifact/
 
+      # `Expand-Archive -Path` takes a wildcard but errors if it resolves to
+      # anything other than one file, and says little about what it found.
+      # Resolve it ourselves so the failure names the directory contents, and
+      # list the result: every step after this one assumes specific .exe names.
       - name: Extract (Windows)
         if: runner.os == 'Windows'
-        run: powershell -Command "Expand-Archive -Path 'artifact/*.zip' -DestinationPath 'artifact/'"
+        shell: pwsh
+        run: |
+          $zips = @(Get-ChildItem -Path artifact -Filter *.zip)
+          if ($zips.Count -ne 1) {
+            Write-Host "expected exactly one .zip in artifact/, found $($zips.Count):"
+            Get-ChildItem -Path artifact | Format-Table -AutoSize | Out-String | Write-Host
+            exit 1
+          }
+          Expand-Archive -LiteralPath $zips[0].FullName -DestinationPath artifact -Force
+          Write-Host "extracted:"
+          Get-ChildItem -Path artifact | Select-Object Name,Length | Format-Table -AutoSize | Out-String | Write-Host
 
       - name: Run rgaa --version (TUI)
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
@@ -319,17 +333,47 @@ jobs:
       #
       # The port is fixed and overridable (RGAA_SMOKE_PORT): matrix jobs run on
       # separate runners, so nothing else is bound there.
+      # Output is teed to a file and uploaded on failure. The script already
+      # prints the spawned server's log to stderr when it gives up, but that
+      # only ever reached the job log, which expires — a Windows failure on
+      # 2026-10-10 blocked every release for ten days and by the time anyone
+      # looked, the log that would have named the cause was gone.
       - name: Smoke MCP HTTP transport (every tool over JSON-RPC)
         if: matrix.os != 'macos-latest' || matrix.target == 'x86_64-apple-darwin'
         env:
           RGAA_SMOKE_PORT: 34117
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            bash scripts/smoke-mcp-http.sh --bin ./artifact/rgaa-mcp-http.exe
+            BIN=./artifact/rgaa-mcp-http.exe
           else
-            bash scripts/smoke-mcp-http.sh --bin ./artifact/rgaa-mcp-http
+            BIN=./artifact/rgaa-mcp-http
           fi
+          set -o pipefail
+          bash scripts/smoke-mcp-http.sh --bin "$BIN" 2>&1 | tee smoke-${{ matrix.target }}.log
         shell: bash
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "== artifact/ =="
+          ls -l artifact/ || true
+          echo "== uname / shell =="
+          uname -a || true
+          echo "== jq / curl =="
+          command -v jq && jq --version || echo "jq MISSING"
+          command -v curl && curl --version | head -1 || echo "curl MISSING"
+
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-diagnostics-${{ matrix.target }}
+          path: |
+            smoke-*.log
+            artifact/*.manifest.json
+          if-no-files-found: warn
+          retention-days: 30
 
   # ─── Installer E2E ────────────────────────────────────────────────────────
 

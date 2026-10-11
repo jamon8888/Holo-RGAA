@@ -16,10 +16,15 @@ tier 0 is a useful degraded mode, **not** a failure.
 |---|---|---|
 | 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static` |
 | 1 | + `obscura` **exactly 0.2.2** | `analyze`, `igt`, `source_map`, `verify_fix` |
-| 2 | + an LLM key *or* a local provider | `audit_url` |
+| 2 | + a model, **and** a key *or* a local provider | `audit_url` |
 
 Tier 1 is what the remediation loop needs. Tier 2 is only for full
 106-criteria audits, and it is the only tier that costs anything.
+
+Tier 2 is **not** reached by supplying a key alone. Only MyIA and the legacy
+`holo3` route carry a `default_model`, so every other provider — local ones
+included — also needs `RGAA_LLM_MODEL`, and `custom` additionally needs
+`RGAA_LLM_BASE_URL`.
 
 ## Install
 
@@ -138,10 +143,21 @@ something "worked yesterday", or when a reinstall seems to have had no effect.
 Proves the server starts and its catalogue loads. Expect 106 criteria.
 A failure here is the binary: not installed, not on `PATH`, or not starting.
 
-**Stage 2 — `analyze`** on any URL the user can reach. Free: `analyze` makes no
-LLM call. Proves the `obscura` binary is present *and* at the pinned version.
-A failure here is `obscura`: missing, not on `PATH`, `RGAA_OBSCURA_BIN` pointing
-somewhere stale, or a version mismatch — the error says which.
+**Stage 2 — `analyze`** on a **public** URL the user can reach. Free: `analyze`
+makes no LLM call. Proves the `obscura` binary is present *and* at the pinned
+version.
+
+Use a public URL deliberately. `obscura` blocks loopback and private ranges by
+default, so `http://localhost:…` fails here **even when obscura is installed
+correctly** — and the failure looks identical to a missing binary. If a local
+URL is all that is available, read the error before blaming `obscura`: an
+`Access to private/internal IP address … is not allowed` means the
+private-network restriction, not the binary. See the environment variables
+section below.
+
+Otherwise a failure here is `obscura`: missing, not on `PATH`,
+`RGAA_OBSCURA_BIN` pointing somewhere stale, or a version mismatch — the error
+says which.
 
 Without this stage, a missing `obscura` surfaces only at the first loop round,
 far from its cause. Do not skip it because it looks redundant.

@@ -72,6 +72,13 @@ for dir in "${skill_dirs[@]}"; do
     fail "skills/$slug/SKILL.md does not open with front matter"
     continue
   fi
+  # The front matter must actually close. Without a second `---`, the sed range
+  # below runs to end of file and still finds `name` and `description`, so a
+  # malformed skill would pass this check.
+  if [[ "$(tail -n +2 "$md" | grep -c '^---$')" -eq 0 ]]; then
+    fail "skills/$slug/SKILL.md front matter is never closed by a second ---"
+    continue
+  fi
   fm=$(sed -n '2,/^---$/p' "$md" | sed '$d')
   fm_name=$(printf '%s\n' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)
   fm_desc=$(printf '%s\n' "$fm" | sed -n 's/^description:[[:space:]]*//p' | head -1)

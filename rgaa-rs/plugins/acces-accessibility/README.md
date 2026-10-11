@@ -74,7 +74,7 @@ therefore iterates at zero marginal cost, and the knob worth tuning
 |---|---|---|
 | 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static` — source linting, sub-millisecond per file, no browser |
 | 1 | + `obscura` **0.2.2** exactly | `analyze`, `igt`, `source_map`, `verify_fix` — the whole loop |
-| 2 | + an LLM key *or* a local provider | `audit_url` — the 106-criteria audit |
+| 2 | + `RGAA_LLM_MODEL`, **and** a key *or* a local provider (`custom` also needs `RGAA_LLM_BASE_URL`) | `audit_url` — the 106-criteria audit |
 
 Tier 0 is a useful degraded mode, not a failure. The `obscura` version is
 checked at runtime and a mismatch fails fast, so a drifted binary reports

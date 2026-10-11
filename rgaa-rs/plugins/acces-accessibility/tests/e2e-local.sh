@@ -183,6 +183,39 @@ if [[ -n "$URL" ]]; then
   # criterion_id is often null: real axe findings outside the referential.
   UNMAPPED=$(printf '%s' "$AB" | jq '[.. | objects | select(has("criterion_id")) | select(.criterion_id == null)] | length' 2>/dev/null)
   ok "unmapped findings (criterion_id null): ${UNMAPPED:-0} of ${NF:-0}"
+
+  # The loop's key must be unique, or matching silently merges findings. One axe
+  # violation often maps to two RGAA criteria, so (rule,target) alone is not
+  # enough and html does not disambiguate it.
+  K2=$(printf '%s' "$AB" | jq '[.. | objects | select(has("criterion_id")) | [.rule,.target]] | unique | length' 2>/dev/null)
+  K3=$(printf '%s' "$AB" | jq '[.. | objects | select(has("criterion_id")) | [.rule,.target,.criterion_id]] | unique | length' 2>/dev/null)
+  if [[ "${K3:-0}" == "${NF:-0}" ]]; then
+    ok "(rule,target,criterion_id) is unique: ${K3}/${NF} — (rule,target) alone gives ${K2}"
+  else
+    fail "(rule,target,criterion_id) is NOT unique: ${K3} keys for ${NF} findings — the loop's matching would merge findings"
+  fi
+
+  # Stability: re-scan the unedited page. Findings on positional or
+  # runtime-generated selectors move between scans; those on stable selectors
+  # must not. A difference among the stable ones means the loop cannot tell a
+  # fix from noise.
+  echo "— re-scanning to measure selector stability"
+  A2=$(call_tool analyze "{\"url\":\"${URL}\"}")
+  AB2=$(printf '%s' "$A2" | jq -r '.result.content[0].text // empty' 2>/dev/null)
+  [[ -z "$AB2" ]] && AB2="$A2"
+  stable_keys() {
+    printf '%s' "$1" | jq -r '[.. | objects | select(has("criterion_id"))
+      | select((.target | test(":nth-child|:nth-of-type|carousel|go[0-9]{6,}")) | not)
+      | "\(.rule)|\(.target)|\(.criterion_id)"] | sort | .[]' 2>/dev/null
+  }
+  S1=$(stable_keys "$AB"); S2=$(stable_keys "$AB2")
+  N1=$(printf '%s\n' "$S1" | grep -c . ); N2=$(printf '%s\n' "$S2" | grep -c . )
+  if [[ "$S1" == "$S2" ]]; then
+    ok "stable-selector findings reproduce exactly across scans ($N1 findings)"
+  else
+    fail "stable-selector findings differ across two scans of an unedited page ($N1 vs $N2) — the loop cannot distinguish a fix from scan noise"
+  fi
+  ok "unstable-selector findings (excluded from convergence): $(( ${NF:-0} - N1 )) of ${NF:-0}"
 else
   echo "— analyze skipped (pass a URL to exercise it)"
 fi

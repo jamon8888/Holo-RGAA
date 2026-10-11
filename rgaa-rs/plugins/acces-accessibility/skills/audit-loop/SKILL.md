@@ -72,10 +72,35 @@ A live run established that `analyze` emits one DOM-snapshot evidence hash per
 every reference finding reads as *fixed* and every current finding as *new*.
 Full evidence in [field-mapping](../usage/references/field-mapping.md).
 
-**Compare rounds yourself on `rule` + `target` + `criterion_id`**, which were
-empirically stable across runs. A finding is gone when no current finding
-matches that triple. Call `verify_fix` for its re-analysis and its RGAA
-citations if useful, but derive *fixed / remaining / new* from your own match.
+**Compare rounds yourself on `rule` + `target` + `criterion_id`.** That triple
+was verified unique on a live page — 24 findings gave 24 distinct keys — and
+`criterion_id` is the part that earns its place: one axe violation often maps to
+two RGAA criteria, so the same element appears twice with the same `rule`,
+`target` *and* `html`. Dropping `criterion_id` silently collapses them.
+
+Call `verify_fix` for its re-analysis and its RGAA citations if useful, but
+derive *fixed / remaining / new* from your own match.
+
+**But a disappeared finding is not automatically a fixed one.** Two scans of an
+*unedited* page differed by 6 findings, and **every one of them sat on a
+positional or runtime-generated selector**. Restricted to stable selectors the
+two runs were identical — 19 findings, same set.
+
+So treat a finding as **unstable, not fixed**, when its `target` contains:
+
+- a positional step — `:nth-child(…)`, `:nth-of-type(…)`
+- a carousel, slider or other rotating container
+- an obfuscated runtime class, e.g. `.go2617933356` — CSS-module or
+  build-generated names that change between builds or renders
+
+A carousel rotates between scans, so `:nth-child(1)` points at a different
+element each time; such a finding vanishes and reappears with no edit at all.
+Report these separately as **unstable** and do not count them toward
+convergence. On the page tested this was 4 of 24 findings — not a corner case.
+
+**Prefer a deterministic target.** The loop is reliable against a local dev
+server or a static build, where the DOM does not move between scans. Against a
+live, dynamic page, expect noise and say so.
 
 Do not use finding `id` either: it is positional per rule within a scan, so the
 same element was `rgaa-9.3-listitem-9` in one run and `rgaa-9.3-listitem-3` in
@@ -98,10 +123,13 @@ your file.
 Stop on the first of these:
 
 1. **No findings remain.** Success — reported with the residue below.
-2. **Fixpoint: the set of `rule` + `target` pairs did not change between two
-   rounds.** Match on that triple, **not** on the fingerprint — the fingerprint
-   moves on its own whenever the page changes, so a fingerprint-based fixpoint
-   would never trigger and the loop would always run to the cap.
+2. **Fixpoint: the set of `rule` + `target` + `criterion_id` keys, excluding
+   unstable selectors, did not change between two rounds.** Match on that
+   triple, **not** on the fingerprint — the fingerprint moves on its own
+   whenever the page changes (and on a dynamic page, between any two scans), so
+   a fingerprint-based fixpoint would never trigger and the loop would always
+   run to the cap. Excluding unstable selectors matters for the same reason: a
+   rotating carousel would otherwise keep the set changing for ever.
 3. **Round cap** — default 5, override with the second argument.
 
 **The fixpoint matters more than the cap.** An unchanged fingerprint after you
@@ -141,7 +169,8 @@ Three categories, never merged:
 | **fixed** | gone, confirmed by `verify_fix` |
 | **refused** | the human declined the patch |
 | **out of reach** | the 40, plus anything the coverage map shows as undecidable here |
-| **outside the referential** | axe-core findings whose `criterion_id` is `null` — real defects, but not RGAA criteria. On a live WordPress/Elementor homepage this was 8 of 20 findings, so do not treat it as a corner case. |
+| **outside the referential** | axe-core findings whose `criterion_id` is `null` — real defects, but not RGAA criteria. On a live WordPress/Elementor homepage this was 7 of 22 findings, so do not treat it as a corner case. |
+| **unstable** | findings on a positional or runtime-generated selector, which move between scans with no edit. 4 of 24 on the page tested. Never report one as fixed. |
 
 Also state: how many rounds ran and why it stopped; which fixes were
 `remediate` patches and which you wrote yourself; and that no tokens were spent.

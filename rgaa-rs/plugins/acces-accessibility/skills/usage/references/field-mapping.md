@@ -185,10 +185,44 @@ the page changes every finding's fingerprint**, and `compare` then reports every
 reference finding as *fixed* and every current finding as *new* — exactly when
 you are using it, because a change is the only reason to re-verify.
 
+Worse than first thought: on a **dynamic** page the hash differs between two
+scans of the *unedited* page, because the DOM itself moved. So the diff is
+unreliable even without an edit.
+
 **Until this is fixed, do not trust `verify_fix`'s categories.** Compare rounds
-yourself on `rule` + `target` + `criterion_id`, which were empirically stable
-across runs. Call `verify_fix` for its re-analysis and its citations if you like,
-but derive *fixed / remaining / new* from your own comparison.
+yourself on `rule` + `target` + `criterion_id`, and derive *fixed / remaining /
+new* from your own comparison. Call `verify_fix` for its re-analysis and its
+citations if you like, just not for its verdict.
+
+### Why all three parts of the key are needed
+
+Measured on a live page, twice:
+
+| | |
+|---|---|
+| findings | 24 and 22 |
+| distinct by `(rule, target)` | 22 and 21 — **not unique** |
+| distinct by `(rule, target, html)` | 22 and 21 — **html does not help** |
+| distinct by `(rule, target, criterion_id)` | 24 and 22 — **unique** |
+
+The collisions are one element mapped to **two RGAA criteria** — e.g. the same
+`<img class="emoji">` reported as `rgaa-1.1-image-alt-0` and
+`rgaa-1.2-image-alt-0`, identical `rule`, `target` and `html`, differing only in
+`criterion_id`. Drop `criterion_id` and you silently merge two findings.
+
+### Selector stability, measured
+
+Two scans of the same unedited page differed by **6 findings, all of them on a
+positional or runtime-generated selector**. Restricted to stable selectors the
+two runs were **identical: 19 findings, same set**.
+
+Unstable shapes seen in the wild: `:nth-child(1)`, carousel containers
+(`.tm-carousel-item`, `.tm-carousel-next`) and obfuscated runtime classes
+(`.go2617933356`). A rotating carousel makes `:nth-child(1)` point somewhere
+else on the next scan, so the finding disappears and returns with no edit.
+
+Never read such a disappearance as a fix. The loop is reliable against a local
+dev server or static build; against a live dynamic page, expect this noise.
 
 Note also that finding `id` is **positional per rule within a scan**: the same
 element was `rgaa-9.3-listitem-9` in one run and `rgaa-9.3-listitem-3` in

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "rgaa-mcp": {
+      "type": "stdio",
+      "command": "rgaa-mcp",
+      "description": "RGAA MCP server. Nine tools: analyze, remediate, igt, audit_url, get_audit_result, list_criteria, lint_static, source_map, verify_fix. Install with install.sh, or: cargo install --path rgaa-rs/crates/rgaa-mcp",
+      "env": {
+        "RGAA_LLM_API_KEY": "${user_config.llm_api_key}",
+        "RGAA_OBSCURA_BIN": "${user_config.obscura_bin}"
+      }
+    }
+  }
+}

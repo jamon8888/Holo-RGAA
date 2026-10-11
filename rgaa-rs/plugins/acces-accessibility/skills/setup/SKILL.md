@@ -24,10 +24,23 @@ Tier 1 is what the remediation loop needs. Tier 2 is only for full
 ## Install
 
 **Prefer the repository's installer.** If `install.sh` exists at the repository
-root, run it — it installs `rgaa-mcp`, `rgaa-cli`, the pinned `obscura`, and
-the plugin, and it version-checks `obscura` itself. Do **not** restate its steps
-in your own words: a second description of the install drifts from the real one,
-and the cost is an inexplicable "it won't start".
+root, run it — it installs `rgaa-mcp`, `rgaa-cli` and the pinned `obscura`, and
+version-checks `obscura` itself. Do **not** restate its steps in your own words:
+a second description of the install drifts from the real one, and the cost is an
+inexplicable "it won't start".
+
+Note what it does **not** do: `install.sh` symlinks only the sibling
+`rgaa-accessibility` plugin into `~/.claude/plugins/` (it hardcodes
+`rgaa-rs/plugins/rgaa-consultant`). It does not install **this** plugin, which
+comes from the marketplace:
+
+```
+/plugin install acces-accessibility --marketplace jamon8888/Holo-RGAA
+```
+
+In practice a user running this skill already has the plugin — that is how the
+skill reached them. What `install.sh` gives them is the **runtime**: the server
+and the browser binary.
 
 ```bash
 ./install.sh
@@ -47,11 +60,33 @@ The version is not advisory. `rgaa-obscura` compares the binary's reported
 version against a pinned constant and **fails fast on mismatch**, so a drifted
 `obscura` reports itself instead of misbehaving quietly.
 
-## Verify in three stages
+## Verify in four stages
 
 Run them in order. Each isolates one failure, so a failure names its own cause.
 Stop at the first one that fails and fix that, rather than reporting "it doesn't
 work".
+
+**Stage 0 — the advertised tool set.** Before anything else, check what the
+server advertises. It must offer **nine** tools: `analyze`, `remediate`, `igt`,
+`audit_url`, `get_audit_result`, `list_criteria`, `lint_static`, `source_map`,
+`verify_fix`.
+
+**A shorter list means a stale binary, and it is not a cosmetic problem.** An
+installed server predating `source_map` cannot run the remediation loop at all:
+`remediate` rejects every issue whose `source_locations` is empty, and
+`source_map` is the only thing that fills it. The individual calls in the stages
+below all still succeed on such a server, which is exactly why this check comes
+first — a stale binary passes every other test.
+
+This happens: a binary installed from an earlier checkout stays on `PATH`
+indefinitely, and nothing warns. Fix it with:
+
+```bash
+cargo install --path rgaa-rs/crates/rgaa-mcp --force
+```
+
+`tests/e2e-local.sh` in this plugin performs this check along with the rest of
+the contract; run it when a user reports that something "worked yesterday".
 
 **Stage 1 — `list_criteria`.** No arguments, no browser, no network, no LLM.
 Proves the server starts and its catalogue loads. Expect 106 criteria.

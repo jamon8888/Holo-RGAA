@@ -43,12 +43,16 @@ skipping this step fails every issue.
   yourself.** `remediate` cannot touch it; there is no HTML framework variant.
 
 **Inspect every patch before applying it. Some are not applicable.**
-`remediate` currently emits syntactically invalid code for **self-closing**
-tags — the attribute lands after the `/`, so `<img … />` becomes
-`<img … / alt="">`, which does not compile. `outcome` is `"ok"` and
-`confidence` is `"high"` regardless, so the response gives no warning. It also
-proposed the same `alt=""` for criteria 1.1 and 1.2, which are opposite
-requirements. Full detail in
+`remediate` proposes the same `alt=""` for criteria **1.1 and 1.2**, which are
+opposite requirements — 1.1 asks an informative image to carry a text
+alternative, 1.2 asks a decorative one to be ignored. `alt=""` satisfies 1.2
+and **defeats** 1.1, so read `criteria` on the outcome and judge the patch
+against it. `confidence` is the hardcoded string `"high"` and tells you
+nothing.
+
+A separate syntax defect — the attribute landing after a self-closing `/`, so
+`<img … />` came back as `<img … / alt="">` — has been fixed, but a binary
+older than that fix still emits it. Full detail in
 [field-mapping](../usage/references/field-mapping.md).
 
 Refusing a broken patch is the approval gate working, not a loop failure.

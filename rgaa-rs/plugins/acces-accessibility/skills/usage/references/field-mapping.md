@@ -337,23 +337,23 @@ Two things to know about it:
 - **`files` is a bare basename** (`App.jsx`), not the path you passed in
   `source_locations`. Resolve it against your own mapping, not against the repo.
 
-### The patch can be syntactically invalid. Check it.
+### Check the patch before applying it
 
-`insert_attribute` (`rgaa-remediation/src/adapters.rs:216-243`) inserts the new
-attribute immediately before the opening tag's first `>`. For a **self-closing**
-tag the character before `>` is `/`, so the attribute lands after the slash and
-the tag loses its self-closing form. Measured against a React fixture:
+A syntax defect here was **fixed** in `rgaa-remediation`: attribute insertion
+used to land after a self-closing `/`, so `<img … />` came back as
+`<img … / alt="">`, which does not compile. Two of three measured cases were
+broken, and `outcome` was `"ok"` with `confidence` `"high"` on all of them.
 
-| Source | Emitted `diff` | Valid |
-|---|---|---|
-| `<img className="logo" src="/logo.png" />` | `<img className="logo" src="/logo.png" / alt="">` | **no** |
-| `<input … name="email" />` | `<input … name="email" / aria-label="email">` | **no** |
-| `<button …></button>` | `<button … aria-label="Submit"></button>` | yes |
+It matters for two reasons even so:
 
-Self-closing tags are the norm in JSX and Vue, and the two broken cases are the
-most common RGAA defects there. `outcome` is `"ok"` and `confidence` is `"high"`
-on all three, so **nothing in the response flags the problem**. Applying these
-breaks the build.
+- **A binary older than that fix still emits it.** Check what you are running
+  before trusting a patch; the symptom is an attribute sitting after the slash.
+- The same scan also mis-read JSX **brace expressions**, so the `>` of an arrow
+  function in `onClick={() => …}` ended the tag and the attribute was injected
+  into the middle of the expression. Also fixed.
+
+An unquoted attribute value ending in a slash — `<img src=/logo.png/>` — is
+genuinely ambiguous and now returns `NeedsReview` rather than a guess.
 
 ### The patch can also be semantically wrong for its criterion
 

@@ -1,6 +1,6 @@
 ---
 name: setup
-description: This skill should be used when the user asks to "set up rgaa-mcp", "install the RGAA accessibility tooling", "configure the RGAA MCP server", "connect rgaa-mcp", "why is analyze failing", "obscura not found", or runs /acces-accessibility:setup. It installs the rgaa-mcp server and the pinned obscura browser binary, wires them into the user's MCP client (Claude Code, opencode, Cursor, VS Code, Claude Desktop), and verifies the installation in three stages that each isolate one failure.
+description: This skill should be used when the user asks to "set up rgaa-mcp", "install the RGAA accessibility tooling", "configure the RGAA MCP server", "connect rgaa-mcp", "why is analyze failing", "obscura not found", or runs /acces-accessibility:setup. It installs the rgaa-mcp server and the pinned obscura browser binary, wires them into the user's MCP client (Claude Code, opencode, Cursor, VS Code, Claude Desktop), and verifies the installation in four stages that each isolate one failure.
 argument-hint: "[client] (optional: claude-code | opencode | cursor | vscode | claude-desktop)"
 allowed-tools: AskUserQuestion, Bash, Read, Edit, Write, Glob, Grep
 ---
@@ -147,6 +147,22 @@ falls through to `.env` rather than shadowing it. Setting the plugin's
 
 If the user only wants the remediation loop, they need **no key at all**: say so
 instead of walking them through credentials they will never use.
+
+## Confirm before you change anything
+
+This plugin gates its own patches on human approval. Setup is held to the same
+standard, and the actions below are not reversible by the user without effort:
+
+- **Before running `install.sh`**, say what it will install and where. It writes
+  binaries into `~/.local/bin`.
+- **Before writing to an MCP client config**, show the exact change and ask.
+  These files hold the user's other servers.
+- **Never move, overwrite or delete a binary** on the user's machine. If one
+  shadows another, say which shadows which and let the user choose.
+- **Never edit `PATH`** or shell startup files.
+
+Reading to diagnose — `command -v`, listing the two known binary paths, printing
+a config file — needs no permission. Writing does.
 
 ## Clients
 

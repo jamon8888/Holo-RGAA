@@ -54,7 +54,7 @@ construct it**. See "Building a reference bundle".
 
 ---
 
-## The ten traps
+## The thirteen traps
 
 Each fails *silently* or from an unexpected direction. None is discoverable by
 trying once.
@@ -149,7 +149,7 @@ paths; use `sources` to pass content inline.
 
 axe-core finds real violations that map to **no RGAA criterion**. Their `id` is
 prefixed `rgaa-unmapped-`, and `criterion_id` is `null`. On a live run against a
-WordPress/Elementor homepage, **8 of 20 findings were unmapped**.
+WordPress/Elementor homepage, **7 of 22 findings were unmapped**.
 
 They are genuine defects, but they are outside the referential: they cannot be
 counted for or against conformity, and passing `null` into `remediate`'s

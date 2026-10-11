@@ -54,7 +54,7 @@ audit_url ──(sampled_page_urls)──▶ analyze ──▶ source_map ──
 documents a path that does not work — see trap 1 in
 [field-mapping.md](references/field-mapping.md).
 
-## The five rules that matter most
+## The six rules that matter most
 
 Full detail, with every field, in [field-mapping.md](references/field-mapping.md).
 These are the ones that bite first:
@@ -76,7 +76,7 @@ These are the ones that bite first:
 4. **`remediate` correlates on `issue_id`, never on array position** — and the
    server *verifies* it, failing the whole call on mismatch. Invent stable ids.
 5. **`criterion_id` is often `null`.** axe-core finds real violations mapped to
-   no RGAA criterion (`rgaa-unmapped-*` ids) — 8 of 20 on a live
+   no RGAA criterion (`rgaa-unmapped-*` ids) — 7 of 22 on a live
    WordPress/Elementor homepage. Report them separately; they cannot count for
    or against conformity, and `null` must not go into `remediate`'s `criteria[]`.
 6. **A clean result is not RGAA conformity.** 40 of the 106 criteria are
@@ -108,12 +108,17 @@ there.
 
 ## Before you report
 
-Three categories, never merged:
+Five categories, never merged:
 
-- **fixed** — a finding that is gone, confirmed by `verify_fix`
+- **fixed** — gone, confirmed by your own key comparison
 - **refused** — a patch the human declined. Not the same as undetected, and it
   must not be silently dropped or re-proposed.
 - **out of reach** — the residue above
+- **outside the referential** — findings whose `criterion_id` is `null`: real
+  defects, but not RGAA criteria, so they count neither for nor against
+  conformity
+- **unstable** — findings on a positional or runtime-generated selector, which
+  move between scans with no edit. Never report one as fixed.
 
 And if you ran anything that cost tokens, say what it cost.
 

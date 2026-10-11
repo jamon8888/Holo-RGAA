@@ -132,13 +132,19 @@ Stop on the first of these:
    rotating carousel would otherwise keep the set changing for ever.
 3. **Round cap** — default 5, override with the second argument.
 
-**The fixpoint matters more than the cap.** An unchanged fingerprint after you
-applied a patch means **the fix did not land**. That is a failure, not slowness:
-report it as one, name the findings that did not move, and stop. Spending four
-more rounds on patches that provably do nothing wastes the human's attention,
-which is the one resource this loop actually consumes.
+**The fixpoint matters more than the cap.** If a finding's `rule` + `target` +
+`criterion_id` key is **still present** after you applied a patch for it, the fix
+did not land. That is a failure, not slowness: report it as one, name the keys
+that did not move, and stop. Spending four more rounds on patches that provably
+do nothing wastes the human's attention, which is the one resource this loop
+actually consumes.
 
-This check is free, but it is only precise if you kept `target` verbatim.
+Judge this on the key, **never on the fingerprint**. The fingerprint carries a
+per-scan DOM hash, so it moves whenever the page changes — and on a dynamic page
+between any two scans — which means "the fingerprint changed" tells you nothing
+about whether a fix worked.
+
+The check is free, but it is only precise if you kept `target` verbatim.
 Restated selectors make every round look like progress.
 
 ## A clean loop is not conformity
@@ -162,7 +168,7 @@ guess, and do not round 32 up to 66.
 
 ## The report
 
-Three categories, never merged:
+Five categories, never merged:
 
 | Category | Meaning |
 |---|---|

@@ -137,9 +137,20 @@ echo "— remediate rejects what the docs say it rejects"
 # summary and remediation are required. Omitting them must be an error; the
 # plugin's field-mapping table once left them out.
 MISSING_REQ=$(call_tool remediate '{"issues":[{"id":"a","rule":"image-alt","element_html":"<img>","page_url":"https://example.org"}]}')
-printf '%s' "$MISSING_REQ" | jq -e '.error // (.result.isError == true)' >/dev/null 2>&1 \
-  && ok "rejects an issue missing summary/remediation" \
-  || fail "accepted an issue missing summary/remediation"
+# Must be a real server rejection, not our own timeout. The rpc helper emits
+# {"error":{"message":"no response within Ns"}} when nothing comes back, and
+# matching on `.error` alone would score that as a successful rejection test —
+# a false pass of exactly the kind this script exists to prevent.
+if printf '%s' "$MISSING_REQ" | jq -e '.error.message? // "" | test("no response within")' >/dev/null 2>&1; then
+  fail "remediate check inconclusive: the call timed out, nothing was tested"
+elif printf '%s' "$MISSING_REQ" | jq -e '(.result.isError == true) or ((.error | type) == "object")' >/dev/null 2>&1; then
+  # Note: `.error | objects` would emit an empty stream when .error is null,
+  # which annihilates the whole `or` and makes jq -e exit non-zero. Compare the
+  # type instead.
+  ok "rejects an issue missing summary/remediation"
+else
+  fail "accepted an issue missing summary/remediation"
+fi
 
 # Empty source_locations fails the issue, which is what makes source_map
 # mandatory. Per-issue failure, not call failure.
@@ -157,9 +168,13 @@ if [[ -n "$URL" ]]; then
   [[ -z "$AB" ]] && AB="$A"
 
   # Flat shape when igt_tools is unset: findings at top level, not data.axe.
-  printf '%s' "$AB" | jq -e '.. | objects | select(has("findings"))' >/dev/null 2>&1 \
-    && ok "flat response shape (findings at top level)" \
-    || fail "no top-level findings — shape may have switched"
+  # `length` on an object returns its key count, so assert the type before any
+  # counting below depends on it.
+  if printf '%s' "$AB" | jq -e '[.. | objects | select(has("findings")) | .findings | select(type=="array")] | length > 0' >/dev/null 2>&1; then
+    ok "flat response shape (findings is an array at top level)"
+  else
+    fail "no top-level findings array — the shape may have switched, or the call failed: $(printf '%s' "$A" | head -c 200)"
+  fi
 
   NF=$(printf '%s' "$AB" | jq '[.. | objects | select(has("findings")) | .findings] | first | length' 2>/dev/null)
   # Zero findings on an arbitrary page is far more likely to mean the call did
@@ -209,8 +224,13 @@ if [[ -n "$URL" ]]; then
       | "\(.rule)|\(.target)|\(.criterion_id)"] | sort | .[]' 2>/dev/null
   }
   S1=$(stable_keys "$AB"); S2=$(stable_keys "$AB2")
-  N1=$(printf '%s\n' "$S1" | grep -c . ); N2=$(printf '%s\n' "$S2" | grep -c . )
-  if [[ "$S1" == "$S2" ]]; then
+  N1=$(printf '%s\n' "$S1" | grep -c . || true); N2=$(printf '%s\n' "$S2" | grep -c . || true)
+  # An empty stable set is not agreement. Two empty sets compare equal, which
+  # would report "reproduce exactly (0 findings)" when the second scan simply
+  # failed. Require something to have been compared.
+  if [[ "${N1:-0}" -eq 0 ]]; then
+    fail "no stable-selector findings to compare — the re-scan probably failed; nothing was verified"
+  elif [[ "$S1" == "$S2" ]]; then
     ok "stable-selector findings reproduce exactly across scans ($N1 findings)"
   else
     fail "stable-selector findings differ across two scans of an unedited page ($N1 vs $N2) — the loop cannot distinguish a fix from scan noise"

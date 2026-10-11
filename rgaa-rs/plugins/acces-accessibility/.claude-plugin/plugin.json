@@ -3,7 +3,7 @@
   "name": "acces-accessibility",
   "displayName": "Acces Accessibility",
   "version": "1.0.0",
-  "description": "RGAA tooling discipline for coding agents. Drives the rgaa-mcp server through the analyze -> source_map -> remediate -> approve -> verify loop, teaching the field mappings and trap fields that silently return wrong answers when got wrong. Covers the ~66 RGAA 4.1.2 criteria that automated instruments can decide, at zero token cost, and reports the 40 it cannot reach rather than implying conformity.",
+  "description": "RGAA tooling discipline for coding agents. Drives the rgaa-mcp server through the analyze -> source_map -> remediate -> approve -> verify loop, teaching the field mappings and trap fields that silently return wrong answers when got wrong. Reaches 66 of the 106 RGAA 4.1.2 criteria at zero token cost, but concludes conforming for only 32 — it reports the other 74 as residue rather than implying conformity.",
   "author": {
     "name": "RGAA Team",
     "url": "https://github.com/jamon8888/Holo-RGAA"

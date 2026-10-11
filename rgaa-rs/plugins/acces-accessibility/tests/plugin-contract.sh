@@ -6,6 +6,10 @@
 
 set -uo pipefail
 
+# Without jq every check below fails with a misleading message, blaming the
+# JSON rather than the missing tool.
+command -v jq >/dev/null || { echo "❌ jq is required by this script"; exit 1; }
+
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$PLUGIN_ROOT/../../.." && pwd)"
 PLUGIN_NAME="acces-accessibility"

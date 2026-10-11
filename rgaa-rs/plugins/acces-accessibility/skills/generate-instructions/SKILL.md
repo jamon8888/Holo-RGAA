@@ -57,19 +57,23 @@ Keep these tight. Each one is a rule an agent breaks by default, and each fails
 3. **`analyze`'s response shape switches on `config.igt_tools`.**
    With it set, findings move from top-level `findings` to `data.axe`. Reading
    `findings` then yields nothing, with no error.
-4. **Copy findings byte-exact between rounds.** `compare` fingerprints on
-   `rule`/`url`/`target`/`component_path`/`evidence[]` — never on `id`.
-   A paraphrased selector splits one finding into one "fixed" and one "new",
-   which reads as progress.
-5. **Reference findings go in top-level `bundle.findings` only.** Findings in
+4. **Match findings across rounds on `rule` + `target` + `criterion_id`**, copied
+   verbatim. Never on `id` — it is positional per scan. Never on the fingerprint
+   — it carries a per-scan DOM hash, so it moves on any page change. All three
+   parts are needed: one axe violation often maps to two RGAA criteria, so
+   `rule` + `target` alone merges two findings silently.
+5. **A finding that vanished from a positional or runtime-generated selector is
+   unstable, not fixed.** `:nth-child`, carousels and build-generated class
+   names move between scans with no edit at all.
+6. **Reference findings go in top-level `bundle.findings` only.** Findings in
    `pages[].findings` are dropped from the diff; the call still succeeds and
    reports nothing.
-6. **Never put `status: "pass"` findings in a reference bundle.** Omitting them
+7. **Never put `status: "pass"` findings in a reference bundle.** Omitting them
    keeps the "new" category meaning only genuinely-new.
-7. **A clean loop is not RGAA conformity.** 40 of the 106 criteria are
+8. **A clean loop is not RGAA conformity.** 40 of the 106 criteria are
    structurally out of reach — 32 need the LLM (`audit_url` only), 8 need a
    person. Report that residue; never imply a conformance verdict.
-8. **Only `audit_url` spends tokens.** The whole remediation loop is free, so
+9. **Only `audit_url` spends tokens.** The whole remediation loop is free, so
    iterate it freely — and announce the cost before any `audit_url`.
 
 ## Targets

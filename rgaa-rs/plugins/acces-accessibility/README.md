@@ -103,15 +103,21 @@ flag keeps blocking localhost and your variable has no effect. Check with
 |---|---|
 | `setup` | Install and verify the server across Claude Code, opencode, Cursor, VS Code and Claude Desktop |
 | `usage` | The tool contract: field mappings, trap fields, cost control, and the per-criterion coverage map |
-
-Two more land on top of this one: `audit-loop` (the approval-gated remediation
-loop) and `generate-instructions`.
+| `audit-loop` | The approval-gated remediation loop: analyze → source_map → remediate → approve → apply → verify |
+| `generate-instructions` | Write the workflow into a repository's own agent instructions |
 
 ## Verifying an installation
 
 ```bash
 ./tests/plugin-contract.sh          # structure, no network
+./tests/e2e-local.sh                # the real MCP contract, offline parts
+./tests/e2e-local.sh https://example.org   # plus a live analyze
 ```
+
+`e2e-local.sh` checks the server advertises all nine tools first. A short list
+means a stale binary on `PATH`, which passes every other check while making the
+remediation loop impossible — reinstall with
+`cargo install --path rgaa-rs/crates/rgaa-mcp --root "$HOME/.local" --force`.
 
 ## License
 

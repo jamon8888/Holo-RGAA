@@ -285,3 +285,61 @@ fn policy_rejects_unresolved_findings() {
     assert_eq!(result.counts.unchanged, 1);
     assert!(!result.failures.is_empty());
 }
+
+/// Self-closing JSX, as it actually appears in a React or Vue source tree.
+///
+/// The fixture in `full_remediation_loop_analyze_to_resolve` uses
+/// `<img src="hero.png">` — HTML-style, not self-closing — which is why the
+/// insertion bug survived: the attribute went in before the `>` and there was
+/// no `/` for it to land behind. Driving the real MCP loop against a React
+/// project produced `<img className="logo" src="/logo.png" / alt="">`, which
+/// does not compile.
+#[test]
+fn proposes_valid_jsx_for_a_self_closing_element() {
+    let policy = RemediationPolicy::default();
+    let issue = rgaa_remediation::RemediationIssue {
+        id: "f-selfclose".into(),
+        rule: "image-alt".into(),
+        element_html: "import React from \"react\";\n<img className=\"logo\" src=\"/logo.png\" />"
+            .into(),
+        page_url: "https://example.test".into(),
+        source_locations: vec![rgaa_remediation::SourceLocation {
+            file: "src/App.jsx".into(),
+            line: 6,
+            column: Some(5),
+        }],
+        summary: "Image missing alt".into(),
+        remediation: "Add alt attribute".into(),
+        criteria: vec!["1.1".into()],
+        framework: Some(Framework::React),
+    };
+    let adapter = adapter_for(Framework::React);
+    let mut outcomes =
+        rgaa_remediation::remediate(&[issue], &policy, adapter).expect("batch succeeds");
+    let guidance = match outcomes.remove(0) {
+        RemediationOutcome::Ok(g) => g,
+        other => panic!("expected a proposal, got {other:?}"),
+    };
+    let diff = &guidance.proposal.diff;
+
+    assert!(
+        diff.contains(r#"alt="""#),
+        "the alt attribute should be present: {diff}"
+    );
+    // The tag must still self-close, and the slash must stay adjacent to the
+    // bracket rather than being stranded in the middle of the attribute list.
+    assert!(
+        diff.contains("/>"),
+        "the tag must remain self-closing: {diff}"
+    );
+    assert!(
+        !diff.contains("/ alt"),
+        "the attribute must not be inserted after the self-closing slash: {diff}"
+    );
+    // No attribute may follow the slash at all.
+    let after_slash = diff.rsplit_once('/').map(|(_, tail)| tail).unwrap_or("");
+    assert!(
+        after_slash.trim_start().starts_with('>'),
+        "nothing may sit between the self-closing slash and the bracket: {diff}"
+    );
+}

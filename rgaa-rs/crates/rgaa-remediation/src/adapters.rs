@@ -230,7 +230,7 @@ fn insert_attribute(
         issue_id: issue_id.into(),
         reason: "opening tag is incomplete".into(),
     })?;
-    let at = attribute_insertion_point(source, start, end);
+    let at = attribute_insertion_point(source, start, end, issue_id)?;
     Ok(format!("{}{}{}", &source[..at], attribute, &source[at..]))
 }
 
@@ -241,17 +241,29 @@ fn insert_attribute(
 /// otherwise be cut after `a `, and the attribute inserted into the middle of a
 /// value.
 ///
+/// Brace depth is tracked for the same reason, and it matters more in practice:
+/// `onClick={() => submit()}` is ubiquitous in JSX, and the `>` of the arrow is
+/// not the end of the tag. Quotes are still tracked inside a brace expression,
+/// so a `}` in a string does not close it.
+///
+/// Backslash escapes are deliberately not handled: neither HTML nor JSX
+/// processes `\"` inside an attribute value, so treating it as an escape would
+/// end the quoted run in the wrong place.
+///
 /// Scanning bytes is safe here and lands on a character boundary: the markers
 /// are ASCII, and a UTF-8 continuation byte is never an ASCII byte.
 fn opening_tag_end(source: &str, start: usize) -> Option<usize> {
     let mut quote: Option<u8> = None;
+    let mut braces: u32 = 0;
     for (offset, byte) in source.as_bytes().iter().enumerate().skip(start) {
         match quote {
             Some(open) if *byte == open => quote = None,
             Some(_) => {}
             None => match *byte {
                 b'"' | b'\'' => quote = Some(*byte),
-                b'>' => return Some(offset),
+                b'{' => braces += 1,
+                b'}' => braces = braces.saturating_sub(1),
+                b'>' if braces == 0 => return Some(offset),
                 _ => {}
             },
         }
@@ -268,19 +280,41 @@ fn opening_tag_end(source: &str, start: usize) -> Option<usize> {
 /// compile. JSX and Vue self-close by default, so that hit the two most common
 /// RGAA defects in exactly the sources this crate exists to patch.
 ///
-/// A `/` inside a quoted value is not a self-closing marker. The last
-/// non-whitespace byte before `>` is the only candidate, and in `src="/x.png">`
-/// that is the closing quote, so the common case is safe. An *unquoted* value
-/// ending in a slash is not distinguishable here, but JSX and Vue always quote
-/// or brace their attribute values, so it cannot arise in the sources reached
-/// through these adapters.
-fn attribute_insertion_point(source: &str, start: usize, end: usize) -> usize {
+/// A `/` inside a quoted value is not a self-closing marker: the only candidate
+/// is the last non-whitespace byte before `>`, and in `src="/x.png">` that is
+/// the closing quote.
+///
+/// An *unquoted* value ending in a slash — `<img src=/logo.png/>` — is genuinely
+/// ambiguous, and HTML parsers keep that slash in the value. Guessing either way
+/// corrupts something: treat it as self-closing and the URL loses its trailing
+/// slash, treat it as a value and the emitted tag does not compile. So decline,
+/// the way `source_map` returns `unmappable` rather than a guessed location.
+fn attribute_insertion_point(
+    source: &str,
+    start: usize,
+    end: usize,
+    issue_id: &str,
+) -> Result<usize, RemediationError> {
     let inner = &source[start..end];
-    match inner.rfind(|c: char| !c.is_whitespace()) {
-        Some(offset) if inner.as_bytes()[offset] == b'/' => {
-            start + inner[..offset].trim_end().len()
+    let Some(offset) = inner.rfind(|c: char| !c.is_whitespace()) else {
+        return Ok(end);
+    };
+    if inner.as_bytes()[offset] != b'/' {
+        return Ok(end);
+    }
+    let before = &inner[..offset];
+    match before.chars().last() {
+        // A self-closing slash follows whitespace, the end of a quoted value,
+        // or the end of a brace expression.
+        Some(c) if c.is_whitespace() || c == '"' || c == '\'' || c == '}' => {
+            Ok(start + before.trim_end().len())
         }
-        _ => end,
+        // `<img/>` — no attributes at all, so the slash cannot belong to a value.
+        Some(_) if !before.contains(char::is_whitespace) => Ok(start + before.len()),
+        _ => Err(RemediationError::NeedsReview {
+            issue_id: issue_id.into(),
+            reason: "ambiguous trailing slash in an unquoted attribute value".into(),
+        }),
     }
 }
 
@@ -475,6 +509,56 @@ mod insert_attribute_tests {
         assert!(
             format!("{err:?}").contains("opening tag is incomplete"),
             "{err:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod jsx_expression_tests {
+    use super::insert_attribute;
+
+    /// `onClick={() => …}` is ubiquitous in JSX, and the `>` of the arrow is
+    /// not the end of the opening tag. Scanning for the first unquoted `>`
+    /// stops there, so the attribute is inserted into the middle of an
+    /// expression. The original implementation had the same flaw; quoting
+    /// awareness alone does not cover it.
+    #[test]
+    fn an_arrow_function_does_not_end_the_opening_tag() {
+        let out = insert_attribute(
+            r#"<button className="x" onClick={() => submit()}></button>"#,
+            "button",
+            r#" aria-label="Submit""#,
+            "issue-1",
+        )
+        .expect("insertion succeeds");
+        assert_eq!(
+            out,
+            r#"<button className="x" onClick={() => submit()} aria-label="Submit"></button>"#
+        );
+    }
+
+    #[test]
+    fn a_bracket_inside_a_brace_expression_does_not_end_the_tag() {
+        let out = insert_attribute(
+            r#"<img src={a > b ? "x.png" : "y.png"} />"#,
+            "img",
+            r#" alt="""#,
+            "issue-1",
+        )
+        .expect("insertion succeeds");
+        assert_eq!(out, r#"<img src={a > b ? "x.png" : "y.png"} alt="" />"#);
+    }
+
+    /// An unquoted value ending in a slash is genuinely ambiguous — HTML
+    /// parsers treat it as part of the value — so guessing either way can
+    /// corrupt the URL or the tag. Decline instead.
+    #[test]
+    fn declines_an_ambiguous_unquoted_trailing_slash() {
+        let err = insert_attribute(r#"<img src=/logo.png/>"#, "img", r#" alt="""#, "issue-1")
+            .expect_err("ambiguous");
+        assert!(
+            format!("{err:?}").contains("ambiguous"),
+            "should decline rather than guess: {err:?}"
         );
     }
 }

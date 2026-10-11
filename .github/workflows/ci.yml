@@ -50,6 +50,9 @@ jobs:
       - run: bash rgaa-rs/plugins/rgaa-consultant/tests/plugin-contract.sh
       - run: bash -n rgaa-rs/plugins/rgaa-codex/tests/plugin-contract.sh
       - run: bash rgaa-rs/plugins/rgaa-codex/tests/plugin-contract.sh
+      - run: claude plugin validate rgaa-rs/plugins/acces-accessibility --strict
+      - run: bash -n rgaa-rs/plugins/acces-accessibility/tests/plugin-contract.sh
+      - run: bash rgaa-rs/plugins/acces-accessibility/tests/plugin-contract.sh
   ts-types:
     name: TypeScript types
     runs-on: ubuntu-latest

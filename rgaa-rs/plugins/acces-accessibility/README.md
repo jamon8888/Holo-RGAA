@@ -104,7 +104,7 @@ flag keeps blocking localhost and your variable has no effect. Check with
 | `setup` | Install and verify the server across Claude Code, opencode, Cursor, VS Code and Claude Desktop |
 | `usage` | The tool contract: field mappings, trap fields, cost control, and the per-criterion coverage map |
 | `audit-loop` | The approval-gated remediation loop: analyze → source_map → remediate → approve → apply → verify |
-| `generate-instructions` | Write the workflow into a repository's own agent instructions |
+| `generate-instructions` | Write the trap rules — the field mistakes an agent makes unaided — into a repository's own agent instructions |
 
 ## Verifying an installation
 

@@ -75,6 +75,18 @@ Keep these tight. Each one is a rule an agent breaks by default, and each fails
    person. Report that residue; never imply a conformance verdict.
 9. **Only `audit_url` spends tokens.** The whole remediation loop is free, so
    iterate it freely — and announce the cost before any `audit_url`.
+10. **Show `remediate`'s `approval_token` and get human agreement before
+   applying a patch.** The token re-derives from the proposal's identity, so a
+   patch altered after approval is detectable and a skipped approval is
+   visible. Never apply a patch that has not been shown and accepted.
+11. **Read the patch before applying it.** `remediate` can propose the same
+   `alt=""` for criteria 1.1 and 1.2, which are opposite requirements, and
+   `confidence` is a hardcoded `"high"` that signals nothing. Judge the patch
+   against the `criteria` on its own outcome.
+
+Rule 10 is not optional dressing: it is the whole of what replaces the hook
+this skill deliberately does not write. Omit it and the generated file claims an
+approval step it never asks for.
 
 ## Targets
 
@@ -104,6 +116,16 @@ Assume the file exists and is hand-maintained. Most are.
 - If the markers are present, **replace what is between them**. Never append a
   second copy.
 - If they are absent, append the section at the end of the file.
+- **Creating a Cursor `.mdc` that does not yet exist** needs Cursor's rule front
+  matter above the section, or Cursor never loads it and the file is silently
+  inert:
+
+  ```
+  ---
+  description: RGAA accessibility rules for rgaa-mcp
+  alwaysApply: true
+  ---
+  ```
 - Never rewrite or reorder the rest of the file. The surrounding content is
   someone's hand-written work and is none of your business.
 

@@ -138,7 +138,21 @@ your file.
 
 Stop on the first of these:
 
-1. **No findings remain.** Success — reported with the residue below.
+1. **No findings remain — *and the scan actually ran*.** Success, reported with
+   the residue below.
+
+   **An empty `findings` list is not by itself success.** `analyze` returns one
+   when the scan fails: check `completed == true`, that `errors` is empty, and
+   that `evidence` is non-empty before believing it. A real example from this
+   plugin's own testing — analysing `http://127.0.0.1:…` without
+   `OBSCURA_ALLOW_PRIVATE_NETWORK=1` returns
+
+   ```json
+   {"findings": [], "errors": [{"code": "cdp_transport", …}], "completed": false}
+   ```
+
+   An agent that read only `findings` would have declared a page conformant
+   that was never loaded. Treat that as a failed round, not a clean one.
 2. **Fixpoint: the set of `rule` + `target` + `criterion_id` keys, excluding
    unstable selectors, did not change between two rounds.** Match on that
    triple, **not** on the fingerprint — the fingerprint moves on its own
@@ -190,11 +204,11 @@ guess, and do not round 32 up to 66.
 
 ## The report
 
-Five categories, never merged:
+Six categories, never merged:
 
 | Category | Meaning |
 |---|---|
-| **fixed** | gone, confirmed by `verify_fix` |
+| **fixed** | its `rule` + `target` + `criterion_id` key is absent from the next round's findings. **Not** `verify_fix`'s `fixed` category, which is unreliable once the page has changed. |
 | **refused** | the human declined the patch |
 | **out of reach** | the 40, plus anything the coverage map shows as undecidable here |
 | **outside the referential** | axe-core findings whose `criterion_id` is `null` — real defects, but not RGAA criteria. On a live WordPress/Elementor homepage this was 7 of 22 findings, so do not treat it as a corner case. |

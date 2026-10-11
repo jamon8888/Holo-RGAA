@@ -170,10 +170,20 @@ if [[ -n "$URL" ]]; then
   # Flat shape when igt_tools is unset: findings at top level, not data.axe.
   # `length` on an object returns its key count, so assert the type before any
   # counting below depends on it.
-  if printf '%s' "$AB" | jq -e '[.. | objects | select(has("findings")) | .findings | select(type=="array")] | length > 0' >/dev/null 2>&1; then
-    ok "flat response shape (findings is an array at top level)"
+  # Must be the TOP-LEVEL `findings`. A recursive search would also accept a
+  # nested one — `data.axe` is exactly where they move when `config.igt_tools`
+  # is set — so the shape switch this asserts against would pass unnoticed.
+  if printf '%s' "$AB" | jq -e '(.findings | type) == "array"' >/dev/null 2>&1; then
+    ok "flat response shape (top-level findings is an array)"
   else
-    fail "no top-level findings array — the shape may have switched, or the call failed: $(printf '%s' "$A" | head -c 200)"
+    fail "no top-level findings array — the shape may have switched to data.axe, or the call failed: $(printf '%s' "$A" | head -c 200)"
+  fi
+  # `analyze` returns an empty list on a failed scan, so an empty result must
+  # not read as a clean page.
+  if printf '%s' "$AB" | jq -e '.completed == true and ((.errors // []) | length == 0)' >/dev/null 2>&1; then
+    ok "scan completed with no errors"
+  else
+    fail "scan did not complete cleanly: $(printf '%s' "$AB" | jq -c '{completed, errors}' 2>/dev/null)"
   fi
 
   NF=$(printf '%s' "$AB" | jq '[.. | objects | select(has("findings")) | .findings] | first | length' 2>/dev/null)

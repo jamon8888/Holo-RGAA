@@ -125,6 +125,31 @@ def main():
         return 2
 
     entries = json.loads(SOURCE.read_text(encoding="utf-8"))
+
+    # Without this, an emptied or truncated source passes `--check` as long as
+    # the committed map was generated from it: render([]) compares equal to a
+    # map of nothing, and the drift check reports success having verified
+    # nothing. The count is printed but was never asserted.
+    if not isinstance(entries, list) or not entries:
+        print(
+            f"{SOURCE.name} is not a non-empty JSON list — refusing to "
+            "generate or check against it",
+            file=sys.stderr,
+        )
+        return 2
+    required = {"criterion_id", "primary"}
+    missing = [
+        i for i, e in enumerate(entries)
+        if not isinstance(e, dict) or not required.issubset(e)
+    ]
+    if missing:
+        print(
+            f"{SOURCE.name}: {len(missing)} entr{'y' if len(missing) == 1 else 'ies'} "
+            f"lack {sorted(required)} (first at index {missing[0]})",
+            file=sys.stderr,
+        )
+        return 2
+
     rendered = render(entries)
 
     if args.check:

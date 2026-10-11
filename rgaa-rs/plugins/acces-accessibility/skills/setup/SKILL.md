@@ -14,9 +14,16 @@ tier 0 is a useful degraded mode, **not** a failure.
 
 | Tier | Requires | Tools that work |
 |---|---|---|
-| 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static` |
-| 1 | + `obscura` **exactly 0.2.2** | `analyze`, `igt`, `source_map`, `verify_fix` |
+| 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static`, `source_map`, `remediate`, `get_audit_result` |
+| 1 | + `obscura` **exactly 0.2.2** | `analyze`, `igt`, `verify_fix` |
 | 2 | + a model, **and** a key *or* a local provider | `audit_url` |
+
+Only three tools touch the browser. `source_map` and `remediate` are local
+computation — `rgaa-remediation` has no `rgaa-obscura` dependency at all — so
+**the patch-proposing half of the loop works with the binary alone**: lint the
+source, map findings onto it, get templated patches. What tier 0 cannot do is
+*see* the page, so it can neither find the findings in the first place nor
+confirm a fix.
 
 Tier 1 is what the remediation loop needs. Tier 2 is only for full
 106-criteria audits, and it is the only tier that costs anything.

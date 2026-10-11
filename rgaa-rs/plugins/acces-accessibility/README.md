@@ -72,8 +72,8 @@ therefore iterates at zero marginal cost, and the knob worth tuning
 
 | Tier | Requires | Gives you |
 |---|---|---|
-| 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static` — source linting, sub-millisecond per file, no browser |
-| 1 | + `obscura` **0.2.2** exactly | `analyze`, `igt`, `source_map`, `verify_fix` — the whole loop |
+| 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static`, `source_map`, `remediate`, `get_audit_result` — everything that is local computation, no browser |
+| 1 | + `obscura` **0.2.2** exactly | `analyze`, `igt`, `verify_fix` — the three tools that need to see the page |
 | 2 | + `RGAA_LLM_MODEL`, **and** a key *or* a local provider (`custom` also needs `RGAA_LLM_BASE_URL`) | `audit_url` — the 106-criteria audit |
 
 Tier 0 is a useful degraded mode, not a failure. The `obscura` version is

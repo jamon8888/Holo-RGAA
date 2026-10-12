@@ -218,9 +218,20 @@ the fix does not touch:
 > stability** below, which was measured on an *unedited* page and still holds.
 
 That is the live risk now, not the fingerprint. When a round's `target` values
-are all stable shapes, read `verify_fix`'s verdict. When they are not, fall
-back to comparing on `rule` + `target` + `criterion_id` yourself — which is the
-same tuple the fingerprint now uses, so the two agree by construction.
+are all stable shapes, read `verify_fix`'s verdict and report from it.
+
+**When they are not, comparing yourself does not help.** Your key and the
+fingerprint are the same tuple, so they fail the same way: a moved `target`
+makes the old finding absent, and absence is indistinguishable from a fix by
+*any* key built on `target`. There is no fallback comparison to reach for.
+
+The only sound move is to stop classifying those findings. Screen each
+round's targets for the unstable shapes listed under **Selector stability**,
+and report anything matching them as **unstable** — neither fixed nor
+remaining, and excluded from the convergence check. A finding on
+`:nth-child(2)` inside a carousel has to be re-identified by something that
+does not move — a stable ancestor, an `id`, an accessible name — or carried
+forward as unresolved. Never counted as fixed.
 
 ### Why all three parts of the key are needed
 

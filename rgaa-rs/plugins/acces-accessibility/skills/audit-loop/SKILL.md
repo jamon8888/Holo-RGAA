@@ -124,7 +124,8 @@ live, dynamic page, expect noise and say so.
 
 Do not use finding `id` either: it is positional per rule within a scan, so the
 same element was `rgaa-9.3-listitem-9` in one run and `rgaa-9.3-listitem-3` in
-another. **`target` is the stable identifier.**
+another. **`target` is the best identifier available — not a reliable one**: see
+the unstable shapes above, which no key built on `target` can survive.
 
 If you do build a reference bundle, three rules, each of which fails **silently**
 when broken — full detail in
@@ -132,7 +133,8 @@ when broken — full detail in
 
 - findings go in top-level `findings`, **never** `pages[].findings`
 - copy them **verbatim**; the comparison fingerprints on
-  `rule`/`url`/`target`/`component_path`/`evidence[]`, not on `id`
+  `rule`/`criterion_id`/`url`/`target`/`component_path` — not on `id`, not on
+  `status`, and since #320 not on `evidence[]` either
 - never include `status: "pass"` findings
 
 Remember `files[].path` is echo-only: `verify_fix` re-analyses the **page**, not

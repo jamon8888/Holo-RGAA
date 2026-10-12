@@ -67,11 +67,13 @@ These are the ones that bite first:
 2. **`analyze`'s response shape switches on `config.igt_tools`.** Set it, and
    findings move from top-level `findings` to `data.axe`. Read `findings` then
    and you get nothing, with no error.
-3. **Match findings across rounds on `rule` + `target`, not on the fingerprint
-   and not on `id`.** `id` is positional per rule within a scan, and the
-   fingerprint includes a scan-level DOM hash that moves whenever the page
-   changes — so `verify_fix`'s own categories are unreliable after an edit.
-   `target` is the stable identifier. See the fingerprint defect in
+3. **Match findings across rounds on `rule` + `criterion_id` + `target`, never
+   on `id`.** `id` is positional per rule within a scan, so the same element
+   was `rgaa-9.3-listitem-9` in one run and `rgaa-9.3-listitem-3` in the next.
+   Since #320 that tuple is also what the `rgaa-fp-v2-` fingerprint hashes, so
+   `verify_fix`'s own categories agree with your comparison — **as far as
+   `target` is stable**. A positional or runtime-generated selector still moves
+   between scans of an unedited page; see
    [field-mapping](references/field-mapping.md).
 4. **`remediate` correlates on `issue_id`, never on array position** — and the
    server *verifies* it, failing the whole call on mismatch. Invent stable ids.

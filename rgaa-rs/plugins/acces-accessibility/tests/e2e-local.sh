@@ -195,14 +195,15 @@ if [[ -n "$URL" ]]; then
     fail "findings: 0 — treat as a failed call, not a clean page. Check the raw response: $(printf '%s' "$A" | head -c 200)"
   fi
 
-  # The fingerprint defect: one dom_snapshot hash per scan, shared by every
-  # finding. While this holds, verify_fix's diff cannot be trusted after an
-  # edit, and the skills must compare on rule + target themselves.
+  # analyze still emits one dom_snapshot hash per scan, shared by every finding.
+  # That is expected, and since #320 it is harmless: the fingerprint hashes the
+  # finding's identity (rule, criterion_id, url, target, component_path) and no
+  # longer touches evidence, so a shared hash cannot move it. Recorded rather
+  # than asserted on, because the count legitimately varies with
+  # ScreenshotPolicy. What must hold is the uniqueness check below.
   HASHES=$(printf '%s' "$AB" | jq -r '[.. | objects | select(has("evidence")) | .evidence[]?.hash] | unique | length' 2>/dev/null)
-  if [[ "${HASHES:-0}" == "1" && "${NF:-0}" -gt 1 ]]; then
-    fail "KNOWN DEFECT still present: all ${NF} findings share one evidence hash, so every fingerprint moves when the page changes (see field-mapping.md)"
-  elif [[ "${NF:-0}" -gt 1 ]]; then
-    ok "evidence hashes are per-finding (${HASHES} distinct) — the defect may be fixed; drop the caveats from usage/ and audit-loop/"
+  if [[ "${NF:-0}" -gt 1 ]]; then
+    ok "evidence hashes: ${HASHES:-0} distinct across ${NF} findings (scan-level is normal; excluded from the fingerprint since #320)"
   fi
 
   # criterion_id is often null: real axe findings outside the referential.

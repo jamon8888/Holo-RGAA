@@ -187,29 +187,46 @@ failure. Another constraint the schema cannot tell you.
 
 ---
 
-## The fingerprint defect — read before trusting `verify_fix`
+## The fingerprint, and what it does and does not guarantee
 
-**Established by a real run, not by reading code.** `analyze` emits **one
-`dom_snapshot` evidence hash per scan**, shared by every finding in it. Two
-scans of the same page at different scopes produced different hashes for an
-element whose `rule`, `url`, `target`, `component_path`, evidence count, kind and
-location were all identical.
+**The scan-level-hash defect described here was fixed in #320** (merged
+2026-10-12). It is worth knowing what it was, because the measurements below
+were taken against the broken version and one of them still applies.
 
-`FindingFingerprint::from_finding` includes `evidence[].hash`. So **any change to
-the page changes every finding's fingerprint**, and `compare` then reports every
-reference finding as *fixed* and every current finding as *new* — exactly when
-you are using it, because a change is the only reason to re-verify.
+**What was wrong.** `analyze` emits **one `dom_snapshot` evidence hash per
+scan**, shared by every finding in it, and `FindingFingerprint::from_finding`
+used to hash `evidence[].hash`. So any change to the page moved every
+finding's fingerprint at once, and `compare` reported every reference finding
+as *fixed* and every current one as *new* — exactly when you were using it,
+since a change is the only reason to re-verify. Established by a real run: two
+scans at different scopes gave different hashes for an element whose `rule`,
+`url`, `target`, `component_path`, evidence count, kind and location were all
+identical.
 
-Worse than first thought: on a **dynamic** page the hash differs between two
-scans of the *unedited* page, because the DOM itself moved. So the diff is
-unreliable even without an edit.
+**What it is now.** The fingerprint is the finding's *identity* and nothing
+else: `rule` + `criterion_id` + `url` + `target` + `component_path`, under the
+`rgaa-fp-v2-` prefix. Evidence is excluded deliberately — it is attached per
+scan, not per finding, and its *count* moved too, because
+`ScreenshotPolicy::OnFailure` only appends a screenshot while the page still
+fails.
 
-**Until this is fixed, do not trust `verify_fix`'s categories.** Compare rounds
-yourself on `rule` + `target` + `criterion_id`, and derive *fixed / remaining /
-new* from your own comparison. Call `verify_fix` for its re-analysis and its
-citations if you like, just not for its verdict.
+So **`verify_fix`'s categories are now usable** — with one standing caveat that
+the fix does not touch:
+
+> The fingerprint is stable *given a stable `target`*. It cannot rescue a
+> finding whose selector is positional or runtime-generated; see **Selector
+> stability** below, which was measured on an *unedited* page and still holds.
+
+That is the live risk now, not the fingerprint. When a round's `target` values
+are all stable shapes, read `verify_fix`'s verdict. When they are not, fall
+back to comparing on `rule` + `target` + `criterion_id` yourself — which is the
+same tuple the fingerprint now uses, so the two agree by construction.
 
 ### Why all three parts of the key are needed
+
+This measurement is why `criterion_id` is part of the v2 fingerprint. It was
+taken here first, against a build that lacked it; #320 confirmed the same
+collision in Rust (2 findings, 1 fingerprint) and added the field.
 
 Measured on a live page, twice:
 
@@ -241,7 +258,8 @@ dev server or static build; against a live dynamic page, expect this noise.
 
 Note also that finding `id` is **positional per rule within a scan**: the same
 element was `rgaa-9.3-listitem-9` in one run and `rgaa-9.3-listitem-3` in
-another. Neither `id` nor the fingerprint is a stable identifier. `target` is.
+another. Never match on `id`. The v2 fingerprint is stable across runs, but
+only as far as its inputs are — and `target` is the input that moves.
 
 ---
 
@@ -263,12 +281,15 @@ yields no citations.
 
 **Rule 2 — copy findings verbatim.** `analyze`'s finding objects deserialise
 **directly** into the bundle's findings. There is no translation step: copy them.
-The comparison fingerprints on `rule`, `url`, `target`, `component_path` and
-`evidence[].{kind,hash,location}` — **not** on `id`, **not** on `status`.
-Changing `target` alone splits one finding into one "fixed" and one "new".
+The comparison fingerprints on `rule`, `criterion_id`, `url`, `target` and
+`component_path` — **not** on `id`, **not** on `status`, and since #320 **not**
+on `evidence` either. Changing `target` alone splits one finding into one
+"fixed" and one "new".
 
-Copying verbatim is still right, but it is **not sufficient**: the evidence hash
-moves on its own when the page changes. See the fingerprint defect above.
+Copying verbatim is still the rule, and since #320 it is also sufficient: the
+fields that decide the match are the ones you copied, and nothing that moves on
+its own is in the hash any more. Evidence no longer has to match — copy it for
+the record, not for the diff.
 
 **Rule 3 — never include `status: "pass"` findings.** This is what makes trap 9
 harmless.

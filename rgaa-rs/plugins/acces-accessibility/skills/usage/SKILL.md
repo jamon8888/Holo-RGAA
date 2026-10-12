@@ -68,16 +68,18 @@ These are the ones that bite first:
    findings move from top-level `findings` to `data.axe`. Read `findings` then
    and you get nothing, with no error.
 3. **Match findings across rounds on `rule` + `target` + `criterion_id`** —
-   never on `id`, which is positional per scan, and never on the fingerprint,
-   which includes a scan-level DOM hash that moves whenever the page changes, so
-   `verify_fix`'s own categories are unreliable after an edit.
+   never on `id`, which is positional per scan. Since #320 that triple is also
+   exactly what the `rgaa-fp-v2-` fingerprint hashes, so `verify_fix`'s own
+   categories agree with your comparison by construction — **as far as `target`
+   is stable**. A positional or runtime-generated selector still moves between
+   two scans of an unedited page, and no fingerprint can rescue that.
 
    All three parts are needed. One axe violation often maps to **two** RGAA
    criteria, so the same element arrives twice with identical `rule`, `target`
    *and* `html`, differing only in `criterion_id`: measured on a live page, 24
    findings gave 22 distinct `(rule, target)` pairs but 24 distinct triples.
    Drop `criterion_id` and two findings merge silently, which understates what
-   remains. See the fingerprint defect in
+   remains. This measurement is why the field is in the v2 fingerprint; see
    [field-mapping](references/field-mapping.md).
 4. **`remediate` correlates on `issue_id`, never on array position** — and the
    server *verifies* it, failing the whole call on mismatch. Invent stable ids.

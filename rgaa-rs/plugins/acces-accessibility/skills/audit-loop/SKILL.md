@@ -79,27 +79,31 @@ will offer the human the same declined patch indefinitely. Carry it to the final
 report as **refused** — which is a different fact from *undetected*, and must
 not be collapsed into it.
 
-### 5. Verify — and do the comparison yourself
+### 5. Verify — and check selector stability before you believe it
 
-**`verify_fix`'s categories are currently unreliable. Do not report from them.**
-A live run established that `analyze` emits one DOM-snapshot evidence hash per
-*scan*, shared by every finding, and that hash is part of the fingerprint
-`compare` uses. So once you have edited the page — the only reason to verify —
-every reference finding reads as *fixed* and every current finding as *new*.
-Full evidence in [field-mapping](../usage/references/field-mapping.md).
+**`verify_fix`'s categories are usable since #320** (merged 2026-10-12). They
+were not before: `analyze` emits one DOM-snapshot evidence hash per *scan*,
+shared by every finding, and that hash used to be part of the fingerprint, so
+any edit — the only reason to verify — made every reference finding read as
+*fixed* and every current one as *new*. The fingerprint is now the finding's
+identity only: `rule` + `criterion_id` + `url` + `target` + `component_path`.
 
-**Compare rounds yourself on `rule` + `target` + `criterion_id`.** That triple
-was verified unique on a live page — 24 findings gave 24 distinct keys — and
+**That triple is also the right key for your own comparison**, and it was
+verified unique on a live page — 24 findings gave 24 distinct keys.
 `criterion_id` is the part that earns its place: one axe violation often maps to
 two RGAA criteria, so the same element appears twice with the same `rule`,
-`target` *and* `html`. Dropping `criterion_id` silently collapses them.
+`target` *and* `html`. Dropping it silently collapses them. Because the
+fingerprint now hashes exactly that tuple, your comparison and `verify_fix`
+agree by construction — so report from `verify_fix` directly, and keep your own
+match only as a cross-check when the next paragraph applies.
 
-Call `verify_fix` for its re-analysis and its RGAA citations if useful, but
-derive *fixed / remaining / new* from your own match.
+Full detail in [field-mapping](../usage/references/field-mapping.md).
 
-**But a disappeared finding is not automatically a fixed one.** Two scans of an
-*unedited* page differed by 6 findings, and **every one of them sat on a
-positional or runtime-generated selector**. Restricted to stable selectors the
+**But a disappeared finding is not automatically a fixed one — and this part
+#320 does not touch.** The fingerprint is stable only as far as its inputs are,
+and `target` is the input that moves. Two scans of an *unedited* page differed
+by 6 findings, and **every one of them sat on a positional or runtime-generated
+selector**. Restricted to stable selectors the
 two runs were identical — 19 findings, same set.
 
 So treat a finding as **unstable, not fixed**, when its `target` contains:

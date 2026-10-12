@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "acces-accessibility",
+  "displayName": "Acces Accessibility",
+  "version": "1.0.0",
+  "description": "RGAA tooling discipline for coding agents. Drives the rgaa-mcp server through the analyze -> source_map -> remediate -> approve -> verify loop, teaching the field mappings and trap fields that silently return wrong answers when got wrong. Reaches 66 of the 106 RGAA 4.1.2 criteria at zero token cost, but concludes conforming for only 32 — it reports the other 74 as residue rather than implying conformity.",
+  "author": {
+    "name": "RGAA Team",
+    "url": "https://github.com/jamon8888/Holo-RGAA"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/jamon8888/Holo-RGAA",
+  "keywords": [
+    "accessibility",
+    "rgaa",
+    "a11y",
+    "wcag",
+    "mcp",
+    "remediation",
+    "claude-code"
+  ],
+  "userConfig": {
+    "llm_api_key": {
+      "type": "string",
+      "title": "LLM API key",
+      "description": "Key for the provider named by RGAA_LLM_PROVIDER. Only audit_url spends tokens; the remediation loop does not, so leave this unset unless you need full 106-criteria audits. Leave unset for a local provider (ollama, lmstudio, vllm). Note this setting and .env are alternatives, not layers: a blank value here is still passed to the server and shadows .env, which is loaded without overriding existing variables.",
+      "sensitive": true,
+      "required": false
+    },
+    "obscura_bin": {
+      "type": "string",
+      "title": "Path to the obscura binary",
+      "description": "Absolute path to the obscura browser binary, pinned to version 0.2.2. Required by analyze, igt, source_map and verify_fix — that is, by the whole remediation loop. Leave unset if obscura is already on PATH; a blank value here shadows any RGAA_OBSCURA_BIN set in .env. install.sh installs and version-checks it for you.",
+      "required": false
+    }
+  }
+}

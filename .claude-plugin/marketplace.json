@@ -16,6 +16,14 @@
       "version": "2.0.0",
       "category": "accessibility",
       "keywords": ["accessibility", "rgaa", "wcag", "audit"]
+    },
+    {
+      "name": "acces-accessibility",
+      "source": "./rgaa-rs/plugins/acces-accessibility",
+      "description": "RGAA tooling discipline for coding agents: drives rgaa-mcp through the analyze -> source_map -> remediate -> approve -> verify loop, teaches the field mappings and trap fields, and reports what automated instruments cannot decide instead of implying conformity. Complements rgaa-accessibility, which owns the 106-criteria domain.",
+      "version": "1.0.0",
+      "category": "accessibility",
+      "keywords": ["accessibility", "rgaa", "a11y", "wcag", "mcp", "remediation"]
     }
   ]
 }

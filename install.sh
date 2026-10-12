@@ -89,6 +89,15 @@ ensure_dep() {
     fi
 }
 
+# True when `obscura --version` output starts with exactly "obscura <pinned>".
+# Compares the first two tokens, like the Rust gate (`start_server`): a prefix
+# match would accept "obscura 0.2.40" as 0.2.4.
+obscura_reports_pinned() {
+    local name ver
+    read -r name ver _ <<<"$1"
+    [[ "$name $ver" == "obscura ${OBSCURA_VERSION}" ]]
+}
+
 # Fail the install when the installed obscura is not the pinned substrate.
 verify_obscura_version() {
     local bin=""
@@ -102,7 +111,7 @@ verify_obscura_version() {
     fi
     local version
     version="$("$bin" --version 2>/dev/null)" || die "Failed to query obscura version."
-    if [[ "$version" != *"obscura ${OBSCURA_VERSION}"* ]]; then
+    if ! obscura_reports_pinned "$version"; then
         die "obscura version mismatch: got '${version}', want 'obscura ${OBSCURA_VERSION}'. Re-run install or update OBSCURA_VERSION."
     fi
     ok "obscura version: ${version}"
@@ -232,7 +241,7 @@ install_obscura() {
 
     # Skip if pinned version already installed
     if [[ -x "${INSTALL_DIR}/obscura" ]] \
-        && "${INSTALL_DIR}/obscura" --version 2>/dev/null | grep -q "obscura ${OBSCURA_VERSION}"; then
+        && obscura_reports_pinned "$("${INSTALL_DIR}/obscura" --version 2>/dev/null)"; then
         ok "obscura ${OBSCURA_VERSION} already installed"
         return
     fi

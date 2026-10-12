@@ -215,7 +215,8 @@ try {
     $got = (Get-FileHash -Algorithm SHA256 $obscuraOut).Hash.ToLower()
     if ($got -ne $ObscuraSha256) {
         Remove-Item $obscuraOut -Force -ErrorAction SilentlyContinue
-        throw "obscura checksum mismatch: want $ObscuraSha256, got $got. Refusing to install."
+        Write-Host "  ERROR: obscura checksum mismatch: want $ObscuraSha256, got $got. Refusing to install." -ForegroundColor Red
+        exit 1
     }
     Write-Host "  obscura checksum verified"
     $obscuraTmp = Join-Path $TmpDir "obscura-extract"
@@ -332,7 +333,8 @@ foreach ($b in @("rgaa-api.exe","rgaa-mcp.exe")) {
 $obscuraBin = Join-Path $InstallDir "obscura.exe"
 if (Test-Path $obscuraBin) {
     $ov = & $obscuraBin --version 2>$null
-    if ($ov -notlike "*obscura $ObscuraVersion*") {
+    $ovTokens = ([string]$ov).Trim() -split '\s+'
+    if ("$($ovTokens[0]) $($ovTokens[1])" -ne "obscura $ObscuraVersion") {
         Write-Host "  WARNING: obscura version mismatch: '$ov' (want obscura $ObscuraVersion)" -ForegroundColor Yellow
     } else {
         Write-Host "  obscura version: $ov"

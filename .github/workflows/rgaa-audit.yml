@@ -46,11 +46,12 @@ jobs:
         id: version
         run: |
           curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.4/obscura-x86_64-linux.tar.gz"
+          echo "757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000  obscura.tar.gz" | sha256sum -c -
           tar -xzf obscura.tar.gz
           chmod +x obscura obscura-worker
           VERSION=$(./obscura --version | sed -n 's/.*obscura \([0-9.]*\).*/\1/p')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          ./obscura --version | grep -q "obscura 0.2.4" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
+          [ "$(./obscura --version | awk '{print $1" "$2}')" = "obscura 0.2.4" ] || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
 
   build:

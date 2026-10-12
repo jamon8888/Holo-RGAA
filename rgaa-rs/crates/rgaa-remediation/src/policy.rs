@@ -239,16 +239,18 @@ mod tests {
         bundle
     }
 
-    fn finding(id: &str, status: CriterionStatus, fingerprint_suffix: &str) -> Finding {
+    /// `element` is what makes two findings distinct: the fingerprint is the
+    /// finding's identity (rule, criterion, url, target, component path) and
+    /// deliberately excludes evidence, which scanners attach per scan rather
+    /// than per finding. The shared `screenshot` hash below mirrors that —
+    /// every finding of one scan carries the same evidence.
+    fn finding(id: &str, status: CriterionStatus, element: &str) -> Finding {
         let mut f = Finding::new(id);
         f.rule = "rgaa-1.1".into();
         f.url = "https://example.test".into();
-        f.target = "#main".into();
+        f.target = format!("#{element}");
         f.status = status;
-        f.evidence = vec![EvidenceRef::new(
-            "screenshot",
-            format!("sha256:{}", fingerprint_suffix),
-        )];
+        f.evidence = vec![EvidenceRef::new("screenshot", "sha256:scan")];
         f
     }
 

@@ -4,7 +4,9 @@
 //! services, so a regression in the wiring — not just in the pure
 //! categorisation — fails them.
 
-use rgaa_core::{AuditBundle, AuditConfig, Citation, CriterionResult, CriterionStatus, Finding};
+use rgaa_core::{
+    AuditBundle, AuditConfig, Citation, CriterionResult, CriterionStatus, EvidenceRef, Finding,
+};
 use rgaa_mcp::{
     AnalyzeService, FileVerificationStatus, GuidedService, McpFailure, NoOpStorageService,
     OrchestrationService, RemediationServiceImpl, ToolServer, VerifyFixRequest, VerifyFixResponse,
@@ -34,10 +36,24 @@ impl AnalyzeService for StubAnalyze {
     > {
         Box::pin(async move {
             tokio::time::sleep(self.delay).await;
+            // `rgaa-obscura` hashes the page once per scan and clones that
+            // one `EvidenceRef` onto every finding it reports, so a rescan
+            // stamps its own page hash over the lot. Modelled here because a
+            // stub returning bare findings cannot exercise the fingerprint at
+            // all — which is how a scan-level hash stayed in it unnoticed.
+            let findings = self
+                .findings
+                .iter()
+                .cloned()
+                .map(|mut finding| {
+                    finding.evidence = rescan_evidence();
+                    finding
+                })
+                .collect();
             Ok(rgaa_obscura::AnalyzePageResult {
                 url: request.url,
-                findings: self.findings.clone(),
-                evidence: Vec::new(),
+                findings,
+                evidence: rescan_evidence(),
                 errors: Vec::new(),
                 completed: true,
                 duration_ms: 1,
@@ -74,6 +90,33 @@ fn server(findings: Vec<Finding>, delay: Duration) -> ToolServer {
     )
 }
 
+/// The evidence the reference scan attached to every one of its findings: a
+/// hash of the whole page, plus the screenshot `ScreenshotPolicy::OnFailure`
+/// adds while the page still has violations.
+fn reference_evidence() -> Vec<EvidenceRef> {
+    vec![
+        EvidenceRef {
+            kind: "dom_snapshot".into(),
+            hash: "sha256:reference-page".into(),
+            location: Some("reference.json".into()),
+        },
+        EvidenceRef::new("screenshot", "sha256:reference-shot"),
+    ]
+}
+
+/// The same, for the rescan. Every field differs, because the page was edited
+/// — that edit is the only reason to call `verify_fix` — and the vector is
+/// shorter because this run was not asked for a screenshot. A finding whose
+/// element nobody touched must still match its reference counterpart through
+/// all of that.
+fn rescan_evidence() -> Vec<EvidenceRef> {
+    vec![EvidenceRef {
+        kind: "dom_snapshot".into(),
+        hash: "sha256:rescan-page".into(),
+        location: Some("rescan.json".into()),
+    }]
+}
+
 fn finding(id: &str, target: &str, criterion: &str) -> Finding {
     let mut f = Finding::new(id);
     f.rule = "image-alt".into();
@@ -81,6 +124,7 @@ fn finding(id: &str, target: &str, criterion: &str) -> Finding {
     f.target = target.into();
     f.criterion_id = Some(criterion.into());
     f.status = CriterionStatus::Fail;
+    f.evidence = reference_evidence();
     f
 }
 
@@ -153,6 +197,12 @@ fn ids(findings: &[rgaa_mcp::VerifiedFindingDto]) -> Vec<&str> {
 async fn a_finding_gone_after_the_fix_is_fixed_while_a_surviving_one_remains() {
     // The rescan still reports the label problem, so only the alt problem
     // was actually fixed.
+    //
+    // The two scans share no evidence at all — see `rescan_evidence` — so this
+    // only holds while the finding fingerprint is the finding's *identity*
+    // rather than a hash of the scan that observed it. While evidence was part
+    // of it, `fixed` listed both reference findings, `new_findings` listed the
+    // rescan's, and `remaining` was empty however little had been fixed.
     let server = server(
         vec![finding("f-label", "#search input", "11.1")],
         Duration::ZERO,
@@ -178,6 +228,36 @@ async fn a_finding_absent_from_the_reference_is_reported_as_new() {
     assert_eq!(ids(&response.new_findings), vec!["f-contrast"]);
     // Both reference findings disappeared from the rescan.
     assert_eq!(response.fixed.len(), 2);
+}
+
+#[tokio::test]
+async fn the_two_criteria_of_one_element_are_tracked_separately() {
+    // `image-alt` on a single `<img>` decides both 1.1 and 1.2, so the two
+    // findings agree on rule, url and target and differ only by criterion. If
+    // the fingerprint cannot tell them apart they collapse into one entry of
+    // the diff's maps, and fixing neither reads as fixing one.
+    let mut bundle = AuditBundle::new("audit-ref", PAGE, AuditConfig::default());
+    bundle
+        .findings
+        .push(finding("f-alt-11", "#hero img", "1.1"));
+    bundle
+        .findings
+        .push(finding("f-alt-12", "#hero img", "1.2"));
+    let reference_audit = serde_json::to_value(bundle).expect("bundle serialises");
+
+    let server = server(
+        vec![finding("f-alt-12", "#hero img", "1.2")],
+        Duration::ZERO,
+    );
+    let response = call(&server, request(reference_audit, None)).await;
+
+    assert_eq!(ids(&response.fixed), vec!["f-alt-11"]);
+    assert_eq!(ids(&response.remaining), vec!["f-alt-12"]);
+    assert!(
+        response.new_findings.is_empty(),
+        "{:?}",
+        ids(&response.new_findings)
+    );
 }
 
 #[tokio::test]

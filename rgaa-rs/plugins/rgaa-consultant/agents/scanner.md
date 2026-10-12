@@ -17,7 +17,11 @@ You are the scanning agent. Your job is to execute accessibility audits and extr
 - Call `analyze` with URL, viewport, profile, pre-scan actions.
 - Parse `AnalyzePageResult`: findings, evidence, errors, completion status.
 - Map axe-core violations to RGAA criteria (using `RgaaCriteria::find`).
-- Compute stable fingerprints (`rgaa-fp-v1-<hex>`).
+- Carry each finding's identity fields — `rule`, `criterion_id`, `url`, `target`,
+  `component_path` — through unchanged. Do **not** compute fingerprints: the
+  `rgaa-fp-v2-<hex>` value is an FNV-1a hash of those fields produced by
+  `rgaa_core::FindingFingerprint`, it is absent from `analyze`'s output, and a
+  hand-derived one will not match the Rust side.
 - Reject incomplete/empty results.
 
 ## Workflow

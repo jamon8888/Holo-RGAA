@@ -2591,6 +2591,51 @@ mod tests {
         assert_eq!(finding.evidence, evidence);
     }
 
+    /// A re-scan after a fix is the only reason to re-scan at all, so the page
+    /// DOM — and therefore the scan-level `dom_snapshot` hash — always differs
+    /// between the two bundles `compare` is handed. An element that was not
+    /// touched must still fingerprint identically across that pair, or every
+    /// reference finding reads as resolved and every current one as new.
+    #[test]
+    fn untouched_element_keeps_fingerprint_across_rescan() {
+        let before = serde_json::json!([{
+            "id": "image-alt",
+            "impact": "critical",
+            "description": "Images must have alternate text",
+            "help": "Ensure alt text",
+            "nodes": [
+                {"target": ["#kept"], "html": "<img id=\"kept\">"},
+                {"target": ["#fixed"], "html": "<img id=\"fixed\">"}
+            ]
+        }]);
+        let after = serde_json::json!([{
+            "id": "image-alt",
+            "impact": "critical",
+            "description": "Images must have alternate text",
+            "help": "Ensure alt text",
+            "nodes": [{"target": ["#kept"], "html": "<img id=\"kept\">"}]
+        }]);
+
+        let fingerprint_of_kept = |payload: &serde_json::Value, dom_hash: &str| {
+            let evidence = vec![rgaa_core::EvidenceRef::new("dom_snapshot", dom_hash)];
+            let findings = findings_from_axe("https://example.test", payload, &evidence)
+                .expect("valid axe payload");
+            let kept = findings
+                .iter()
+                .find(|finding| {
+                    finding.target == "#kept" && finding.criterion_id.as_deref() == Some("1.1")
+                })
+                .expect("untouched finding is still reported");
+            FindingFingerprint::from_finding(kept)
+        };
+
+        assert_eq!(
+            fingerprint_of_kept(&before, "sha256:before-page"),
+            fingerprint_of_kept(&after, "sha256:after-page"),
+            "untouched element must fingerprint identically after the page changed"
+        );
+    }
+
     // Single test (not two) because env vars are process-global and Rust
     // runs tests in parallel threads: split set/remove steps could interleave.
     #[test]

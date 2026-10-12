@@ -52,24 +52,54 @@ impl Finding {
     }
 }
 
-/// Stable persisted fingerprint format: `rgaa-fp-v1-` followed by a 16-digit
+/// Stable persisted fingerprint format: `rgaa-fp-v2-` followed by a 16-digit
 /// lowercase hexadecimal FNV-1a hash of length-prefixed UTF-8 fields.
+///
+/// The fingerprint is the *identity* of a finding — which rule failed, under
+/// which criterion, on which element of which page — and deliberately nothing
+/// else. In particular it does not hash [`Finding::evidence`], and must not:
+///
+/// * Scanners attach evidence per *scan*, not per finding. `rgaa-obscura`
+///   hashes `document.documentElement.outerHTML` once and clones that one
+///   `EvidenceRef` onto every finding of the scan, so any change anywhere on
+///   the page moved every fingerprint at once. A re-scan after a fix is the
+///   only reason to re-scan, so `compare` saw two bundles sharing no
+///   fingerprints: every reference finding read as resolved and every current
+///   one as new, with nothing ever `unchanged`.
+/// * The evidence *count* is no more stable than the hashes:
+///   `ScreenshotPolicy::OnFailure` appends a screenshot only while the page
+///   still has violations, so fixing the last violation changes the vector's
+///   length too.
+/// * Hashing the finding's own element instead (`Finding::html`) would trade
+///   one instability for a worse one: the markup under repair changes exactly
+///   when it is repaired, so a *partial* fix would be reported as one finding
+///   resolved plus one new finding rather than as still outstanding — and
+///   "still outstanding after my fix" is the answer callers need most.
+///
+/// `criterion_id` is part of the identity because a single axe rule maps to
+/// several RGAA criteria: `image-alt` on one `<img>` decides both 1.1 and 1.2
+/// and yields two findings agreeing on every other field here. Without it the
+/// two collapse to one fingerprint and the `HashMap`s in
+/// `rgaa_remediation::compare` keep only whichever was inserted last.
+///
+/// Bumped from `v1` so that a fingerprint string stored under the old scheme
+/// is recognisable as such rather than silently failing to match. Only the
+/// `findings.fingerprint` column in `rgaa-storage` holds one: neither
+/// `AuditBundle` nor `Finding` has a fingerprint field, so a baseline bundle
+/// read back from disk is re-fingerprinted on both sides by
+/// `rgaa_remediation::compare` and needs no re-baselining for this change.
 pub struct FindingFingerprint;
 
 impl FindingFingerprint {
+    #[must_use]
     pub fn from_finding(finding: &Finding) -> String {
         let mut hash = 0xcbf29ce484222325_u64;
         hash = hash_field(hash, Some(&finding.rule));
+        hash = hash_field(hash, finding.criterion_id.as_deref());
         hash = hash_field(hash, Some(&finding.url));
         hash = hash_field(hash, Some(&finding.target));
         hash = hash_field(hash, finding.component_path.as_deref());
-        hash = hash_field(hash, Some(&finding.evidence.len().to_string()));
-        for evidence in &finding.evidence {
-            hash = hash_field(hash, Some(&evidence.kind));
-            hash = hash_field(hash, Some(&evidence.hash));
-            hash = hash_field(hash, evidence.location.as_deref());
-        }
-        format!("rgaa-fp-v1-{hash:016x}")
+        format!("rgaa-fp-v2-{hash:016x}")
     }
 }
 
@@ -113,16 +143,57 @@ mod tests {
         );
     }
 
+    /// Scan-level evidence must not reach the fingerprint. `rgaa-obscura`
+    /// hashes the whole page once per scan and clones that `EvidenceRef` onto
+    /// every finding, so hashing it made every fingerprint move whenever any
+    /// part of the page changed — which is precisely the situation `compare`
+    /// exists to analyse.
     #[test]
-    fn fingerprint_changes_when_evidence_location_changes() {
+    fn fingerprint_ignores_evidence() {
         let mut finding = valid_finding();
         finding.evidence = vec![EvidenceRef {
-            kind: "screenshot".into(),
-            hash: "sha256:abc".into(),
-            location: Some("before.png".into()),
+            kind: "dom_snapshot".into(),
+            hash: "sha256:before".into(),
+            location: Some("before.json".into()),
         }];
+        let before = FindingFingerprint::from_finding(&finding);
+
+        // The whole evidence vector moves on a re-scan: a fresh page hash, a
+        // fresh location, and one more item once `OnFailure` starts (or stops)
+        // attaching a screenshot.
+        finding.evidence = vec![
+            EvidenceRef {
+                kind: "dom_snapshot".into(),
+                hash: "sha256:after".into(),
+                location: Some("after.json".into()),
+            },
+            EvidenceRef::new("screenshot", "sha256:shot"),
+        ];
+
+        assert_eq!(before, FindingFingerprint::from_finding(&finding));
+    }
+
+    /// One axe rule maps to several RGAA criteria, so the same element yields
+    /// several findings differing only here. They must not collapse into one
+    /// entry of `compare`'s maps.
+    #[test]
+    fn fingerprint_distinguishes_criteria_on_the_same_element() {
+        let mut first = valid_finding();
+        first.criterion_id = Some("1.1".into());
+        let mut second = first.clone();
+        second.criterion_id = Some("1.2".into());
+
+        assert_ne!(
+            FindingFingerprint::from_finding(&first),
+            FindingFingerprint::from_finding(&second)
+        );
+    }
+
+    #[test]
+    fn fingerprint_changes_when_the_element_changes() {
+        let mut finding = valid_finding();
         let first = FindingFingerprint::from_finding(&finding);
-        finding.evidence[0].location = Some("after.png".into());
+        finding.target = "#other".into();
 
         assert_ne!(first, FindingFingerprint::from_finding(&finding));
     }
@@ -131,7 +202,7 @@ mod tests {
     fn fingerprint_uses_stable_persistence_format() {
         let fingerprint = FindingFingerprint::from_finding(&valid_finding());
 
-        assert!(fingerprint.starts_with("rgaa-fp-v1-"));
+        assert!(fingerprint.starts_with("rgaa-fp-v2-"));
         assert_eq!(fingerprint.len(), 27);
     }
 

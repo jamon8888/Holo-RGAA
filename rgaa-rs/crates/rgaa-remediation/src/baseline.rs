@@ -160,6 +160,130 @@ mod tests {
         f
     }
 
+    /// The shape `verify_fix` actually hands `compare`: a reference bundle and
+    /// a re-scan of the same page after one of two findings was fixed.
+    ///
+    /// Scanners attach evidence per scan, not per finding — `rgaa-obscura`
+    /// hashes the page once and clones that `EvidenceRef` onto every finding —
+    /// so the two bundles never share an evidence hash, and `OnFailure` may
+    /// drop the screenshot once the page is clean. While the fingerprint
+    /// hashed any of that, this diff came back with everything in
+    /// `resolved_findings`, everything in `new_findings` and nothing
+    /// `unchanged`, whatever had really been fixed.
+    #[test]
+    fn rescan_after_a_fix_reports_only_the_fixed_finding() {
+        let scan_evidence = |hash: &str, with_screenshot: bool| {
+            let mut evidence = vec![rgaa_core::EvidenceRef {
+                kind: "dom_snapshot".into(),
+                hash: hash.into(),
+                location: Some(format!("{hash}.json")),
+            }];
+            if with_screenshot {
+                evidence.push(rgaa_core::EvidenceRef::new("screenshot", "sha256:shot"));
+            }
+            evidence
+        };
+        let finding = |id: &str, criterion: &str, target: &str, evidence: Vec<_>| {
+            let mut f = Finding::new(id);
+            f.rule = "image-alt".into();
+            f.criterion_id = Some(criterion.into());
+            f.url = "https://example.test".into();
+            f.target = target.into();
+            f.status = CriterionStatus::Fail;
+            f.evidence = evidence;
+            f
+        };
+
+        let mut prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        prev.findings.push(finding(
+            "rgaa-1.1-image-alt-0",
+            "1.1",
+            "#kept",
+            scan_evidence("sha256:before", true),
+        ));
+        prev.findings.push(finding(
+            "rgaa-1.1-image-alt-1",
+            "1.1",
+            "#fixed",
+            scan_evidence("sha256:before", true),
+        ));
+
+        // Re-scan: `#fixed` is gone, `#kept` is reported again, and the page
+        // hash moved because the page changed.
+        let mut curr = rgaa_core::AuditBundle::new("c", "u", Default::default());
+        curr.findings.push(finding(
+            "rgaa-1.1-image-alt-0",
+            "1.1",
+            "#kept",
+            scan_evidence("sha256:after", false),
+        ));
+
+        let diff = compare(&prev, &curr);
+
+        assert_eq!(
+            diff.resolved_findings
+                .iter()
+                .map(|f| f.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["#fixed"]
+        );
+        assert_eq!(
+            diff.unchanged
+                .iter()
+                .map(|f| f.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["#kept"]
+        );
+        assert!(diff.new_findings.is_empty(), "{:?}", diff.new_findings);
+        assert!(diff.regressions.is_empty());
+    }
+
+    /// One axe rule decides several RGAA criteria, so the same element yields
+    /// one finding per criterion. They are distinct findings and must survive
+    /// the fingerprint-keyed maps rather than overwriting each other.
+    #[test]
+    fn findings_differing_only_by_criterion_are_not_merged() {
+        let on_same_element = |criterion: &str| {
+            let mut f = Finding::new(format!("rgaa-{criterion}-image-alt-0"));
+            f.rule = "image-alt".into();
+            f.criterion_id = Some(criterion.into());
+            f.url = "https://example.test".into();
+            f.target = "#img".into();
+            f.status = CriterionStatus::Fail;
+            f
+        };
+
+        // Both criteria open in the baseline, only 1.2 still reported after
+        // the fix. An empty baseline would not test anything: every current
+        // finding takes the `new_findings` branch whether or not the two
+        // fingerprints collide.
+        let mut prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        prev.findings.push(on_same_element("1.1"));
+        prev.findings.push(on_same_element("1.2"));
+        let mut curr = rgaa_core::AuditBundle::new("c", "u", Default::default());
+        curr.findings.push(on_same_element("1.2"));
+
+        let diff = compare(&prev, &curr);
+
+        // On a collision `prev_map` holds one entry instead of two, 1.2 covers
+        // it, and 1.1 is never reported as resolved.
+        assert_eq!(
+            diff.resolved_findings
+                .iter()
+                .map(|f| f.criterion_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("1.1")]
+        );
+        assert_eq!(
+            diff.unchanged
+                .iter()
+                .map(|f| f.criterion_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("1.2")]
+        );
+        assert!(diff.new_findings.is_empty(), "{:?}", diff.new_findings);
+    }
+
     #[test]
     fn detects_new_findings() {
         let prev = rgaa_core::AuditBundle::new("p", "u", Default::default());

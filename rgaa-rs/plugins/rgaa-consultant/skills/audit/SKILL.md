@@ -62,8 +62,7 @@ Run a full RGAA 4.1.2 accessibility audit against a URL or local project. Return
       "evidence": {
         "screenshot": "/evidence/screenshot-001.png",
         "axtree": "/evidence/axtree-001.json"
-      },
-      "fingerprint": "rgaa-fp-v1-sha256:abc123"
+      }
     }
   ],
   "evidence": [...]

@@ -18,7 +18,10 @@ Filter, deduplicate, prioritize, and categorize audit findings for actionable re
 ## Workflow
 
 1. **Load findings** — From audit bundle or direct input
-2. **Deduplicate** — Group by fingerprint (`rgaa-fp-v1-*`) across pages
+2. **Deduplicate** — Group on `rule` + `criterion_id` + `target` +
+   `component_path`. Dropping `url` is what makes this group *across* pages;
+   the `rgaa-fp-v2-` fingerprint includes `url`, so it never could, and it is
+   not in `analyze`'s output to group by in any case
 3. **Classify severity** — Critical, Major, Minor based on criterion importance
 4. **Estimate effort** — Quick (5min), Medium (30min), Large (2hr+)
 5. **Group by category** — Images, Forms, Navigation, Language, Color, Structure

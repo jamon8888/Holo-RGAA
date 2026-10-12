@@ -214,7 +214,7 @@ Six categories, never merged:
 
 | Category | Meaning |
 |---|---|
-| **fixed** | its `rule` + `target` + `criterion_id` key is absent from the next round's findings. **Not** `verify_fix`'s `fixed` category, which is unreliable once the page has changed. |
+| **fixed** | its `rule` + `target` + `criterion_id` key is absent from the next round's findings. Since the `v2` fingerprint this agrees with `verify_fix`'s own `fixed` category, so use either — but screen for **unstable** first, because a selector that moved also reads as absent. |
 | **refused** | the human declined the patch |
 | **out of reach** | the 40, plus anything the coverage map shows as undecidable here |
 | **outside the referential** | axe-core findings whose `criterion_id` is `null` — real defects, but not RGAA criteria. On a live WordPress/Elementor homepage this was 7 of 22 findings, so do not treat it as a corner case. |

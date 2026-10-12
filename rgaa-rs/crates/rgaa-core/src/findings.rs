@@ -82,9 +82,12 @@ impl Finding {
 /// two collapse to one fingerprint and the `HashMap`s in
 /// `rgaa_remediation::compare` keep only whichever was inserted last.
 ///
-/// Bumped from `v1` because `findings.fingerprint` is persisted (Postgres, and
-/// baseline bundles on disk): the prefix makes a stored fingerprint that
-/// predates this change fail to match loudly rather than silently.
+/// Bumped from `v1` so that a fingerprint string stored under the old scheme
+/// is recognisable as such rather than silently failing to match. Only the
+/// `findings.fingerprint` column in `rgaa-storage` holds one: neither
+/// `AuditBundle` nor `Finding` has a fingerprint field, so a baseline bundle
+/// read back from disk is re-fingerprinted on both sides by
+/// `rgaa_remediation::compare` and needs no re-baselining for this change.
 pub struct FindingFingerprint;
 
 impl FindingFingerprint {

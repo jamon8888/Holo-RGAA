@@ -253,14 +253,35 @@ mod tests {
             f
         };
 
-        let prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        // Both criteria open in the baseline, only 1.2 still reported after
+        // the fix. An empty baseline would not test anything: every current
+        // finding takes the `new_findings` branch whether or not the two
+        // fingerprints collide.
+        let mut prev = rgaa_core::AuditBundle::new("p", "u", Default::default());
+        prev.findings.push(on_same_element("1.1"));
+        prev.findings.push(on_same_element("1.2"));
         let mut curr = rgaa_core::AuditBundle::new("c", "u", Default::default());
-        curr.findings.push(on_same_element("1.1"));
         curr.findings.push(on_same_element("1.2"));
 
         let diff = compare(&prev, &curr);
 
-        assert_eq!(diff.new_findings.len(), 2, "{:?}", diff.new_findings);
+        // On a collision `prev_map` holds one entry instead of two, 1.2 covers
+        // it, and 1.1 is never reported as resolved.
+        assert_eq!(
+            diff.resolved_findings
+                .iter()
+                .map(|f| f.criterion_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("1.1")]
+        );
+        assert_eq!(
+            diff.unchanged
+                .iter()
+                .map(|f| f.criterion_id.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("1.2")]
+        );
+        assert!(diff.new_findings.is_empty(), "{:?}", diff.new_findings);
     }
 
     #[test]

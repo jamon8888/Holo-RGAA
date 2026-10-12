@@ -54,8 +54,8 @@ of a clean run.
 
 Every report this plugin produces names that residue rather than implying a
 conformance verdict. This is a regulatory context; the distinction is not
-pedantry. Per-criterion detail lives in a generated coverage map, which arrives
-with the `usage` skill.
+pedantry. The per-criterion detail lives in the generated
+[coverage map](skills/usage/references/coverage-map.md).
 
 For the full 106-criteria audit and compliance reports, use the
 `rgaa-accessibility` plugin.
@@ -102,10 +102,10 @@ flag keeps blocking localhost and your variable has no effect. Check with
 | Skill | Purpose |
 |---|---|
 | `setup` | Install and verify the server across Claude Code, opencode, Cursor, VS Code and Claude Desktop |
+| `usage` | The tool contract: field mappings, trap fields, cost control, and the per-criterion coverage map |
 
-Three more land on top of this one: `usage` (the tool contract and its
-references), `audit-loop` (the approval-gated remediation loop) and
-`generate-instructions`.
+Two more land on top of this one: `audit-loop` (the approval-gated remediation
+loop) and `generate-instructions`.
 
 ## Verifying an installation
 

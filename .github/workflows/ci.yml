@@ -53,6 +53,11 @@ jobs:
       - run: claude plugin validate rgaa-rs/plugins/acces-accessibility --strict
       - run: bash -n rgaa-rs/plugins/acces-accessibility/tests/plugin-contract.sh
       - run: bash rgaa-rs/plugins/acces-accessibility/tests/plugin-contract.sh
+      # The coverage map is generated from engine_plan.json, never hand-edited.
+      # Without this step the decision to generate it collapses back into a
+      # hand-written copy that drifts invisibly — which is how SPEC.md came to
+      # document six tools for a nine-tool server, twice.
+      - run: python3 rgaa-rs/plugins/acces-accessibility/scripts/generate-coverage-map.py --check
   ts-types:
     name: TypeScript types
     runs-on: ubuntu-latest

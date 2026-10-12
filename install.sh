@@ -31,7 +31,7 @@ CODEX_PLUGIN_NAME="rgaa-accessibility-codex"
 
 # Pinned browser substrate: default-render variant. Keep in sync with the
 # version gate in .github/workflows/ci.yml (e2e Prepare step).
-OBSCURA_VERSION="0.2.2"
+OBSCURA_VERSION="0.2.4"
 OBSCURA_REPO="h4ckf0r0day/obscura"
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
@@ -195,6 +195,32 @@ obscura_asset_for() {
     esac
 }
 
+# SHA-256 of each pinned upstream asset. Regenerate on every OBSCURA_VERSION
+# bump (an asset whose digest is unknown is refused, not installed blindly):
+#
+#   gh api repos/${OBSCURA_REPO}/releases/tags/v${OBSCURA_VERSION} \
+#     --jq '.assets[] | "\(.name)  \(.digest)"'
+obscura_sha256_for() {
+    case "$1" in
+        obscura-x86_64-linux.tar.gz)   echo "757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000" ;;
+        obscura-aarch64-linux.tar.gz)  echo "d9ba3719c2442a227567d7664b5505b38ab68236f3f5388884eee2e27f55db28" ;;
+        obscura-x86_64-macos.tar.gz)   echo "91b1b5e1f581e7572bdffd289195ad112cd5cf33069019e892b251c099bef015" ;;
+        obscura-aarch64-macos.tar.gz)  echo "456210fe48e77324a064477fe450452a58709940a50e71678ae6638a3e5095ec" ;;
+        *)                             return 1 ;;
+    esac
+}
+
+# Portable sha256: coreutils on Linux, BSD `shasum` on macOS.
+sha256_of() {
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        return 1
+    fi
+}
+
 install_obscura() {
     local platform="$1"
 
@@ -216,11 +242,31 @@ install_obscura() {
     tmpdir=$(mktemp -d)
     trap 'if [ -n "${tmpdir:-}" ]; then rm -rf "$tmpdir"; fi' EXIT
 
+    # Refuse to install an asset we have no pinned digest for: a missing entry
+    # means the version was bumped without regenerating the table, and silently
+    # extracting an unverified browser engine is worse than failing here.
+    local want
+    if ! want=$(obscura_sha256_for "$asset"); then
+        die "No pinned sha256 for '${asset}' (obscura ${OBSCURA_VERSION}). Regenerate obscura_sha256_for."
+    fi
+
     info "Downloading obscura ${OBSCURA_VERSION}..."
     if ! curl -fSL --progress-bar -o "${tmpdir}/obscura.tar.gz" "$url"; then
         warn "obscura download failed (${url}); browser automation unavailable."
         return
     fi
+
+    local got
+    if ! got=$(sha256_of "${tmpdir}/obscura.tar.gz"); then
+        die "Neither sha256sum nor shasum found; cannot verify the obscura download."
+    fi
+    if [[ "$got" != "$want" ]]; then
+        die "obscura checksum mismatch for ${asset}:
+  want ${want}
+  got  ${got}
+Refusing to install. Either the pinned digest is stale or the download was tampered with."
+    fi
+    ok "obscura checksum verified (${asset})"
 
     tar -xzf "${tmpdir}/obscura.tar.gz" -C "$INSTALL_DIR"
     chmod +x "${INSTALL_DIR}/obscura" 2>/dev/null || true

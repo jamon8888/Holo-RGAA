@@ -43,7 +43,7 @@ static AXE_CORE_CACHE: OnceLock<String> = OnceLock::new();
 
 /// Pinned substrate version. Keep in sync with `OBSCURA_VERSION` in
 /// `install.sh` / `install.ps1` and the e2e gate in `ci.yml`.
-const OBSCURA_PINNED_VERSION: &str = "obscura 0.2.2";
+const OBSCURA_PINNED_VERSION: &str = "obscura 0.2.4";
 
 fn escape_js_string(s: &str) -> String {
     s.replace('\\', "\\\\")
@@ -811,8 +811,8 @@ impl ObscuraBridge {
             )
         })?;
         // Compare the `name`/`version` tokens exactly (not a substring match):
-        // a binary reporting e.g. "obscura 0.2.20" must not pass as a match
-        // for the pinned "obscura 0.2.2" just because it shares the prefix.
+        // a binary reporting e.g. "obscura 0.2.40" must not pass as a match
+        // for the pinned "obscura 0.2.4" just because it shares the prefix.
         let mut reported = version.split_whitespace();
         let mut pinned = OBSCURA_PINNED_VERSION.split_whitespace();
         if (reported.next(), reported.next()) != (pinned.next(), pinned.next()) {
@@ -2766,9 +2766,9 @@ mod tests {
     async fn start_server_rejects_version_that_shares_pinned_prefix() {
         // Regression test: the version gate must compare the reported
         // "obscura X.Y.Z" tokens exactly, not with a substring check, so a
-        // binary reporting "obscura 0.2.20" doesn't pass as "obscura 0.2.2".
+        // binary reporting "obscura 0.2.40" doesn't pass as "obscura 0.2.4".
         let script_path = std::env::temp_dir().join("rgaa-obscura-fake-drifted-version.sh");
-        std::fs::write(&script_path, "#!/bin/sh\necho 'obscura 0.2.20'\n")
+        std::fs::write(&script_path, "#!/bin/sh\necho 'obscura 0.2.40'\n")
             .expect("write fake obscura binary");
         #[cfg(unix)]
         {

@@ -382,8 +382,8 @@ mod substrate_version {
     #[test]
     fn the_flat_shape_carries_the_version_the_bridge_reported() {
         assert_eq!(
-            json(Some("obscura 0.2.2"), false)["obscura_version"],
-            "obscura 0.2.2"
+            json(Some("obscura 0.2.4"), false)["obscura_version"],
+            "obscura 0.2.4"
         );
     }
 
@@ -391,9 +391,9 @@ mod substrate_version {
     /// this is exactly the pair that drifted apart in the first place.
     #[test]
     fn the_nested_shape_carries_it_too() {
-        let payload = json(Some("obscura 0.2.2"), true);
+        let payload = json(Some("obscura 0.2.4"), true);
         assert!(payload.get("data").is_some(), "expected the nested shape");
-        assert_eq!(payload["obscura_version"], "obscura 0.2.2");
+        assert_eq!(payload["obscura_version"], "obscura 0.2.4");
     }
 
     /// Backward compatibility, and the reason the field is skipped rather

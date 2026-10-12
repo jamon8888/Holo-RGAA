@@ -174,8 +174,8 @@ mod tests {
         // Absent by default: older payloads keep their shape.
         let json = serde_json::to_string(&result).expect("result serializes");
         assert!(!json.contains("obscura_version"));
-        result.obscura_version = Some("obscura 0.2.2".into());
+        result.obscura_version = Some("obscura 0.2.4".into());
         let json = serde_json::to_string(&result).expect("result serializes");
-        assert!(json.contains("obscura 0.2.2"));
+        assert!(json.contains("obscura 0.2.4"));
     }
 }

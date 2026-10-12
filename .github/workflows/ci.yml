@@ -303,7 +303,7 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
       - name: Audit dependencies
         working-directory: rgaa-rs
-        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0253 --ignore RUSTSEC-2026-0002 --ignore RUSTSEC-2025-0141 --ignore RUSTSEC-2025-0057
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0253 --ignore RUSTSEC-2026-0002 --ignore RUSTSEC-2025-0057
         # RUSTSEC-2023-0071: ReDoS in regex-lite via bstr dependency chain (fastembed).
         # Not introduced by our code; transitive dependency on regex 1.x through fastembed.
         # Tracking: https://github.com/oxalorg/regex/issues/702
@@ -313,9 +313,10 @@ jobs:
         # dependency tree (rgaa-agent's vector-store feature). Not introduced by our
         # code; upgrading past it means upgrading lancedb, out of scope here.
         #
-        # RUSTSEC-2025-0141: bincode 1.x unmaintained (maintainers ceased development).
-        # Pinned transitive dependency of deno_core via the obscura browser substrate;
-        # no upgrade path until upstream migrates. Used for trusted IPC payloads only.
+        # RUSTSEC-2025-0141 (bincode 1.x unmaintained) was dropped with the
+        # obscura 0.2.4 bump: obscura's deno_core 0.412 no longer pulls bincode,
+        # and `grep 'name = "bincode"' Cargo.lock` now finds nothing.
+        #
         # RUSTSEC-2025-0057: fxhash unmaintained.
         # Pinned transitive dependency via selectors/obscura-dom's CSS matching;
         # upstream replacement is rustc-hash, pending upstream migration.
@@ -360,10 +361,10 @@ jobs:
         if: ${{ vars.MYIA_E2E_ENABLED == 'true' }}
         working-directory: ${{ github.workspace }}
         run: |
-          curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.2/obscura-x86_64-linux.tar.gz"
+          curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.4/obscura-x86_64-linux.tar.gz"
           tar -xzf obscura.tar.gz
           chmod +x obscura obscura-worker
-          ./obscura --version | grep -q "obscura 0.2.2" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
+          ./obscura --version | grep -q "obscura 0.2.4" || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
       - name: Validate MyIA API key
         id: myia_credentials

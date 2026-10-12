@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Repo = "jamon8888/Holo-RGAA"
 $ObscuraRepo = "h4ckf0r0day/obscura"
-$ObscuraVersion = "0.2.2"
+$ObscuraVersion = "0.2.4"
 $InstallDir = "$env:LOCALAPPDATA\rgaa\bin"
 $CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
 $CodexMarketplaceDir = Join-Path $env:LOCALAPPDATA "rgaa\codex-marketplace"
@@ -201,10 +201,23 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Expand-Archive -Path $outPath -DestinationPath $InstallDir -Force
 Remove-Item $outPath -Force
 
+# SHA-256 of the pinned upstream asset. Regenerate on every $ObscuraVersion
+# bump; an unverified browser engine is not installed:
+#
+#   gh api repos/$ObscuraRepo/releases/tags/v$ObscuraVersion `
+#     --jq '.assets[] | "\(.name)  \(.digest)"'
+$ObscuraSha256 = "8e5428bf8c101f1439c53a9dcb52d7d09bb22599206b49f6420028d93d01189b"
+
 Write-Step "Downloading obscura $ObscuraVersion..."
 $obscuraOut = Join-Path $TmpDir "obscura-x86_64-windows.zip"
 try {
     Invoke-WebRequest -Uri $obscuraUrl -OutFile $obscuraOut -UserAgent "rgaa-install"
+    $got = (Get-FileHash -Algorithm SHA256 $obscuraOut).Hash.ToLower()
+    if ($got -ne $ObscuraSha256) {
+        Remove-Item $obscuraOut -Force -ErrorAction SilentlyContinue
+        throw "obscura checksum mismatch: want $ObscuraSha256, got $got. Refusing to install."
+    }
+    Write-Host "  obscura checksum verified"
     $obscuraTmp = Join-Path $TmpDir "obscura-extract"
     New-Item -ItemType Directory -Force -Path $obscuraTmp | Out-Null
     Expand-Archive -Path $obscuraOut -DestinationPath $obscuraTmp -Force
@@ -213,7 +226,8 @@ try {
     Remove-Item $obscuraOut -Force
     Remove-Item $obscuraTmp -Recurse -Force
 } catch {
-    Write-Host "  WARNING: obscura download failed; browser automation unavailable." -ForegroundColor Yellow
+    Write-Host "  WARNING: obscura unavailable; browser automation disabled." -ForegroundColor Yellow
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 # Claude Code plugin

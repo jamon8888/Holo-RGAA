@@ -1,35 +1,53 @@
 # Obscura substrate pin
 
-Pinned browser substrate for Holo-RGAA audits: **default-render `obscura 0.2.2`**
+Pinned browser substrate for Holo-RGAA audits: **default-render `obscura 0.2.4`**
 (`obscura-x86_64-linux.tar.gz` from upstream releases; stealth/no-render variants
 are out of the install path).
 
 ## Verify
 
 ```bash
+./obscura --version          # want: obscura 0.2.4
+```
+
+Enforced in four places (keep the version string in sync):
+
+- `install.sh` / `rgaa-rs/install.ps1` — `OBSCURA_VERSION` / `$ObscuraVersion` +
+  `verify_obscura_version` (fails the install on mismatch), **and** the pinned
+  per-asset SHA-256 in `obscura_sha256_for` / `$ObscuraSha256`. The download is
+  verified before extraction; an asset with no pinned digest is refused rather
+  than installed. Regenerate the digests on every version bump:
+  ```bash
+  gh api repos/h4ckf0r0day/obscura/releases/tags/v0.2.4 \
+    --jq '.assets[] | "\(.name)  \(.digest)"'
+  ```
+- `.github/workflows/ci.yml` and `.github/workflows/rgaa-audit.yml` — the Prepare
+  Obscura step greps the pin; `release.yml` stamps it into the release manifest
+- Rust — `OBSCURA_PINNED_VERSION` in `rgaa-obscura/src/lib.rs`, checked by
+  `ObscuraBridge::start_server` (exact `name`/`version` token compare, not a
+  prefix match) and logged per run; `AnalyzePageResult.obscura_version` carries
+  it on every analyze result
+- `rgaa-rs/crates/rgaa-obscura/Cargo.toml` — the `obscura` git dependency is
+  pinned to the tag commit of the same release (`v0.2.4` =
+  `1fccab2c1ecd0f7eadc16d7a520ba227f9e7f782`), so the library and the binary
+  cannot drift apart
+
+## Rollback
+
+No tarball is vendored in the repo; roll back by re-downloading the previous
+release and reverting the pins. From the repo root:
+
+```bash
+curl -fSL -o obscura.tar.gz \
+  https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.2/obscura-x86_64-linux.tar.gz
+tar -xzf obscura.tar.gz
 ./obscura --version          # want: obscura 0.2.2
 ```
 
-Enforced in three places (keep the version string in sync):
-
-- `install.sh` — `OBSCURA_VERSION` + `verify_obscura_version` (fails the install on mismatch)
-- `.github/workflows/ci.yml` — e2e Prepare step greps the pin
-- Rust — `ObscuraBridge::binary_version()` + per-run version log in `start_server`;
-  `AnalyzePageResult.obscura_version` carries it on every analyze result
-
-## Rollback (exercised 2026-09-06: 0.2.2 → 0.2.0 → 0.2.2, `--version` checked each step)
-
-The previous pin is kept as `obscura-x86_64-linux-0.2.0.tar.gz`. From the repo root:
-
-```bash
-tar -xzf obscura-x86_64-linux-0.2.0.tar.gz
-cp obscura-x86_64-linux-0.2.0.tar.gz obscura-x86_64-linux.tar.gz
-./obscura --version          # want: obscura 0.2.0
-```
-
-Re-apply 0.2.2 by extracting the current `obscura-x86_64-linux.tar.gz` from a
-checkout at or after the upgrade commit (or re-downloading
-`obscura-x86_64-linux.tar.gz` from upstream `v0.2.2`), then re-check `--version`.
+Then set the pin sites above back to `0.2.2` (and the Cargo `rev` to
+`a1e09de68c7617b8079fbb1661b0548c501971c1`, the `v0.2.2` tag commit), or revert
+the upgrade commit. Upgrade history: `0.2.0` → `0.2.2` (2026-09-06, rollback
+exercised in both directions) → `0.2.4` (2026-10-12).
 
 ## Production ops
 

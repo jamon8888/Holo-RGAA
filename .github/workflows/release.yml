@@ -134,7 +134,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/rgaa-rs/dist"
           sha256sum "${{ matrix.tarball }}" > "${{ matrix.tarball }}.sha256"
           base="$(basename "${{ matrix.tarball }}" .tar.gz)"
-          printf '{"tag": "%s", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp", "rgaa-mcp-http"]}\n' "${{ env.TAG }}" > "${base}.manifest.json"
+          printf '{"tag": "%s", "obscura_version": "0.2.4", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp", "rgaa-mcp-http"]}\n' "${{ env.TAG }}" > "${base}.manifest.json"
         shell: bash
 
       - name: Package (Windows)
@@ -148,7 +148,7 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.zip }}").Hash.ToLower()
           "$hash  ${{ matrix.zip }}" | Set-Content -Encoding ascii "${{ matrix.zip }}.sha256"
           $base = [System.IO.Path]::GetFileNameWithoutExtension("${{ matrix.zip }}")
-          $manifest = '{"tag": "' + "${{ env.TAG }}" + '", "obscura_version": "0.2.2", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp", "rgaa-mcp-http"]}'
+          $manifest = '{"tag": "' + "${{ env.TAG }}" + '", "obscura_version": "0.2.4", "bins": ["rgaa", "rgaa-cli", "rgaa-api", "rgaa-mcp", "rgaa-mcp-http"]}'
           Set-Content -Path "$base.manifest.json" -Value $manifest -Encoding ascii
           Pop-Location
         shell: pwsh

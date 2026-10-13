@@ -1,6 +1,6 @@
 # 0001 — Une alternative d'image de données restitue la série complète
 
-- Statut : **provisoire — le cas décisif est contesté par le lot D (2026-10-13)**
+- Statut : accepté (confirmé par la 2e passe du lot D, 2026-10-13)
 - Date : 2026-10-13
 - Contexte d'origine : ticket #339 (grilling pertinence), lot C + re-vérification à l'aveugle
 
@@ -104,3 +104,77 @@ photo.
 Prochaine étape : faire trancher les 10 cartes manquantes, puis reprendre ce
 calcul. Ne pas durcir cet ADR, ni l'appliquer au code, avant qu'un second
 étiqueteur ait été mesuré.
+
+## Révision du 2026-10-13 (soir) — confirmé, et la règle est plus simple que prévu
+
+La 1re passe du lot D souffrait d'un défaut de protocole, pas d'un désaccord de
+doctrine : sur ses 39 cartes, **toutes** celles portant une correction écrite
+étaient « non pertinente » et **toutes** celles sans commentaire étaient
+« pertinente », sans exception (phi = −1,000). Le verdict n'apportait rien de
+plus que le fait d'avoir écrit. Preuve : l'ancre `D037`, dont l'alternative est
+factuellement fausse, était passée en « pertinente » sans un mot.
+
+Les 39 mêmes cartes ont été re-soumises (ordre et identifiants changés,
+réponses précédentes inaccessibles) avec **une justification obligatoire sur
+chaque carte, « pertinente » comprise**. Résultats :
+
+| | 1re passe | 2e passe |
+|---|---|---|
+| ancres | 3/4 (`D037` échouée) | **4/4** |
+| axe « complétude » | 14/18 | **17/18** |
+| axe « nature du média annoncée » | 8/14 | 7/14 |
+| axe « légende de la galerie » | 1/3 | 0/3 |
+
+Les **quatre** écarts qui avaient fait repasser cet ADR en provisoire se sont
+tous retournés, avec un motif précis à chaque fois :
+
+- `D007` (titre seul, valeurs déjà dans le texte voisin) → non pertinente,
+  « manque la répartition par type d'énergie ». **Le cas décisif est reproduit**
+  (il reproduit `C004`).
+- `D011` → « manque les membres et leurs rôles » ; `D009` → « manque trois
+  jalons et dates » ; `D006` → « ajouter au début Répartition de l'énergie
+  consommée en 2024 ».
+
+La préférence de la 2e passe n'est pas un choix post hoc : le changement de
+protocole a été décidé pour corriger un défaut mesuré *avant* de voir les
+nouveaux verdicts, et le contrôle pré-établi (les ancres) passe de 3/4 à 4/4.
+
+### Ce qui change dans la décision
+
+Les deux conventions « série complète » et « nature du média annoncée » étaient
+une mauvaise découpe. L'étiqueteur a énoncé son critère lui-même, dans les
+13 justifications de ses verdicts « pertinente » : **cohérence et complétude
+entre l'image, le contexte de la page et l'alternative**. « contexte » y
+apparaît 10 fois, « image » 9, « complétude » 7, « cohérence » 5.
+
+Ce critère unique explique les trois axes :
+
+- **images de données** : la complétude porte sur les grandeurs de l'image ;
+- **photos** : l'alternative doit reprendre ce que la page dit de l'image
+  (légende de galerie, raison d'être), et une description fidèle mais hors
+  contexte est rejetée — « alternative textuelle ne couvre pas le contexte de
+  la page juste la description de l'image » ;
+- **préfixe « Photo : »** : incident, pas un critère. L'axe reste à 50 %, et
+  `D019` comme `D031` ont été rejetées *bien que* portant l'annonce. Cette
+  convention est **abandonnée**.
+
+### Ce qui est infirmé dans la version précédente de cet ADR
+
+La clause « elle ne reprend pas le contenu rédactionnel du texte voisin » est
+**fausse**, et c'était l'inverse : la reprise de la légende est *due*. Les trois
+cartes qui la portent sont jugées pertinentes en 2e passe (0/3 conformes à
+l'ancienne règle). `CONTEXT.md` remplace donc « Reprise du contexte », qui
+désignait un défaut, par **Cohérence avec le contexte**, qui est une exigence,
+et introduit **Description seule** pour nommer le défaut réel.
+
+### Limites qui restent
+
+- Cohérence test-retest entre les deux passes : 29/39 = 74 %, IC95
+  [59 % ; 85 %]. C'est bas, mais les bascules ne sont pas du bruit : elles vont
+  toutes dans le sens d'une exigence accrue, et la passe la plus exigeante est
+  celle dont les ancres sont bonnes.
+- Aucun modèle n'a encore été mesuré contre ces étiquettes-ci. Les 79 % de
+  `swift-1.5-27b` et les 68 % de `gemma4:e2b` l'ont été contre le lot C, dont le
+  phi est de −0,94 : ces deux chiffres sont à refaire.
+- **Un second étiqueteur reste requis** avant d'appliquer ce critère au code.
+  Un critère énoncé par une seule personne reste une pratique individuelle.

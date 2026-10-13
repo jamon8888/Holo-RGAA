@@ -150,14 +150,18 @@ impl ChatTransport {
             return Ok(Self::text_messages(prompt));
         };
         // Validate base64 without retaining the full decoded buffer; the image
-        // is forwarded as base64 and decoded by the model server.
-        let mut buf = vec![0u8; 64];
-        base64::engine::general_purpose::STANDARD
-            .decode_slice(img, &mut buf)
-            .map_err(|e| RgaaError::Llm {
-                message: format!("invalid base64 image data: {e}"),
-                code: Some("INVALID_IMAGE".to_string()),
-            })?;
+        // is forwarded as base64 and decoded by the model server. Chunks are
+        // 4-char aligned, so each decodes independently and padding is only
+        // accepted in the last one.
+        let mut buf = [0u8; 768];
+        for chunk in img.as_bytes().chunks(1024) {
+            base64::engine::general_purpose::STANDARD
+                .decode_slice(chunk, &mut buf)
+                .map_err(|e| RgaaError::Llm {
+                    message: format!("invalid base64 image data: {e}"),
+                    code: Some("INVALID_IMAGE".to_string()),
+                })?;
+        }
 
         Ok(vec![
             ChatMessage {
@@ -417,6 +421,34 @@ mod tests {
     fn multimodal_messages_reject_bad_base64() {
         let err = ChatTransport::multimodal_messages("p", Some("not-valid-base64!!!")).unwrap_err();
         assert!(err.to_string().contains("base64"));
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
+    }
+
+    /// A real 32x32 PNG (~3 KB decoded, ~4 KB base64), far larger than any
+    /// fixed validation buffer.
+    const REAL_PNG_B64: &str = include_str!("../tests/fixtures/noise_32x32.png.b64");
+
+    #[test]
+    fn multimodal_messages_accept_realistic_png() {
+        let m = ChatTransport::multimodal_messages("p", Some(REAL_PNG_B64.trim())).unwrap();
+        assert_eq!(m.len(), 2);
+        let url = m[1].content[1]["image_url"]["url"].as_str().unwrap();
+        assert!(url.starts_with("data:image/png;base64,iVBORw0KGgo"));
+    }
+
+    #[test]
+    fn multimodal_messages_reject_corruption_after_first_kilobytes() {
+        let mut img = REAL_PNG_B64.trim().to_string();
+        img.replace_range(3000..3001, "!");
+        let err = ChatTransport::multimodal_messages("p", Some(&img)).unwrap_err();
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
+    }
+
+    #[test]
+    fn multimodal_messages_reject_truncated_base64() {
+        let img = REAL_PNG_B64.trim();
+        let err = ChatTransport::multimodal_messages("p", Some(&img[..img.len() - 1])).unwrap_err();
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
     }
 
     #[test]

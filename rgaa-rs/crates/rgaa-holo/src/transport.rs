@@ -151,13 +151,30 @@ impl ChatTransport {
         };
         // Validate base64 without retaining the full decoded buffer; the image
         // is forwarded as base64 and decoded by the model server.
-        let mut buf = vec![0u8; 64];
-        base64::engine::general_purpose::STANDARD
-            .decode_slice(img, &mut buf)
-            .map_err(|e| RgaaError::Llm {
-                message: format!("invalid base64 image data: {e}"),
-                code: Some("INVALID_IMAGE".to_string()),
-            })?;
+        //
+        // CHUNK_CHARS is a multiple of 4, so every chunk but the last is a
+        // whole number of base64 groups and decodes on its own. That alone is
+        // not enough: a non-final chunk ending in padding decodes happily while
+        // the string is malformed as a whole, so padding is rejected anywhere
+        // but in the last chunk.
+        const CHUNK_CHARS: usize = 1024;
+        const BUF_BYTES: usize = CHUNK_CHARS / 4 * 3;
+        let invalid = |detail: &str| RgaaError::Llm {
+            message: format!("invalid base64 image data: {detail}"),
+            code: Some("INVALID_IMAGE".to_string()),
+        };
+
+        let bytes = img.as_bytes();
+        let mut buf = [0u8; BUF_BYTES];
+        let last = bytes.len().div_ceil(CHUNK_CHARS).saturating_sub(1);
+        for (i, chunk) in bytes.chunks(CHUNK_CHARS).enumerate() {
+            if i < last && chunk.contains(&b'=') {
+                return Err(invalid("padding before the end of the data"));
+            }
+            base64::engine::general_purpose::STANDARD
+                .decode_slice(chunk, &mut buf)
+                .map_err(|e| invalid(&e.to_string()))?;
+        }
 
         Ok(vec![
             ChatMessage {
@@ -417,6 +434,54 @@ mod tests {
     fn multimodal_messages_reject_bad_base64() {
         let err = ChatTransport::multimodal_messages("p", Some("not-valid-base64!!!")).unwrap_err();
         assert!(err.to_string().contains("base64"));
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
+    }
+
+    /// A real 32x32 PNG (~3 KB decoded, ~4 KB base64), far larger than any
+    /// fixed validation buffer.
+    const REAL_PNG_B64: &str = include_str!("../tests/fixtures/noise_32x32.png.b64");
+
+    #[test]
+    fn multimodal_messages_accept_realistic_png() {
+        let m = ChatTransport::multimodal_messages("p", Some(REAL_PNG_B64.trim())).unwrap();
+        assert_eq!(m.len(), 2);
+        let url = m[1].content[1]["image_url"]["url"].as_str().unwrap();
+        // Full equality, not a prefix: forwarding only the PNG signature would
+        // satisfy a prefix check while handing the caller an unusable image.
+        assert_eq!(
+            url,
+            format!("data:image/png;base64,{}", REAL_PNG_B64.trim())
+        );
+    }
+
+    #[test]
+    fn multimodal_messages_reject_corruption_after_first_kilobytes() {
+        let mut img = REAL_PNG_B64.trim().to_string();
+        img.replace_range(3000..3001, "!");
+        let err = ChatTransport::multimodal_messages("p", Some(&img)).unwrap_err();
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
+    }
+
+    #[test]
+    fn multimodal_messages_reject_truncated_base64() {
+        let img = REAL_PNG_B64.trim();
+        let err = ChatTransport::multimodal_messages("p", Some(&img[..img.len() - 1])).unwrap_err();
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
+    }
+
+    /// Padding inside a non-final chunk: each chunk decodes on its own, so a
+    /// naive per-chunk loop accepts base64 that is malformed as a whole.
+    #[test]
+    fn multimodal_messages_reject_padding_inside_non_final_chunk() {
+        let img = format!("{}=={}", "A".repeat(1022), "AAAA");
+        assert!(
+            base64::engine::general_purpose::STANDARD
+                .decode(&img)
+                .is_err(),
+            "fixture must be malformed base64 as a whole"
+        );
+        let err = ChatTransport::multimodal_messages("p", Some(&img)).unwrap_err();
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
     }
 
     #[test]

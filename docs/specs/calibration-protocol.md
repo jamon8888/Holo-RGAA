@@ -80,6 +80,37 @@ La **cohérence test-retest** de l'étiqueteur est mesurée sur un sous-ensemble
 aveugle, identifiants et ordre changés. Elle plafonne ce qu'un modèle peut atteindre : sur la
 famille calibrée elle vaut 74 %, pour 85 % d'accord du modèle.
 
+### Une re-vérification n'est pas facultative
+
+Sur deux familles et deux campagnes, **les glissements de l'étiqueteur sont du même type** : une
+affirmation **vraie mais incomplète** est validée à la première passe, puis rejetée à la seconde avec le
+motif de l'incomplétude.
+
+| campagne | carte | 1re passe | 2e passe |
+|---|---|---|---|
+| alternatives d'image | « L'électricité vient surtout du nucléaire » (tête de classement seule) | pertinente | non — « ajouter la répartition » |
+| alternatives d'image | 3 autres cartes de ce type | pertinente | non |
+| descriptions détaillées | « La voiture est le mode de transport le plus utilisé » | pertinente — « vrai très cohérent » | non — « manque … transports en commun 27 %, … vélo 12 % » |
+
+La première justification ne vérifie que l'**exactitude** ; la seconde vérifie aussi la **complétude**.
+Aucun contrôle statique ne voit ce glissement, puisque champ rempli et ancres sont corrects : seule une
+seconde lecture le trouve. Toute campagne comporte donc une re-vérification (`recheck.py`) d'au moins 12
+cartes, dont **toutes celles où l'étiqueteur diverge de la règle**, et le verdict retenu pour une carte
+qui bascule est celui de la seconde passe, justification à l'appui.
+
+Un résultat voisin sur le lot « description détaillée » : sur 11 cartes non signalées, 11 sont stables.
+Le glissement ne se produit donc pas au hasard, il se concentre sur les cartes qui le méritaient. Ce qui
+rend la re-vérification **ciblée** efficace : 14 cartes ont suffi à le trouver.
+
+### Une raison écrite doit s'appliquer aux cartes équivalentes
+
+`g03` (prix inversés) est rejetée aux deux passes pour « manque le titre Piscine municipale », alors
+que `g19`, qui manque le même élément, est validée aux deux passes. Les verdicts sont stables et
+probablement justes — l'erreur réelle de `g03` est l'inversion des prix, jamais mentionnée — mais la
+raison écrite ne distingue pas les deux cartes. **Extraire un critère des justifications ne vaut que si
+la raison citée est appliquée de la même façon à toute carte équivalente** ; sinon on écrit dans la
+consigne modèle une règle que l'étiqueteur lui-même n'applique pas. À vérifier avant chaque consigne.
+
 ## 4. Seuil d'admission d'un modèle
 
 | Condition | Seuil |
@@ -166,7 +197,7 @@ avec le porteur est l'extraction, traitée au §5.
 | Famille de preuve | Tests | État | Lot |
 |---|---|---|---|
 | alternative d'image | 1.3.1–1.3.9 | **calibrée** — 33/39 = 85 %, kappa 0,68, ancres 4/4, repère trivial 67 % | (campagne #339) |
-| description détaillée | 1.7.1–1.7.6 | lot prêt, **étiquetage à faire** | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
+| description détaillée | 1.7.1–1.7.6 | **étiqueté**, modèle à mesurer — ancres 4/4, test-retest 13/14 = 93 % | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
 | résumé et libellé | 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3 | lot prêt, **étiquetage à faire** | `lots/resume_libelle.py` — 40 cartes, repère trivial 50 %, 6 ancres |
 | transcription et sous-titres | 4.2.1, 4.4.1 | **bloquée** | — |
 | audiodescription | 4.6.1, 4.6.2, 4.9.1 | **sans objet** | — |

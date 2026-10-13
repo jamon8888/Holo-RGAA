@@ -243,7 +243,7 @@ s'appuie sur le DOM, le CDP d'Obscura ou du code de ce dépôt.
 | `Holo4-35B-A3B` | Apache-2.0 | auto-hébergeable ; Holo 4 est un affinage *computer use* de Qwen |
 | `holo4-27b` | **CC-BY-NC-4.0** | **usage non commercial** : inutilisable en production |
 | `swift-1.5-27b` (passerelle MyIA) | — | mesuré : admis en Assisté, échoue le seuil de faux « pertinent » à 19 % |
-| `gemma4:e2b` (local) | — | mesuré **sous son repère trivial** (67 % vs 70 %) : disqualifié |
+| `gemma4:e2b` (local) | — | lot D2 propre : 22/39 = 56 %, **sous son repère trivial de 67 %**, kappa 0,26, 17 faux « pertinent » sur 26 rejets : insuffisant pour l'alternative d'image. (Un premier chiffre, 67 % vs 70 %, venait du lot C à étiquetage vicié ; il est remplacé.) Sur la description détaillée (lot G) il atteint 92 % : lot non discriminant |
 
 ## 5. Prérequis bloquants
 

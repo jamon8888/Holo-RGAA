@@ -35,6 +35,18 @@ python3 score.py --key lot_dd/key.json --labels etiquettes-...json \
     --labels2 etiquettes-...json --model lot_dd/results_*.jsonl
 ```
 
+## Re-vérification à l'aveugle
+
+```bash
+python3 recheck.py build   --lot-dir lot_dd --labels etiquettes.json --extra g03,g19 --n 14
+python3 -m http.server 8773 --bind 127.0.0.1 --directory lot_dd/recheck/serve
+python3 recheck.py compare --lot-dir lot_dd --labels etiquettes.json --labels2 etiquettes-recheck.json
+```
+
+Re-soumet les cartes où l'étiqueteur diverge de la règle, celles que vous désignez, et un complément
+équilibré de cartes concordantes — ré-identifiées, mélangées, sans rien qui les distingue. Elle mesure la
+cohérence test-retest, qui plafonne ce qu'un modèle peut atteindre.
+
 ## Ce que chaque script garantit
 
 **`sheet.py`** applique la contrainte du §2 du protocole : **justification obligatoire sur
@@ -56,7 +68,9 @@ passe viciée ne vaut rien :
    justifiées et la passe est inexploitable ;
 2. **ancres**, dont une factuellement fausse. Moins de 4/4 et la passe est suspecte, quel que
    soit l'accord ;
-3. **repère trivial**, le score du meilleur verdict constant.
+3. **répétition des justifications favorables** — une phrase copiée sur plus de 30 % des cartes favorables
+   ne dit pas pourquoi ; le champ est rempli, la collinéarité ne voit rien ;
+4. **repère trivial**, le score du meilleur verdict constant.
 
 Puis l'accord, le kappa de Cohen, les intervalles de Wilson, les faux « pertinent » rapportés
 aux rejets humains, et le verdict du **seuil d'admission** du §4.

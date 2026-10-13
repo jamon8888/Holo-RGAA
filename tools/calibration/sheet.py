@@ -110,8 +110,9 @@ def build(items, lot_dir, key, title, rubric):
     <label><input type="radio" name="{x['qid']}" value="pertinent"> Pertinente</label>
     <label><input type="radio" name="{x['qid']}" value="non_pertinent"> Non pertinente</label>
     <label><input type="radio" name="{x['qid']}" value="ne_sait_pas"> Je ne sais pas</label></fieldset>
-  <label class="cm"><span>Justification <strong>obligatoire</strong> — si pertinente : ce qui la rend
-    suffisante ; si non pertinente : ce qui manque ou ce qui est faux</span>
+  <label class="cm"><span>Justification <strong>obligatoire</strong> — si pertinente : <em>citez ce que vous
+    avez vérifié</em> (une valeur, un élément, une relation) ; si non pertinente : ce qui manque ou ce
+    qui est faux</span>
     <input type="text" name="c_{x['qid']}" maxlength="300" placeholder="une phrase suffit"></label></article>""")
     js = JS % {"key": key, "n": len(items), "min": MIN_JUSTIFICATION}
     return f"""<!doctype html><html lang="fr"><head><meta charset="utf-8">

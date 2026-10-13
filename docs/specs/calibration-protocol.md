@@ -55,6 +55,15 @@ un motif précis. La feuille d'étiquetage applique donc :
 - carte incomplète signalée visuellement et comptée en tête de page ;
 - **export refusé** tant qu'il en manque une, avec renvoi à la première.
 
+**Remplir le champ ne suffit pas : la justification doit dire pourquoi.** Sur le lot « description
+détaillée », 11 des 19 justifications favorables étaient la même phrase (« parfaitement cohérent très
+bien décrit »). Le champ était rempli, donc le contrôle ci-dessus ne voyait rien, mais ces justifications
+ne disent pas ce qui rend l'alternative suffisante : on ne peut pas vérifier qu'une complétude a été
+contrôlée, et on ne peut pas en extraire un critère. `score.py` mesure donc la part de la justification
+favorable la plus fréquente : 58 % sur ce lot, 15 % sur la passe propre de référence. Au-delà de 30 % la
+passe est marquée suspecte (seuil indicatif, posé sur ces deux points seulement). La consigne de la feuille
+demande, pour une carte favorable, **de citer ce qui a été vérifié** (une valeur, un élément, une relation).
+
 ## 3. Composition d'un lot
 
 | Exigence | Valeur | Pourquoi |
@@ -148,6 +157,7 @@ avec le porteur est l'extraction, traitée au §5.
 | `lots/description_detaillee.py`, `lots/resume_libelle.py` | un générateur par famille : cartes, ancres, clé de correction tenue hors de la feuille |
 | `sheet.py` | feuille d'étiquetage HTML autonome : justification obligatoire, export bloqué tant qu'une carte est incomplète |
 | `prompts/neutre.txt` | consigne modèle qui ne donne que le texte officiel du test, sans règle de pertinence |
+| `recheck.py` | re-vérification à l'aveugle d'un sous-ensemble, et calcul de la cohérence test-retest de l'étiqueteur |
 | `run_models.py` | exécute un modèle sur un lot. Backends `ollama` (local) et `openai`. **Le backend externe refuse de partir sans `--allow-external`** et ne reçoit la clé que par nom de variable d'environnement, jamais en ligne de commande |
 | `score.py` | accord, kappa de Cohen, intervalles de Wilson, matrice de confusion, repère trivial, ancres, et **phi(justification, verdict)** — le contrôle de collinéarité du §2 |
 

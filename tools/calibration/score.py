@@ -114,10 +114,24 @@ def main():
         print(f"   {mark} {r['qid']} [{r.get('kind','')}] règle={r['pred']} humain={r['h']}")
     print()
 
+    # 3bis. répétition des justifications favorables. Une phrase copiée sur la moitié des cartes
+    # favorables ne dit pas POURQUOI ces alternatives conviennent : le champ est rempli, donc le
+    # contrôle de collinéarité ne voit rien, mais la justification ne porte plus d'information.
+    fav = [(r["hc"] or "").strip().lower() for r in tranches if r["h"] == VERDICTS[0]]
+    if fav:
+        top, n_top = collections.Counter(fav).most_common(1)[0]
+        part = n_top / len(fav)
+        etat = "SUSPECT — ne dit pas pourquoi" if part > 0.30 else "acceptable"
+        print(f"== 3. RÉPÉTITION des justifications favorables : la plus fréquente couvre "
+              f"{n_top}/{len(fav)} = {part:.0%}   ({etat})")
+        if part > 0.30:
+            print(f"   « {top[:80]} »")
+        print()
+
     # 3. repère trivial
     freq = collections.Counter(r["h"] for r in tranches)
     triv, triv_n = (freq.most_common(1) or [("—", 0)])[0]
-    print(f"== 3. REPÈRE TRIVIAL (réponse constante « {triv} ») : {pct(triv_n, len(tranches))}\n")
+    print(f"== 4. REPÈRE TRIVIAL (réponse constante « {triv} ») : {pct(triv_n, len(tranches))}\n")
 
     if a.labels2:
         H2 = {l["qid"]: l["verdict"] for l in json.load(open(a.labels2, encoding="utf-8"))["labels"]}

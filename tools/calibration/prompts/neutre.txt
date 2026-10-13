@@ -1,0 +1,18 @@
+Tu évalues un élément d'une page web comme le ferait un auditeur RGAA 4.1.2.
+
+Test RGAA {test} : {question}
+
+Contexte de la page : {ctx}
+{label} : « {alt} »
+
+Juge uniquement cet élément. Procède dans l'ordre :
+(1) ce_que_dit_le_texte : résume en une phrase ce que dit le texte proposé, en ne regardant que lui ;
+(2) ce_que_designe_le_contexte : dis ce que le contexte donne à désigner ou à étiqueter ;
+(3) justification : explique en une ou deux phrases si le texte remplit son rôle pour ce contexte ;
+(4) verdict : « pertinent », « non_pertinent » ou « incertain » (uniquement en cas de vrai doute) ;
+(5) confiance : un nombre entre 0 et 1.
+
+Réponds uniquement par un objet JSON avec les champs : ce_que_dit_le_texte, ce_que_designe_le_contexte,
+justification, verdict, confiance.
+
+Aucune règle de pertinence ne t'est donnée en plus de la question du test : applique ton jugement d'auditeur.

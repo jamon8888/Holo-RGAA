@@ -1788,8 +1788,43 @@ impl ObscuraBridge {
       .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim() }));
     const landmarks = Array.from(document.querySelectorAll('header, nav, main, aside, footer, [role="banner"], [role="navigation"], [role="main"], [role="complementary"], [role="contentinfo"]'))
       .map(el => ({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), label: el.getAttribute('aria-label') }));
-    const images = Array.from(document.querySelectorAll('img'))
-      .map(img => ({ src: img.src, alt: img.alt, has_alt: img.hasAttribute('alt'), is_decorative: !img.hasAttribute('alt') && !img.alt }));
+    // Les sept porteurs d'alternative du critere RGAA 1.3 (tests 1.3.1 a 1.3.8).
+    // On lit l'ATTRIBUT alt, jamais la propriete IDL `.alt` : elle n'est pas
+    // implementee sous obscura 0.2.4 (`typeof img.alt === 'undefined'`, verifie sur
+    // img, area et input[type=image]), et JSON.stringify supprime les champs
+    // undefined — l'alternative disparaissait donc silencieusement du contexte.
+    const altOf = (el) => {
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'svg') {
+        const parts = ['title', 'desc']
+          .map(sel => { const n = el.querySelector(sel); return n ? n.textContent.trim() : ''; })
+          .filter(Boolean);
+        const v = parts.join(' — ');
+        return { alt: v || null, has_alt: parts.length > 0 };
+      }
+      if (tag === 'object' || tag === 'canvas') {
+        const aria = el.getAttribute('aria-label');
+        const fallback = (el.textContent || '').trim();
+        return { alt: aria || fallback || null, has_alt: aria !== null || fallback.length > 0 };
+      }
+      if (tag === 'embed') {
+        const aria = el.getAttribute('aria-label');
+        return { alt: aria, has_alt: aria !== null };
+      }
+      const a = el.getAttribute('alt');
+      return { alt: a, has_alt: el.hasAttribute('alt') };
+    };
+    const images = Array.from(document.querySelectorAll(
+        'img, area, input[type="image"], object[type^="image/"], embed[type^="image/"], svg, canvas'))
+      .map(el => {
+        const carrier = el.tagName.toLowerCase() === 'input' ? 'input[type=image]' : el.tagName.toLowerCase();
+        const { alt, has_alt } = altOf(el);
+        // `is_decorative` garde exactement sa semantique d'avant la correction
+        // (aucune alternative declaree). Le cas `alt=""`, marqueur decoratif reel
+        // du RGAA, reste classe comme avant : le changer deplacerait des verdicts
+        // en aval et releve d'un autre lot.
+        return { src: el.getAttribute('src') || el.getAttribute('data') || el.src || '', carrier, alt, has_alt, is_decorative: !has_alt };
+      });
     const iframes = Array.from(document.querySelectorAll('iframe'))
       .map(iframe => ({ src: iframe.src || null, title: iframe.title || null, has_title: iframe.hasAttribute('title') }));
     const media = Array.from(document.querySelectorAll('video, audio'))
@@ -2467,6 +2502,58 @@ impl Drop for ObscuraBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les sept porteurs d'alternative du critère RGAA 1.3 doivent être interrogés.
+    /// Mesuré : le script n'interrogeait que `img`, donc six tests sur sept (1.3.2 à
+    /// 1.3.8) n'avaient aucune preuve à juger.
+    #[test]
+    fn page_context_script_queries_every_alt_carrier() {
+        let script = ObscuraBridge::build_page_context_script();
+        for carrier in [
+            "img",
+            "area",
+            "input[type=\"image\"]",
+            "object[type^=\"image/\"]",
+            "embed[type^=\"image/\"]",
+            "svg",
+            "canvas",
+        ] {
+            assert!(
+                script.contains(carrier),
+                "le script d'extraction n'interroge pas le porteur {carrier}"
+            );
+        }
+    }
+
+    /// Garde, et non test de comportement : `.alt` **n'est pas implémentée** comme
+    /// propriété IDL sous obscura 0.2.4 (`typeof img.alt === "undefined"`, vérifié sur
+    /// `img`, `area` et `input[type=image]`), et `JSON.stringify` supprime les champs
+    /// `undefined`. Le script lisait `img.alt` : l'alternative disparaissait du contexte
+    /// sans aucune erreur, et le modèle chargé de juger sa pertinence recevait
+    /// `alt: ""` pour toutes les images. Ce garde tourne sans navigateur, là où seul un
+    /// test d'intégration aurait vu le défaut.
+    #[test]
+    fn page_context_script_reads_the_alt_attribute_not_the_idl_property() {
+        let script = ObscuraBridge::build_page_context_script();
+        assert!(
+            script.contains("getAttribute('alt')"),
+            "l'alternative doit être lue par getAttribute('alt')"
+        );
+        // Les commentaires du script citent la propriété fautive pour expliquer le
+        // défaut : on ne contrôle que le code.
+        let code: String = script
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for idl in ["img.alt", "el.alt", "area.alt", "input.alt"] {
+            assert!(
+                !code.contains(idl),
+                "`{idl}` est une propriété IDL absente sous obscura 0.2.4 : \
+                 lire l'attribut avec getAttribute('alt')"
+            );
+        }
+    }
 
     #[test]
     fn resolve_workers_defaults_to_cpu_count() {

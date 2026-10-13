@@ -178,3 +178,60 @@ et introduit **Description seule** pour nommer le défaut réel.
   phi est de −0,94 : ces deux chiffres sont à refaire.
 - **Un second étiqueteur reste requis** avant d'appliquer ce critère au code.
   Un critère énoncé par une seule personne reste une pratique individuelle.
+
+## Mesure du 2026-10-13 (nuit) — ce qu'un modèle atteint sur ce critère
+
+`swift-1.5-27b` (API MyIA), lot D 2e passe, 39 cartes, température 0. La consigne
+donnée au modèle énonce le critère de cet ADR ; trois versions ont été essayées.
+
+| | v4 | v5 | v5 (2e passage) |
+|---|---|---|---|
+| modèle vs humain | 31/39 = 79 % | 32/39 = 82 % | **33/39 = 85 %**, kappa 0,68 |
+| faux « pertinent » | 7 | 6 | **5** |
+| complétude (images de données) | 17/18 | 17/18 | **17/18 = 94 %** |
+| photos et logo | 7/14 | 8/14 | **9/14 = 64 %** |
+| ancres | 4/4 | 4/4 | **4/4** |
+
+Repères : réponse constante 26/39 = 67 % ; cohérence test-retest de l'étiqueteur
+entre ses deux passes 29/39 = 74 %.
+
+### Le gain de consigne n'est pas démontré
+
+Deux passages de la **même** consigne v5 à température 0 donnent 32/39 puis
+33/39 : **38/39 verdicts identiques**, donc une carte de bruit. Le gain v4 → v5
+est de 1 à 2 cartes, soit l'ordre de grandeur de ce bruit, et la v4 n'a été
+mesurée qu'une fois. On ne peut donc pas conclure que la v5 fonctionne : au
+mieux elle ne dégrade rien et la direction est plausible.
+
+### L'erreur n'est pas dans l'agrégation : inutile de découper en deux appels
+
+La v5 fait émettre séparément `complet_vis_a_vis_de_l_image` et
+`coherent_avec_le_contexte` avant le verdict. Le **ET mécanique** de ces deux
+réponses, recalculé hors du modèle, donne **exactement le même résultat** que le
+verdict énoncé : 33/39, kappa 0,68, 5 faux « pertinent », 1 faux « non
+pertinent ». Le modèle agrège donc correctement ses propres réponses.
+
+Conséquence : scinder l'évaluation en deux appels et combiner par un `ET` en
+Rust ne gagnerait rien. L'écart est dans la **condition B elle-même** — sur les
+5 faux « pertinent » restants, le modèle répond `B = oui` alors que l'étiqueteur
+juge le contexte absent. C'est un désaccord de jugement, pas un défaut de
+docilité.
+
+### Verdict d'automatisation
+
+5 faux « pertinent » sur 26 alternatives rejetées par l'humain : **19 % des
+mauvaises alternatives seraient validées**. Le `pass` automatique est exclu, et
+la production d'un `pass` même sous revue reste imprudente. Le niveau atteint
+est **Assisté** au sens de `CONTEXT.md` : le modèle peut remonter des `review`
+et motiver son signalement (sa détection de l'incomplétude chiffrée est à 94 %),
+jamais conclure seul à la conformité.
+
+### Réserve sur un des désaccords
+
+Sur `D031`, l'alternative « Logo de l'Atelier Lumière » est jugée non pertinente
+par l'étiqueteur, qui demande d'y ajouter « créateur de luminaires depuis
+2015 ». C'est une alternative que la plupart des auditeurs tiendraient pour
+correcte, et l'ajout demandé relève de l'argumentaire de la page. Le modèle
+donne ici la réponse conventionnelle. Ce cas illustre pourquoi le second
+étiqueteur reste requis : il n'est pas établi que le critère de cet ADR soit
+celui de la profession plutôt que celui d'un auditeur.

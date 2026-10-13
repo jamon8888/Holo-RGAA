@@ -25,6 +25,12 @@ pub struct ImageInfo {
     pub alt: Option<String>,
     pub has_alt: bool,
     pub is_decorative: bool,
+    /// Élément porteur de l'alternative : `img`, `area`, `input[type=image]`,
+    /// `object`, `embed`, `svg` ou `canvas`. L'extraction diffère selon le
+    /// porteur (test RGAA 1.3.1 à 1.3.8), et l'auditeur doit savoir lequel il
+    /// juge. `None` pour un contexte produit avant cette distinction.
+    #[serde(default)]
+    pub carrier: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +318,7 @@ mod tests {
                 alt: Some("Logo".to_string()),
                 has_alt: true,
                 is_decorative: false,
+                carrier: Some("img".to_string()),
             }],
             iframes: vec![],
             links: vec![LinkInfo {
@@ -353,6 +360,7 @@ mod tests {
             alt: None,
             has_alt: false,
             is_decorative: false,
+            carrier: Some("img".to_string()),
         });
         let prompt = PromptBuilder::build("1.1", &context);
         assert!(prompt.contains("(sans alt)"));

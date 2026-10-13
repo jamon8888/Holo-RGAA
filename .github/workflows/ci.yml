@@ -388,4 +388,4 @@ jobs:
           RGAA_LLM_PROVIDER: myia
           MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
           RUSTC_WRAPPER: sccache
-        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification -- --nocapture
+        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification --test alt_carriers -- --nocapture

@@ -257,6 +257,7 @@ mod tests {
                 alt: None,
                 has_alt: false,
                 is_decorative: false,
+                carrier: Some("img".to_string()),
             }],
             iframes: vec![],
             links: vec![LinkInfo {

@@ -90,12 +90,13 @@ def b64(path, max_side=880):
 
 
 def esc(t):
-    return (t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return (t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def build(items, lot_dir, key, title, rubric):
     cache, cards = {}, []
     for x in items:
+        x = {**x, "qid": esc(str(x["qid"]))}
         img = x.get("image")
         if img and img not in cache:
             cache[img] = b64(os.path.join(lot_dir, img))
@@ -114,6 +115,7 @@ def build(items, lot_dir, key, title, rubric):
     avez vérifié</em> (une valeur, un élément, une relation) ; si non pertinente : ce qui manque ou ce
     qui est faux</span>
     <input type="text" name="c_{x['qid']}" maxlength="300" placeholder="une phrase suffit"></label></article>""")
+    assert "".join(cards).count("<article ") == len(items), "une carte a été absorbée par du HTML mal formé"
     js = JS % {"key": key, "n": len(items), "min": MIN_JUSTIFICATION}
     return f"""<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

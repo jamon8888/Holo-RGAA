@@ -26,8 +26,12 @@ _Avoid_ : semi-automatique, aidé
 Le niveau d'un test pour lequel rien d'utile ne s'automatise au-delà de l'inventaire. Il est accompagné d'une justification écrite.
 _Avoid_ : humain par conception, manuel, impossible
 
+**Famille de preuve** :
+Ensemble des tests RGAA qui posent la même question de pertinence sur le même type de preuve, et que la machine traite donc de la même façon : alternative d'image, description détaillée, transcription et sous-titres, audiodescription, résumé et libellé. C'est l'unité à laquelle on calibre.
+_Avoid_ : groupe, thème, catégorie
+
 **Calibration** :
-Mesure de l'accord d'un modèle avec un étiquetage humain sur un test RGAA donné, avec ancres, repère trivial et intervalle de confiance. Un test Assisté est **calibré** quand cette mesure existe pour lui, **non calibré** sinon. Le niveau Assisté ne dépend pas de la calibration ; ce qu'on peut affirmer de sa fiabilité en dépend.
+Mesure de l'accord d'un modèle avec un étiquetage humain sur une famille de preuve, avec ancres, repère trivial et intervalle de confiance. Un test Assisté est **calibré** quand sa famille l'est, **non calibré** sinon. Le niveau Assisté ne dépend pas de la calibration ; ce qu'on peut affirmer de sa fiabilité en dépend.
 _Avoid_ : validation, évaluation, benchmark
 
 ### Alternatives textuelles

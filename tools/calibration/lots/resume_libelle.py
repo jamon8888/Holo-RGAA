@@ -6,13 +6,17 @@ par l'auteur de la page, désigne-t-il correctement ce qu'il étiquette ? Quaran
 test, quatre pertinentes et quatre non pertinentes attendues pour chacun : repère trivial de 50 %
 (protocole §3 : <= 60 %). Six ancres.
 
-Famille SANS IMAGE : la preuve est un texte et le contexte qu'il désigne. Aucune règle de
+Chaque contexte est une IMAGE (`images_rl.py`) : le tableau, le groupe de champs, la liste ou la page
+que le texte désigne, dessiné SANS ce texte. Un contexte seulement écrit prédisait la réponse et ne
+laissait rien à vérifier. Aucune règle de
 pertinence n'est écrite dans la feuille, seulement le texte officiel de chaque test — voir
 `description_detaillee.py` pour la raison. `pred` est ma prédiction, pas une vérité.
 
     python3 resume_libelle.py OUT_DIR
 """
-import json, os, random, sys
+import html, json, os, random, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import images_rl
 
 TESTS = {
     "5.2.1": dict(label="Résumé proposé", question="Ce résumé de tableau est-il pertinent ?",
@@ -117,10 +121,33 @@ ROWS = [
 ]
 
 
+# début du contexte écrit -> image qui le remplace
+IMG = {
+    "Tableau complexe : consommation": "energie_regions", "Tableau complexe : emploi du temps": "emploi_du_temps",
+    "Tableau complexe : comparatif": "forfaits", "Tableau complexe : barème": "bareme",
+    "Tableau de données : classement": "classement", "Tableau de données : horaires": "dechetterie",
+    "Tableau de données : une ligne par département": "idf", "Tableau de données : une ligne par mois": "ca_mensuel",
+    "Page : fiche pratique": "page_cni", "Page : formulaire de contact": "page_contact",
+    "Page : recette": "page_tarte", "Page : résultats de recherche": "page_recherche",
+    "Groupe de quatre champs": "adresse", "Groupe de trois boutons radio": "paiement",
+    "Groupe de trois champs": "identite", "Groupe de trois cases à cocher": "abonnements",
+    "Liste de choix « Fruits »": "liste_fruits", "Liste de choix « Pays »": "liste_pays",
+    "Liste de choix « Taille »": "liste_taille", "Liste de choix « Ville »": "liste_ville",
+}
+CTX_IMAGE = "Voir l'image : l'élément de la page dont le texte proposé est le titre, le résumé, la légende ou le libellé."
+
+
+def image_of(ctx):
+    hits = [v for k, v in IMG.items() if ctx.startswith(k)]
+    assert len(hits) == 1, ctx
+    return hits[0]
+
+
 def rubric():
-    lis = "".join(f"<li><strong>{t}</strong> — <em>{v['official']}</em></li>" for t, v in TESTS.items())
+    lis = "".join(f"<li><strong>{t}</strong> — <em>{html.escape(v['official'])}</em></li>" for t, v in TESTS.items())
     return f"""<p>Chaque carte porte sur l'un de ces cinq tests RGAA, indiqué sur la carte. Lisez le contexte, puis
-dites si le texte proposé est pertinent. Texte officiel de chaque test :</p><ul>{lis}</ul>
+dites si le texte proposé est pertinent. L'image montre l'élément concerné sans ce texte
+(tableau sans titre ni résumé, groupe sans légende, liste sans libellé de groupe, page sans titre d'onglet). Texte officiel de chaque test :</p><ul>{lis}</ul>
 <p><strong>Aucune règle supplémentaire n'est donnée, volontairement.</strong> Jugez selon votre pratique
 d'audit. C'est ce que vous écrivez dans la justification qui établit le critère retenu.</p>"""
 
@@ -130,11 +157,17 @@ def build(out):
     items = [dict(id=f"R{n:03d}", ctx=ctx, alt=txt, pred=p, kind=k, anchor=bool(a), test=t,
                   label=TESTS[t]["label"], question=TESTS[t]["question"])
              for n, (t, ctx, txt, p, k, a) in enumerate(ROWS, 1)]
+    for x in items:
+        x["image"] = f"img/{image_of(x['ctx'])}.jpg"
+        x["ctx_ecrit"] = x["ctx"]
     random.Random(5200).shuffle(items)
     for n, x in enumerate(items, 1):
         x["qid"] = f"r{n:02d}"
-    public = [{k: x[k] for k in ("qid", "id", "ctx", "alt", "test", "label", "question")} for x in items]
+    for x in items:
+        x["ctx"] = CTX_IMAGE
+    public = [{k: x[k] for k in ("qid", "id", "image", "ctx", "alt", "test", "label", "question")} for x in items]
     key = {x["qid"]: {k: x[k] for k in ("id", "pred", "kind", "anchor", "test")} for x in items}
+    images_rl.make(os.path.join(out, "img"))
     json.dump(public, open(os.path.join(out, "items.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     json.dump(key, open(os.path.join(out, "key.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     open(os.path.join(out, "rubric.html"), "w", encoding="utf-8").write(rubric())

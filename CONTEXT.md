@@ -25,3 +25,17 @@ _Avoid_ : semi-automatique, aidé
 **Irréductible** :
 Le niveau d'un test pour lequel rien d'utile ne s'automatise au-delà de l'inventaire. Il est accompagné d'une justification écrite.
 _Avoid_ : humain par conception, manuel, impossible
+
+### Alternatives textuelles
+
+**Alternative pertinente** :
+Alternative textuelle d'une image informative qui décrit ce que l'image montre, nomme le sujet précis quand le contexte l'identifie (lieu, organisation, espèce, produit, valeurs d'un graphique) et ne reprend pas le contenu du texte voisin. Elle reste concise (test 1.3.9).
+_Avoid_ : alternative correcte, bonne alternative, alternative de qualité
+
+**Identification par le contexte** :
+Fait de nommer ce que représente l'image grâce à ce que dit la page (« forêt de Brocéliande », « érable du Japon », « Logo de l'association… »). C'est la seule contribution du contexte à une alternative pertinente.
+_Avoid_ : reprise du contexte
+
+**Reprise du contexte** :
+Fait de recopier dans l'alternative le contenu du texte voisin (prix, dates, durée, thème de la page). Elle rend une alternative non pertinente.
+_Avoid_ : contexte pris en compte

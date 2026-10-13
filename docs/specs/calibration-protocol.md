@@ -88,8 +88,8 @@ motif de l'incomplétude.
 
 | campagne | carte | 1re passe | 2e passe |
 |---|---|---|---|
-| alternatives d'image | « L'électricité vient surtout du nucléaire » (tête de classement seule) | pertinente | non — « ajouter la répartition » |
-| alternatives d'image | 3 autres cartes de ce type | pertinente | non |
+| alternatives d'image | « L'électricité vient surtout du nucléaire » (tête de classement seule) | pertinente | non — « Ajouter au début Répartition de Energie consommée en 2024 » |
+| alternatives d'image | 3 autres cartes d'incomplétude (titre seul, jalons manquants) | pertinente | non — « manque les membres et leur rôles », « manque trois jalons et dates »… |
 | descriptions détaillées | « La voiture est le mode de transport le plus utilisé » | pertinente — « vrai très cohérent » | non — « manque … transports en commun 27 %, … vélo 12 % » |
 
 La première justification ne vérifie que l'**exactitude** ; la seconde vérifie aussi la **complétude**.

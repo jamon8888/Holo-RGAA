@@ -36,9 +36,9 @@ jobs:
     steps:
       - name: Reject malformed tag
         run: |
-          re='^(latest|v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?)$'
+          re='^(latest|v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?)$'
           if ! [[ "$TAG" =~ $re ]]; then
-            echo "::error::refusing to release: tag is not 'latest' or a vMAJOR.MINOR.PATCH[-suffix] version"
+            echo "::error::refusing to release: tag is not 'latest' or a vMAJOR.MINOR.PATCH[-prerelease] version"
             exit 1
           fi
         shell: bash

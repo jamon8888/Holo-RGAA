@@ -30,7 +30,7 @@
     "obscura_bin": {
       "type": "string",
       "title": "Path to the obscura binary",
-      "description": "Absolute path to the obscura browser binary, pinned to version 0.2.2. Required by analyze, igt, source_map and verify_fix — that is, by the whole remediation loop. Leave unset if obscura is already on PATH; a blank value here shadows any RGAA_OBSCURA_BIN set in .env. install.sh installs and version-checks it for you.",
+      "description": "Absolute path to the obscura browser binary, pinned to version 0.2.4. Required by analyze, igt, source_map and verify_fix — that is, by the whole remediation loop. Leave unset if obscura is already on PATH; a blank value here shadows any RGAA_OBSCURA_BIN set in .env. install.sh installs and version-checks it for you.",
       "required": false
     }
   }

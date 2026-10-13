@@ -15,7 +15,7 @@ tier 0 is a useful degraded mode, **not** a failure.
 | Tier | Requires | Tools that work |
 |---|---|---|
 | 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static`, `source_map`, `remediate`, `get_audit_result` |
-| 1 | + `obscura` **exactly 0.2.2** | `analyze`, `igt`, `verify_fix` |
+| 1 | + `obscura` **exactly 0.2.4** | `analyze`, `igt`, `verify_fix` |
 | 2 | + a model, **and** a key *or* a local provider | `audit_url` |
 
 Only three tools touch the browser. `source_map` and `remediate` are local
@@ -80,7 +80,7 @@ without the repository — fall back to installing by hand:
 cargo install --path rgaa-rs/crates/rgaa-mcp
 ```
 
-and install `obscura` 0.2.2 from `h4ckf0r0day/obscura`, then either put it on
+and install `obscura` 0.2.4 from `h4ckf0r0day/obscura`, then either put it on
 `PATH` or set `RGAA_OBSCURA_BIN` to its absolute path.
 
 The version is not advisory. `rgaa-obscura` compares the binary's reported

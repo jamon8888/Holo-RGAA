@@ -1,5 +1,5 @@
 //! Classification of the registry's fixtures under Obscura (spec §4 points 6-7,
-//! issue #261). Runs in the E2E job (Obscura 0.2.2 on PATH, network for the axe-core
+//! issue #261). Runs in the E2E job (Obscura 0.2.4 on PATH, network for the axe-core
 //! CDN); skipped unless `RUN_E2E=1`.
 //!
 //! For every fixture a registry mechanism names:
@@ -143,7 +143,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
     bridge
         .start_server()
         .await
-        .expect("obscura 0.2.2 must start");
+        .expect("obscura 0.2.4 must start");
     let binary = bridge.binary_path().to_string();
     let bridge = Arc::new(bridge);
 

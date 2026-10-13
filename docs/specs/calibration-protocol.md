@@ -117,6 +117,7 @@ consigne modèle une règle que l'étiqueteur lui-même n'applique pas. À véri
 |---|---|
 | ancres | **4/4** |
 | accord | au-dessus du repère trivial, **intervalles de confiance disjoints** |
+| pouvoir discriminant | **le lot doit être mesuré avec un modèle faible de référence** (ici `gemma4:e2b`) : il doit y tomber nettement sous le modèle fort, intervalles disjoints. Sinon le lot est déclaré *non discriminant* et aucune admission n'y compte. Lot D2 : `swift` 85 % [70 ; 93] vs `gemma` 56 % [41 ; 71] — séparation à la limite (1 point de recouvrement). Lot G : 100 % vs 92 % — non discriminant |
 | faux « pertinent » | **≤ 10 %** des alternatives rejetées par l'humain |
 
 Aucun modèle n'est épinglé : un seuil survit au changement de modèle et de passerelle.
@@ -126,7 +127,7 @@ Aucun modèle n'est épinglé : un seuil survit au changement de modèle et de p
 | Modèle | Ancres | Accord | Faux « pertinent » | Verdict |
 |---|---|---|---|---|
 | `swift-1.5-27b` (API) | 4/4 | 33/39 = 85 %, kappa 0,68 | **19 %** | admis en *Assisté*, échoue le seuil |
-| `gemma4:e2b` (local) | — | 22/33 = 67 %, **sous son repère trivial de 70 %** | — | disqualifié |
+| `gemma4:e2b` (local) | — | lot D2 : 22/39 = 56 %, IC95 [41 % ; 71 %], **sous son repère trivial de 67 %**, kappa 0,26, faux « pertinent » 17/26 = 65 % | — | insuffisant (figure antérieure 67 % vs 70 % tirée du lot C vicié, remplacée) |
 
 Deux pistes mesurées et fermées :
 
@@ -197,7 +198,7 @@ avec le porteur est l'extraction, traitée au §5.
 | Famille de preuve | Tests | État | Lot |
 |---|---|---|---|
 | alternative d'image | 1.3.1–1.3.9 | **calibrée** — 33/39 = 85 %, kappa 0,68, ancres 4/4, repère trivial 67 % | (campagne #339) |
-| description détaillée | 1.7.1–1.7.6 | **étiqueté**, modèle à mesurer — ancres 4/4, test-retest 13/14 = 93 % | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
+| description détaillée | 1.7.1–1.7.6 | **étiqueté, mesure non discriminante** — ancres 4/4, test-retest 13/14 = 93 % ; `swift` 39/39 = 100 %, `gemma4:e2b` 36/39 = 92 % (2 faux « pertinent » sur 21 = 10 %, admis). Un modèle de 2 Md passe : famille **non déclarée calibrée** tant qu'un lot plus difficile n'existe pas | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
 | résumé et libellé | 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3 | lot prêt, **étiquetage à faire** | `lots/resume_libelle.py` — 40 cartes, repère trivial 50 %, 6 ancres |
 | transcription et sous-titres | 4.2.1, 4.4.1 | **bloquée** | — |
 | audiodescription | 4.6.1, 4.6.2, 4.9.1 | **sans objet** | — |

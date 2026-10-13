@@ -27,7 +27,7 @@ URL ──► rgaa-orchestrator (pipeline.rs)
 | Brique | Rôle | Fichiers qui font foi |
 |---|---|---|
 | **rgaa-core** | Types, catalogue des 106 critères, classification, registre des mécanismes | `src/criteria.rs`, `src/registry.rs`, `data/rgaa-4.1.2/{criteres,mechanisms,axe_rules,automatable_criteres}.json|toml` |
-| **rgaa-obscura** | Pont vers le navigateur **Obscura 0.2.2** (binaire épinglé, CDP) : navigation, évaluation JS, axe, captures, AX tree, clavier (`press_key`, `get_tab_order`) | `src/lib.rs` (`ObscuraBridge`), `src/cdp_pool.rs`, [docs/obscura-substrate.md](obscura-substrate.md) |
+| **rgaa-obscura** | Pont vers le navigateur **Obscura 0.2.4** (binaire épinglé, CDP) : navigation, évaluation JS, axe, captures, AX tree, clavier (`press_key`, `get_tab_order`) | `src/lib.rs` (`ObscuraBridge`), `src/cdp_pool.rs`, [docs/obscura-substrate.md](obscura-substrate.md) |
 | **axe-core** | Moteur de règles d'accessibilité, 4.9.1, exécuté **dans la page** via Obscura. Ses règles étiquetées `RGAAv4` sont mappées aux critères | `rgaa-obscura/src/lib.rs` (`run_axe_batch`), `rgaa-rules/src/axe_mapper.rs` |
 | **rgaa-rules** | Traduit les violations axe et les résultats des sondes JS en `CriterionResult` | `axe_mapper.rs`, `gap_fix.rs` |
 | **rgaa-agent / rgaa-holo** | Évaluation par LLM (Holo) des critères qui demandent du jugement, avec RAG | `rgaa-agent/src/{agent,criteria_defs,rag}`, `rgaa-holo/src` |

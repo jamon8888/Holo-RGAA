@@ -363,7 +363,7 @@ impl BrowserWorker {
                 completed,
                 duration_ms: started.elapsed().as_millis() as u64,
                 igt: None,
-                obscura_version: Some("obscura 0.1.0 (v0.2.2 substrate)".into()),
+                obscura_version: Some("obscura 0.1.0 (v0.2.4 substrate)".into()),
             })
         });
         BrowserResponse::AnalyzeResult(result)

@@ -265,6 +265,22 @@ Les sondes comportementales (L2) ne démarrent qu'après la vérification de cap
 
 ## 9. Critères humains par conception
 
+> **Remplacé.** Ce paragraphe est remplacé par
+> [`human-criteria-automation.md`](human-criteria-automation.md), qui classe **117 tests**
+> en *Automatique* (16), *Assisté* (82) et *Irréductible* (19), avec pour chacun la
+> technique, la bibliothèque et sa licence, la preuve produite et le statut par défaut.
+>
+> Deux hypothèses de ce paragraphe sont infirmées par les mesures de la carte
+> [#330](https://github.com/jamon8888/Holo-RGAA/issues/330) :
+>
+> - « aucun mécanisme de verdict » est faux pour **16 tests**, qui rendent un `fail` ou un
+>   `pass` déterministe accompagné d'une preuve — dont 13.7.1 (flashs), 4.3.1, 4.10.1,
+>   10.7.1, 12.3.2 et 5.1.1 ;
+> - « exclus de l'objectif de couverture » ne tient plus : un test *Assisté* produit une
+>   preuve et un `review` motivé, qui comptent au rapport.
+>
+> La liste ci-dessous est conservée pour mémoire, comme état antérieur.
+
 Leur statut `needs_review` est assumé. Ils sont **exclus de l'objectif de couverture** et ne reçoivent aucun mécanisme de verdict :
 
 - **Pertinence** : 4.2, 4.6, 4.9 ; pertinence dans 1.3, 1.7, 4.4, 5.2, 5.5, 8.6, 11.7, 11.8.3.

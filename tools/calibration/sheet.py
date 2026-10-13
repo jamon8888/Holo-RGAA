@@ -10,8 +10,10 @@ correction — mesuré à phi = -1,000 sur 39 cartes, avec une ancre factuelleme
 acceptée sans un mot. La feuille marque donc les cartes incomplètes, les compte en tête,
 et refuse l'export tant qu'il en reste une.
 
-Entrée : un JSON de cartes `[{"qid", "image", "ctx", "alt"}, ...]`, l'image étant un
-chemin relatif au répertoire du lot. La clé de correction n'entre jamais dans la page.
+Entrée : un JSON de cartes `[{"qid", "id", "image", "ctx", "alt"}, ...]`, l'image étant un
+chemin relatif au répertoire du lot, avec extension (le même contrat que `run_models.py`) ;
+elle est facultative pour les familles sans image. `label`, `question` et `test` sont
+facultatifs et propres à la carte. La clé de correction n'entre jamais dans la page.
 
     python3 sheet.py lot/items.json --out lot/etiquetage.html --title "Lot E — descriptions détaillées"
 """
@@ -102,8 +104,9 @@ def build(items, lot_dir, key, title, rubric):
         cards.append(f"""<article class="card" data-qid="{x['qid']}"><h2>{x['qid']} / {len(items)}</h2>
   {pic}
   <p class="ctx"><strong>Contexte de la page :</strong> {esc(x.get('ctx',''))}</p>
-  <p class="alt"><strong>Alternative textuelle proposée :</strong> « {esc(x['alt'])} »</p>
-  <fieldset><legend>Cette alternative est-elle pertinente ?</legend>
+  {('<p class="ctx"><strong>Test RGAA :</strong> ' + esc(x['test']) + '</p>') if x.get('test') else ''}
+  <p class="alt"><strong>{esc(x.get('label', 'Alternative textuelle proposée'))} :</strong> « {esc(x['alt'])} »</p>
+  <fieldset><legend>{esc(x.get('question', 'Cette alternative est-elle pertinente ?'))}</legend>
     <label><input type="radio" name="{x['qid']}" value="pertinent"> Pertinente</label>
     <label><input type="radio" name="{x['qid']}" value="non_pertinent"> Non pertinente</label>
     <label><input type="radio" name="{x['qid']}" value="ne_sait_pas"> Je ne sais pas</label></fieldset>
@@ -118,9 +121,8 @@ def build(items, lot_dir, key, title, rubric):
 <div class="rules">{rubric}
 <p class="warn">Une justification est obligatoire sur chaque carte, <strong>verdict favorable
 compris</strong>. Sans elle, le verdict ne se distingue pas du simple fait d'avoir écrit une
-correction : mesuré à phi = &minus;1,000 sur 39 cartes lors d'une campagne précédente, où une
-alternative factuellement fausse est passée en « pertinente » sans un mot. L'export est bloqué
-tant qu'une carte est incomplète.</p>
+correction : cela a été mesuré sur une campagne précédente. L'export est bloqué tant qu'une carte
+est incomplète.</p>
 <p>Répondez <strong>carte par carte</strong>. Plusieurs cartes peuvent montrer la même image avec
 un contexte ou une alternative légèrement différents : c'est voulu. Si vous êtes la seconde
 personne, <strong>ne consultez pas</strong> les réponses de la première.</p></div>
@@ -148,7 +150,11 @@ def main():
             sys.exit(f"carte sans qid ou sans alt : {x}")
     if len({x["qid"] for x in items}) != len(items):
         sys.exit("identifiants de cartes dupliqués")
-    key = a.key or os.path.splitext(os.path.basename(a.out))[0]
+    # La clé de stockage dépend du CONTENU du lot : un lot modifié ne doit jamais recharger les
+    # réponses de l'ancien (cela a produit des étiquettes attachées à de mauvaises cartes).
+    import hashlib
+    digest = hashlib.sha1(json.dumps(items, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
+    key = a.key or f"{os.path.splitext(os.path.basename(a.out))[0]}-{digest}"
     rubric = open(a.rubric, encoding="utf-8").read() if a.rubric else "<p>Jugez chaque alternative selon la règle en vigueur.</p>"
     html = build(items, os.path.dirname(os.path.abspath(a.items)), key, a.title, rubric)
 
@@ -156,6 +162,7 @@ def main():
     for leak in ("pred", "\"axis\"", "anchor", "key.json"):
         if leak in html:
             sys.exit(f"fuite possible de la clé de correction dans la page : {leak!r}")
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     open(a.out, "w", encoding="utf-8").write(html)
     print(f"{a.out} — {len(items)} cartes, clé de stockage {key!r}, "
           f"justification de {MIN_JUSTIFICATION} caractères minimum")

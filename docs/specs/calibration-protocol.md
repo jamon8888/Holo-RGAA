@@ -144,20 +144,43 @@ avec le porteur est l'extraction, traitée au §5.
 
 | Fichier | Rôle |
 |---|---|
-| `build_lot.py` | génère un lot : cartes, ancres, clé de correction tenue hors de la feuille |
+| `lots/images.py` | neuf images de données **synthétiques**, générées par code : rien à commiter, aucune licence. Libellés uniques (un défaut du prototype fusionnait les libellés répétés en une catégorie) |
+| `lots/description_detaillee.py`, `lots/resume_libelle.py` | un générateur par famille : cartes, ancres, clé de correction tenue hors de la feuille |
 | `sheet.py` | feuille d'étiquetage HTML autonome : justification obligatoire, export bloqué tant qu'une carte est incomplète |
+| `prompts/neutre.txt` | consigne modèle qui ne donne que le texte officiel du test, sans règle de pertinence |
 | `run_models.py` | exécute un modèle sur un lot. Backends `ollama` (local) et `openai`. **Le backend externe refuse de partir sans `--allow-external`** et ne reçoit la clé que par nom de variable d'environnement, jamais en ligne de commande |
 | `score.py` | accord, kappa de Cohen, intervalles de Wilson, matrice de confusion, repère trivial, ancres, et **phi(justification, verdict)** — le contrôle de collinéarité du §2 |
 
 ## 8. État
 
-| Famille de preuve | Tests | État |
-|---|---|---|
-| alternative d'image | 1.3.1–1.3.9 | **calibrée** — 33/39 = 85 %, kappa 0,68, ancres 4/4, repère trivial 67 % |
-| description détaillée | 1.7.1–1.7.6 | à calibrer |
-| transcription et sous-titres | 4.2.1, 4.4.1 | à calibrer |
-| audiodescription | 4.6.1, 4.6.2, 4.9.1 | sans objet — ces tests sont *Irréductibles* ; la calibration ne porterait que sur la preuve d'inventaire |
-| résumé et libellé | 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3 | à calibrer |
+| Famille de preuve | Tests | État | Lot |
+|---|---|---|---|
+| alternative d'image | 1.3.1–1.3.9 | **calibrée** — 33/39 = 85 %, kappa 0,68, ancres 4/4, repère trivial 67 % | (campagne #339) |
+| description détaillée | 1.7.1–1.7.6 | lot prêt, **étiquetage à faire** | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
+| résumé et libellé | 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3 | lot prêt, **étiquetage à faire** | `lots/resume_libelle.py` — 40 cartes, repère trivial 50 %, 6 ancres |
+| transcription et sous-titres | 4.2.1, 4.4.1 | **bloquée** | — |
+| audiodescription | 4.6.1, 4.6.2, 4.9.1 | **sans objet** | — |
+
+**Pourquoi « transcription et sous-titres » est bloquée.** Le modèle qui juge ces tests ne lit pas
+l'audio : il compare un texte publié à une transcription produite par Whisper. Calibrer cette chaîne
+de bout en bout mêlerait deux erreurs — celle du transcripteur et celle du juge — sans moyen de les
+séparer. Or **Whisper est un prérequis non résolu** (« à valider », `human-criteria-automation.md`
+§5.3) : il n'est pas installé ici, et rien n'a été mesuré sur du français. L'étiqueteur devrait de plus
+écouter chaque média, ce qui exige des clips de parole connue ; aucun synthétiseur vocal n'est
+disponible non plus. À reprendre une fois Whisper validé.
+
+**Pourquoi « audiodescription » est sans objet.** Ses trois tests sont *Irréductibles*
+(`human-criteria-automation.md` §3, G3) : aucun modèle n'y rend de verdict, donc il n'y a rien à
+calibrer. Seule la preuve d'inventaire (piste présente, marqueur lu) est produite, et elle est
+déterministe — couverte par les fixtures du §5, pas par un étiquetage.
+
+Il reste donc **deux campagnes réalisables**, pas quatre : environ 80 cartes, environ 2 h
+d'étiquetage par étiqueteur au rythme observé (39 cartes en une heure, justification comprise).
+
+**Consigne des deux campagnes.** Aucune règle de pertinence n'est donnée aux étiqueteurs : seule la
+formulation officielle de chaque test figure dans la feuille. Le critère sera extrait des
+justifications, comme il l'a été pour la famille « alternative d'image », puis une seconde consigne
+modèle l'énoncera. `tools/calibration/prompts/neutre.txt` sert à la première mesure.
 
 **Réserve ouverte** : le critère de pertinence de
 [`docs/adr/0001-alternatives-serie-complete.md`](../adr/0001-alternatives-serie-complete.md)

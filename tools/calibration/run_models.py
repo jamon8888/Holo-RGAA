@@ -141,10 +141,25 @@ PROMPTS.update({"v1": prompt, "v2": prompt_v2, "v3": prompt_v3, "v4": prompt_v4,
 
 def b64(path): return base64.b64encode(open(path, "rb").read()).decode()
 
+def image_b64(item):
+    """Image de la carte, ou None pour une famille sans image (titre de page, légende...).
+
+    `image` est un chemin relatif au répertoire du lot, avec extension — le même contrat que
+    `sheet.py`. L'ancien format (nom nu, `img/<nom>.jpg` implicite) reste lu pour rejouer les
+    lots du prototype.
+    """
+    rel = item.get("image")
+    if not rel:
+        return None
+    path = os.path.join(OUT, rel)
+    if not os.path.exists(path):
+        path = os.path.join(OUT, "img", rel + ".jpg")
+    return b64(path)
+
 def call_ollama(model, item, ver='v1', host="http://127.0.0.1:11434", timeout=900):
     body = {"model": model, "stream": False, "think": False, "format": (SCHEMA if ver == "v1" else SCHEMA_V2),
             "options": {"temperature": 0, "num_predict": 500},
-            "messages": [{"role": "user", "content": PROMPTS[ver](item), "images": [b64(os.path.join(OUT, "img", item["image"] + ".jpg"))]}]}
+            "messages": [dict({"role": "user", "content": PROMPTS[ver](item)}, **({"images": [image_b64(item)]} if image_b64(item) else {}))]}
     req = urllib.request.Request(host + "/api/chat", json.dumps(body).encode(), {"Content-Type": "application/json"})
     r = json.load(urllib.request.urlopen(req, timeout=timeout))
     return r["message"]["content"]
@@ -154,9 +169,11 @@ LAST_USAGE = {}
 def call_openai(base_url, model, key_env, item, ver='v1', max_tokens=1200, timeout=240):
     key = os.environ.get(key_env)
     if not key: raise SystemExit(f"variable d'environnement {key_env} absente")
-    msg = [{"role": "user", "content": [
-        {"type": "text", "text": PROMPTS[ver](item)},
-        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64(os.path.join(OUT, "img", item["image"] + ".jpg"))}}]}]
+    content = [{"type": "text", "text": PROMPTS[ver](item)}]
+    img = image_b64(item)
+    if img:
+        content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + img}})
+    msg = [{"role": "user", "content": content}]
     url = base_url.rstrip("/") + "/chat/completions"
     hdr = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
     for use_fmt in (True, False):                       # certains modèles/passerelles refusent response_format
@@ -207,6 +224,8 @@ if __name__ == "__main__":
     ap.add_argument("--prompt", default="v5", choices=["v1", "v2", "v3", "v4", "v5"],
                     help="v5 porte le critere en vigueur (ADR 0001). v1 a v3 sont conservees "
                          "pour l'historique : elles enoncent une regle que l'etiquetage a infirmee")
+    ap.add_argument("--prompt-file", help="consigne propre a la famille (remplace --prompt). Marqueurs : "
+                    "{label} {test} {question} {ctx} {alt}. Voir tools/calibration/prompts/")
     ap.add_argument("--max-tokens", type=int, default=1200, help="plafond de jetons de sortie (backend openai) ; consigné dans chaque résultat")
     a = ap.parse_args()
     if a.backend == "openai":
@@ -216,6 +235,15 @@ if __name__ == "__main__":
         print(f"[ATTENTION] envoi d'images vers : {host}", file=sys.stderr)
     OUT = os.path.abspath(a.lot_dir)
     ITEMS_FILE, KEY_FILE = "items.json", "key.json"
+    if a.prompt_file:
+        template = open(a.prompt_file, encoding="utf-8").read()
+        def _from_file(item):
+            out = template
+            for k in ("label", "test", "question", "ctx", "alt"):
+                out = out.replace("{" + k + "}", str(item.get(k, "")))
+            return out
+        PROMPTS["file"] = _from_file
+        a.prompt = "file"
     items = json.load(open(os.path.join(OUT, ITEMS_FILE)))
     key = json.load(open(os.path.join(OUT, KEY_FILE)))
     sheet_ids = {v.get("item", v.get("id")) for v in key.values()}   # lot B/C : "item" ; lot D2 : "id"

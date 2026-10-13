@@ -12,19 +12,27 @@ qui permet d'affirmer, chiffres en main, qu'un test est *Assisté calibré* plut
 ## Chaîne
 
 ```bash
+# 0. générer un lot (items.json, key.json, rubric.html, et les images s'il y en a)
+python3 lots/description_detaillee.py lot_dd        # famille « description détaillée » (1.7.x)
+python3 lots/resume_libelle.py lot_rl               # famille « résumé et libellé »
+
 # 1. feuille d'étiquetage, à remplir par DEUX personnes en aveugle l'une de l'autre
-python3 sheet.py lot/items.json --out lot/etiquetage.html --title "Lot E — descriptions détaillées"
-python3 -m http.server 8766 --bind 127.0.0.1 --directory lot   # Chrome bloque le JS d'un file://
+python3 sheet.py lot_dd/items.json --out lot_dd/serve/etiquetage.html \
+    --rubric lot_dd/rubric.html --title "Lot G — descriptions détaillées (1.7.x)"
+
+# Ne servir QUE le sous-répertoire `serve/` : le répertoire du lot contient key.json, la
+# clé de correction, qui serait alors lisible depuis le navigateur de l'étiqueteur.
+python3 -m http.server 8766 --bind 127.0.0.1 --directory lot_dd/serve
 
 # 2. le même lot, passé au modèle
 export MA_CLE=...        # jamais en argument : seul le NOM de la variable est passé
 python3 run_models.py --backend openai --model <modèle> \
     --base-url https://exemple/v1 --key-env MA_CLE --allow-external \
-    --lot-dir lot --prompt v5 --max-tokens 3000
+    --lot-dir lot_dd --prompt-file prompts/neutre.txt --max-tokens 3000
 
 # 3. dépouillement
-python3 score.py --key lot/key.json --labels etiquettes-...json \
-    --labels2 etiquettes-...json --model lot/results_*.jsonl
+python3 score.py --key lot_dd/key.json --labels etiquettes-...json \
+    --labels2 etiquettes-...json --model lot_dd/results_*.jsonl
 ```
 
 ## Ce que chaque script garantit
@@ -57,14 +65,29 @@ aux rejets humains, et le verdict du **seuil d'admission** du §4.
 
 ```
 lot/
-├── items.json   [{"qid": "e01", "image": "img/chart.jpg", "ctx": "...", "alt": "..."}, ...]
-├── key.json     {"e01": {"id": "E001", "pred": "P"|"N", "kind": "...", "anchor": false}, ...}
-└── img/
+├── items.json   [{"qid","id","image","ctx","alt","test","label","question"}, ...]
+├── key.json     {"g01": {"id","pred","kind","anchor","test"}, ...}
+├── rubric.html  la règle affichée en tête de la feuille
+├── img/         (familles avec image)
+└── serve/       etiquetage.html seul — c'est ce répertoire qu'on sert
 ```
 
-`items.json` alimente la feuille ; `key.json` ne doit **jamais** y entrer. `pred` est
-l'application attendue de la règle, pas une vérité : c'est l'étiquetage humain qui fait
-référence, et un écart entre les deux est une information sur la règle.
+`image` est un chemin relatif au répertoire du lot, **avec extension** (`img/bar_h.jpg`) : c'est le
+contrat commun à `sheet.py` et à `run_models.py`. Il est facultatif pour les familles sans image.
+`label`, `question` et `test` sont propres à la carte et affichés tels quels.
+
+`items.json` alimente la feuille ; `key.json` ne doit **jamais** y entrer, ni être servi. `pred` est
+l'application attendue de la règle, pas une vérité : c'est l'étiquetage humain qui fait référence, et
+un écart entre les deux est une information sur la règle. La clé de stockage de la feuille dépend du
+contenu du lot, pour qu'un lot modifié ne recharge jamais d'anciennes réponses.
+
+## Consignes modèles
+
+`prompts/neutre.txt` ne donne que le texte officiel du test : **aucune règle de pertinence de la
+main de l'auteur**. À chaque campagne le critère n'est pas connu d'avance, et la dernière fois qu'une
+règle a été imposée (#339), elle était fausse — c'est la justification de l'étiqueteur qui a établi le
+critère. On mesure d'abord le modèle sous consigne neutre ; une fois le critère extrait des
+justifications, on en écrit une seconde et on remesure.
 
 ## Mesure de référence
 

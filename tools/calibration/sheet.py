@@ -64,7 +64,7 @@ document.getElementById("exp").onclick=()=>{const s=st();
  const labels=[...document.querySelectorAll("article")].map(a=>{const q=a.dataset.qid;
    return{qid:q,verdict:(s[q]||{}).v||null,comment:(s[q]||{}).c||""}});
  const bad=labels.filter(l=>!l.verdict||l.comment.trim().length<MIN);
- if(bad.length){const el=document.querySelector('article[data-qid="'+bad[0].qid+'"]');
+ if(bad.length){const el=[...document.querySelectorAll("article")].find(a=>a.dataset.qid===bad[0].qid);
   alert(bad.length+" carte(s) incomplete(s). Il faut un verdict ET une justification d'au moins "+MIN+
         " caracteres sur chacune, verdict favorable compris. Je vous emmene a la premiere.");
   el.scrollIntoView({block:"center"}); return;}

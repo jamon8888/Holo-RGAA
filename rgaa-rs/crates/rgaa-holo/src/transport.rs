@@ -150,17 +150,30 @@ impl ChatTransport {
             return Ok(Self::text_messages(prompt));
         };
         // Validate base64 without retaining the full decoded buffer; the image
-        // is forwarded as base64 and decoded by the model server. Chunks are
-        // 4-char aligned, so each decodes independently and padding is only
-        // accepted in the last one.
-        let mut buf = [0u8; 768];
-        for chunk in img.as_bytes().chunks(1024) {
+        // is forwarded as base64 and decoded by the model server.
+        //
+        // CHUNK_CHARS is a multiple of 4, so every chunk but the last is a
+        // whole number of base64 groups and decodes on its own. That alone is
+        // not enough: a non-final chunk ending in padding decodes happily while
+        // the string is malformed as a whole, so padding is rejected anywhere
+        // but in the last chunk.
+        const CHUNK_CHARS: usize = 1024;
+        const BUF_BYTES: usize = CHUNK_CHARS / 4 * 3;
+        let invalid = |detail: &str| RgaaError::Llm {
+            message: format!("invalid base64 image data: {detail}"),
+            code: Some("INVALID_IMAGE".to_string()),
+        };
+
+        let bytes = img.as_bytes();
+        let mut buf = [0u8; BUF_BYTES];
+        let last = bytes.len().div_ceil(CHUNK_CHARS).saturating_sub(1);
+        for (i, chunk) in bytes.chunks(CHUNK_CHARS).enumerate() {
+            if i < last && chunk.contains(&b'=') {
+                return Err(invalid("padding before the end of the data"));
+            }
             base64::engine::general_purpose::STANDARD
                 .decode_slice(chunk, &mut buf)
-                .map_err(|e| RgaaError::Llm {
-                    message: format!("invalid base64 image data: {e}"),
-                    code: Some("INVALID_IMAGE".to_string()),
-                })?;
+                .map_err(|e| invalid(&e.to_string()))?;
         }
 
         Ok(vec![
@@ -433,7 +446,12 @@ mod tests {
         let m = ChatTransport::multimodal_messages("p", Some(REAL_PNG_B64.trim())).unwrap();
         assert_eq!(m.len(), 2);
         let url = m[1].content[1]["image_url"]["url"].as_str().unwrap();
-        assert!(url.starts_with("data:image/png;base64,iVBORw0KGgo"));
+        // Full equality, not a prefix: forwarding only the PNG signature would
+        // satisfy a prefix check while handing the caller an unusable image.
+        assert_eq!(
+            url,
+            format!("data:image/png;base64,{}", REAL_PNG_B64.trim())
+        );
     }
 
     #[test]
@@ -448,6 +466,21 @@ mod tests {
     fn multimodal_messages_reject_truncated_base64() {
         let img = REAL_PNG_B64.trim();
         let err = ChatTransport::multimodal_messages("p", Some(&img[..img.len() - 1])).unwrap_err();
+        assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
+    }
+
+    /// Padding inside a non-final chunk: each chunk decodes on its own, so a
+    /// naive per-chunk loop accepts base64 that is malformed as a whole.
+    #[test]
+    fn multimodal_messages_reject_padding_inside_non_final_chunk() {
+        let img = format!("{}=={}", "A".repeat(1022), "AAAA");
+        assert!(
+            base64::engine::general_purpose::STANDARD
+                .decode(&img)
+                .is_err(),
+            "fixture must be malformed base64 as a whole"
+        );
+        let err = ChatTransport::multimodal_messages("p", Some(&img)).unwrap_err();
         assert!(matches!(err, RgaaError::Llm { code: Some(ref c), .. } if c == "INVALID_IMAGE"));
     }
 

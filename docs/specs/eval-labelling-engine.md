@@ -39,6 +39,21 @@ un autre juge LLM (voir §6).
   extrait, comme `run_models.py`) ;
 - le coût en appels du tri par désaccord sur un lot réel.
 
+## 3 bis. Candidats juges (fiches NVIDIA NIM, non mesurés chez nous)
+
+| modèle | annoncé | rôle visé |
+|---|---|---|
+| `swift-1.5-27b` (MyIA) | mesuré : D2 85 %, kappa 0,68, 19 % de faux « pertinent » | juge vision |
+| GLM-5.3-Flash (NIM) | multimodal natif | juge vision, à mesurer |
+| DeepSeek-V4.1-Flash (NIM) | texte et image en entrée | juge vision, à mesurer |
+| DeepSeek-V4-Flash (NIM) | texte seul (aucune mention d'image) | générateur de défauts sur du texte |
+| `gemma4:e2b` (local) | mesuré : D2 56 %, sous le repère trivial | référence faible du test de pouvoir discriminant |
+| Kumo Tabular (NIM) | classe des données tabulaires en contexte | pas un juge ; agrégateur de votes envisageable **après** les mesures, non retenu d'avance |
+
+Une fiche dit qu'une image est acceptée, pas que le modèle juge bien nos tableaux et nos libellés :
+l'admission de chaque candidat se mesure (§8). Chaque appel NIM envoie nos données à un service
+externe : accord de l'utilisateur par exécution.
+
 ## 4. Architecture proposée
 
 Un crate `rgaa-eval` (placement à confirmer, §7) avec quatre briques indépendantes :
@@ -87,10 +102,18 @@ Format d'échange : les JSON existants, pour que `sheet.py` et `score.py` resten
 
 ## 8. Prototype (critère d'acceptation)
 
-Un binaire qui lit le lot **D2**, appelle `swift-1.5-27b` par `rig` avec l'image, et retrouve
-**33/39 ± 1 carte** (le bruit de reproductibilité mesuré à température 0 est d'environ une carte).
-`gemma4:e2b` en local doit retrouver 22/39 ± 1. Sortie comparée à `score.py` : mêmes accord, kappa
-et faux « pertinent ». Aucun envoi externe sans accord de l'utilisateur pour cette exécution.
+Un binaire qui lit le lot **D2** et appelle un juge par `rig` avec l'image.
+
+**Étape 1, parité.** `swift-1.5-27b` retrouve **33/39 ± 1 carte** (bruit de reproductibilité à
+température 0 : environ une carte) ; `gemma4:e2b` retrouve **22/39 ± 1**. Accord, kappa et faux
+« pertinent » identiques à `score.py`.
+
+**Étape 2, banc d'essai.** GLM-5.3-Flash et DeepSeek-V4.1-Flash passent sur D2 puis G. Pour chacun :
+admis ou non selon le seuil du protocole (§4) *et* le pouvoir discriminant (modèle faible nettement
+en dessous, intervalles disjoints). Résultat publié même négatif. Puis accord entre juges admis : le
+bon duo est celui dont les erreurs diffèrent le plus, pas celui qui a le meilleur score isolé.
+
+Aucun envoi externe sans l'accord de l'utilisateur pour cette exécution.
 
 Hors périmètre : boucle d'agent, génération de pages par agent, pilotage d'Obscura, tout
 changement du produit d'audit.

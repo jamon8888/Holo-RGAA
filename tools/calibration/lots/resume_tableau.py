@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Lot T — test RGAA 5.2.1 : pertinence du résumé d'un tableau de données complexe.
+"""Lot T2 — test RGAA 5.2.1 : pertinence du résumé d'un tableau de données complexe.
 
 Remplace les 8 cartes 5.2.1 du lot R, écartées par l'ADR 0002 : elles avaient été étiquetées
 selon un critère plus strict que le référentiel, et deux d'entre elles portaient sur un tableau
 qui n'était pas complexe, donc hors du champ du test.
+
+Le lot T (mêmes tests, quatre autres tableaux) n'a rien mesuré : l'étiqueteur n'avait pas vu
+l'encadré de règle en tête de feuille et a rejeté les 8 cartes, ancre positive comprise. D'où
+deux changements ici : **la règle est rappelée sur CHAQUE carte**, juste au-dessus de la
+question (champ `rule` de `sheet.py`), et les 8 cartes sont neuves, les anciennes étant
+désormais connues de l'étiqueteur.
 
 DIFFÉRENCE DE NATURE avec les lots C, D, G et R : **la feuille énonce la définition** du
 glossaire RGAA. On ne cherche donc plus à découvrir le critère de l'étiqueteur, on mesure
@@ -25,40 +31,44 @@ QUESTION = "Ce résumé de tableau est-il pertinent ?"
 CTX = ("Voir l'image : le tableau de données complexe auquel ce résumé est associé. "
        "Le tableau est montré sans son résumé.")
 
+RULE = ("Un résumé donne la NATURE et la STRUCTURE du tableau. Il n'a PAS à reprendre les valeurs "
+        "des cellules : celles-ci sont portées par l'association de chaque cellule à ses en-têtes "
+        "(critères 5.6 et 5.7). Définition du glossaire RGAA 4.1.2.")
+
 # (image, résumé proposé, prédiction P/N, nature, ancre ?)
 ROWS = [
-    ("meteo_villes",
-     "Relevés météorologiques de six villes : pour chaque ville, la température minimale et la "
-     "température maximale en degrés Celsius, puis les précipitations exprimées en hauteur d'eau "
-     "et en nombre de jours de pluie.",
+    ("effectifs_filieres",
+     "Effectifs de cinq filières aux rentrées 2024 et 2025 ; pour chaque rentrée, le nombre "
+     "d'hommes et le nombre de femmes sont donnés séparément.",
      "P", "nature et structure", 0),
-    ("meteo_villes",
-     "La météo dans plusieurs villes françaises.",
+    ("effectifs_filieres",
+     "Les effectifs étudiants de l'établissement.",
      "N", "nature seule, rien sur la structure", 0),
 
-    ("horaires_trains",
-     "Horaires de départ des trains dans cinq gares, donnés séparément pour la semaine et pour le "
-     "week-end, et pour chacun de ces deux cas le départ du matin et celui du soir.",
+    ("tournoi_dom_ext",
+     "Bilan de cinq équipes d'un tournoi, distingué selon que les matchs ont été joués à domicile "
+     "ou à l'extérieur ; dans chacun de ces deux cas figurent le nombre de matchs joués, gagnés "
+     "et perdus.",
      "P", "nature et structure", 0),
-    ("horaires_trains",
-     "Tarifs des abonnements de transport selon l'âge du voyageur.",
+    ("tournoi_dom_ext",
+     "Calendrier des prochaines rencontres du championnat, avec la date et le lieu de chaque match.",
      "N", "factuellement faux (ancre)", 1),
 
-    ("bulletin_trimestres",
-     "Résultats de six élèves sur deux trimestres : pour chaque trimestre, la moyenne obtenue et "
-     "le rang dans la classe.",
+    ("tarifs_postaux",
+     "Tarifs d'affranchissement par tranche de poids, pour la France puis pour l'international, "
+     "chaque destination étant déclinée en envoi normal et en envoi suivi.",
      "P", "nature et structure", 0),
-    ("bulletin_trimestres",
-     "Tableau récapitulatif des résultats.",
+    ("tarifs_postaux",
+     "Tableau des tarifs.",
      "N", "générique (ancre)", 1),
 
-    ("budget_services",
-     "Budget de deux services, Technique et Culture, détaillé par poste de dépense ; pour chaque "
-     "poste, le montant prévu et le montant réalisé, en 2024 puis en 2025.",
+    ("conso_eau",
+     "Consommation d'eau de deux sites, Nord et Sud, détaillée bâtiment par bâtiment ; pour chaque "
+     "bâtiment, le volume consommé et son coût, en été puis en hiver.",
      "P", "nature et structure (ancre)", 1),
-    ("budget_services",
-     "Le service Technique a mieux tenu son budget que le service Culture.",
-     "N", "avis, pas une description", 0),
+    ("conso_eau",
+     "La serre du site Sud consomme à elle seule plus d'eau que tous les bureaux réunis.",
+     "N", "avis tiré des valeurs, pas une description", 0),
 ]
 
 DEFINITION = (
@@ -79,16 +89,18 @@ par l'association de chaque cellule à ses en-têtes (critères 5.6 et 5.7).</p>
 <p>Les quatre tableaux montrés sont des tableaux de données complexes : leurs en-têtes ne tiennent
 pas dans la seule première ligne et la seule première colonne.</p>
 <p>Jugez chaque résumé <strong>selon cette définition</strong>, et dites dans la justification ce qui,
-dans l'image, vous a fait répondre.</p>"""
+dans l'image, vous a fait répondre. <strong>La règle est rappelée sur chaque carte</strong>, juste
+au-dessus de la question.</p>"""
 
 
 def build(out):
     os.makedirs(out, exist_ok=True)
     images_resume.make(os.path.join(out, "img"))
-    items = [dict(id=f"T{n:03d}", qid=f"t{n:02d}", image=f"img/{img}.jpg", ctx=CTX, alt=txt,
-                  pred=p, kind=k, anchor=bool(a), test="5.2.1", label=LABEL, question=QUESTION)
+    items = [dict(id=f"U{n:03d}", qid=f"u{n:02d}", image=f"img/{img}.jpg", ctx=CTX, alt=txt,
+                  pred=p, kind=k, anchor=bool(a), test="5.2.1", label=LABEL, question=QUESTION,
+                  rule=RULE)
              for n, (img, txt, p, k, a) in enumerate(ROWS, 1)]
-    public = [{k: x[k] for k in ("qid", "id", "image", "ctx", "alt", "test", "label", "question")}
+    public = [{k: x[k] for k in ("qid", "id", "image", "ctx", "alt", "test", "label", "question", "rule")}
               for x in items]
     key = {x["qid"]: {k: x[k] for k in ("id", "pred", "kind", "anchor", "test")} for x in items}
     json.dump(public, open(os.path.join(out, "items.json"), "w", encoding="utf-8"),

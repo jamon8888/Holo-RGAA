@@ -6,6 +6,8 @@ Un score obtenu sur ce lot-là ne vaut donc que comme ajustement. Ce lot-ci sert
 consigne arrêtée **une seule fois**, sur du matériel neuf : six tableaux complexes inédits et
 trente-six résumés inédits. Il perd cette valeur dès qu'une consigne est retouchée après l'avoir vu.
 
+Les cartes sont **mélangées** (graine fixe) : `id` reste lié au contenu, `qid` à la position.
+
 Trente-six cartes, dix-huit pertinentes et dix-huit non pertinentes attendues : repère trivial de
 50 %. Quatre ancres. Les familles de défauts reprennent celles du lot d'ajustement : niveau omis,
 structure fausse, sujet seul, générique, consigne de lecture, constat tiré des valeurs.
@@ -18,7 +20,7 @@ laquelle des deux lectures est la bonne. `pred` suit la lecture de la consigne v
 
     python3 resume_tableau_valid.py OUT_DIR
 """
-import html, json, os, sys
+import html, json, os, random, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import images_resume_valid
@@ -178,10 +180,16 @@ au-dessus de la question.</p>"""
 def build(out):
     os.makedirs(out, exist_ok=True)
     images_resume_valid.make(os.path.join(out, "img"))
-    items = [dict(id=f"V{n:03d}", qid=f"v{n:02d}", image=f"img/{img}.jpg", ctx=CTX, alt=txt,
+    # `id` est attribué dans l'ordre de ROWS, donc lié au contenu de la carte et stable ;
+    # `qid` l'est après mélange, donc lié à la position dans la feuille. Sans ce mélange, le lot
+    # présentait trois résumés valides puis trois défectueux par tableau : un rythme repérable.
+    items = [dict(id=f"V{n:03d}", image=f"img/{img}.jpg", ctx=CTX, alt=txt,
                   pred=p, kind=k, anchor=bool(a), test="5.2.1", label=LABEL, question=QUESTION,
                   rule=RULE)
              for n, (img, txt, p, k, a) in enumerate(ROWS, 1)]
+    random.Random(7310).shuffle(items)
+    for n, x in enumerate(items, 1):
+        x["qid"] = f"v{n:02d}"
     public = [{k: x[k] for k in ("qid", "id", "image", "ctx", "alt", "test", "label", "question", "rule")}
               for x in items]
     key = {x["qid"]: {k: x[k] for k in ("id", "pred", "kind", "anchor", "test")} for x in items}

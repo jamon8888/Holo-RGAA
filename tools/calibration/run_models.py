@@ -225,7 +225,7 @@ if __name__ == "__main__":
                     help="v5 porte le critere en vigueur (ADR 0001). v1 a v3 sont conservees "
                          "pour l'historique : elles enoncent une regle que l'etiquetage a infirmee")
     ap.add_argument("--prompt-file", help="consigne propre a la famille (remplace --prompt). Marqueurs : "
-                    "{label} {test} {question} {ctx} {alt}. Voir tools/calibration/prompts/")
+                    "{label} {test} {question} {ctx} {alt} {rule}. Voir tools/calibration/prompts/")
     ap.add_argument("--max-tokens", type=int, default=1200, help="plafond de jetons de sortie (backend openai) ; consigné dans chaque résultat")
     a = ap.parse_args()
     if a.backend == "openai":
@@ -239,7 +239,7 @@ if __name__ == "__main__":
         template = open(a.prompt_file, encoding="utf-8").read()
         def _from_file(item):
             out = template
-            for k in ("label", "test", "question", "ctx", "alt"):
+            for k in ("label", "test", "question", "ctx", "alt", "rule"):
                 out = out.replace("{" + k + "}", str(item.get(k, "")))
             return out
         PROMPTS["file"] = _from_file

@@ -147,9 +147,28 @@ consigne modèle une règle que l'étiqueteur lui-même n'applique pas. À véri
 | ancres | **4/4** |
 | accord | au-dessus du repère trivial, **intervalles de confiance disjoints** |
 | pouvoir discriminant | **le lot doit être mesuré avec un modèle faible de référence** (ici `gemma4:e2b`) : il doit y tomber nettement sous le modèle fort, intervalles disjoints. Sinon le lot est déclaré *non discriminant* et aucune admission n'y compte. Lot D2 : `swift` 85 % [70 ; 93] vs `gemma` 56 % [41 ; 71] — séparation à la limite (1 point de recouvrement). Lot G : 100 % vs 92 % — non discriminant |
-| faux « pertinent » | **≤ 10 %** des alternatives rejetées par l'humain |
+| faux « pertinent » | **≤ 10 %** des éléments rejetés par l'humain — chacun est une non-conformité manquée |
+| faux « non pertinent » | **≤ 25 %** des éléments acceptés par l'humain — chacun est du travail de revue inutile |
 
 Aucun modèle n'est épinglé : un seuil survit au changement de modèle et de passerelle.
+
+### Pourquoi un plafond sur les faux « non pertinent »
+
+Le seuil ne portait d'abord que sur les faux « pertinent ». Il a **admis une consigne qui avait
+dégradé le modèle** : sur le lot 5.2.1, `Opus` passe de 33/36 = 92 % (kappa 0,83) à 29/36 = 81 %
+(kappa 0,59) entre deux rédactions, et se trouve admis par la seconde parce qu'il a cessé de faire
+des faux « pertinent » — en rejetant 7 résumés sur 16 que l'auditeur accepte. Un modèle qui rejette
+tout passait donc le seuil, exactement le travers que le repère trivial contrôle chez l'étiqueteur.
+
+Les deux erreurs ne coûtent pas la même chose, d'où deux plafonds différents : un faux « pertinent »
+laisse passer une non-conformité et fausse l'audit ; un faux « non pertinent » ajoute un élément
+conforme à la file de revue humaine. Le second est donc toléré plus largement, mais pas sans borne :
+au-delà du quart des éléments conformes renvoyés en revue, l'assistance ne fait plus gagner de temps.
+Le plafond de 25 % est indicatif et à revoir dès qu'une campagne mesure le coût réel de la revue.
+
+La condition « au-dessus du repère trivial, intervalles disjoints » figurait au protocole mais
+**n'était pas implémentée** dans `score.py` : elle l'est depuis. À elle seule, elle refusait déjà la
+seconde rédaction (IC modèle [65 % ; …] contre repère trivial [… ; 70 %]).
 
 État mesuré :
 
@@ -157,6 +176,19 @@ Aucun modèle n'est épinglé : un seuil survit au changement de modèle et de p
 |---|---|---|---|---|
 | `swift-1.5-27b` (API) | 4/4 | 33/39 = 85 %, kappa 0,68 | **19 %** | admis en *Assisté*, échoue le seuil |
 | `gemma4:e2b` (local) | — | lot D2 : 22/39 = 56 %, IC95 [41 % ; 71 %], **sous son repère trivial de 67 %**, kappa 0,26, faux « pertinent » 17/26 = 65 % | — | insuffisant (figure antérieure 67 % vs 70 % tirée du lot C vicié, remplacée) |
+
+Famille « résumé de tableau » (lot de 36 cartes, test-retest 94 %, repère trivial 58 %) :
+
+| Modèle | Consigne | Accord | Faux « pert. » | Faux « non pert. » | Verdict |
+|---|---|---|---|---|---|
+| `Opus` | règle du glossaire | 33/36 = 92 %, kappa 0,83 | 15 % | 0 % | refusé (faux « pertinent ») |
+| `Opus` | + exigence d'effectif | 29/36 = 81 %, kappa 0,59 | 0 % | **44 %** | refusé (faux « non pertinent », et sous le repère trivial) |
+| `gemma4:e2b` | règle du glossaire | 27/35 = 77 %, kappa 0,56 | 40 % | 0 % | refusé |
+
+Les deux modèles se trompent **sur les mêmes quatre cartes** sous la première consigne, et toujours
+dans le même sens : ils acceptent des résumés que l'auditeur refuse, jamais l'inverse. Une erreur
+commune à tous les juges est invisible au tri par désaccord du §4 bis : c'est ce qui justifie
+l'échantillon tiré au sort parmi les cartes d'accord.
 
 Deux pistes mesurées et fermées :
 

@@ -1,0 +1,47 @@
+Tu évalues un élément d'une page web comme le ferait un auditeur RGAA 4.1.2.
+
+Test RGAA {test} : {question}
+
+RÈGLE À APPLIQUER : {rule}
+
+COMMENT L'AUDITEUR L'APPLIQUE (observé sur une campagne d'étiquetage) :
+
+Un résumé est PERTINENT quand il remplit les deux conditions :
+(a) il dit de quoi traite le tableau ;
+(b) il rend compte de TOUS les niveaux d'en-têtes, de lignes comme de colonnes.
+
+Un niveau est « rendu compte » dès qu'il est désigné de l'une de ces façons, toutes acceptées :
+  — nommé comme dimension : « par entrepôt et par référence », « par tranche de poids » ;
+  — exprimé de façon distributive : « jour par jour », « bâtiment par bâtiment », « pour chaque commune » ;
+  — énuméré : « l'Ardèche et le Gers », « basse saison et haute saison », « janvier et février » ;
+  — dénombré : « cinq filières », « deux catégories », « trois candidats » ;
+  — donné comme plage : « du mardi au dimanche ».
+Aucune de ces formes n'est supérieure aux autres : il suffit que le niveau apparaisse.
+
+Un résumé est NON PERTINENT dans l'un de ces cas :
+  — un niveau d'en-têtes est passé sous silence (une dimension du tableau n'apparaît nulle part) ;
+  — la structure annoncée ne correspond pas à l'image (colonne inexistante, série de relevés inventée) ;
+  — il se borne au sujet sans rien dire de la structure (« Le stock des entrepôts. ») ;
+  — il est générique (« Tableau des tarifs. ») ou n'est qu'une consigne de lecture ;
+  — il énonce un constat tiré des valeurs au lieu de décrire le tableau ;
+  — il décrit la mise en page (nombre de lignes et de colonnes) sans dire de quoi traite le tableau.
+
+Citer quelques valeurs de cellules ne rend PAS un résumé non pertinent, dès lors que (a) et (b) sont
+remplies : ce n'est ni exigé ni interdit.
+
+Contexte de la page : {ctx}
+{label} : « {alt} »
+
+L'image jointe montre le tableau de données complexe concerné, sans son résumé.
+
+Juge uniquement cet élément. Procède dans l'ordre :
+(1) niveaux_du_tableau : d'après l'image, énumère les niveaux d'en-têtes (lignes et colonnes) ;
+(2) niveaux_couverts : pour chaque niveau, dis si le résumé le rend compte, et sous quelle forme,
+    ou s'il l'omet ;
+(3) sujet_annonce : dis si le résumé indique de quoi traite le tableau ;
+(4) justification : une ou deux phrases ;
+(5) verdict : « pertinent », « non_pertinent » ou « incertain » (uniquement en cas de vrai doute) ;
+(6) confiance : un nombre entre 0 et 1.
+
+Réponds uniquement par un objet JSON avec les champs : niveaux_du_tableau, niveaux_couverts,
+sujet_annonce, justification, verdict, confiance.

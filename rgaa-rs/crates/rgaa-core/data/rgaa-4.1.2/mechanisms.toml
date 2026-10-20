@@ -17,13 +17,13 @@ id        = "axe-1-1"
 criterion = "1.1"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["1.1.1", "1.1.2", "1.1.3", "1.1.5", "1.1.6"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["image-alt", "input-image-alt", "area-alt", "object-alt", "role-img-alt", "svg-img-alt"]
-provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Extends image-alt/input-image-alt with area-alt, object-alt, role-img-alt and svg-img-alt - all missing-accessible-name rules, hence 1.1 rather than 1.2." }
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "PARTIAL since #366: no rule targets 1.1.4 (server-side image map), 1.1.7 (<embed>) or 1.1.8 (<canvas>), so axe silence cannot establish conformance of 1.1 — shown by rgaa-obscura/tests/criterion_1_1_coverage.rs. `tests` lists the five tests whose element a rule targets (rule-to-test mapping proposed in docs/specs/axe-rules-per-test-proposal.md, to be reviewed). Extends image-alt/input-image-alt with area-alt, object-alt, role-img-alt and svg-img-alt - all missing-accessible-name rules, hence 1.1 rather than 1.2." }
 
 [[mechanism]]
 id        = "axe-1-2"
@@ -459,9 +459,9 @@ id        = "gapfix-1-1"
 criterion = "1.1"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["1.1.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 

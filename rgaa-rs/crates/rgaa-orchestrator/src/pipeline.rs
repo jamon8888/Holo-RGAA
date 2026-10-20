@@ -1558,13 +1558,13 @@ mod routing_tests {
 
         let result = results
             .iter_mut()
-            .find(|result| result.criterion_id == "1.1")
-            .expect("criterion 1.1 exists");
+            .find(|result| result.criterion_id == "3.2")
+            .expect("criterion 3.2 exists");
         result.tests[0].source = "agent-estimate".into();
 
         let error = validate_automatic_verdict_coverage(&results)
             .expect_err("model estimates alone cannot close a complete route");
-        assert_eq!(error.missing_criterion_ids, vec!["1.1"]);
+        assert_eq!(error.missing_criterion_ids, vec!["3.2"]);
     }
 
     #[test]
@@ -1572,13 +1572,13 @@ mod routing_tests {
         let mut results = complete_prediction_set();
         let result = results
             .iter_mut()
-            .find(|result| result.criterion_id == "1.1")
-            .expect("criterion 1.1 exists");
+            .find(|result| result.criterion_id == "3.2")
+            .expect("criterion 3.2 exists");
         result.status = CriterionStatus::Fail;
 
         let error = validate_automatic_verdict_coverage(&results)
             .expect_err("aggregate failure does not identify a test key");
-        assert!(error.missing_criterion_ids.iter().any(|id| id == "1.1"));
+        assert!(error.missing_criterion_ids.iter().any(|id| id == "3.2"));
     }
 
     #[test]
@@ -1596,17 +1596,20 @@ mod routing_tests {
     }
 
     #[test]
+    // 3.2 et non 1.1 : 1.1 est sorti de la couverture complète (#366). 3.2 l'est toujours,
+    // avec cinq tests, ce qui garde au test son objet : un `Pass` de mécanisme complet
+    // matérialise une route par test.
     fn complete_mechanism_pass_materializes_routes_but_failure_does_not_guess_test_keys() {
         let mut results: HashMap<String, CriterionResult> = HashMap::new();
-        let pass = deterministic_result("1.1", CriterionStatus::Pass, "axe-core");
-        results.insert("1.1".into(), pass);
+        let pass = deterministic_result("3.2", CriterionStatus::Pass, "axe-core");
+        results.insert("3.2".into(), pass);
         let fail = deterministic_result("1.2", CriterionStatus::Fail, "gap-fix");
         results.insert("1.2".into(), fail);
 
         attach_complete_mechanism_passes(results.values_mut());
 
-        assert_eq!(results["1.1"].tests.len(), 8);
-        assert!(results["1.1"]
+        assert_eq!(results["3.2"].tests.len(), 5);
+        assert!(results["3.2"]
             .tests
             .iter()
             .all(|test| { test.status == CriterionStatus::Pass && test.source == "axe-core" }));

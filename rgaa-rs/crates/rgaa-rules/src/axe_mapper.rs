@@ -320,8 +320,9 @@ mod tests {
         ]"#;
         let results = AxeMapper::map(axe_json).unwrap();
         let keys: Vec<_> = results.keys().cloned().collect();
-        // First key should be "1.1" (first in rgaa_to_axe_map), not random
-        assert_eq!(keys[0], "1.1");
+        // First key is the first criterion initialised to Pass, in catalog order — 2.1 now
+        // that 1.1 is partial (#366) and appears only once a rule has fired — not random.
+        assert_eq!(keys[0], "2.1");
     }
 
     // ---------------------------------------------------------------- #201

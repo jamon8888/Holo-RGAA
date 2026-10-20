@@ -1,7 +1,7 @@
 [
  {
   "criterion_id": "1.1",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "image-alt",
    "input-image-alt",
@@ -10,7 +10,7 @@
    "svg-img-alt",
    "object-alt"
   ],
-  "deterministic": "alt présent sur <img>/role=img/<area>/<input image>/<object>/<svg>/<canvas>",
+  "deterministic": "alt présent sur <img>/role=img, <area>, <input image>, <object>, <svg> (axe + sonde img) ; <embed>, <canvas> et image réactive côté serveur NON couverts (#366)",
   "holo": "pertinence si alt vide douteux",
   "human_residual": ""
  },

@@ -11,8 +11,9 @@ Pour chaque mécanisme `axe-native` d'un critère à plusieurs tests : l'énonc�
 
 `mechanisms.toml` déclare `axe-1-1` en couverture **complète**, et `test_routes.json` route les **huit** tests de 1.1 vers `axe-1-1` et `gapfix-1-1`. Or les six règles citées ne ciblent que `<img>`/`role=img` (1.1.1), `<area>` (1.1.2), `<input type=image>` (1.1.3), `<svg>` (1.1.5) et `<object>` (1.1.6). **Aucune ne cible** le test 1.1.4 (image réactive côté serveur), 1.1.7 (`<embed>`) ni 1.1.8 (`<canvas>`).
 
-Si le silence d'axe vaut `Pass` pour 1.1 (c'est le sens de « complete »), une page dont seul un `<canvas>` ou un `<embed>` est dépourvu d'alternative ressortirait conforme sur 1.1. **Non vérifié par exécution** : la sonde `gapfix-1-1` (legacy) pourrait couvrir ces cas, je n'y ai trouvé aucune vérification d'alternative sur `embed`/`canvas` en lisant `gap_fix.rs`, mais je n'ai pas exécuté la sonde. À tester par fixture avant de statuer.
+**Confirmé par exécution** (`crates/rgaa-obscura/tests/criterion_1_1_coverage.rs`, `RUN_E2E=1`, axe et sonde réels sous Obscura). Sur une page dont **seuls** un `<canvas>` (1.1.8) et un `<embed type="image/png">` (1.1.7) portent de l'information sans aucune alternative, **axe rend `Pass` pour 1.1 et la sonde `gapfix-1-1` rend `pass: true`**. Le témoin, une `<img>` sans `alt`, est bien vu : axe `Fail`, sonde `pass: false`. Le banc distingue donc les deux cas. C'est un `Pass` fabriqué sur 1.1.7 et 1.1.8.
 
+Le test énonce le comportement **attendu** et échoue tant que la couverture de 1.1 est surdéclarée ; il n'est pas câblé dans le job E2E de la CI. 1.1.4 (image réactive côté serveur) n'est pas testé ici.
 
 ## 1.1 — mécanisme `axe-1-1` (complete)
 

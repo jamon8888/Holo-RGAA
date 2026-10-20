@@ -63,16 +63,27 @@ fn serve(dir: PathBuf) -> std::io::Result<u16> {
 /// Ce que l'audit conclut pour 1.1 sur une page : le statut posé par axe, et ce que dit la
 /// sonde `gapfix-1-1` (`pass` ou non).
 async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<bool>) {
-    let bridge = Arc::new(ObscuraBridge::new());
+    // `run_axe_batch` pilote une session CDP par URL : le serveur doit être démarré. Sans lui
+    // la fonction rend une carte vide (l'échec par URL est journalisé, jamais remonté), ce
+    // qui ressemblerait à « axe n'a rien trouvé ».
+    let mut server = ObscuraBridge::new().with_port(9341);
+    server
+        .start_server()
+        .await
+        .expect("démarrage du serveur CDP d'Obscura");
+    let bridge = Arc::new(server);
     let binary = bridge.binary_path().to_string();
 
     let mut axe = bridge
         .run_axe_batch(vec![url.to_string()], 1)
         .await
         .expect("run_axe_batch");
-    let violations = axe.remove(url).expect("résultat axe pour l'URL");
+    let keys: Vec<String> = axe.keys().cloned().collect();
+    let violations = axe
+        .remove(url)
+        .unwrap_or_else(|| panic!("pas de résultat axe pour {url} ; clés reçues : {keys:?}"));
     let mapped = AxeMapper::map(&violations).expect("mapping axe");
-    let axe_status = mapped.get("1.1").map(|r| r.status);
+    let axe_status = mapped.get("1.1").map(|r| r.status.clone());
 
     let snippets: HashMap<String, String> = GapFixRules::snippets()
         .iter()
@@ -86,7 +97,10 @@ async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<bool>) {
         .remove(url)
         .and_then(|per_criterion| per_criterion.get("1.1").cloned())
         .and_then(|value| {
-            let raw = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
+            let raw = value
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| value.to_string());
             serde_json::from_str::<serde_json::Value>(&raw).ok()
         })
         .and_then(|parsed| parsed.get("pass").and_then(|p| p.as_bool()));
@@ -111,7 +125,11 @@ async fn criterion_1_1_does_not_pass_a_page_whose_canvas_and_embed_lack_an_alter
         Some(CriterionStatus::Fail),
         "le témoin (img sans alt) doit échouer 1.1 : sinon le banc ne voit rien"
     );
-    assert_eq!(probe_control, Some(false), "la sonde doit voir l'img sans alt");
+    assert_eq!(
+        probe_control,
+        Some(false),
+        "la sonde doit voir l'img sans alt"
+    );
 
     let page = format!("http://127.0.0.1:{port}/coverage-1-1-embed-canvas.html");
     let (axe_status, probe_pass) = audit_1_1(&page).await;

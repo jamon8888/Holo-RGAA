@@ -470,9 +470,9 @@ id        = "gapfix-1-2"
 criterion = "1.2"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["1.2.1"]
+outcomes  = ["fail", "review"]
 fixtures  = []
 legacy    = true
 

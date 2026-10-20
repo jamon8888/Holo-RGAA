@@ -72,52 +72,42 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.2",
     "test_key": "2",
-    "mechanisms": [
-      "gapfix-1-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.2",
     "test_key": "3",
-    "mechanisms": [
-      "gapfix-1-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.2",
     "test_key": "4",
-    "mechanisms": [
-      "gapfix-1-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.2",
     "test_key": "5",
-    "mechanisms": [
-      "gapfix-1-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.2",
     "test_key": "6",
-    "mechanisms": [
-      "gapfix-1-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {

@@ -30,20 +30,53 @@ impl GapFixRules {
             })()
         "#);
 
-        // 1.2: decorative images without alt="" or role=presentation
-        m.insert("1.2".into(), r#"
+        // 1.2 : « Chaque image DE DÉCORATION est-elle correctement ignorée ? ». Les six
+        // tests ne s'appliquent qu'aux images décoratives, et rien dans le balisage ne dit
+        // qu'une image l'est : c'est un jugement éditorial. La sonde ne tranche donc que la
+        // contradiction décidable — une image déclarée décorative qui porte malgré tout une
+        // alternative, ce que 1.2.1 interdit mot pour mot (« dépourvue de tout autre attribut
+        // permettant de fournir une alternative textuelle ») — et rend `review` ailleurs.
+        // Elle ne rend jamais `pass` : elle ne regarde que <img>, un porteur sur six (#366).
+        m.insert(
+            "1.2".into(),
+            r#"
             (() => {
-                const imgs = document.querySelectorAll('img');
-                let bad = 0;
-                imgs.forEach(img => {
-                    const hasAlt = img.hasAttribute('alt');
-                    const hasPresentation = img.getAttribute('role') === 'presentation';
-                    const hasAriaHidden = img.getAttribute('aria-hidden') === 'true';
-                    if (!hasAlt && !hasPresentation && !hasAriaHidden) bad++;
+                const imgs = Array.from(document.querySelectorAll('img'));
+                const text = (el, attr) => (el.getAttribute(attr) || '').trim();
+                const declaredDecorative = (img) =>
+                    (img.hasAttribute('alt') && text(img, 'alt') === '')
+                    || img.getAttribute('role') === 'presentation'
+                    || img.getAttribute('role') === 'none'
+                    || img.getAttribute('aria-hidden') === 'true';
+                const competingAlternative = (img) =>
+                    ['title', 'aria-label', 'aria-labelledby']
+                        .some((attr) => text(img, attr) !== '')
+                    || text(img, 'alt') !== '';
+                const contradictions = imgs.filter(
+                    (img) => declaredDecorative(img) && competingAlternative(img)
+                );
+                if (contradictions.length > 0) {
+                    return JSON.stringify({
+                        outcome: 'fail',
+                        pass: false,
+                        nodes: contradictions.length,
+                        details: `${contradictions.length} image(s) declaree(s) decorative(s) `
+                            + `portent malgre tout une alternative textuelle (alt, title, `
+                            + `aria-label ou aria-labelledby) : 1.2.1 l'interdit`
+                    });
+                }
+                return JSON.stringify({
+                    outcome: 'review',
+                    pass: false,
+                    nodes: imgs.length,
+                    details: `${imgs.length} image(s) <img> examinee(s), aucune contradiction `
+                        + `de balisage`,
+                    reason: `le caractere decoratif d'une image ne se lit pas dans le balisage, `
+                        + `et la sonde n'examine que <img> (1 porteur sur 6)`
                 });
-                return JSON.stringify({ pass: bad === 0, details: `${bad} decorative images not hidden`, nodes: bad });
             })()
-        "#);
+        "#,
+        );
 
         // 2.1: iframe without title
         m.insert("2.1".into(), r#"
@@ -891,13 +924,14 @@ mod tests {
 
     /// The coverage the registry declares is exactly what the pre-registry
     /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves) — à une exception
-    /// près, assumée : 1.1 en est sorti (#366). La sonde ne regarde que `img:not([alt])`,
-    /// et le silence d'une sonde qui ignore `<canvas>` et `<embed>` ne prouve rien.
+    /// près, assumée : 1.1 et 1.2 en sont sortis (#366). Pour 1.1, la sonde ne regardait que
+    /// `img:not([alt])`, et le silence d'une sonde qui ignore `<canvas>` et `<embed>` ne
+    /// prouve rien. Pour 1.2, le caractère décoratif d'une image ne se lit pas dans le
+    /// balisage : la sonde ne rend plus de `pass` du tout.
     #[test]
     fn migrated_probe_coverage_matches_the_former_constant() {
         const FORMER: &[&str] = &[
-            "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
-            "12.7",
+            "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4", "12.7",
         ];
         for id in GapFixRules::snippets().keys() {
             assert_eq!(

@@ -179,11 +179,48 @@ impl MechanismRegistry {
                     problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
                 }
             }
+            problems.extend(Self::check_declared_tests(m));
             if !m.legacy {
                 problems.extend(Self::check_fixtures(m, fixtures_dir));
             }
         }
         problems
+    }
+
+    /// Un test déclaré doit exister, pour **ce** critère, au catalogue. Deux graphies sont
+    /// admises, comme dans `tests` : le test complet (`11.6.1`) et la clé locale (`1`).
+    /// Sans ce contrôle, une route de test pourrait pointer vers un test qui n'existe pas,
+    /// ou vers celui d'un autre critère, sans que rien ne le signale (prérequis bloquant 6).
+    fn check_declared_tests(m: &Mechanism) -> Vec<String> {
+        if m.tests.is_empty() {
+            return Vec::new();
+        }
+        let Some(catalog_tests) = crate::catalog::RgaaCatalog::tests(&m.criterion) else {
+            return vec![format!(
+                "{}: criterion {} is not in the catalog, so its tests cannot be declared",
+                m.id, m.criterion
+            )];
+        };
+        let prefix = format!("{}.", m.criterion);
+        m.tests
+            .iter()
+            .filter_map(|test| {
+                let key = test.strip_prefix(&prefix).unwrap_or(test);
+                (!catalog_tests.contains_key(key)).then(|| {
+                    format!(
+                        "{}: test {test} is not in the catalog for criterion {} (known: {})",
+                        m.id,
+                        m.criterion,
+                        {
+                            let mut keys: Vec<_> =
+                                catalog_tests.keys().map(String::as_str).collect();
+                            keys.sort_unstable();
+                            keys.join(", ")
+                        }
+                    )
+                })
+            })
+            .collect()
     }
 
     fn check_fixtures(m: &Mechanism, dir: &Path) -> Vec<String> {
@@ -354,14 +391,17 @@ mod tests {
 
     #[test]
     fn complete_mechanism_needs_one_pair_per_test() {
-        let dir = tmp_dir("complete", &["11.6-t1-x-pass", "11.6-t1-x-fail"]);
-        let t = entry(
-            "coverage=\"complete\"\ntests=[\"11.6.1\",\"11.6.2\"]\noutcomes=[\"fail\",\"pass\"]\n\
-             legacy=false\nfixtures=[\"11.6-t1-x-pass\",\"11.6-t1-x-fail\"]",
-        );
-        let problems = check(&t, &dir);
+        // 1.1 a cinq tests au catalogue : deux tests déclarés y sont donc valides. Le test
+        // utilisait 11.6, qui n'en a qu'un — `11.6.2` n'existe pas, ce que le contrôle de
+        // cohérence des tests déclarés signale désormais.
+        let dir = tmp_dir("complete", &["1.1-t1-x-pass", "1.1-t1-x-fail"]);
+        let t = "[[mechanism]]\nid=\"probe-1-1-x\"\ncriterion=\"1.1\"\nkind=\"js-static\"\n\
+                 engine=\"obscura\"\ncoverage=\"complete\"\ntests=[\"1.1.1\",\"1.1.2\"]\n\
+                 outcomes=[\"fail\",\"pass\"]\nlegacy=false\n\
+                 fixtures=[\"1.1-t1-x-pass\",\"1.1-t1-x-fail\"]\n";
+        let problems = check(t, &dir);
         assert_eq!(problems.len(), 1, "{problems:?}");
-        assert!(problems[0].contains("test 11.6.2"));
+        assert!(problems[0].contains("test 1.1.2"));
     }
 
     #[test]

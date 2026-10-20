@@ -346,13 +346,21 @@ async fn run_axe_core_static(
     extract_axe_violations(&result)
 }
 
-/// Pull the violations array out of a `Runtime.evaluate` response for `axe.run()`.
+/// Pull what the mapper needs out of a `Runtime.evaluate` response for `axe.run()`.
 ///
 /// `axe.run()` resolves to the full run object — `{violations, passes, incomplete,
-/// inapplicable, testEngine, ...}` — and `AxeMapper::map` parses a **violations
-/// array**. Serialising the whole object instead hands the mapper a JSON map, which
-/// it rejects with "invalid type: map, expected a sequence", and every page of the
-/// audit fails.
+/// inapplicable, testEngine, ...}`. On en transmet **deux** champs, sous la forme
+/// `{"violations": [...], "incomplete": [...]}` :
+///
+///   * `violations`, les manquements prouvés ;
+///   * `incomplete`, les cas qu'axe n'a pas pu trancher. Les jeter ici — ce que faisait
+///     ce code — rendait un `Pass` sur un « je ne sais pas » pour tout critère à
+///     couverture complète. C'est le prérequis bloquant n° 1 de l'addendum
+///     `human-criteria-automation.md`.
+///
+/// L'enveloppe (`passes`, `inapplicable`, `testEngine`) n'est pas transmise : sérialiser
+/// l'objet entier donnait au mapper une map JSON qu'il rejetait avec "invalid type: map,
+/// expected a sequence", et toutes les pages de l'audit échouaient.
 ///
 /// The pooled session path did exactly that while the direct-connection fallback
 /// extracted the field correctly, so which path ran decided whether an audit worked.
@@ -391,14 +399,31 @@ pub(crate) fn extract_axe_violations(result: &Value) -> Result<String, String> {
         return Err("axe result 'violations' is not an array".to_string());
     }
 
+    // `incomplete` peut manquer : une passerelle ancienne, une fixture. Son absence vaut
+    // liste vide, alors que l'absence de `violations` est une erreur — sans violations on
+    // ne sait pas si la page est propre ou si axe n'a rien rendu.
+    let incomplete = value
+        .get("incomplete")
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+
+    if !incomplete.is_array() {
+        return Err("axe result 'incomplete' is not an array".to_string());
+    }
+
     // The shape check above accepts `[null]` and other malformed elements, which
     // `run_axe_batch` would then insert as a successful per-URL result. Validate the
     // elements with the same rule the single-page path uses.
-    crate::validate_axe_payload(violations)
+    crate::validate_axe_violation_array(violations)
         .map_err(|error| format!("invalid axe violations: {error}"))?;
+    crate::validate_axe_violation_array(&incomplete)
+        .map_err(|error| format!("invalid axe incomplete entries: {error}"))?;
 
-    serde_json::to_string(violations)
-        .map_err(|e| format!("failed to serialize axe violations: {e}"))
+    serde_json::to_string(&serde_json::json!({
+        "violations": violations,
+        "incomplete": incomplete,
+    }))
+    .map_err(|e| format!("failed to serialize axe violations: {e}"))
 }
 
 /// Static version of eval_js for use with pooled sessions (no &self needed)

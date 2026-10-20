@@ -335,7 +335,12 @@ impl BrowserWorker {
             page.evaluate(
                 r#"(async () => {
                     const results = await axe.run(document);
-                    window.__axeResult = JSON.stringify(results.violations);
+                    // violations ET incomplete : jeter les cas qu'axe n'a pas tranchés
+                    // rendait un Pass sur un « je ne sais pas » (prérequis bloquant 1).
+                    window.__axeResult = JSON.stringify({
+                        violations: results.violations,
+                        incomplete: results.incomplete || [],
+                    });
                 })()"#,
             );
 
@@ -343,7 +348,9 @@ impl BrowserWorker {
             page.settle(5000).await;
 
             let violations_json =
-                page.evaluate(r#"typeof __axeResult !== 'undefined' ? __axeResult : '[]'"#);
+                page.evaluate(
+                r#"typeof __axeResult !== 'undefined' ? __axeResult : '{"violations":[],"incomplete":[]}'"#,
+            );
 
             let violations: serde_json::Value = match violations_json.as_str() {
                 Some(s) => serde_json::from_str(s).map_err(|e| {

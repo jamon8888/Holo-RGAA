@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>1.2 — contradictions sur les six porteurs</title></head>
+<body>
+<h1>Six éléments déclarés décoratifs qui portent malgré tout une alternative</h1>
+
+<!-- 1.2.1 <img> : alt vide + title -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" title="Logo de la société">
+
+<!-- 1.2.2 <area> sans href (zone non cliquable) : alt vide + aria-label -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Plan" usemap="#m">
+<map name="m"><area shape="rect" coords="0,0,1,1" alt="" aria-label="Aile nord"></map>
+
+<!-- 1.2.3 <object type=image/*> : aria-hidden + texte interne faisant alternative -->
+<object type="image/png" data="data:image/png;base64,iVBORw0KGgo=" aria-hidden="true">Schéma du circuit</object>
+
+<!-- 1.2.4 <svg> : aria-hidden + <title> non vide -->
+<svg aria-hidden="true" width="10" height="10"><title>Icône de recherche</title><rect width="10" height="10"/></svg>
+
+<!-- 1.2.5 <canvas> : aria-hidden + texte interne faisant alternative -->
+<canvas aria-hidden="true" width="10" height="10">Graphique des ventes 2025</canvas>
+
+<!-- 1.2.6 <embed type=image/*> : aria-hidden + aria-label -->
+<embed type="image/png" src="data:image/png;base64,iVBORw0KGgo=" aria-hidden="true" aria-label="Plan d'accès">
+</body>
+</html>

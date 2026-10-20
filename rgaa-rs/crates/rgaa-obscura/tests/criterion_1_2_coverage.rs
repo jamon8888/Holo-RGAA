@@ -66,6 +66,11 @@ fn serve(dir: PathBuf) -> std::io::Result<u16> {
 /// Le statut que la sonde `gapfix-1-2` pose pour 1.2, tel que le pipeline le matérialise.
 /// `None` = aucun verdict, le critère retombe sur le repli déclaré.
 async fn probe_1_2(url: &str) -> Option<CriterionStatus> {
+    probe_1_2_detailed(url).await.map(|(status, _)| status)
+}
+
+/// Le statut et le nombre d'éléments cités comme preuve.
+async fn probe_1_2_detailed(url: &str) -> Option<(CriterionStatus, usize)> {
     let binary = ObscuraBridge::new().binary_path().to_string();
     let snippets: HashMap<String, String> = GapFixRules::snippets()
         .iter()
@@ -76,9 +81,13 @@ async fn probe_1_2(url: &str) -> Option<CriterionStatus> {
         .await
         .expect("run_gap_fix_batch");
     let raw = probes.remove(url).unwrap_or_default();
-    GapFixRules::parse_results(&raw)
-        .get("1.2")
-        .map(|result| result.status.clone())
+    GapFixRules::parse_results(&raw).get("1.2").map(|result| {
+        let nodes = result
+            .violations
+            .first()
+            .map_or(0, |violation| violation.nodes_affected);
+        (result.status.clone(), nodes)
+    })
 }
 
 #[tokio::test]
@@ -118,5 +127,45 @@ async fn criterion_1_2_judges_only_what_the_markup_settles() {
         Some(CriterionStatus::Fail),
         "la sonde conclut à la non-conformité de 1.2 alors qu'une image sans alt est \
          d'abord un manquement à 1.1, et qu'une image à alt non vide peut être informative"
+    );
+}
+
+/// Les six porteurs de 1.2, chacun déclaré décoratif et portant malgré tout une alternative.
+/// Un seul `fail` ne suffirait pas : le compte de preuves doit valoir six, sinon un porteur
+/// passe au travers — le défaut même qui a fait ouvrir #366.
+#[tokio::test]
+async fn every_carrier_of_criterion_1_2_is_examined() {
+    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
+        eprintln!("criterion_1_2_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+        return;
+    }
+    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let port = serve(dir).expect("fixture server");
+
+    let all = format!("http://127.0.0.1:{port}/coverage-1-2-contradictions-all.html");
+    let detailed = probe_1_2_detailed(&all).await;
+    eprintln!("six contradictions : sonde -> {detailed:?}");
+    let (status, nodes) = detailed.expect("la sonde doit rendre un résultat pour 1.2");
+    assert_eq!(
+        status,
+        CriterionStatus::Fail,
+        "six éléments déclarés décoratifs portent une alternative"
+    );
+    assert_eq!(
+        nodes, 6,
+        "chaque porteur de 1.2 doit être examiné : <img>, <area>, <object>, <svg>, \
+         <canvas>, <embed> — obtenu {nodes} au lieu de 6"
+    );
+
+    // Les mêmes porteurs, correctement masqués : aucune contradiction, mais rien ne dit
+    // qu'ils sont décoratifs. Ni `fail`, ni `pass`.
+    let hidden = format!("http://127.0.0.1:{port}/coverage-1-2-correctly-hidden.html");
+    let status = probe_1_2(&hidden).await;
+    eprintln!("six porteurs masqués : sonde -> {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::NeedsReview),
+        "sans contradiction, le caractère décoratif reste à établir par un humain"
     );
 }

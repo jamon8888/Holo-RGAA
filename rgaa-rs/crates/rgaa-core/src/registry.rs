@@ -256,6 +256,52 @@ mod tests {
         dir
     }
 
+    /// Prérequis bloquant 6 de `human-criteria-automation.md` : le registre doit raisonner
+    /// par test. Avant de remplir `tests`, on interdit d'y écrire un test que le catalogue
+    /// ne connaît pas — sinon une route de test pointerait dans le vide sans que rien ne le
+    /// signale.
+    #[test]
+    fn a_test_the_catalog_does_not_know_is_a_problem() {
+        let toml = entry(
+            "coverage=\"complete\"\ntests=[\"11.6.9\"]\noutcomes=[\"fail\",\"pass\"]\nlegacy=true",
+        );
+        let problems = check(&toml, &tmp_dir("unknown-test", &[]));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("probe-11-6-x") && p.contains("11.6.9")),
+            "un test absent du catalogue doit être signalé, obtenu {problems:?}"
+        );
+    }
+
+    #[test]
+    fn the_two_spellings_of_a_known_test_are_accepted() {
+        for spelling in ["11.6.1", "1"] {
+            let toml = entry(&format!(
+                "coverage=\"complete\"\ntests=[\"{spelling}\"]\noutcomes=[\"fail\",\"pass\"]\nlegacy=true"
+            ));
+            let problems = check(&toml, &tmp_dir("known-test", &[]));
+            assert!(
+                !problems.iter().any(|p| p.contains("not in the catalog")),
+                "{spelling} est un test connu de 11.6, obtenu {problems:?}"
+            );
+        }
+    }
+
+    /// Un test qui appartient à un autre critère n'est pas valide ici : `1.1.1` existe au
+    /// catalogue, mais pas pour un mécanisme déclaré sur 11.6.
+    #[test]
+    fn a_test_of_another_criterion_is_a_problem() {
+        let toml = entry(
+            "coverage=\"complete\"\ntests=[\"1.1.1\"]\noutcomes=[\"fail\",\"pass\"]\nlegacy=true",
+        );
+        let problems = check(&toml, &tmp_dir("other-criterion", &[]));
+        assert!(
+            problems.iter().any(|p| p.contains("1.1.1")),
+            "un test d'un autre critère doit être signalé, obtenu {problems:?}"
+        );
+    }
+
     #[test]
     fn builtin_registry_parses() {
         assert!(!MechanismRegistry::builtin().mechanisms().is_empty());

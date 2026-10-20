@@ -147,3 +147,73 @@ async fn criterion_1_1_does_not_pass_a_page_whose_canvas_and_embed_lack_an_alter
         "la sonde rend Pass pour 1.1 alors qu'un <canvas> et un <embed> sont sans alternative"
     );
 }
+
+/// Le statut posé par la sonde `gapfix-1-1`, et le nombre d'éléments cités en preuve.
+async fn probe_1_1(url: &str) -> Option<(CriterionStatus, usize)> {
+    let binary = ObscuraBridge::new().binary_path().to_string();
+    let snippets: HashMap<String, String> = GapFixRules::snippets()
+        .iter()
+        .filter(|(id, _)| id.as_str() == "1.1")
+        .map(|(id, s)| (id.clone(), (*s).to_string()))
+        .collect();
+    let mut probes = ObscuraBridge::run_gap_fix_batch(binary, vec![url.to_string()], snippets, 1)
+        .await
+        .expect("run_gap_fix_batch");
+    let raw = probes.remove(url).unwrap_or_default();
+    GapFixRules::parse_results(&raw).get("1.1").map(|result| {
+        let nodes = result
+            .violations
+            .first()
+            .map_or(0, |violation| violation.nodes_affected);
+        (result.status.clone(), nodes)
+    })
+}
+
+/// Les trois tests de 1.1 qu'aucune règle axe ne décide : 1.1.4 (image réactive côté
+/// serveur), 1.1.7 (`<embed>`) et 1.1.8 (`<canvas>`). La sonde ne peut pas savoir qu'un
+/// élément est porteur d'information — sauf quand **l'auteur l'a déclaré** par `role="img"`,
+/// que le test exige d'accompagner d'une alternative textuelle. Ce cas-là est décidable ;
+/// les autres relèvent de la revue, avec la preuve.
+#[tokio::test]
+async fn criterion_1_1_covers_embed_canvas_and_server_side_maps() {
+    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
+        eprintln!("criterion_1_1_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+        return;
+    }
+    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let port = serve(dir).expect("fixture server");
+
+    // Décidable : `role="img"` posé, alternative absente. Les deux porteurs doivent être vus.
+    let declared = format!("http://127.0.0.1:{port}/coverage-1-1-declared-img-no-name.html");
+    let detailed = probe_1_1(&declared).await;
+    eprintln!("role=img sans nom : sonde -> {detailed:?}");
+    let (status, nodes) = detailed.expect("la sonde doit rendre un résultat pour 1.1");
+    assert_eq!(
+        status,
+        CriterionStatus::Fail,
+        "role=\"img\" sans alternative textuelle : 1.1.7 et 1.1.8 l'excluent"
+    );
+    assert_eq!(
+        nodes, 2,
+        "les deux porteurs doivent être vus, <canvas> et <embed> — obtenu {nodes}"
+    );
+
+    // 1.1.4 : l'applicabilité est certaine, la conformité ne l'est pas.
+    let ismap = format!("http://127.0.0.1:{port}/coverage-1-1-server-side-map.html");
+    let status = probe_1_1(&ismap).await.map(|(status, _)| status);
+    eprintln!("image réactive côté serveur : sonde -> {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::NeedsReview),
+        "une image réactive côté serveur doit être signalée pour revue : le mécanisme de \
+         remplacement ne se lit pas dans le DOM"
+    );
+
+    // Ni masqué ni pourvu d'alternative : la nature n'est pas établie, donc revue — jamais
+    // un Pass, et pas non plus un Fail attribué à 1.1 alors que 1.2 pourrait s'appliquer.
+    let bare = format!("http://127.0.0.1:{port}/coverage-1-1-embed-canvas.html");
+    let status = probe_1_1(&bare).await.map(|(status, _)| status);
+    eprintln!("canvas+embed nus : sonde -> {status:?}");
+    assert_eq!(status, Some(CriterionStatus::NeedsReview));
+}

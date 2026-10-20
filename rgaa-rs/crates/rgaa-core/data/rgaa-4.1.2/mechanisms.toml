@@ -460,8 +460,8 @@ criterion = "1.1"
 kind      = "js-static"
 engine    = "obscura"
 coverage  = "partial"
-tests     = ["1.1.1"]
-outcomes  = ["fail"]
+tests     = ["1.1.1", "1.1.4", "1.1.7", "1.1.8"]
+outcomes  = ["fail", "review"]
 fixtures  = []
 legacy    = true
 

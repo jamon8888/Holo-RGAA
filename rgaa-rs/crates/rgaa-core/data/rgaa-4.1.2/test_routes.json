@@ -30,7 +30,9 @@
   {
     "criterion_id": "1.1",
     "test_key": "4",
-    "mechanisms": [],
+    "mechanisms": [
+      "gapfix-1-1"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -55,14 +57,18 @@
   {
     "criterion_id": "1.1",
     "test_key": "7",
-    "mechanisms": [],
+    "mechanisms": [
+      "gapfix-1-1"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "8",
-    "mechanisms": [],
+    "mechanisms": [
+      "gapfix-1-1"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },

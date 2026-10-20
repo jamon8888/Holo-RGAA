@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>1.1 — role=img déclaré, sans alternative</title></head>
+<body>
+<h1>L'auteur déclare ces éléments porteurs d'information, sans fournir d'alternative</h1>
+<!-- 1.1.8 : « La balise <canvas> possède une alternative textuelle ET un attribut role="img" ».
+     role="img" est posé, l'alternative manque, et rien entre les balises. Décidable. -->
+<canvas role="img" width="10" height="10"></canvas>
+<!-- 1.1.7 : même construction pour <embed type="image/…">. -->
+<embed type="image/png" src="data:image/png;base64,iVBORw0KGgo=" role="img">
+</body>
+</html>

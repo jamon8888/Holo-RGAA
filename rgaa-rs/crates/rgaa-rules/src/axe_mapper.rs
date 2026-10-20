@@ -441,6 +441,67 @@ mod tests {
         ("svg-img-alt", "1.1"),
     ];
 
+    /// Prérequis bloquant 1 de `human-criteria-automation.md` : `axe.run()` résout un
+    /// objet qui porte aussi `incomplete` — les cas qu'axe n'a pas pu trancher. Jusqu'ici
+    /// seul `violations` était transmis, donc un critère à couverture complète ressortait
+    /// `Pass` alors qu'axe disait « je ne sais pas ». C'est un `Pass` fabriqué, le défaut
+    /// de #199 sous une autre forme.
+    #[test]
+    fn an_incomplete_rule_turns_a_complete_coverage_pass_into_needs_review() {
+        let axe_json = r#"{"violations":[],"incomplete":[{"id":"area-alt","impact":"serious",
+            "description":"synthetic incomplete","nodes":[{"html":"<area/>"}]}]}"#;
+        let results = AxeMapper::map(axe_json).expect("l'objet complet d'axe doit être accepté");
+        let result = results
+            .get("1.1")
+            .expect("area-alt doit produire un résultat pour 1.1");
+        assert_eq!(
+            result.status,
+            CriterionStatus::NeedsReview,
+            "un cas qu'axe n'a pas tranché ne peut pas rester un Pass"
+        );
+        assert!(
+            result.review_required,
+            "le critère doit être marqué comme exigeant une revue"
+        );
+        assert!(
+            result
+                .review_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("area-alt")),
+            "la raison de revue doit nommer la règle, obtenu {:?}",
+            result.review_reason
+        );
+    }
+
+    /// Une violation l'emporte sur un cas non tranché : un `Fail` prouvé ne se dégrade pas
+    /// en revue parce qu'une autre règle du même critère est restée indécise.
+    #[test]
+    fn an_incomplete_rule_does_not_downgrade_a_proven_fail() {
+        let axe_json = r#"{"violations":[{"id":"image-alt","impact":"critical",
+            "description":"synthetic violation","nodes":[{"html":"<img/>"}]}],
+            "incomplete":[{"id":"area-alt","impact":"serious",
+            "description":"synthetic incomplete","nodes":[{"html":"<area/>"}]}]}"#;
+        let results = AxeMapper::map(axe_json).expect("l'objet complet d'axe doit être accepté");
+        assert_eq!(
+            results.get("1.1").expect("1.1 doit être présent").status,
+            CriterionStatus::Fail,
+            "un Fail prouvé reste un Fail"
+        );
+    }
+
+    /// L'ancien format — un tableau de violations nu — reste accepté : fixtures,
+    /// instantanés et chemin natif l'émettent encore.
+    #[test]
+    fn a_bare_violations_array_is_still_accepted() {
+        let axe_json = r#"[{"id":"image-alt","impact":"critical","description":"x",
+            "nodes":[{"html":"<img/>"}]}]"#;
+        let results = AxeMapper::map(axe_json).expect("le tableau nu doit rester accepté");
+        assert_eq!(
+            results.get("1.1").expect("1.1 doit être présent").status,
+            CriterionStatus::Fail
+        );
+    }
+
     #[test]
     fn each_newly_mapped_rule_fails_its_intended_criterion() {
         for (rule_id, criterion_id) in NEWLY_MAPPED {

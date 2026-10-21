@@ -109,8 +109,10 @@ mod tests {
         // 1.1.7 (`<embed>`), ni 1.1.8 (`<canvas>`), donc il ne « possède » plus le critère.
         // 9.3 suit le même chemin : `list`/`listitem`/`definition-list`/`dlitem` ne
         // valident qu'une liste déjà balisée, jamais une liste visuelle sans balisage.
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 11);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 55);
+        // 12.7 aussi : `bypass`/`skip-link` n'examinent qu'une seule page, et 12.7.2 porte
+        // sur la cohérence du lien d'évitement à travers tout un ensemble de pages.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 10);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 56);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

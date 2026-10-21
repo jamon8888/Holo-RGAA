@@ -824,12 +824,12 @@
  },
  {
   "criterion_id": "12.7",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "bypass",
    "skip-link"
   ],
-  "deterministic": "Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus",
+  "deterministic": "Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus (12.7.1 seul ; 12.7.2, cohérence sur l'ensemble des pages, NON couvert)",
   "holo": "",
   "human_residual": ""
  },

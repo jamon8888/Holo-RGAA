@@ -321,13 +321,20 @@ axe_rules = ["link-in-text-block"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 1 axe rules validated" }
 
 [[mechanism]]
+# `aria-hidden-focus` catche une contradiction structurelle précise (aria-hidden contenant
+# un focalisable), jamais un contenu masqué par CSS et non marqué aria-hidden.
+# `hidden-content` (tags axe : experimental, review-item, sans aucun tag RGAAv4 ni wcag)
+# se contente de signaler du contenu caché pour revue — elle ne tranche jamais sa
+# conformité. 10.8.1 pose un jugement d'intention (ignoré par les AT, ou restituable via
+# une action clavier) que ni l'une ni l'autre règle ne lit dans le DOM statique. Un `Pass`
+# sur leur silence y était fabriqué (`criterion_10_8_coverage`).
 id        = "axe-10-8"
 criterion = "10.8"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["10.8.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["aria-hidden-focus", "hidden-content"]

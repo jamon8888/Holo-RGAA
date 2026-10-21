@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>10.8 — contenu caché sans vocation ni mécanisme de révélation</title>
+<style>
+.cache { display: none; }
+</style>
+</head>
+<body>
+<h1>Contenu caché, ni masqué pour les AT ni révélable</h1>
+<button type="button" onclick="document.body.dataset.clicked = 'oui'">
+  Afficher la suite
+</button>
+<p class="cache">Ce paragraphe est masqué par CSS (<code>display:none</code>),
+n'est pas marqué <code>aria-hidden</code>, et le bouton ci-dessus ne le
+révèle jamais (le gestionnaire ne touche qu'un attribut de données, jamais
+cet élément). Son intention — ignoré par les technologies d'assistance, ou
+restituable via une action clavier — n'est pas établie.</p>
+</body>
+</html>

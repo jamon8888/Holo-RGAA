@@ -1260,7 +1260,7 @@
     "mechanisms": [
       "axe-10-8"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {

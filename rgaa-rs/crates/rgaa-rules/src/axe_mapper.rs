@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn empty_json_initializes_all_mapped_criteria_as_pass() {
         let result = AxeMapper::map("[]").unwrap();
-        // 10 of the 43 criteria carrying axe rules: only those whose rules decide every
+        // 9 of the 43 criteria carrying axe rules: only those whose rules decide every
         // test of the criterion may be asserted Pass by axe's silence (#199, #201).
         assert_eq!(result.len(), COMPLETE_COVERAGE_CRITERIA.len());
         for (id, r) in &result {
@@ -425,7 +425,7 @@ mod tests {
     /// than derived so that moving a criterion between the two regimes is a visible,
     /// reviewed change and not a side effect of editing `mechanisms.toml`.
     const COMPLETE_COVERAGE_CRITERIA: &[&str] = &[
-        "2.1", "3.2", "4.3", "5.7", "6.2", "8.3", "8.5", "10.6", "10.8", "11.1",
+        "2.1", "4.3", "5.7", "6.2", "8.3", "8.5", "10.6", "10.8", "11.1",
     ];
 
     /// Criteria whose mapped rules catch real violations but cannot establish
@@ -444,10 +444,15 @@ mod tests {
     /// la cohérence du lien d'évitement à travers tout un ensemble de pages. Un `Pass` sur
     /// le silence (ou même la réussite) d'une seule page y était fabriqué
     /// (`criterion_12_7_coverage`).
+    ///
+    /// 3.2 (`color-contrast`) pour deux raisons : 3.2.5 porte sur un mécanisme d'affichage
+    /// de contraste qu'axe n'active jamais, et `color-contrast` ne se déclenche carrément
+    /// jamais via ce pipeline (#371, défaut d'infrastructure du navigateur). Un `Pass`
+    /// était fabriqué dans les deux cas (`criterion_3_2_coverage`).
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
-        "1.1", "1.2", "3.3", "4.10", "5.4", "5.6", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1",
-        "9.3", "10.4", "10.11", "11.2", "11.9", "11.13", "12.1", "12.4", "12.6", "12.7", "13.1",
-        "13.8", "13.9",
+        "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8",
+        "9.1", "9.3", "10.4", "10.11", "11.2", "11.9", "11.13", "12.1", "12.4", "12.6", "12.7",
+        "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.

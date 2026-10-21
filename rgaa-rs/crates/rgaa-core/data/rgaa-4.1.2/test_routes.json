@@ -507,7 +507,7 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -517,7 +517,7 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -527,7 +527,7 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -537,17 +537,14 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "3.2",
     "test_key": "5",
-    "mechanisms": [
-      "axe-3-2",
-      "gapfix-3-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {

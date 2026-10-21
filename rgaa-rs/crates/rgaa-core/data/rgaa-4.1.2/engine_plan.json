@@ -114,11 +114,11 @@
  },
  {
   "criterion_id": "3.2",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "color-contrast"
   ],
-  "deterministic": "styles calculés des cas « incomplete » (dégradés, images de fond, pseudo-éléments)",
+  "deterministic": "styles calculés des cas « incomplete » (dégradés, images de fond, pseudo-éléments) ; color-contrast ne se déclenche pas via ce pipeline (#371) ; 3.2.5 (mécanisme d'affichage de contraste, une fois activé) NON couvert",
   "holo": "contraste de texte sur image de fond (vision)",
   "human_residual": ""
  },

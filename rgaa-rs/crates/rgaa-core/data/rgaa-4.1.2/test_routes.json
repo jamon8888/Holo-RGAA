@@ -1726,17 +1726,14 @@
       "axe-12-7",
       "gapfix-12-7"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "12.7",
     "test_key": "2",
-    "mechanisms": [
-      "axe-12-7",
-      "gapfix-12-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {

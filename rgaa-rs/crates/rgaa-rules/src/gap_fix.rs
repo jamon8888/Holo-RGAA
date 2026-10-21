@@ -1071,15 +1071,17 @@ mod tests {
     }
 
     /// The coverage the registry declares is exactly what the pre-registry
-    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves) — à une exception
-    /// près, assumée : 1.1 et 1.2 en sont sortis (#366). Pour 1.1, la sonde ne regardait que
-    /// `img:not([alt])`, et le silence d'une sonde qui ignore `<canvas>` et `<embed>` ne
-    /// prouve rien. Pour 1.2, le caractère décoratif d'une image ne se lit pas dans le
+    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves) — à des exceptions
+    /// près, assumées : 1.1 et 1.2 en sont sorties (#366). Pour 1.1, la sonde ne regardait
+    /// que `img:not([alt])`, et le silence d'une sonde qui ignore `<canvas>` et `<embed>`
+    /// ne prouve rien. Pour 1.2, le caractère décoratif d'une image ne se lit pas dans le
     /// balisage : la sonde ne rend plus de `pass` du tout, sur aucun des six porteurs.
+    /// 12.7 en est sortie aussi : le repérage de texte ne regarde jamais qu'une seule
+    /// page, et 12.7.2 porte sur la cohérence à travers tout un ensemble de pages.
     #[test]
     fn migrated_probe_coverage_matches_the_former_constant() {
         const FORMER: &[&str] = &[
-            "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4", "12.7",
+            "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
         ];
         for id in GapFixRules::snippets().keys() {
             assert_eq!(

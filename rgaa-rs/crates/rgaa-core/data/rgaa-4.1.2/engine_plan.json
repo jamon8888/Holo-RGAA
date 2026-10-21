@@ -569,11 +569,11 @@
  },
  {
   "criterion_id": "10.6",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "link-in-text-block"
   ],
-  "deterministic": "distinction visuelle des liens (couleur ≥ 3:1, soulignement)",
+  "deterministic": "distinction visuelle des liens (couleur ≥ 3:1, soulignement) ; link-in-text-block rend un faux passes via ce pipeline (#371)",
   "holo": "nature du lien non évidente",
   "human_residual": ""
  },

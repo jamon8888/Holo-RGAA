@@ -260,13 +260,19 @@ axe_rules = ["heading-order", "landmark-one-main", "region", "p-as-heading"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Extends heading-order/landmark-one-main/region with p-as-heading." }
 
 [[mechanism]]
+# 9.3 est resté « complète » jusqu'ici : list/listitem/definition-list/dlitem ne valident
+# que la *structure* d'un élément déjà balisé comme liste — ils ne regardent jamais un
+# contenu qui n'est pas balisé comme tel. Or 9.3.1/9.3.2/9.3.3 portent sur « les
+# informations regroupées **visuellement** sous forme de liste », balisage ou non : une
+# liste à puces faite en CSS sur des `<p>` est exactement le cas visé, et le silence
+# d'axe n'y prouve rien (fabriquait un `Pass`, voir `criterion_9_3_coverage.rs`).
 id        = "axe-9-3"
 criterion = "9.3"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["9.3.1", "9.3.2", "9.3.3"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["list", "listitem", "definition-list", "dlitem"]

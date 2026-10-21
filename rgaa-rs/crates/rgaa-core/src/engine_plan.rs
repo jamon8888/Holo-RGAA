@@ -117,8 +117,10 @@ mod tests {
         // (#371), confirmé contre un vrai Chrome sur la même page.
         // 10.8 aussi : `aria-hidden-focus`/`hidden-content` ne décident jamais l'intention
         // d'un contenu caché par CSS et non marqué aria-hidden.
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 7);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 59);
+        // 5.7 aussi : aucune règle axe ne vérifie la cohérence orientation/valeur de
+        // scope ou role — une limite réelle d'axe-core, confirmée contre un vrai Chrome.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 6);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 60);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

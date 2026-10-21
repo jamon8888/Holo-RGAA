@@ -820,28 +820,22 @@
   {
     "criterion_id": "5.7",
     "test_key": "1",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "5.7",
     "test_key": "2",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "5.7",
     "test_key": "3",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -850,16 +844,14 @@
     "mechanisms": [
       "axe-5-7"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "5.7",
     "test_key": "5",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {

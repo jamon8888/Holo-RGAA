@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn empty_json_initializes_all_mapped_criteria_as_pass() {
         let result = AxeMapper::map("[]").unwrap();
-        // 7 of the 43 criteria carrying axe rules: only those whose rules decide every
+        // 6 of the 43 criteria carrying axe rules: only those whose rules decide every
         // test of the criterion may be asserted Pass by axe's silence (#199, #201).
         assert_eq!(result.len(), COMPLETE_COVERAGE_CRITERIA.len());
         for (id, r) in &result {
@@ -424,7 +424,7 @@ mod tests {
     /// silence is evidence and a criterion-level `Pass` is justified. Listed rather
     /// than derived so that moving a criterion between the two regimes is a visible,
     /// reviewed change and not a side effect of editing `mechanisms.toml`.
-    const COMPLETE_COVERAGE_CRITERIA: &[&str] = &["2.1", "4.3", "5.7", "6.2", "8.3", "8.5", "11.1"];
+    const COMPLETE_COVERAGE_CRITERIA: &[&str] = &["2.1", "4.3", "6.2", "8.3", "8.5", "11.1"];
 
     /// Criteria whose mapped rules catch real violations but cannot establish
     /// conformance: axe may fail them, never pass them.
@@ -458,10 +458,16 @@ mod tests {
     /// `review-item` côté axe, sans aucun tag RGAAv4 — elle ne tranche jamais une
     /// conformité. 10.8.1 pose un jugement d'intention qu'aucune des deux ne lit dans le
     /// DOM statique (`criterion_10_8_coverage`).
+    ///
+    /// 5.7 (`td-headers-attr`, `th-has-data-cells`, `td-has-header`) ne vérifie jamais la
+    /// cohérence entre la valeur de `scope` (ou le rôle rowheader/columnheader) et
+    /// l'orientation réelle du `<th>` — une limite réelle d'axe-core, confirmée contre un
+    /// vrai Chrome, pas seulement contre ce pipeline. Seul 5.7.4 a un appui partiel
+    /// (`criterion_5_7_coverage`).
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
-        "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8",
-        "9.1", "9.3", "10.4", "10.6", "10.8", "10.11", "11.2", "11.9", "11.13", "12.1", "12.4",
-        "12.6", "12.7", "13.1", "13.8", "13.9",
+        "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "5.7", "6.1", "7.1", "7.3", "8.2", "8.4",
+        "8.8", "9.1", "9.3", "10.4", "10.6", "10.8", "10.11", "11.2", "11.9", "11.13", "12.1",
+        "12.4", "12.6", "12.7", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.

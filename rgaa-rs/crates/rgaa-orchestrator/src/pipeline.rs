@@ -1556,32 +1556,33 @@ mod routing_tests {
         let mut results = complete_prediction_set();
         assert!(validate_automatic_verdict_coverage(&results).is_ok());
 
-        // 5.7 et non 3.2 : 3.2 est sorti de la couverture complète (#371). 5.7 l'est
-        // toujours, avec cinq tests, ce qui garde au test son objet.
+        // 4.3 et non 5.7 : 5.7 est sorti de la couverture complète (#371 : aucune règle
+        // ne vérifie la cohérence scope/role, en plus du défaut d'infrastructure). 4.3
+        // l'est toujours, avec deux tests, ce qui garde au test son objet.
         let result = results
             .iter_mut()
-            .find(|result| result.criterion_id == "5.7")
-            .expect("criterion 5.7 exists");
+            .find(|result| result.criterion_id == "4.3")
+            .expect("criterion 4.3 exists");
         result.tests[0].source = "agent-estimate".into();
 
         let error = validate_automatic_verdict_coverage(&results)
             .expect_err("model estimates alone cannot close a complete route");
-        assert_eq!(error.missing_criterion_ids, vec!["5.7"]);
+        assert_eq!(error.missing_criterion_ids, vec!["4.3"]);
     }
 
     #[test]
     fn aggregate_failure_without_a_test_key_keeps_the_audit_incomplete() {
         let mut results = complete_prediction_set();
-        // 5.7 et non 3.2 : 3.2 est sorti de la couverture complète (#371).
+        // 4.3 et non 5.7 : 5.7 est sorti de la couverture complète (#371).
         let result = results
             .iter_mut()
-            .find(|result| result.criterion_id == "5.7")
-            .expect("criterion 5.7 exists");
+            .find(|result| result.criterion_id == "4.3")
+            .expect("criterion 4.3 exists");
         result.status = CriterionStatus::Fail;
 
         let error = validate_automatic_verdict_coverage(&results)
             .expect_err("aggregate failure does not identify a test key");
-        assert!(error.missing_criterion_ids.iter().any(|id| id == "5.7"));
+        assert!(error.missing_criterion_ids.iter().any(|id| id == "4.3"));
     }
 
     #[test]
@@ -1599,20 +1600,20 @@ mod routing_tests {
     }
 
     #[test]
-    // 5.7 et non 1.1 ni 3.2 : 1.1 est sorti de la couverture complète (#366), 3.2 aussi
-    // (#371). 5.7 l'est toujours, avec cinq tests, ce qui garde au test son objet : un
+    // 4.3 et non 1.1 ni 5.7 : 1.1 est sorti de la couverture complète (#366), 5.7 aussi
+    // (#371). 4.3 l'est toujours, avec deux tests, ce qui garde au test son objet : un
     // `Pass` de mécanisme complet matérialise une route par test.
     fn complete_mechanism_pass_materializes_routes_but_failure_does_not_guess_test_keys() {
         let mut results: HashMap<String, CriterionResult> = HashMap::new();
-        let pass = deterministic_result("5.7", CriterionStatus::Pass, "axe-core");
-        results.insert("5.7".into(), pass);
+        let pass = deterministic_result("4.3", CriterionStatus::Pass, "axe-core");
+        results.insert("4.3".into(), pass);
         let fail = deterministic_result("1.2", CriterionStatus::Fail, "gap-fix");
         results.insert("1.2".into(), fail);
 
         attach_complete_mechanism_passes(results.values_mut());
 
-        assert_eq!(results["5.7"].tests.len(), 5);
-        assert!(results["5.7"]
+        assert_eq!(results["4.3"].tests.len(), 2);
+        assert!(results["4.3"]
             .tests
             .iter()
             .all(|test| { test.status == CriterionStatus::Pass && test.source == "axe-core" }));

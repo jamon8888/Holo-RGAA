@@ -506,14 +506,14 @@
  },
  {
   "criterion_id": "9.3",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "list",
    "listitem",
    "definition-list",
    "dlitem"
   ],
-  "deterministic": "faux listes (tirets, <br>, paragraphes consécutifs)",
+  "deterministic": "structure d'une liste déjà balisée (axe) ; faux listes (tirets, <br>, paragraphes consécutifs) NON couvertes (#voir criterion_9_3_coverage)",
   "holo": "confirme les faux positifs",
   "human_residual": ""
  },

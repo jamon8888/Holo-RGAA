@@ -107,8 +107,10 @@ mod tests {
     fn engine_assignments_match_the_audited_criterion_map() {
         // 1.1 est passé d'AxeCore à Deterministic (#366) : axe ne décide ni 1.1.4, ni
         // 1.1.7 (`<embed>`), ni 1.1.8 (`<canvas>`), donc il ne « possède » plus le critère.
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 12);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 54);
+        // 9.3 suit le même chemin : `list`/`listitem`/`definition-list`/`dlitem` ne
+        // valident qu'une liste déjà balisée, jamais une liste visuelle sans balisage.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 11);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 55);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

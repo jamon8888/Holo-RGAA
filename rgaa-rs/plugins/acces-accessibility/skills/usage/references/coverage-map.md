@@ -90,7 +90,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 8.10 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 9.1 | `Holo` | `heading-order`, `empty-heading`, `page-has-heading-one` | **nothing** — not evaluated here |
 | 9.2 | `Holo` | `landmark-one-main`, `region`, `landmark-no-duplicate-banner` | **nothing** — not evaluated here |
-| 9.3 | `AxeCore` | `list`, `listitem`, `definition-list`, `dlitem` | **nothing conclusive** — residual judgement |
+| 9.3 | `Deterministic` | `list`, `listitem`, `definition-list`, `dlitem` | **nothing conclusive** — residual judgement |
 | 9.4 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 10.1 | `Deterministic` | — | conforming |
 | 10.2 | `Deterministic` | — | **nothing conclusive** — residual judgement |

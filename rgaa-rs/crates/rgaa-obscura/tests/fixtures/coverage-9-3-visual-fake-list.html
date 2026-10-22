@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>9.3 — liste visuelle sans balisage de liste</title>
+<style>
+.fake-list .item { position: relative; padding-left: 1.2em; }
+.fake-list .item::before { content: "•"; position: absolute; left: 0; }
+</style>
+</head>
+<body>
+<h1>Une liste visuelle, sans balise <code>&lt;ul&gt;</code>/<code>&lt;li&gt;</code></h1>
+<div class="fake-list">
+  <p class="item">Premier élément</p>
+  <p class="item">Second élément</p>
+  <p class="item">Troisième élément</p>
+</div>
+</body>
+</html>

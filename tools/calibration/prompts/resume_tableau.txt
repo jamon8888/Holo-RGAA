@@ -1,0 +1,20 @@
+Tu évalues un élément d'une page web comme le ferait un auditeur RGAA 4.1.2.
+
+Test RGAA {test} : {question}
+
+RÈGLE À APPLIQUER : {rule}
+
+Contexte de la page : {ctx}
+{label} : « {alt} »
+
+L'image jointe montre le tableau de données complexe concerné, sans son résumé.
+
+Juge uniquement cet élément, en appliquant la règle ci-dessus. Procède dans l'ordre :
+(1) ce_que_dit_le_texte : résume en une phrase ce que dit le résumé proposé, en ne regardant que lui ;
+(2) ce_que_designe_le_contexte : dis quelle est la nature du tableau et comment ses en-têtes sont structurés, d'après l'image ;
+(3) justification : explique en une ou deux phrases si le résumé donne la nature et la structure du tableau ;
+(4) verdict : « pertinent », « non_pertinent » ou « incertain » (uniquement en cas de vrai doute) ;
+(5) confiance : un nombre entre 0 et 1.
+
+Réponds uniquement par un objet JSON avec les champs : ce_que_dit_le_texte, ce_que_designe_le_contexte,
+justification, verdict, confiance.

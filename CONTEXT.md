@@ -59,3 +59,13 @@ _Avoid_ : —
 **Description seule** :
 Défaut d'une alternative qui décrit fidèlement ce qui est visible sans reprendre ce que la page dit de l'image. Elle n'est pas pertinente, quelle que soit la qualité de la description.
 _Avoid_ : alternative trop descriptive, alternative hors contexte
+
+### Tableaux de données
+
+**Résumé (de tableau)** :
+Passage de texte associé à un tableau de données complexe, qui donne des informations sur la **nature et la structure** du tableau. Il n'a pas à restituer le contenu des cellules : celui-ci est porté par l'association des cellules à leurs en-têtes (critères 5.6 et 5.7). Définition reprise mot pour mot du glossaire RGAA 4.1.2.
+_Avoid_ : description du tableau, synthèse des données, résumé des chiffres
+
+**Tableau de données complexe** :
+Tableau dont les en-têtes ne sont pas répartis uniquement sur la première ligne et/ou la première colonne, ou dont la portée d'un en-tête ne vaut pas pour toute sa ligne ou toute sa colonne. Seul un tel tableau appelle un résumé (critères 5.1 et 5.2) : des cellules fusionnées dans le corps du tableau ne suffisent pas à le rendre complexe.
+_Avoid_ : grand tableau, tableau à double entrée, tableau multi-niveaux

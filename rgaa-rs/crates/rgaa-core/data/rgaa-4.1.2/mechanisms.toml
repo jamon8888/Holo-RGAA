@@ -301,13 +301,20 @@ axe_rules = ["meta-viewport"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-viewport catches a viewport blocking zoom, a precondition for 200% text rather than the whole criterion." }
 
 [[mechanism]]
+# `link-in-text-block` souffre du même défaut d'infrastructure que `color-contrast` (#371),
+# sous une forme plus trompeuse : au lieu de se classer `inapplicable`, elle rend un faux
+# `passes` sur une violation flagrante (lien distingué uniquement par une couleur proche,
+# ratio < 3:1, sans soulignement ni gras ni indication au survol/focus) — confirmé en
+# comparant la même page dans un vrai Chrome, où la règle la classe correctement en
+# violation. Un `Pass` sur le silence (ou le faux `passes`) d'axe y était fabriqué
+# (`criterion_10_6_coverage`).
 id        = "axe-10-6"
 criterion = "10.6"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["10.6.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["link-in-text-block"]

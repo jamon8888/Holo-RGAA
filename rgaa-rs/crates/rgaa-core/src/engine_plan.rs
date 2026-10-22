@@ -113,8 +113,10 @@ mod tests {
         // sur la cohérence du lien d'évitement à travers tout un ensemble de pages.
         // 3.2 aussi : `color-contrast` ne se déclenche pas via ce pipeline (#371), et 3.2.5
         // porte sur un mécanisme d'affichage de contraste qu'axe n'active jamais.
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 9);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 57);
+        // 10.6 aussi : `link-in-text-block` rend un faux `passes` via ce même pipeline
+        // (#371), confirmé contre un vrai Chrome sur la même page.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 8);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 58);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

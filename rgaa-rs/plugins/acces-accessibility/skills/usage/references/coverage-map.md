@@ -36,7 +36,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 
 | Criterion | Engine | Axe rules | Silence proves |
 |---|---|---|---|
-| 1.1 | `AxeCore` | `image-alt`, `input-image-alt`, `area-alt`, `role-img-alt`, `svg-img-alt`, `object-alt` | **nothing conclusive** — residual judgement |
+| 1.1 | `Deterministic` | `image-alt`, `input-image-alt`, `area-alt`, `role-img-alt`, `svg-img-alt`, `object-alt` | **nothing conclusive** — residual judgement |
 | 1.2 | `Holo` | `image-redundant-alt`, `presentation-role-conflict` | **nothing** — not evaluated here |
 | 1.3 | `Holo` | `image-alt` | **nothing** — not evaluated here |
 | 1.4 | `Holo` | — | **nothing** — not evaluated here |

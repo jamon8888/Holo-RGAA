@@ -413,8 +413,9 @@ mod tests {
         ]"#;
         let results = AxeMapper::map(axe_json).unwrap();
         let keys: Vec<_> = results.keys().cloned().collect();
-        // First key should be "1.1" (first in rgaa_to_axe_map), not random
-        assert_eq!(keys[0], "1.1");
+        // First key is the first criterion initialised to Pass, in catalog order — 2.1 now
+        // that 1.1 is partial (#366) and appears only once a rule has fired — not random.
+        assert_eq!(keys[0], "2.1");
     }
 
     // ---------------------------------------------------------------- #201
@@ -424,14 +425,17 @@ mod tests {
     /// than derived so that moving a criterion between the two regimes is a visible,
     /// reviewed change and not a side effect of editing `mechanisms.toml`.
     const COMPLETE_COVERAGE_CRITERIA: &[&str] = &[
-        "1.1", "2.1", "3.2", "4.3", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8", "11.1",
-        "12.7",
+        "2.1", "3.2", "4.3", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8", "11.1", "12.7",
     ];
 
     /// Criteria whose mapped rules catch real violations but cannot establish
     /// conformance: axe may fail them, never pass them.
+    ///
+    /// 1.1 y est depuis #366 : huit tests, dont 1.1.4, 1.1.7 (`<embed>`) et 1.1.8
+    /// (`<canvas>`) qu'aucune règle axe ne décide. Un `Pass` sur le silence d'axe y était
+    /// fabriqué (`criterion_1_1_coverage`).
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
-        "1.2", "3.3", "4.10", "5.4", "5.6", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1",
+        "1.1", "1.2", "3.3", "4.10", "5.4", "5.6", "6.1", "7.1", "7.3", "8.2", "8.4", "8.8", "9.1",
         "10.4", "10.11", "11.2", "11.9", "11.13", "12.1", "12.4", "12.6", "13.1", "13.8", "13.9",
     ];
 

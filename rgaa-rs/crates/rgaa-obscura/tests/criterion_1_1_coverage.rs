@@ -60,9 +60,11 @@ fn serve(dir: PathBuf) -> std::io::Result<u16> {
     Ok(port)
 }
 
-/// Ce que l'audit conclut pour 1.1 sur une page : le statut posé par axe, et ce que dit la
-/// sonde `gapfix-1-1` (`pass` ou non).
-async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<bool>) {
+/// Ce que l'audit conclut pour 1.1 sur une page, **tel que le pipeline le matérialise** :
+/// le statut posé par axe (via `AxeMapper`) et celui posé par la sonde `gapfix-1-1` (via
+/// `GapFixRules::parse_results`). `None` = aucun verdict : le critère est laissé au repli du
+/// pipeline (estimation du modèle), ce qui n'est pas une conformité.
+async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<CriterionStatus>) {
     // `run_axe_batch` pilote une session CDP par URL : le serveur doit être démarré. Sans lui
     // la fonction rend une carte vide (l'échec par URL est journalisé, jamais remonté), ce
     // qui ressemblerait à « axe n'a rien trouvé ».
@@ -93,18 +95,14 @@ async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<bool>) {
     let mut probes = ObscuraBridge::run_gap_fix_batch(binary, vec![url.to_string()], snippets, 1)
         .await
         .expect("run_gap_fix_batch");
-    let probe_pass = probes
-        .remove(url)
-        .and_then(|per_criterion| per_criterion.get("1.1").cloned())
-        .and_then(|value| {
-            let raw = value
-                .as_str()
-                .map(str::to_string)
-                .unwrap_or_else(|| value.to_string());
-            serde_json::from_str::<serde_json::Value>(&raw).ok()
-        })
-        .and_then(|parsed| parsed.get("pass").and_then(|p| p.as_bool()));
-    (axe_status, probe_pass)
+    let probes_keys: Vec<String> = probes.keys().cloned().collect();
+    let raw = probes.remove(url).unwrap_or_else(|| {
+        panic!("pas de résultat de sonde pour {url} ; clés reçues : {probes_keys:?}")
+    });
+    let probe_status = GapFixRules::parse_results(&raw)
+        .get("1.1")
+        .map(|r| r.status.clone());
+    (axe_status, probe_status)
 }
 
 #[tokio::test]
@@ -117,7 +115,7 @@ async fn criterion_1_1_does_not_pass_a_page_whose_canvas_and_embed_lack_an_alter
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
-    // Témoin : sans lui, « 1.1 conforme » sur la page à canvas ne prouverait rien.
+    // Témoin : sans lui, « pas de Pass » sur la page à canvas ne prouverait rien.
     let control = format!("http://127.0.0.1:{port}/coverage-1-1-img-control.html");
     let (axe_control, probe_control) = audit_1_1(&control).await;
     assert_eq!(
@@ -127,20 +125,25 @@ async fn criterion_1_1_does_not_pass_a_page_whose_canvas_and_embed_lack_an_alter
     );
     assert_eq!(
         probe_control,
-        Some(false),
+        Some(CriterionStatus::Fail),
         "la sonde doit voir l'img sans alt"
     );
 
     let page = format!("http://127.0.0.1:{port}/coverage-1-1-embed-canvas.html");
-    let (axe_status, probe_pass) = audit_1_1(&page).await;
-    eprintln!("page canvas+embed : axe -> {axe_status:?}, sonde gapfix-1-1 pass -> {probe_pass:?}");
+    let (axe_status, probe_status) = audit_1_1(&page).await;
+    eprintln!("page canvas+embed : axe -> {axe_status:?}, sonde gapfix-1-1 -> {probe_status:?}");
 
-    let axe_says_conformant = axe_status != Some(CriterionStatus::Fail)
-        && axe_status != Some(CriterionStatus::NeedsReview);
-    let probe_says_conformant = probe_pass == Some(true);
-    assert!(
-        !(axe_says_conformant && probe_says_conformant),
-        "1.1 ressort conforme alors qu'un <canvas> et un <embed> portent de l'information \
-         sans alternative (1.1.7 et 1.1.8) : axe -> {axe_status:?}, sonde -> {probe_pass:?}"
+    // Aucun des deux mécanismes ne doit conclure `Pass` : ni l'un ni l'autre ne décide
+    // 1.1.7 ni 1.1.8. L'absence de verdict est le bon résultat — le critère retombe sur le
+    // repli du pipeline (estimation du modèle, jamais un `Pass`).
+    assert_ne!(
+        axe_status,
+        Some(CriterionStatus::Pass),
+        "axe rend Pass pour 1.1 alors qu'un <canvas> et un <embed> sont sans alternative"
+    );
+    assert_ne!(
+        probe_status,
+        Some(CriterionStatus::Pass),
+        "la sonde rend Pass pour 1.1 alors qu'un <canvas> et un <embed> sont sans alternative"
     );
 }

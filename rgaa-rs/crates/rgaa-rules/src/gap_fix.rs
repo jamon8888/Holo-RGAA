@@ -890,12 +890,13 @@ mod tests {
     }
 
     /// The coverage the registry declares is exactly what the pre-registry
-    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves).
+    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves) — à une exception
+    /// près, assumée : 1.1 en est sorti (#366). La sonde ne regarde que `img:not([alt])`,
+    /// et le silence d'une sonde qui ignore `<canvas>` et `<embed>` ne prouve rien.
     #[test]
     fn migrated_probe_coverage_matches_the_former_constant() {
         const FORMER: &[&str] = &[
-            "1.1", "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
-            "12.7",
+            "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4", "12.7",
         ];
         for id in GapFixRules::snippets().keys() {
             assert_eq!(

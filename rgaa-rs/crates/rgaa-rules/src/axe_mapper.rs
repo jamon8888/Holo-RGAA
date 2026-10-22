@@ -9,14 +9,25 @@ use std::sync::OnceLock;
 pub struct AxeMapper;
 
 impl AxeMapper {
-    /// Map axe-core violations JSON to RGAA criterion results.
-    /// Input: JSON array of axe violations from axe.run()
+    /// Map axe-core output to RGAA criterion results.
+    ///
+    /// Two input shapes are accepted, on purpose :
+    ///   * un **tableau** de violations — la forme historique, encore émise par les
+    ///     fixtures, les instantanés et le chemin natif ;
+    ///   * l'**objet** résolu par `axe.run()`, dont on lit `violations` et `incomplete`.
+    ///
+    /// `incomplete` porte les cas qu'axe n'a pas pu trancher. Les jeter transformait un
+    /// « je ne sais pas » en `Pass` pour tout critère à couverture complète : le défaut de
+    /// #199 sous une autre forme, et le prérequis bloquant n° 1 de l'addendum
+    /// `human-criteria-automation.md`.
+    ///
     /// Output: HashMap of criterion_id → CriterionResult
     #[must_use = "le résultat du mapping doit être utilisé"]
-    pub fn map(violations_json: &str) -> Result<IndexMap<String, CriterionResult>, RgaaError> {
+    pub fn map(axe_json: &str) -> Result<IndexMap<String, CriterionResult>, RgaaError> {
         let mapping = Self::rgaa_to_axe_map();
-        let violations: Vec<AxeViolation> = serde_json::from_str(violations_json)
+        let parsed: serde_json::Value = serde_json::from_str(axe_json)
             .map_err(|e| RgaaError::AxeCore(format!("Failed to parse axe violations JSON: {e}")))?;
+        let (violations, incomplete) = Self::split_run(parsed)?;
 
         let mut results: IndexMap<String, CriterionResult> = IndexMap::new();
 
@@ -103,7 +114,89 @@ impl AxeMapper {
             }
         }
 
+        Self::apply_incomplete(&mut results, mapping, &incomplete);
+
         Ok(results)
+    }
+
+    /// Accepte le tableau de violations nu comme l'objet complet d'`axe.run()`.
+    fn split_run(
+        parsed: serde_json::Value,
+    ) -> Result<(Vec<AxeViolation>, Vec<AxeViolation>), RgaaError> {
+        let field = |value: Option<serde_json::Value>,
+                     name: &str|
+         -> Result<Vec<AxeViolation>, RgaaError> {
+            match value {
+                None | Some(serde_json::Value::Null) => Ok(Vec::new()),
+                Some(value) => serde_json::from_value(value).map_err(|e| {
+                    RgaaError::AxeCore(format!("Failed to parse axe '{name}' JSON: {e}"))
+                }),
+            }
+        };
+        match parsed {
+            serde_json::Value::Array(_) => Ok((field(Some(parsed), "violations")?, Vec::new())),
+            serde_json::Value::Object(mut run) => Ok((
+                field(run.remove("violations"), "violations")?,
+                field(run.remove("incomplete"), "incomplete")?,
+            )),
+            other => Err(RgaaError::AxeCore(format!(
+                "axe output must be a violations array or an axe.run() object, got {other}"
+            ))),
+        }
+    }
+
+    /// Un cas qu'axe n'a pas tranché n'est pas une conformité : le critère passe en
+    /// `NeedsReview` et porte la raison. Une violation prouvée l'emporte — on ne dégrade
+    /// jamais un `Fail` en revue. Un critère à couverture partielle, absent des résultats
+    /// tant qu'aucune règle n'a tiré, est créé ici : l'indécision d'axe est elle aussi une
+    /// preuve à montrer à l'auditeur.
+    fn apply_incomplete(
+        results: &mut IndexMap<String, CriterionResult>,
+        mapping: &IndexMap<String, CriterionMechanism>,
+        incomplete: &[AxeViolation],
+    ) {
+        for item in incomplete {
+            for (rgaa_id, mechanism) in mapping {
+                if !mechanism.rules.iter().any(|rule| rule == &item.id) {
+                    continue;
+                }
+                let result = results
+                    .entry(rgaa_id.clone())
+                    .or_insert_with(|| CriterionResult {
+                        criterion_id: rgaa_id.clone(),
+                        title: String::new(),
+                        classification: Classification::Deterministe,
+                        status: CriterionStatus::NeedsReview,
+                        violations: vec![],
+                        confidence: None,
+                        raw_confidence: None,
+                        justification: None,
+                        source: "axe-core".to_string(),
+                        citations: vec![],
+                        considered_sources: vec![],
+                        tests: vec![],
+                        automated_verdict: None,
+                        verdict_basis: Vec::new(),
+                        evidence: Vec::new(),
+                        confidence_calibration_version: None,
+                        review_required: false,
+                        review_reason: None,
+                        verified_status: None,
+                        review_events: Vec::new(),
+                    });
+                if result.status == CriterionStatus::Fail {
+                    continue;
+                }
+                result.status = CriterionStatus::NeedsReview;
+                result.review_required = true;
+                let reason = format!("{} ({})", item.id, item.description);
+                result.review_reason = Some(match result.review_reason.take() {
+                    Some(previous) if previous.contains(&item.id) => previous,
+                    Some(previous) => format!("{previous} ; {reason}"),
+                    None => format!("axe n'a pas pu trancher : {reason}"),
+                });
+            }
+        }
     }
 
     /// Built once per process and shared read-only — this table (with its several
@@ -440,6 +533,67 @@ mod tests {
         ("role-img-alt", "1.1"),
         ("svg-img-alt", "1.1"),
     ];
+
+    /// Prérequis bloquant 1 de `human-criteria-automation.md` : `axe.run()` résout un
+    /// objet qui porte aussi `incomplete` — les cas qu'axe n'a pas pu trancher. Jusqu'ici
+    /// seul `violations` était transmis, donc un critère à couverture complète ressortait
+    /// `Pass` alors qu'axe disait « je ne sais pas ». C'est un `Pass` fabriqué, le défaut
+    /// de #199 sous une autre forme.
+    #[test]
+    fn an_incomplete_rule_turns_a_complete_coverage_pass_into_needs_review() {
+        let axe_json = r#"{"violations":[],"incomplete":[{"id":"area-alt","impact":"serious",
+            "description":"synthetic incomplete","nodes":[{"html":"<area/>"}]}]}"#;
+        let results = AxeMapper::map(axe_json).expect("l'objet complet d'axe doit être accepté");
+        let result = results
+            .get("1.1")
+            .expect("area-alt doit produire un résultat pour 1.1");
+        assert_eq!(
+            result.status,
+            CriterionStatus::NeedsReview,
+            "un cas qu'axe n'a pas tranché ne peut pas rester un Pass"
+        );
+        assert!(
+            result.review_required,
+            "le critère doit être marqué comme exigeant une revue"
+        );
+        assert!(
+            result
+                .review_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("area-alt")),
+            "la raison de revue doit nommer la règle, obtenu {:?}",
+            result.review_reason
+        );
+    }
+
+    /// Une violation l'emporte sur un cas non tranché : un `Fail` prouvé ne se dégrade pas
+    /// en revue parce qu'une autre règle du même critère est restée indécise.
+    #[test]
+    fn an_incomplete_rule_does_not_downgrade_a_proven_fail() {
+        let axe_json = r#"{"violations":[{"id":"image-alt","impact":"critical",
+            "description":"synthetic violation","nodes":[{"html":"<img/>"}]}],
+            "incomplete":[{"id":"area-alt","impact":"serious",
+            "description":"synthetic incomplete","nodes":[{"html":"<area/>"}]}]}"#;
+        let results = AxeMapper::map(axe_json).expect("l'objet complet d'axe doit être accepté");
+        assert_eq!(
+            results.get("1.1").expect("1.1 doit être présent").status,
+            CriterionStatus::Fail,
+            "un Fail prouvé reste un Fail"
+        );
+    }
+
+    /// L'ancien format — un tableau de violations nu — reste accepté : fixtures,
+    /// instantanés et chemin natif l'émettent encore.
+    #[test]
+    fn a_bare_violations_array_is_still_accepted() {
+        let axe_json = r#"[{"id":"image-alt","impact":"critical","description":"x",
+            "nodes":[{"html":"<img/>"}]}]"#;
+        let results = AxeMapper::map(axe_json).expect("le tableau nu doit rester accepté");
+        assert_eq!(
+            results.get("1.1").expect("1.1 doit être présent").status,
+            CriterionStatus::Fail
+        );
+    }
 
     #[test]
     fn each_newly_mapped_rule_fails_its_intended_criterion() {

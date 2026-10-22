@@ -95,7 +95,10 @@ async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<CriterionStatu
     let mut probes = ObscuraBridge::run_gap_fix_batch(binary, vec![url.to_string()], snippets, 1)
         .await
         .expect("run_gap_fix_batch");
-    let raw = probes.remove(url).unwrap_or_default();
+    let probes_keys: Vec<String> = probes.keys().cloned().collect();
+    let raw = probes.remove(url).unwrap_or_else(|| {
+        panic!("pas de résultat de sonde pour {url} ; clés reçues : {probes_keys:?}")
+    });
     let probe_status = GapFixRules::parse_results(&raw)
         .get("1.1")
         .map(|r| r.status.clone());

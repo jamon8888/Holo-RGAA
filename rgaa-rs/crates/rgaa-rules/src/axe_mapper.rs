@@ -425,8 +425,7 @@ mod tests {
     /// than derived so that moving a criterion between the two regimes is a visible,
     /// reviewed change and not a side effect of editing `mechanisms.toml`.
     const COMPLETE_COVERAGE_CRITERIA: &[&str] = &[
-        "2.1", "3.2", "4.3", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8", "11.1",
-        "12.7",
+        "2.1", "3.2", "4.3", "5.7", "6.2", "8.3", "8.5", "9.3", "10.6", "10.8", "11.1", "12.7",
     ];
 
     /// Criteria whose mapped rules catch real violations but cannot establish

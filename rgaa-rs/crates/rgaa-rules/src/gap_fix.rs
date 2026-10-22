@@ -896,8 +896,7 @@ mod tests {
     #[test]
     fn migrated_probe_coverage_matches_the_former_constant() {
         const FORMER: &[&str] = &[
-            "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
-            "12.7",
+            "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4", "12.7",
         ];
         for id in GapFixRules::snippets().keys() {
             assert_eq!(

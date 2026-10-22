@@ -102,6 +102,35 @@ Un résultat voisin sur le lot « description détaillée » : sur 11 cartes non
 Le glissement ne se produit donc pas au hasard, il se concentre sur les cartes qui le méritaient. Ce qui
 rend la re-vérification **ciblée** efficace : 14 cartes ont suffi à le trouver.
 
+### La re-vérification doit être équilibrée, sinon elle fabrique l'accord
+
+Sur le lot R, la re-vérification comptait **17 cartes divergentes sur 21**. Sur une carte choisie
+parce que l'étiqueteur s'écarte de la règle, tout changement de verdict ne peut aller que dans un
+sens : vers la règle. Les 9 changements observés sont donc allés **9 fois sur 9** vers la prédiction,
+et l'accord du modèle est passé de 67 % à 88 % par ce seul effet de composition. Ce n'était pas une
+convergence, c'était le dispositif.
+
+Une re-vérification comporte donc **au moins autant de cartes concordantes que de cartes
+divergentes**. Le rapport publie les deux taux de stabilité séparément : sur les cartes signalées et
+sur les autres. Un écart entre les deux se lit alors comme un fait, non comme un résultat.
+
+### Un lot n'est utilisable que si l'étiqueteur est stable
+
+La cohérence test-retest plafonne ce qu'un modèle peut atteindre : on ne mesure pas un modèle contre
+une référence qui ne se reproduit pas. Mesures obtenues : **93 % sur le lot G**, **57 % sur le lot R**.
+Sous **80 %**, le lot n'est pas admis comme référence ; on cherche d'abord pourquoi l'étiquetage varie
+— consigne absente, cartes ambiguës, critère non arrêté — avant de mesurer quoi que ce soit.
+
+### Une règle énoncée une seule fois n'est pas lue
+
+Le lot T portait la définition du glossaire dans un encadré en tête de feuille. L'étiqueteur ne l'a
+pas vue : il a rejeté les 8 cartes, **ancre positive comprise**, en appliquant son critère habituel.
+Les mêmes 8 cartes, règle rappelée **sur chaque carte** juste au-dessus de la question (champ `rule`
+de `sheet.py`), ont donné 8 verdicts conformes et 3 ancres sur 3.
+
+Toute règle qu'une campagne impose est donc rappelée sur chaque carte, au point de décision. Un
+en-tête de page ne vaut pas consigne.
+
 ### Une raison écrite doit s'appliquer aux cartes équivalentes
 
 `g03` (prix inversés) est rejetée aux deux passes pour « manque le titre Piscine municipale », alors
@@ -118,9 +147,28 @@ consigne modèle une règle que l'étiqueteur lui-même n'applique pas. À véri
 | ancres | **4/4** |
 | accord | au-dessus du repère trivial, **intervalles de confiance disjoints** |
 | pouvoir discriminant | **le lot doit être mesuré avec un modèle faible de référence** (ici `gemma4:e2b`) : il doit y tomber nettement sous le modèle fort, intervalles disjoints. Sinon le lot est déclaré *non discriminant* et aucune admission n'y compte. Lot D2 : `swift` 85 % [70 ; 93] vs `gemma` 56 % [41 ; 71] — séparation à la limite (1 point de recouvrement). Lot G : 100 % vs 92 % — non discriminant |
-| faux « pertinent » | **≤ 10 %** des alternatives rejetées par l'humain |
+| faux « pertinent » | **≤ 10 %** des éléments rejetés par l'humain — chacun est une non-conformité manquée |
+| faux « non pertinent » | **≤ 25 %** des éléments acceptés par l'humain — chacun est du travail de revue inutile |
 
 Aucun modèle n'est épinglé : un seuil survit au changement de modèle et de passerelle.
+
+### Pourquoi un plafond sur les faux « non pertinent »
+
+Le seuil ne portait d'abord que sur les faux « pertinent ». Il a **admis une consigne qui avait
+dégradé le modèle** : sur le lot 5.2.1, `Opus` passe de 33/36 = 92 % (kappa 0,83) à 29/36 = 81 %
+(kappa 0,59) entre deux rédactions, et se trouve admis par la seconde parce qu'il a cessé de faire
+des faux « pertinent » — en rejetant 7 résumés sur 16 que l'auditeur accepte. Un modèle qui rejette
+tout passait donc le seuil, exactement le travers que le repère trivial contrôle chez l'étiqueteur.
+
+Les deux erreurs ne coûtent pas la même chose, d'où deux plafonds différents : un faux « pertinent »
+laisse passer une non-conformité et fausse l'audit ; un faux « non pertinent » ajoute un élément
+conforme à la file de revue humaine. Le second est donc toléré plus largement, mais pas sans borne :
+au-delà du quart des éléments conformes renvoyés en revue, l'assistance ne fait plus gagner de temps.
+Le plafond de 25 % est indicatif et à revoir dès qu'une campagne mesure le coût réel de la revue.
+
+La condition « au-dessus du repère trivial, intervalles disjoints » figurait au protocole mais
+**n'était pas implémentée** dans `score.py` : elle l'est depuis. À elle seule, elle refusait déjà la
+seconde rédaction (IC modèle [65 % ; …] contre repère trivial [… ; 70 %]).
 
 État mesuré :
 
@@ -128,6 +176,19 @@ Aucun modèle n'est épinglé : un seuil survit au changement de modèle et de p
 |---|---|---|---|---|
 | `swift-1.5-27b` (API) | 4/4 | 33/39 = 85 %, kappa 0,68 | **19 %** | admis en *Assisté*, échoue le seuil |
 | `gemma4:e2b` (local) | — | lot D2 : 22/39 = 56 %, IC95 [41 % ; 71 %], **sous son repère trivial de 67 %**, kappa 0,26, faux « pertinent » 17/26 = 65 % | — | insuffisant (figure antérieure 67 % vs 70 % tirée du lot C vicié, remplacée) |
+
+Famille « résumé de tableau » (lot de 36 cartes, test-retest 94 %, repère trivial 58 %) :
+
+| Modèle | Consigne | Accord | Faux « pert. » | Faux « non pert. » | Verdict |
+|---|---|---|---|---|---|
+| `Opus` | règle du glossaire | 33/36 = 92 %, kappa 0,83 | 15 % | 0 % | refusé (faux « pertinent ») |
+| `Opus` | + exigence d'effectif | 29/36 = 81 %, kappa 0,59 | 0 % | **44 %** | refusé (faux « non pertinent », et sous le repère trivial) |
+| `gemma4:e2b` | règle du glossaire | 27/35 = 77 %, kappa 0,56 | 40 % | 0 % | refusé |
+
+Les deux modèles se trompent **sur les mêmes quatre cartes** sous la première consigne, et toujours
+dans le même sens : ils acceptent des résumés que l'auditeur refuse, jamais l'inverse. Une erreur
+commune à tous les juges est invisible au tri par désaccord du §4 bis : c'est ce qui justifie
+l'échantillon tiré au sort parmi les cartes d'accord.
 
 Deux pistes mesurées et fermées :
 
@@ -139,6 +200,31 @@ Deux pistes mesurées et fermées :
   consigne à température 0 donnent 38/39 verdicts identiques, soit une carte de bruit —
   l'ordre de grandeur du gain observé entre deux rédactions. Nommer explicitement le piège,
   en majuscules, ne l'a pas supprimé.
+
+## 4 bis. Un modèle juge ne devient jamais la référence
+
+La tentation est d'étiqueter avec un modèle fort pour cesser d'étiqueter à la main. Elle est
+écartée, et pour une raison mesurée : `Opus` est d'accord avec la clé des lots sur **56 cartes sur
+56** (40/40 sur le lot R, 8/8 sur le lot T, 8/8 sur le lot T2). Or cette clé est écrite par la même
+personne qui écrit les cartes. Prendre le modèle pour référence revient à prendre l'auteur du lot
+pour référence : on mesurerait la compatibilité d'un modèle avec nos consignes, pas sa conformité au
+RGAA. Les écarts trouvés jusqu'ici — l'exigence de complétude de l'ADR 0001, le critère de résumé de
+l'ADR 0002 — sont précisément ceux que l'auteur et le modèle ne voyaient ni l'un ni l'autre.
+
+Un modèle peut en revanche **réduire le travail humain**, selon quatre étapes :
+
+1. **Un jeu humain gelé par famille.** Il reste la seule référence. Composition et contrôles : §3.
+2. **Le juge est validé contre ce jeu**, au seuil du §4, pouvoir discriminant compris. Son taux
+   d'erreur est publié. S'il échoue, il n'est pas promu — et aucun juge n'est promu aujourd'hui :
+   le seul « admis » d'`Opus` porte sur 8 cartes faciles, IC95 [68 % ; 100 %].
+3. **Le juge préétiquette les cartes nouvelles.** L'humain arbitre les cartes où les juges divergent,
+   plus un échantillon tiré au sort de celles où ils s'accordent — sans quoi une erreur commune à
+   tous les juges ne serait jamais vue.
+4. **Les modèles évalués sont mesurés contre le jeu humain**, jamais contre le juge. Là où le juge a
+   servi de filtre, le chiffre publié porte l'erreur du juge.
+
+L'erreur se propage : un modèle en accord parfait avec un juge à 88 % est à 88 % de l'humain, et
+l'écart réel entre deux modèles se noie dans le bruit du juge. C'est la raison de l'étape 4.
 
 ## 5. Fixtures d'extraction par élément porteur
 
@@ -199,7 +285,8 @@ avec le porteur est l'extraction, traitée au §5.
 |---|---|---|---|
 | alternative d'image | 1.3.1–1.3.9 | **calibrée** — 33/39 = 85 %, kappa 0,68, ancres 4/4, repère trivial 67 % | (campagne #339) |
 | description détaillée | 1.7.1–1.7.6 | **étiqueté, mesure non discriminante** — ancres 4/4, test-retest 13/14 = 93 % ; `swift` 39/39 = 100 %, `gemma4:e2b` 36/39 = 92 % (2 faux « pertinent » sur 21 = 10 %, admis). Un modèle de 2 Md passe : famille **non déclarée calibrée** tant qu'un lot plus difficile n'existe pas | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
-| résumé et libellé | 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3 | lot prêt, **étiquetage à faire** | `lots/resume_libelle.py` — 40 cartes, repère trivial 50 %, 6 ancres |
+| résumé et libellé | 5.5.1, 8.6.1, 11.7.1, 11.8.3 | **étiqueté, non admis** — ancres 6/6, repère trivial 59 %, mais test-retest 12/21 = 57 % (seuil : 80 %). La tranche 5.2.1 en est retirée (ADR 0002) | `lots/resume_libelle.py` — 40 cartes, repère trivial 50 %, 6 ancres |
+| résumé de tableau | 5.2.1 | **en cours** — définition du glossaire rappelée sur chaque carte (ADR 0002). 8 premières cartes : étiqueteur 8/8 conforme, ancres 3/3, `Opus` 8/8, mais lot trop facile. Porté à 36 cartes avec des cas limites, étiquetage des 28 restantes à faire | `lots/resume_tableau.py` — 36 cartes, repère trivial 50 %, 6 ancres, 9 tableaux complexes |
 | transcription et sous-titres | 4.2.1, 4.4.1 | **bloquée** | — |
 | audiodescription | 4.6.1, 4.6.2, 4.9.1 | **sans objet** | — |
 

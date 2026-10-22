@@ -78,7 +78,20 @@ struct AxeNodePayload {
     failure_summary: Option<String>,
 }
 
+/// Accepte les deux formes transmises par la chaîne : le tableau de violations nu
+/// (fixtures, chemin natif) et l'objet `{violations, incomplete}` émis depuis le
+/// prérequis bloquant n° 1. Ne valide que `violations` : `incomplete` est contrôlé à
+/// l'extraction.
 fn validate_axe_payload(
+    value: &serde_json::Value,
+) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
+    match value.get("violations") {
+        Some(violations) => validate_axe_violation_array(violations),
+        None => validate_axe_violation_array(value),
+    }
+}
+
+pub(crate) fn validate_axe_violation_array(
     value: &serde_json::Value,
 ) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
     let array = value

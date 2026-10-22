@@ -409,13 +409,18 @@ axe_rules = ["landmark-one-main", "region", "bypass"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 3 axe rules validated" }
 
 [[mechanism]]
+# 12.7 est resté « complète » jusqu'ici, alors qu'axe (bypass, skip-link) comme la sonde
+# gapfix-12-7 n'examinent chacun jamais qu'une seule page. 12.7.2 porte sur « chaque
+# ensemble de pages » : la cohérence du lien d'évitement à travers tout un site, que rien
+# ici ne compare entre deux pages. Le silence (ou même la réussite) d'une seule page n'y
+# prouve rien (fabriquait un `Pass`, voir `criterion_12_7_coverage.rs`).
 id        = "axe-12-7"
 criterion = "12.7"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["12.7.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["bypass", "skip-link"]
@@ -560,13 +565,15 @@ fixtures  = []
 legacy    = true
 
 [[mechanism]]
+# Même raison que axe-12-7 : repérage de texte sur une seule page, jamais une comparaison
+# entre pages. Ne peut jamais établir 12.7.2.
 id        = "gapfix-12-7"
 criterion = "12.7"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["12.7.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 

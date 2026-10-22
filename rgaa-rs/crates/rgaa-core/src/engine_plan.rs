@@ -105,8 +105,22 @@ mod tests {
 
     #[test]
     fn engine_assignments_match_the_audited_criterion_map() {
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 13);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 53);
+        // 1.1 est passé d'AxeCore à Deterministic (#366) : axe ne décide ni 1.1.4, ni
+        // 1.1.7 (`<embed>`), ni 1.1.8 (`<canvas>`), donc il ne « possède » plus le critère.
+        // 9.3 suit le même chemin : `list`/`listitem`/`definition-list`/`dlitem` ne
+        // valident qu'une liste déjà balisée, jamais une liste visuelle sans balisage.
+        // 12.7 aussi : `bypass`/`skip-link` n'examinent qu'une seule page, et 12.7.2 porte
+        // sur la cohérence du lien d'évitement à travers tout un ensemble de pages.
+        // 3.2 aussi : `color-contrast` ne se déclenche pas via ce pipeline (#371), et 3.2.5
+        // porte sur un mécanisme d'affichage de contraste qu'axe n'active jamais.
+        // 10.6 aussi : `link-in-text-block` rend un faux `passes` via ce même pipeline
+        // (#371), confirmé contre un vrai Chrome sur la même page.
+        // 10.8 aussi : `aria-hidden-focus`/`hidden-content` ne décident jamais l'intention
+        // d'un contenu caché par CSS et non marqué aria-hidden.
+        // 5.7 aussi : aucune règle axe ne vérifie la cohérence orientation/valeur de
+        // scope ou role — une limite réelle d'axe-core, confirmée contre un vrai Chrome.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 6);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 60);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

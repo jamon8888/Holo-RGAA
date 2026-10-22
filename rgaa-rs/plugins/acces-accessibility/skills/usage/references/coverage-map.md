@@ -36,7 +36,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 
 | Criterion | Engine | Axe rules | Silence proves |
 |---|---|---|---|
-| 1.1 | `AxeCore` | `image-alt`, `input-image-alt`, `area-alt`, `role-img-alt`, `svg-img-alt`, `object-alt` | **nothing conclusive** — residual judgement |
+| 1.1 | `Deterministic` | `image-alt`, `input-image-alt`, `area-alt`, `role-img-alt`, `svg-img-alt`, `object-alt` | **nothing conclusive** — residual judgement |
 | 1.2 | `Holo` | `image-redundant-alt`, `presentation-role-conflict` | **nothing** — not evaluated here |
 | 1.3 | `Holo` | `image-alt` | **nothing** — not evaluated here |
 | 1.4 | `Holo` | — | **nothing** — not evaluated here |
@@ -48,7 +48,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 2.1 | `AxeCore` | `frame-title`, `frame-title-unique` | conforming |
 | 2.2 | `Holo` | — | **nothing** — not evaluated here |
 | 3.1 | `Holo` | `link-in-text-block` | **nothing** — not evaluated here |
-| 3.2 | `AxeCore` | `color-contrast` | **nothing conclusive** — residual judgement |
+| 3.2 | `Deterministic` | `color-contrast` | **nothing conclusive** — residual judgement |
 | 3.3 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 4.1 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 4.2 | `Human` | — | **nothing** — not evaluated here |
@@ -69,7 +69,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 5.4 | `Deterministic` | `table-fake-caption` | conforming |
 | 5.5 | `Holo` | — | **nothing** — not evaluated here |
 | 5.6 | `Holo` | `th-has-data-cells`, `scope-attr-valid`, `td-has-header` | **nothing** — not evaluated here |
-| 5.7 | `AxeCore` | `td-headers-attr`, `th-has-data-cells`, `scope-attr-valid`, `td-has-header` | conforming |
+| 5.7 | `Deterministic` | `td-headers-attr`, `th-has-data-cells`, `scope-attr-valid`, `td-has-header` | conforming |
 | 5.8 | `Deterministic` | — | conforming |
 | 6.1 | `Holo` | `identical-links-same-purpose` | **nothing** — not evaluated here |
 | 6.2 | `AxeCore` | `link-name` | conforming |
@@ -90,16 +90,16 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 8.10 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 9.1 | `Holo` | `heading-order`, `empty-heading`, `page-has-heading-one` | **nothing** — not evaluated here |
 | 9.2 | `Holo` | `landmark-one-main`, `region`, `landmark-no-duplicate-banner` | **nothing** — not evaluated here |
-| 9.3 | `AxeCore` | `list`, `listitem`, `definition-list`, `dlitem` | **nothing conclusive** — residual judgement |
+| 9.3 | `Deterministic` | `list`, `listitem`, `definition-list`, `dlitem` | **nothing conclusive** — residual judgement |
 | 9.4 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 10.1 | `Deterministic` | — | conforming |
 | 10.2 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 10.3 | `Holo` | — | **nothing** — not evaluated here |
 | 10.4 | `Deterministic` | `meta-viewport` | **nothing conclusive** — residual judgement |
 | 10.5 | `Deterministic` | — | conforming |
-| 10.6 | `AxeCore` | `link-in-text-block` | **nothing conclusive** — residual judgement |
+| 10.6 | `Deterministic` | `link-in-text-block` | **nothing conclusive** — residual judgement |
 | 10.7 | `Deterministic` | `focus-order-semantics` | **nothing conclusive** — residual judgement |
-| 10.8 | `AxeCore` | `aria-hidden-focus`, `hidden-content` | **nothing conclusive** — residual judgement |
+| 10.8 | `Deterministic` | `aria-hidden-focus`, `hidden-content` | **nothing conclusive** — residual judgement |
 | 10.9 | `Holo` | — | **nothing** — not evaluated here |
 | 10.10 | `Holo` | — | **nothing** — not evaluated here |
 | 10.11 | `Deterministic` | `meta-viewport`, `meta-viewport-large` | **nothing conclusive** — residual judgement |
@@ -125,7 +125,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 12.4 | `Deterministic` | — | conforming |
 | 12.5 | `Deterministic` | — | conforming |
 | 12.6 | `Deterministic` | `landmark-one-main`, `region`, `landmark-unique`, `landmark-banner-is-top-level` | conforming |
-| 12.7 | `AxeCore` | `bypass`, `skip-link` | conforming |
+| 12.7 | `Deterministic` | `bypass`, `skip-link` | conforming |
 | 12.8 | `Deterministic` | `focus-order-semantics` | **nothing conclusive** — residual judgement |
 | 12.9 | `Deterministic` | — | conforming |
 | 12.10 | `Deterministic` | `accesskeys` | conforming |

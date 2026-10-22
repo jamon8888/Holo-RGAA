@@ -17,13 +17,13 @@ id        = "axe-1-1"
 criterion = "1.1"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["1.1.1", "1.1.2", "1.1.3", "1.1.5", "1.1.6"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["image-alt", "input-image-alt", "area-alt", "object-alt", "role-img-alt", "svg-img-alt"]
-provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Extends image-alt/input-image-alt with area-alt, object-alt, role-img-alt and svg-img-alt - all missing-accessible-name rules, hence 1.1 rather than 1.2." }
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "PARTIAL since #366: no rule targets 1.1.4 (server-side image map), 1.1.7 (<embed>) or 1.1.8 (<canvas>), so axe silence cannot establish conformance of 1.1 — shown by rgaa-obscura/tests/criterion_1_1_coverage.rs. `tests` lists the five tests whose element a rule targets (rule-to-test mapping proposed in docs/specs/axe-rules-per-test-proposal.md, to be reviewed). Extends image-alt/input-image-alt with area-alt, object-alt, role-img-alt and svg-img-alt - all missing-accessible-name rules, hence 1.1 rather than 1.2." }
 
 [[mechanism]]
 id        = "axe-1-2"
@@ -52,13 +52,22 @@ axe_rules = ["frame-title", "frame-title-unique", "frame-focusable-content"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Complete: the criterion has one test - every frame has a frame title - and frame-title decides exactly that, so axe's silence proves it. This is what disproves the NotAutomatable label (#201 AC4)." }
 
 [[mechanism]]
+# 3.2 est resté « complète » jusqu'ici pour deux raisons distinctes, chacune suffisante :
+# (1) 3.2.5 porte sur le mécanisme d'affichage de contraste une fois activé — un scan
+# statique au chargement ne clique jamais sur rien ; (2) en instrumentant l'exécution
+# réelle, `color-contrast` ne se déclenche carrément jamais via ce pipeline (ni violation,
+# ni `incomplete` — toujours `inapplicable`), alors que la même version d'axe-core la
+# détecte sans ambiguïté dans un Chrome normal sur une violation flagrante (#371, défaut
+# d'infrastructure du navigateur piloté par obscura, hors du périmètre de ce fichier). Un
+# `Pass` sur le silence d'axe y était fabriqué dans les deux cas (voir
+# `criterion_3_2_coverage.rs`).
 id        = "axe-3-2"
 criterion = "3.2"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["3.2.1", "3.2.2", "3.2.3", "3.2.4"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["color-contrast"]
@@ -130,13 +139,24 @@ axe_rules = ["td-headers-attr"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "Invalid rules found: [\"table-header\"]. Coverage corrected complete -> partial (#256): its only rule, td-headers-attr, does not decide the criterion's 4 tests, so axe's silence must not produce a Pass for 5.6." }
 
 [[mechanism]]
+# Aucune des trois règles ne vérifie ce que 5.7.1/5.7.2/5.7.3/5.7.5 demandent : la
+# cohérence entre la valeur de `scope` (ou le rôle rowheader/columnheader) et l'orientation
+# réelle du <th> dans le tableau. Confirmé contre axe-core lui-même (pas seulement contre
+# ce pipeline) : un vrai Chrome laisse aussi passer un scope="col" posé sur un <th> qui est
+# sans ambiguïté un en-tête de ligne. Seul 5.7.4 (headers référence des id valides) a un
+# appui partiel via td-headers-attr. En plus de cette limite propre à axe-core, ce
+# pipeline souffre ici aussi du défaut d'infrastructure #371 : td-headers-attr et
+# th-has-data-cells tombent en incomplete sur un témoin qu'un vrai Chrome classe en
+# violation — ce qui montre que #371 ne se limite pas aux règles de couleur/contraste.
+# Un `Pass` sur le silence d'axe y était fabriqué dans tous les cas
+# (`criterion_5_7_coverage`).
 id        = "axe-5-7"
 criterion = "5.7"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["5.7.4"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["td-headers-attr", "th-has-data-cells", "td-has-header"]
@@ -260,13 +280,19 @@ axe_rules = ["heading-order", "landmark-one-main", "region", "p-as-heading"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Extends heading-order/landmark-one-main/region with p-as-heading." }
 
 [[mechanism]]
+# 9.3 est resté « complète » jusqu'ici : list/listitem/definition-list/dlitem ne valident
+# que la *structure* d'un élément déjà balisé comme liste — ils ne regardent jamais un
+# contenu qui n'est pas balisé comme tel. Or 9.3.1/9.3.2/9.3.3 portent sur « les
+# informations regroupées **visuellement** sous forme de liste », balisage ou non : une
+# liste à puces faite en CSS sur des `<p>` est exactement le cas visé, et le silence
+# d'axe n'y prouve rien (fabriquait un `Pass`, voir `criterion_9_3_coverage.rs`).
 id        = "axe-9-3"
 criterion = "9.3"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["9.3.1", "9.3.2", "9.3.3"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["list", "listitem", "definition-list", "dlitem"]
@@ -286,26 +312,40 @@ axe_rules = ["meta-viewport"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-viewport catches a viewport blocking zoom, a precondition for 200% text rather than the whole criterion." }
 
 [[mechanism]]
+# `link-in-text-block` souffre du même défaut d'infrastructure que `color-contrast` (#371),
+# sous une forme plus trompeuse : au lieu de se classer `inapplicable`, elle rend un faux
+# `passes` sur une violation flagrante (lien distingué uniquement par une couleur proche,
+# ratio < 3:1, sans soulignement ni gras ni indication au survol/focus) — confirmé en
+# comparant la même page dans un vrai Chrome, où la règle la classe correctement en
+# violation. Un `Pass` sur le silence (ou le faux `passes`) d'axe y était fabriqué
+# (`criterion_10_6_coverage`).
 id        = "axe-10-6"
 criterion = "10.6"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["10.6.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["link-in-text-block"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 1 axe rules validated" }
 
 [[mechanism]]
+# `aria-hidden-focus` catche une contradiction structurelle précise (aria-hidden contenant
+# un focalisable), jamais un contenu masqué par CSS et non marqué aria-hidden.
+# `hidden-content` (tags axe : experimental, review-item, sans aucun tag RGAAv4 ni wcag)
+# se contente de signaler du contenu caché pour revue — elle ne tranche jamais sa
+# conformité. 10.8.1 pose un jugement d'intention (ignoré par les AT, ou restituable via
+# une action clavier) que ni l'une ni l'autre règle ne lit dans le DOM statique. Un `Pass`
+# sur leur silence y était fabriqué (`criterion_10_8_coverage`).
 id        = "axe-10-8"
 criterion = "10.8"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["10.8.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["aria-hidden-focus", "hidden-content"]
@@ -403,13 +443,18 @@ axe_rules = ["landmark-one-main", "region", "bypass"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 3 axe rules validated" }
 
 [[mechanism]]
+# 12.7 est resté « complète » jusqu'ici, alors qu'axe (bypass, skip-link) comme la sonde
+# gapfix-12-7 n'examinent chacun jamais qu'une seule page. 12.7.2 porte sur « chaque
+# ensemble de pages » : la cohérence du lien d'évitement à travers tout un site, que rien
+# ici ne compare entre deux pages. Le silence (ou même la réussite) d'une seule page n'y
+# prouve rien (fabriquait un `Pass`, voir `criterion_12_7_coverage.rs`).
 id        = "axe-12-7"
 criterion = "12.7"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["12.7.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["bypass", "skip-link"]
@@ -459,9 +504,9 @@ id        = "gapfix-1-1"
 criterion = "1.1"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["1.1.1", "1.1.4", "1.1.7", "1.1.8"]
+outcomes  = ["fail", "review"]
 fixtures  = []
 legacy    = true
 
@@ -470,9 +515,9 @@ id        = "gapfix-1-2"
 criterion = "1.2"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5", "1.2.6"]
+outcomes  = ["fail", "review"]
 fixtures  = []
 legacy    = true
 
@@ -488,13 +533,20 @@ fixtures  = []
 legacy    = true
 
 [[mechanism]]
+# Le snippet (`gap_fix.rs`) renvoie `pass: true` sans condition, quel que soit le contenu
+# de la page — il compte un nombre de « paires de couleurs suspectes » puis l'ignore
+# totalement pour le verdict. En couverture complète, ce `pass` systématique suffisait à
+# lui seul à fabriquer un `Pass` sur 3.2, indépendamment d'axe. Passé en partiel, ce `pass`
+# codé en dur est neutralisé (`covers_whole_criterion` ne l'emporte plus jamais) ; la
+# logique du snippet elle-même reste à revoir séparément si on veut qu'il serve à quelque
+# chose.
 id        = "gapfix-3-2"
 criterion = "3.2"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["3.2.1", "3.2.2", "3.2.3", "3.2.4"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 
@@ -554,13 +606,15 @@ fixtures  = []
 legacy    = true
 
 [[mechanism]]
+# Même raison que axe-12-7 : repérage de texte sur une seule page, jamais une comparaison
+# entre pages. Ne peut jamais établir 12.7.2.
 id        = "gapfix-12-7"
 criterion = "12.7"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["12.7.1"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 

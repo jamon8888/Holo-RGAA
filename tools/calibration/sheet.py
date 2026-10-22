@@ -12,7 +12,8 @@ et refuse l'export tant qu'il en reste une.
 
 Entrée : un JSON de cartes `[{"qid", "id", "image", "ctx", "alt"}, ...]`, l'image étant un
 chemin relatif au répertoire du lot, avec extension (le même contrat que `run_models.py`) ;
-elle est facultative pour les familles sans image. `label`, `question` et `test` sont
+elle est facultative pour les familles sans image. `label`, `question`, `test` et `rule`
+(la règle rappelée sur CHAQUE carte, au-dessus de la question) sont
 facultatifs et propres à la carte. La clé de correction n'entre jamais dans la page.
 
     python3 sheet.py lot/items.json --out lot/etiquetage.html --title "Lot E — descriptions détaillées"
@@ -33,6 +34,8 @@ main{max-width:920px;margin:0 auto}h1{font-size:1.4rem}
 .card h2{font-size:1rem;margin:0 0 8px;color:var(--mut)}
 .card img{max-width:100%;height:auto;border-radius:8px;display:block;background:#fff}
 .alt{font-size:1.05rem}.ctx{color:var(--mut)}.warn{color:var(--warn);font-weight:700}
+.rule{border-left:5px solid var(--warn);background:rgba(200,120,0,.10);padding:10px 14px;margin:12px 0;border-radius:0 8px 8px 0}
+.rule b{display:block;margin-bottom:4px;color:var(--warn);text-transform:uppercase;letter-spacing:.04em;font-size:.82rem}
 fieldset{border:1px solid var(--bd);border-radius:8px;margin:10px 0}
 fieldset label{display:inline-block;margin:4px 18px 4px 0;cursor:pointer}
 .cm input{width:100%;box-sizing:border-box;padding:6px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)}
@@ -107,6 +110,7 @@ def build(items, lot_dir, key, title, rubric):
   <p class="ctx"><strong>Contexte de la page :</strong> {esc(x.get('ctx',''))}</p>
   {('<p class="ctx"><strong>Test RGAA :</strong> ' + esc(x['test']) + '</p>') if x.get('test') else ''}
   <p class="alt"><strong>{esc(x.get('label', 'Alternative textuelle proposée'))} :</strong> « {esc(x['alt'])} »</p>
+  {('<div class="rule"><b>Règle à appliquer</b>' + esc(x['rule']) + '</div>') if x.get('rule') else ''}
   <fieldset><legend>{esc(x.get('question', 'Cette alternative est-elle pertinente ?'))}</legend>
     <label><input type="radio" name="{x['qid']}" value="pertinent"> Pertinente</label>
     <label><input type="radio" name="{x['qid']}" value="non_pertinent"> Non pertinente</label>

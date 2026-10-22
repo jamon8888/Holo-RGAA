@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>1.1 — embed et canvas sans alternative</title></head>
+<body>
+<h1>Seuls un canvas et un embed portent de l'information, sans aucune alternative</h1>
+<!-- Une image conforme, pour que la page ne soit pas vide de contenu image : -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Logo de l'association">
+<!-- 1.1.8 : image bitmap (canvas) porteuse d'information, aucune alternative -->
+<canvas id="graphique" width="300" height="150"></canvas>
+<script>
+  const c = document.getElementById('graphique').getContext('2d');
+  c.fillStyle = '#c00'; c.fillRect(10, 10, 120, 90);
+  c.fillStyle = '#06c'; c.fillRect(150, 40, 120, 60);
+</script>
+<!-- 1.1.7 : image embarquée (embed) porteuse d'information, aucune alternative -->
+<embed type="image/png" src="data:image/png;base64,iVBORw0KGgo=" width="120" height="80">
+</body>
+</html>

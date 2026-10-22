@@ -6,77 +6,70 @@
       "axe-1-1",
       "gapfix-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "2",
     "mechanisms": [
-      "axe-1-1",
-      "gapfix-1-1"
+      "axe-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "3",
     "mechanisms": [
-      "axe-1-1",
-      "gapfix-1-1"
+      "axe-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "4",
     "mechanisms": [
-      "axe-1-1",
       "gapfix-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "5",
     "mechanisms": [
-      "axe-1-1",
-      "gapfix-1-1"
+      "axe-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "6",
     "mechanisms": [
-      "axe-1-1",
-      "gapfix-1-1"
+      "axe-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "7",
     "mechanisms": [
-      "axe-1-1",
       "gapfix-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "1.1",
     "test_key": "8",
     "mechanisms": [
-      "axe-1-1",
       "gapfix-1-1"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -85,7 +78,7 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -94,7 +87,7 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -103,7 +96,7 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -112,7 +105,7 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -121,7 +114,7 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -130,7 +123,7 @@
     "mechanisms": [
       "gapfix-1-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -514,7 +507,7 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -524,7 +517,7 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -534,7 +527,7 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -544,17 +537,14 @@
       "axe-3-2",
       "gapfix-3-2"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "3.2",
     "test_key": "5",
-    "mechanisms": [
-      "axe-3-2",
-      "gapfix-3-2"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -830,28 +820,22 @@
   {
     "criterion_id": "5.7",
     "test_key": "1",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "5.7",
     "test_key": "2",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "5.7",
     "test_key": "3",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -860,16 +844,14 @@
     "mechanisms": [
       "axe-5-7"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "5.7",
     "test_key": "5",
-    "mechanisms": [
-      "axe-5-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -1141,7 +1123,7 @@
     "mechanisms": [
       "axe-9-3"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -1150,7 +1132,7 @@
     "mechanisms": [
       "axe-9-3"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -1159,7 +1141,7 @@
     "mechanisms": [
       "axe-9-3"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -1254,7 +1236,7 @@
     "mechanisms": [
       "axe-10-6"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -1270,7 +1252,7 @@
     "mechanisms": [
       "axe-10-8"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
@@ -1733,17 +1715,14 @@
       "axe-12-7",
       "gapfix-12-7"
     ],
-    "coverage": "complete",
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "12.7",
     "test_key": "2",
-    "mechanisms": [
-      "axe-12-7",
-      "gapfix-12-7"
-    ],
-    "coverage": "complete",
+    "mechanisms": [],
+    "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {

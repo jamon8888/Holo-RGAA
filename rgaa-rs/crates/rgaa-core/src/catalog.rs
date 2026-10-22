@@ -362,14 +362,13 @@ mod tests {
     /// closed rather than claiming a conformance axe cannot establish (#201 AC3).
     #[test]
     fn complete_axe_coverage_is_declared_not_inferred() {
-        let (_, three_two) = RgaaCatalog::by_id("3.2").expect("3.2 is in the catalog");
-        assert_eq!(three_two.axe_coverage, AxeCoverage::Complete);
-
         // 3.3 and 5.6 were declared complete although color-contrast measures text only
         // and td-headers-attr does not decide 5.6's four tests; 12.1 and 12.4 are
         // whole-set-of-pages criteria carried by single-page rules. axe's silence passed
-        // them with nothing established (#256).
-        for id in ["3.3", "5.6", "12.1", "12.4"] {
+        // them with nothing established (#256). 3.2 joined them later (#371): 3.2.5 is a
+        // mechanism-activation test axe never performs, and `color-contrast` itself never
+        // fires through this pipeline at all.
+        for id in ["3.2", "3.3", "5.6", "12.1", "12.4"] {
             let (_, criterion) = RgaaCatalog::by_id(id).expect("criterion is in the catalog");
             assert_eq!(
                 criterion.axe_coverage,

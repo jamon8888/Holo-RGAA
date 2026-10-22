@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>3.2 — contraste par défaut correct, mécanisme de contraste cassé</title>
+<style>
+body { background: #ffffff; color: #000000; font-size: 18px; }
+/* N'est appliqué qu'après activation du mécanisme — jamais au chargement. */
+body.high-contrast p { color: #cccccc; background: #ffffff; }
+</style>
+</head>
+<body>
+<h1>Texte par défaut : contraste direct suffisant (3.2.1)</h1>
+<p>Ce paragraphe, tel que la page se charge, a un contraste bien supérieur à
+4.5:1 : axe ne doit rien y voir à redire.</p>
+
+<button type="button" onclick="document.body.classList.toggle('high-contrast')">
+  Afficher un rapport de contraste conforme
+</button>
+<p>Une fois le mécanisme activé, ce même texte passe à un gris clair sur fond
+blanc — un rapport bien inférieur à 4.5:1. C'est précisément ce que 3.2.5
+interroge, et qu'aucun scan statique de la page au chargement ne peut voir :
+le mécanisme n'est jamais activé.</p>
+</body>
+</html>

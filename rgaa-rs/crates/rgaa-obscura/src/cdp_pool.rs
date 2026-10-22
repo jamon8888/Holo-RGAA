@@ -346,13 +346,21 @@ async fn run_axe_core_static(
     extract_axe_violations(&result)
 }
 
-/// Pull the violations array out of a `Runtime.evaluate` response for `axe.run()`.
+/// Pull what the mapper needs out of a `Runtime.evaluate` response for `axe.run()`.
 ///
 /// `axe.run()` resolves to the full run object — `{violations, passes, incomplete,
-/// inapplicable, testEngine, ...}` — and `AxeMapper::map` parses a **violations
-/// array**. Serialising the whole object instead hands the mapper a JSON map, which
-/// it rejects with "invalid type: map, expected a sequence", and every page of the
-/// audit fails.
+/// inapplicable, testEngine, ...}`. On en transmet **deux** champs, sous la forme
+/// `{"violations": [...], "incomplete": [...]}` :
+///
+///   * `violations`, les manquements prouvés ;
+///   * `incomplete`, les cas qu'axe n'a pas pu trancher. Les jeter ici — ce que faisait
+///     ce code — rendait un `Pass` sur un « je ne sais pas » pour tout critère à
+///     couverture complète. C'est le prérequis bloquant n° 1 de l'addendum
+///     `human-criteria-automation.md`.
+///
+/// L'enveloppe (`passes`, `inapplicable`, `testEngine`) n'est pas transmise : sérialiser
+/// l'objet entier donnait au mapper une map JSON qu'il rejetait avec "invalid type: map,
+/// expected a sequence", et toutes les pages de l'audit échouaient.
 ///
 /// The pooled session path did exactly that while the direct-connection fallback
 /// extracted the field correctly, so which path ran decided whether an audit worked.
@@ -391,14 +399,31 @@ pub(crate) fn extract_axe_violations(result: &Value) -> Result<String, String> {
         return Err("axe result 'violations' is not an array".to_string());
     }
 
+    // `incomplete` peut manquer : une passerelle ancienne, une fixture. Son absence vaut
+    // liste vide, alors que l'absence de `violations` est une erreur — sans violations on
+    // ne sait pas si la page est propre ou si axe n'a rien rendu.
+    let incomplete = value
+        .get("incomplete")
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+
+    if !incomplete.is_array() {
+        return Err("axe result 'incomplete' is not an array".to_string());
+    }
+
     // The shape check above accepts `[null]` and other malformed elements, which
     // `run_axe_batch` would then insert as a successful per-URL result. Validate the
     // elements with the same rule the single-page path uses.
-    crate::validate_axe_payload(violations)
+    crate::validate_axe_violation_array(violations)
         .map_err(|error| format!("invalid axe violations: {error}"))?;
+    crate::validate_axe_violation_array(&incomplete)
+        .map_err(|error| format!("invalid axe incomplete entries: {error}"))?;
 
-    serde_json::to_string(violations)
-        .map_err(|e| format!("failed to serialize axe violations: {e}"))
+    serde_json::to_string(&serde_json::json!({
+        "violations": violations,
+        "incomplete": incomplete,
+    }))
+    .map_err(|e| format!("failed to serialize axe violations: {e}"))
 }
 
 /// Static version of eval_js for use with pooled sessions (no &self needed)
@@ -657,8 +682,10 @@ mod tests {
     /// The regression. `axe.run()` resolves to the whole run object; the pooled path
     /// used to serialise it wholesale, so `AxeMapper::map` received a JSON map and
     /// rejected it with "invalid type: map, expected a sequence" on every page.
+    /// Depuis le prérequis bloquant n° 1, on transmet `violations` **et** `incomplete`,
+    /// mais toujours pas l'enveloppe (`passes`, `testEngine`, `inapplicable`).
     #[test]
-    fn the_violations_array_is_extracted_not_the_whole_axe_run_object() {
+    fn only_violations_and_incomplete_are_forwarded_not_the_whole_run_object() {
         let response = evaluate_response(json!({
             "violations": [{
                 "id": "image-alt",
@@ -675,22 +702,54 @@ mod tests {
         let extracted = extract_axe_violations(&response).expect("a well-formed run extracts");
         let parsed: Value = serde_json::from_str(&extracted).expect("the output is JSON");
 
+        assert_eq!(parsed["violations"].as_array().map(Vec::len), Some(1));
+        assert_eq!(parsed["violations"][0]["id"], "image-alt");
         assert!(
-            parsed.is_array(),
-            "the mapper parses a sequence, so this must be an array, got: {parsed}"
-        );
-        assert_eq!(parsed.as_array().map(Vec::len), Some(1));
-        assert_eq!(parsed[0]["id"], "image-alt");
-        assert!(
-            !extracted.contains("testEngine"),
+            !extracted.contains("testEngine") && !extracted.contains("passes"),
             "the run envelope must not be handed to the mapper: {extracted}"
         );
+    }
+
+    /// Prérequis bloquant n° 1 : les cas qu'axe n'a pas tranchés étaient jetés ici même.
+    /// Un critère à couverture complète ressortait alors `Pass` sur un « je ne sais pas ».
+    #[test]
+    fn the_incomplete_array_is_forwarded_too() {
+        let response = evaluate_response(json!({
+            "violations": [],
+            "incomplete": [{
+                "id": "color-contrast",
+                "impact": "serious",
+                "description": "Elements must have sufficient colour contrast",
+                "nodes": [{"target": ["p"], "html": "<p>x</p>"}],
+            }],
+            "passes": [],
+        }));
+
+        let extracted = extract_axe_violations(&response).expect("a well-formed run extracts");
+        let parsed: Value = serde_json::from_str(&extracted).expect("the output is JSON");
+
+        assert_eq!(parsed["incomplete"].as_array().map(Vec::len), Some(1));
+        assert_eq!(parsed["incomplete"][0]["id"], "color-contrast");
+    }
+
+    /// Un `incomplete` malformé est aussi inexploitable qu'une violation malformée :
+    /// le laisser passer reviendrait à fabriquer une revue sans preuve.
+    #[test]
+    fn a_malformed_incomplete_entry_is_rejected() {
+        let response = evaluate_response(json!({
+            "violations": [],
+            "incomplete": [{"id": "", "impact": "serious", "description": "", "nodes": []}],
+        }));
+        assert!(extract_axe_violations(&response).is_err());
     }
 
     #[test]
     fn an_empty_violations_array_is_a_clean_page_not_an_error() {
         let response = evaluate_response(json!({"violations": [], "passes": []}));
-        assert_eq!(extract_axe_violations(&response).unwrap(), "[]");
+        let extracted = extract_axe_violations(&response).unwrap();
+        let parsed: Value = serde_json::from_str(&extracted).expect("the output is JSON");
+        assert_eq!(parsed["violations"].as_array().map(Vec::len), Some(0));
+        assert_eq!(parsed["incomplete"].as_array().map(Vec::len), Some(0));
     }
 
     /// A run object with no `violations` key means axe did not produce a result we can

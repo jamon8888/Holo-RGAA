@@ -20,30 +20,211 @@ impl GapFixRules {
     fn build_snippets() -> HashMap<String, &'static str> {
         let mut m: HashMap<String, &str> = HashMap::new();
 
-        // 1.1: img/picture without alt (axe misses <picture> elements)
+        // 1.1 : quatre porteurs qu'aucune règle axe ne décide, plus le rattrapage de
+        // <picture> qu'axe manque (#366).
+        //
+        //   1.1.1 <img> sans attribut alt, y compris sous <picture> — manquement certain.
+        //   1.1.7 <embed type="image/…"> et 1.1.8 <canvas> : « possède une alternative
+        //         textuelle ET un attribut role="img" ». Quand l'auteur a posé role="img",
+        //         il a déclaré l'élément porteur d'information : l'alternative manquante est
+        //         alors un manquement décidable.
+        //   1.1.4 image réactive côté serveur (<img ismap> dans un lien) : l'applicabilité
+        //         est certaine, le mécanisme de remplacement ne se lit pas dans le DOM.
+        //
+        // Hors de ces cas, la sonde ne tranche pas : qu'un <canvas> ou un <embed> soit
+        // porteur d'information est un jugement éditorial. Un élément ni masqué ni pourvu
+        // d'alternative est signalé en revue, avec les deux branches énoncées — 1.1 s'il est
+        // informatif, 1.2 s'il est décoratif. Lui attribuer un `fail` sur 1.1 serait une
+        // non-conformité inventée dans la seconde branche. La sonde ne rend jamais `pass`.
         m.insert("1.1".into(), r#"
             (() => {
-                const imgs = document.querySelectorAll('img:not([alt])');
-                const pictureImgs = document.querySelectorAll('picture img:not([alt])');
-                const total = new Set([...imgs, ...pictureImgs]).size;
-                return JSON.stringify({ pass: total === 0, details: `${total} images without alt`, nodes: total });
+                const text = (el, attr) => (el.getAttribute(attr) || '').trim();
+                const named = (el) => ['aria-label', 'aria-labelledby', 'title']
+                    .some((attr) => text(el, attr) !== '');
+                const imageType = (el) => (el.getAttribute('type') || '')
+                    .toLowerCase().startsWith('image/');
+                const hidden = (el) => el.getAttribute('aria-hidden') === 'true';
+                const innerAlternative = (el) => (el.textContent || '').trim() !== '';
+                const adjacentFallback = (el) => {
+                    const next = el.nextElementSibling;
+                    return !!next && (next.matches('a[href], button')
+                        || !!next.querySelector('a[href], button'));
+                };
+
+                const fails = [];
+                const reviews = [];
+
+                // 1.1.1 — aucune alternative possible sans attribut alt.
+                const noAlt = new Set([
+                    ...document.querySelectorAll('img:not([alt])'),
+                    ...document.querySelectorAll('picture img:not([alt])'),
+                ]);
+                if (noAlt.size > 0) { fails.push(`1.1.1 (<img> sans alt) x${noAlt.size}`); }
+
+                // 1.1.7 / 1.1.8 — <embed type="image/…"> et <canvas>.
+                const carriers = [
+                    ['1.1.7', 'embed', 'embed[type]', imageType],
+                    ['1.1.8', 'canvas', 'canvas', () => true],
+                ];
+                for (const [test, label, selector, applies] of carriers) {
+                    const found = Array.from(document.querySelectorAll(selector)).filter(applies);
+                    const declaredImage = found.filter(
+                        (el) => el.getAttribute('role') === 'img'
+                    );
+                    const bad = declaredImage.filter(
+                        (el) => !named(el) && !innerAlternative(el) && !adjacentFallback(el)
+                    );
+                    if (bad.length > 0) {
+                        fails.push(`${test} (<${label}> role="img" sans alternative) x${bad.length}`);
+                    }
+                    const unsettled = found.filter((el) =>
+                        el.getAttribute('role') !== 'img' && !hidden(el)
+                        && !named(el) && !innerAlternative(el) && !adjacentFallback(el)
+                    );
+                    if (unsettled.length > 0) {
+                        reviews.push(`${test} (<${label}> ni masque ni pourvu d'alternative : `
+                            + `${test} s'il est informatif, 1.2 s'il est decoratif) `
+                            + `x${unsettled.length}`);
+                    }
+                }
+
+                // 1.1.4 — image réactive côté serveur.
+                const serverMaps = Array.from(document.querySelectorAll('img[ismap]'))
+                    .filter((img) => !!img.closest('a[href]'));
+                if (serverMaps.length > 0) {
+                    reviews.push(`1.1.4 (image reactive cote serveur : le mecanisme equivalent `
+                        + `ne se lit pas dans le DOM) x${serverMaps.length}`);
+                }
+
+                const count = (entries) => entries.reduce(
+                    (sum, entry) => sum + parseInt(entry.slice(entry.lastIndexOf('x') + 1), 10), 0
+                );
+
+                if (fails.length > 0) {
+                    return JSON.stringify({
+                        outcome: 'fail',
+                        pass: false,
+                        nodes: count(fails),
+                        details: `${count(fails)} element(s) porteur(s) d'information sans `
+                            + `alternative textuelle : ${fails.join(', ')}`
+                    });
+                }
+                if (reviews.length > 0) {
+                    return JSON.stringify({
+                        outcome: 'review',
+                        pass: false,
+                        nodes: count(reviews),
+                        details: `${count(reviews)} element(s) a examiner : ${reviews.join(', ')}`,
+                        reason: `le caractere informatif d'un <canvas>, d'un <embed> ou d'une `
+                            + `image reactive cote serveur ne se lit pas dans le balisage`
+                    });
+                }
+                return JSON.stringify({
+                    outcome: 'review',
+                    pass: false,
+                    nodes: 0,
+                    details: `aucun manquement decidable sur les porteurs examines`,
+                    reason: `la sonde ne couvre que 1.1.1, 1.1.4, 1.1.7 et 1.1.8 ; les autres `
+                        + `tests de 1.1 relevent d'axe-core`
+                });
             })()
         "#);
 
-        // 1.2: decorative images without alt="" or role=presentation
-        m.insert("1.2".into(), r#"
+        // 1.2 : « Chaque image DE DÉCORATION est-elle correctement ignorée ? ». Les six
+        // tests ne s'appliquent qu'aux images décoratives, et rien dans le balisage ne dit
+        // qu'une image l'est : c'est un jugement éditorial. La sonde ne tranche donc que la
+        // contradiction décidable — un élément déclaré décoratif qui porte malgré tout une
+        // alternative, ce que chaque test interdit mot pour mot — et rend `review` ailleurs.
+        // Elle ne rend jamais `pass` (#366).
+        //
+        // Les six porteurs sont examinés, avec la déclaration que chaque test exige :
+        //   1.2.1 <img>                       alt="" | aria-hidden="true" | role=presentation
+        //   1.2.2 <area> sans href            idem
+        //   1.2.3 <object type="image/…">     aria-hidden="true" seul
+        //   1.2.4 <svg>                       aria-hidden="true" seul
+        //   1.2.5 <canvas>                    aria-hidden="true" seul
+        //   1.2.6 <embed type="image/…">      aria-hidden="true" seul
+        // Pour <object> et <canvas>, « aucun texte faisant office d'alternative » entre les
+        // balises ; pour <svg>, <title>/<desc> absents ou vides et aucun attribut `title`,
+        // sur la balise comme sur ses enfants.
+        m.insert(
+            "1.2".into(),
+            r#"
             (() => {
-                const imgs = document.querySelectorAll('img');
-                let bad = 0;
-                imgs.forEach(img => {
-                    const hasAlt = img.hasAttribute('alt');
-                    const hasPresentation = img.getAttribute('role') === 'presentation';
-                    const hasAriaHidden = img.getAttribute('aria-hidden') === 'true';
-                    if (!hasAlt && !hasPresentation && !hasAriaHidden) bad++;
+                const text = (el, attr) => (el.getAttribute(attr) || '').trim();
+                // Un aria-labelledby ne vaut alternative que si ses IDREF resolvent
+                // vers du texte : un renvoi dans le vide n'expose aucun nom
+                // accessible, donc ne contredit pas un alt="" et ne doit pas
+                // fabriquer un `fail`.
+                const labelledbyText = (el) => {
+                    const ids = text(el, 'aria-labelledby');
+                    if (ids === '') { return false; }
+                    return ids.split(/\s+/).some((id) => {
+                        const target = document.getElementById(id);
+                        return !!target && (target.textContent || '').trim() !== '';
+                    });
+                };
+                const labelled = (el) => ['title', 'aria-label']
+                    .some((attr) => text(el, attr) !== '') || labelledbyText(el);
+                const imageType = (el) => (el.getAttribute('type') || '')
+                    .toLowerCase().startsWith('image/');
+                const altHidden = (el) =>
+                    (el.hasAttribute('alt') && text(el, 'alt') === '')
+                    || el.getAttribute('aria-hidden') === 'true'
+                    || el.getAttribute('role') === 'presentation'
+                    || el.getAttribute('role') === 'none';
+                const ariaHidden = (el) => el.getAttribute('aria-hidden') === 'true';
+                const innerText = (el) => (el.textContent || '').trim() !== '';
+                const svgLabelled = (el) => labelled(el)
+                    || Array.from(el.querySelectorAll('title, desc'))
+                        .some((child) => (child.textContent || '').trim() !== '')
+                    || Array.from(el.querySelectorAll('*')).some((child) => labelled(child));
+
+                const carriers = [
+                    ['1.2.1', 'img', (el) => true, altHidden,
+                        (el) => labelled(el) || text(el, 'alt') !== ''],
+                    ['1.2.2', 'area', (el) => !el.hasAttribute('href'), altHidden,
+                        (el) => labelled(el) || text(el, 'alt') !== ''],
+                    ['1.2.3', 'object', imageType, ariaHidden,
+                        (el) => labelled(el) || innerText(el)],
+                    ['1.2.4', 'svg', (el) => true, ariaHidden, svgLabelled],
+                    ['1.2.5', 'canvas', (el) => true, ariaHidden,
+                        (el) => labelled(el) || innerText(el)],
+                    ['1.2.6', 'embed', imageType, ariaHidden, labelled],
+                ];
+
+                let examined = 0;
+                const hits = [];
+                for (const [test, selector, applies, declared, competing] of carriers) {
+                    const found = Array.from(document.querySelectorAll(selector)).filter(applies);
+                    examined += found.length;
+                    const bad = found.filter((el) => declared(el) && competing(el));
+                    if (bad.length > 0) { hits.push(`${test} (<${selector}>) x${bad.length}`); }
+                }
+                const total = hits.reduce(
+                    (sum, hit) => sum + parseInt(hit.slice(hit.lastIndexOf('x') + 1), 10), 0
+                );
+
+                if (total > 0) {
+                    return JSON.stringify({
+                        outcome: 'fail',
+                        pass: false,
+                        nodes: total,
+                        details: `${total} element(s) declare(s) decoratif(s) portent malgre `
+                            + `tout une alternative textuelle : ${hits.join(', ')}`
+                    });
+                }
+                return JSON.stringify({
+                    outcome: 'review',
+                    pass: false,
+                    nodes: examined,
+                    details: `${examined} porteur(s) d'image examine(s) sur les six du `
+                        + `critere, aucune contradiction de balisage`,
+                    reason: `le caractere decoratif d'une image ne se lit pas dans le balisage`
                 });
-                return JSON.stringify({ pass: bad === 0, details: `${bad} decorative images not hidden`, nodes: bad });
             })()
-        "#);
+        "#,
+        );
 
         // 2.1: iframe without title
         m.insert("2.1".into(), r#"
@@ -890,13 +1071,18 @@ mod tests {
     }
 
     /// The coverage the registry declares is exactly what the pre-registry
-    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves).
+    /// `COMPLETE_COVERAGE` constant said (#261: no verdict moves) — à des exceptions
+    /// près, assumées : 1.1 et 1.2 en sont sorties (#366). Pour 1.1, la sonde ne regardait
+    /// que `img:not([alt])`, et le silence d'une sonde qui ignore `<canvas>` et `<embed>`
+    /// ne prouve rien. Pour 1.2, le caractère décoratif d'une image ne se lit pas dans le
+    /// balisage : la sonde ne rend plus de `pass` du tout, sur aucun des six porteurs.
+    /// 12.7 en est sortie aussi : le repérage de texte ne regarde jamais qu'une seule
+    /// page, et 12.7.2 porte sur la cohérence à travers tout un ensemble de pages. 3.2 en
+    /// est sortie aussi : le snippet renvoie `pass: true` sans condition, et 3.2.5 comme
+    /// `color-contrast` (#371) échappent de toute façon à ce qu'une sonde JS peut trancher.
     #[test]
     fn migrated_probe_coverage_matches_the_former_constant() {
-        const FORMER: &[&str] = &[
-            "1.1", "1.2", "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
-            "12.7",
-        ];
+        const FORMER: &[&str] = &["2.1", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4"];
         for id in GapFixRules::snippets().keys() {
             assert_eq!(
                 GapFixRules::covers_whole_criterion(id),

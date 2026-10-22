@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>1.2 — aria-labelledby résolu vers du texte</title></head>
+<body>
+<h1>Une image décorative dont l'aria-labelledby expose bien un nom</h1>
+<!-- Témoin de la page coverage-1-2-dangling-labelledby.html : sans lui, « pas de fail » sur
+     un aria-labelledby creux ne prouverait pas que la sonde voit encore la contradiction
+     quand l'attribut résout vraiment vers du texte. -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" aria-labelledby="libelle">
+<span id="libelle">Logo de la société Dupont</span>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>1.2 — nature indécidable</title></head>
+<body>
+<h1>Des images dont rien, dans le balisage, ne dit si elles sont décoratives</h1>
+<!-- alt non vide : conforme si l'image est informative, non conforme en 1.2.1 si elle est
+     décorative. Le balisage ne tranche pas. -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Motif ornemental en arrière-plan">
+<!-- alt vide et rien d'autre : conforme en 1.2.1 si l'image est décorative, non conforme en
+     1.1.1 si elle est informative. Le balisage ne tranche pas davantage. -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+</body>
+</html>

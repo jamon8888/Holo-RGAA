@@ -1,7 +1,7 @@
 [
  {
   "criterion_id": "1.1",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "image-alt",
    "input-image-alt",
@@ -10,7 +10,7 @@
    "svg-img-alt",
    "object-alt"
   ],
-  "deterministic": "alt présent sur <img>/role=img/<area>/<input image>/<object>/<svg>/<canvas>",
+  "deterministic": "alt présent sur <img>/role=img, <area>, <input image>, <object>, <svg> (axe + sonde img) ; <embed>, <canvas> et image réactive côté serveur NON couverts (#366)",
   "holo": "pertinence si alt vide douteux",
   "human_residual": ""
  },
@@ -114,11 +114,11 @@
  },
  {
   "criterion_id": "3.2",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "color-contrast"
   ],
-  "deterministic": "styles calculés des cas « incomplete » (dégradés, images de fond, pseudo-éléments)",
+  "deterministic": "styles calculés des cas « incomplete » (dégradés, images de fond, pseudo-éléments) ; color-contrast ne se déclenche pas via ce pipeline (#371) ; 3.2.5 (mécanisme d'affichage de contraste, une fois activé) NON couvert",
   "holo": "contraste de texte sur image de fond (vision)",
   "human_residual": ""
  },
@@ -295,14 +295,14 @@
  },
  {
   "criterion_id": "5.7",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "td-headers-attr",
    "th-has-data-cells",
    "scope-attr-valid",
    "td-has-header"
   ],
-  "deterministic": "scope/headers/id corrects, ARIA columnheader/rowheader",
+  "deterministic": "scope/headers/id corrects, ARIA columnheader/rowheader ; aucune règle axe ne vérifie la cohérence orientation/valeur de scope ou role (5.7.1/2/3/5 NON couverts, 5.7.4 seul avec appui partiel)",
   "holo": "",
   "human_residual": ""
  },
@@ -506,14 +506,14 @@
  },
  {
   "criterion_id": "9.3",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "list",
    "listitem",
    "definition-list",
    "dlitem"
   ],
-  "deterministic": "faux listes (tirets, <br>, paragraphes consécutifs)",
+  "deterministic": "structure d'une liste déjà balisée (axe) ; faux listes (tirets, <br>, paragraphes consécutifs) NON couvertes (#voir criterion_9_3_coverage)",
   "holo": "confirme les faux positifs",
   "human_residual": ""
  },
@@ -569,11 +569,11 @@
  },
  {
   "criterion_id": "10.6",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "link-in-text-block"
   ],
-  "deterministic": "distinction visuelle des liens (couleur ≥ 3:1, soulignement)",
+  "deterministic": "distinction visuelle des liens (couleur ≥ 3:1, soulignement) ; link-in-text-block rend un faux passes via ce pipeline (#371)",
   "holo": "nature du lien non évidente",
   "human_residual": ""
  },
@@ -589,12 +589,12 @@
  },
  {
   "criterion_id": "10.8",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "aria-hidden-focus",
    "hidden-content"
   ],
-  "deterministic": "CSS display:none/visibility/hidden/aria-hidden vs intention (texte caché pour AT)",
+  "deterministic": "CSS display:none/visibility/hidden/aria-hidden vs intention (texte caché pour AT) ; contenu caché sans aria-hidden ni mécanisme de révélation établi NON couvert",
   "holo": "contenu masqué à tort",
   "human_residual": ""
  },
@@ -824,12 +824,12 @@
  },
  {
   "criterion_id": "12.7",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "bypass",
    "skip-link"
   ],
-  "deterministic": "Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus",
+  "deterministic": "Playwright : 1er Tab → lien d’évitement, cible existante et visible au focus (12.7.1 seul ; 12.7.2, cohérence sur l'ensemble des pages, NON couvert)",
   "holo": "",
   "human_residual": ""
  },

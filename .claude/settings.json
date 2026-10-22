@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v basemind >/dev/null 2>&1 || exit 0; f=$(jq -r '.tool_input.file_path // empty'); [ -z \"$f\" ] && exit 0; rel=$(realpath --relative-to=\"$PWD\" \"$f\" 2>/dev/null); [ -z \"$rel\" ] && exit 0; basemind rescan \"$rel\" -q >/dev/null 2>&1 || true",
+            "async": true,
+            "timeout": 30,
+            "statusMessage": "basemind: refreshing index"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v basemind >/dev/null 2>&1 || exit 0; basemind scan -q >/dev/null 2>&1 || true",
+            "async": true,
+            "timeout": 120,
+            "statusMessage": "basemind: catching up on out-of-band changes"
+          }
+        ]
+      }
+    ]
+  }
+}

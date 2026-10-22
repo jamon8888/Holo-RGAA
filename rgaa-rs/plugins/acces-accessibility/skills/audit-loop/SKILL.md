@@ -45,9 +45,13 @@ skipping this step fails every issue.
 **Inspect every patch before applying it. Some are not applicable.**
 `remediate` proposes the same `alt=""` for criteria **1.1 and 1.2**, which are
 opposite requirements — 1.1 asks an informative image to carry a text
-alternative, 1.2 asks a decorative one to be ignored. `alt=""` satisfies 1.2
-and **defeats** 1.1, so read `criteria` on the outcome and judge the patch
-against it. `confidence` is the hardcoded string `"high"` and tells you
+alternative, 1.2 asks a decorative one to be ignored. `alt=""` is what 1.2
+**requires of an image that is genuinely decorative**, and it **defeats** 1.1.
+It does not by itself make 1.2 conforming: whether an image is decorative is
+not readable from markup, so the `gapfix-1-2` probe returns `review` unless it
+finds a decidable contradiction — markup declaring the image decorative while
+still carrying a textual alternative. Read `criteria` on the outcome and judge
+the patch against it; a `review` is not a pass. `confidence` is the hardcoded string `"high"` and tells you
 nothing.
 
 A separate syntax defect — the attribute landing after a self-closing `/`, so

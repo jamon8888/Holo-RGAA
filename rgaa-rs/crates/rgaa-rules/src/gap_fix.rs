@@ -152,8 +152,20 @@ impl GapFixRules {
             r#"
             (() => {
                 const text = (el, attr) => (el.getAttribute(attr) || '').trim();
-                const labelled = (el) => ['title', 'aria-label', 'aria-labelledby']
-                    .some((attr) => text(el, attr) !== '');
+                // Un aria-labelledby ne vaut alternative que si ses IDREF resolvent
+                // vers du texte : un renvoi dans le vide n'expose aucun nom
+                // accessible, donc ne contredit pas un alt="" et ne doit pas
+                // fabriquer un `fail`.
+                const labelledbyText = (el) => {
+                    const ids = text(el, 'aria-labelledby');
+                    if (ids === '') { return false; }
+                    return ids.split(/\s+/).some((id) => {
+                        const target = document.getElementById(id);
+                        return !!target && (target.textContent || '').trim() !== '';
+                    });
+                };
+                const labelled = (el) => ['title', 'aria-label']
+                    .some((attr) => text(el, attr) !== '') || labelledbyText(el);
                 const imageType = (el) => (el.getAttribute('type') || '')
                     .toLowerCase().startsWith('image/');
                 const altHidden = (el) =>

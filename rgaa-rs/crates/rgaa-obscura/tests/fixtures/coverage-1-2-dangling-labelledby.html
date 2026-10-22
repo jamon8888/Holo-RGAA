@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>1.2 — aria-labelledby sans cible exploitable</title></head>
+<body>
+<h1>Des images décoratives dont l'aria-labelledby n'expose aucun nom</h1>
+<!-- aria-labelledby renvoie vers un id qui n'existe pas : l'élément n'expose aucun nom
+     accessible, donc rien ne contredit le alt="". Compter l'attribut comme une alternative
+     concurrente sur sa seule présence fabriquerait une non-conformité en 1.2.1. -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" aria-labelledby="absent">
+<!-- aria-labelledby renvoie vers un élément présent mais vide : même conclusion. -->
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" aria-labelledby="vide">
+<span id="vide">   </span>
+</body>
+</html>

@@ -80,7 +80,10 @@ async fn probe_1_2_detailed(url: &str) -> Option<(CriterionStatus, usize)> {
     let mut probes = ObscuraBridge::run_gap_fix_batch(binary, vec![url.to_string()], snippets, 1)
         .await
         .expect("run_gap_fix_batch");
-    let raw = probes.remove(url).unwrap_or_default();
+    let probes_keys: Vec<String> = probes.keys().cloned().collect();
+    let raw = probes.remove(url).unwrap_or_else(|| {
+        panic!("pas de résultat de sonde pour {url} ; clés reçues : {probes_keys:?}")
+    });
     GapFixRules::parse_results(&raw).get("1.2").map(|result| {
         let nodes = result
             .violations
@@ -127,6 +130,37 @@ async fn criterion_1_2_judges_only_what_the_markup_settles() {
         Some(CriterionStatus::Fail),
         "la sonde conclut à la non-conformité de 1.2 alors qu'une image sans alt est \
          d'abord un manquement à 1.1, et qu'une image à alt non vide peut être informative"
+    );
+
+    // Témoin du couple suivant : un aria-labelledby qui résout vraiment vers du texte
+    // contredit bien le alt="", et la sonde doit continuer à le voir. Sans ce témoin,
+    // « pas de fail » sur un attribut creux ne prouverait rien.
+    let resolved = format!("http://127.0.0.1:{port}/coverage-1-2-resolved-labelledby.html");
+    let status = probe_1_2(&resolved).await;
+    eprintln!("aria-labelledby résolu vers du texte : sonde -> {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::Fail),
+        "un aria-labelledby qui expose un nom contredit le alt=\"\" : la contradiction \
+         est décidable depuis le balisage"
+    );
+
+    // Un aria-labelledby dont les IDREF ne résolvent vers rien n'expose aucun nom
+    // accessible : il ne contredit pas le alt="". Le compter sur sa seule présence
+    // fabriquait un `fail` — une non-conformité inventée, ce que 1.2 ne doit jamais faire.
+    let dangling = format!("http://127.0.0.1:{port}/coverage-1-2-dangling-labelledby.html");
+    let status = probe_1_2(&dangling).await;
+    eprintln!("aria-labelledby creux : sonde -> {status:?}");
+    assert_ne!(
+        status,
+        Some(CriterionStatus::Fail),
+        "la sonde invente une non-conformité 1.2 : un aria-labelledby dont les IDREF ne \
+         résolvent vers aucun texte n'expose pas d'alternative concurrente"
+    );
+    assert_ne!(
+        status,
+        Some(CriterionStatus::Pass),
+        "la sonde ne doit jamais conclure à la conformité de 1.2 depuis le seul balisage"
     );
 }
 

@@ -1,0 +1,31 @@
+Tu évalues un élément d'une page web comme le ferait un auditeur RGAA 4.1.2.
+
+Test RGAA {test} : {question}
+
+RÈGLE À APPLIQUER : {rule}
+
+PRÉCISION ARRÊTÉE AVEC L'AUDITEUR (campagne 5.2.1) : décrire la structure ne consiste pas seulement
+à nommer les axes du tableau. **Chaque niveau de regroupement doit être annoncé avec son effectif**,
+c'est-à-dire le nombre de groupes qu'il contient : « six produits répartis en deux catégories »,
+« cinq filières », « trois candidats ». Nommer les groupes eux-mêmes (« Jardin et Cuisine ») reste
+facultatif. Un résumé qui écrit « classés par catégorie » ou « groupées par département », sans dire
+combien il y en a, ne décrit pas assez la structure : il est NON PERTINENT.
+Un niveau d'en-tête entièrement passé sous silence rend aussi le résumé NON PERTINENT.
+
+Contexte de la page : {ctx}
+{label} : « {alt} »
+
+L'image jointe montre le tableau de données complexe concerné, sans son résumé.
+
+Juge uniquement cet élément. Procède dans l'ordre :
+(1) ce_que_dit_le_texte : résume en une phrase ce que dit le résumé proposé, en ne regardant que lui ;
+(2) niveaux_du_tableau : d'après l'image, énumère les niveaux d'en-têtes (lignes et colonnes) et,
+    pour chacun, le nombre de groupes qu'il contient ;
+(3) niveaux_couverts : pour chaque niveau, dis si le résumé l'annonce avec son effectif, le mentionne
+    sans effectif, ou l'omet ;
+(4) justification : explique en une ou deux phrases ce qui manque, ou pourquoi le résumé convient ;
+(5) verdict : « pertinent », « non_pertinent » ou « incertain » (uniquement en cas de vrai doute) ;
+(6) confiance : un nombre entre 0 et 1.
+
+Réponds uniquement par un objet JSON avec les champs : ce_que_dit_le_texte, niveaux_du_tableau,
+niveaux_couverts, justification, verdict, confiance.

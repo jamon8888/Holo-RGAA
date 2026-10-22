@@ -157,14 +157,32 @@ def main():
         fp = sum(1 for x, y in pairs if x == VERDICTS[1] and y == VERDICTS[0])
         rejets = sum(1 for x, _ in pairs if x == VERDICTS[1])
         fn = sum(1 for x, y in pairs if x == VERDICTS[0] and y == VERDICTS[1])
+        acceptations = sum(1 for x, _ in pairs if x == VERDICTS[0])
         print(f"== MODÈLE vs HUMAIN : {pct(agree, len(pairs))}   kappa = {kappa(pairs):+.2f}")
         print(f"   faux « pertinent » : {fp} / {rejets} rejets"
-              f" = {fp/rejets:.0%}" if rejets else "")
-        print(f"   faux « non pertinent » : {fn}")
-        seuil = "ADMIS" if (len(ok) == len(anchors) and rejets and fp / rejets <= 0.10) else "REFUSÉ"
-        print(f"\n   seuil d'admission (§4 du protocole) : **{seuil}**"
-              f"  — ancres {len(ok)}/{len(anchors)}, faux « pertinent » "
-              f"{(fp/rejets if rejets else 0):.0%} pour un plafond de 10 %")
+              f" = {fp/rejets:.0%}  (plafond 10 % — une non-conformité manquée)" if rejets else "")
+        print(f"   faux « non pertinent » : {fn} / {acceptations} acceptations"
+              f" = {fn/acceptations:.0%}  (plafond 25 % — du travail de revue inutile)"
+              if acceptations else f"   faux « non pertinent » : {fn}")
+
+        # Quatre conditions. La dernière interdit qu'un modèle passe en répondant
+        # presque toujours la même chose : son accord doit dépasser le repère trivial
+        # avec des intervalles de Wilson disjoints.
+        lo_m, _ = wilson(agree, len(pairs))
+        _, hi_t = wilson(triv_n, len(tranches))
+        cond = [
+            ("ancres", len(ok) == len(anchors), f"{len(ok)}/{len(anchors)}"),
+            ("faux « pertinent »", bool(rejets) and fp / rejets <= 0.10,
+             f"{(fp/rejets if rejets else 0):.0%} / 10 %"),
+            ("faux « non pertinent »", bool(acceptations) and fn / acceptations <= 0.25,
+             f"{(fn/acceptations if acceptations else 0):.0%} / 25 %"),
+            ("au-dessus du repère trivial", lo_m > hi_t,
+             f"IC modèle [{lo_m:.0%} ; …] contre repère trivial [… ; {hi_t:.0%}]"),
+        ]
+        seuil = "ADMIS" if all(c[1] for c in cond) else "REFUSÉ"
+        print(f"\n   seuil d'admission (§4 du protocole) : **{seuil}**")
+        for nom, passe, detail in cond:
+            print(f"      {'ok   ' if passe else 'ÉCHEC'} {nom} : {detail}")
 
 
 if __name__ == "__main__":

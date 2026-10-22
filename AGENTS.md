@@ -9,6 +9,13 @@ Comprehensive rules for writing idiomatic, fast, and safe Rust code. Current for
 - **Return `Result<T, E>` instead of panicking** for recoverable errors
 - **Borrow over clone** — prefer `&T` and `&[T]` to avoid unnecessary heap allocations
 
+## Tooling: basemind
+
+This repo is indexed by basemind — prefer it over `grep`, opening files to learn structure,
+and naked `git log`/`blame`. Full routing table, memory policy, and rescan automation live in
+[CLAUDE.md](CLAUDE.md#basemind--prefer-it-over-grep--read--git); kept there, not duplicated
+here, so one place stays authoritative.
+
 ---
 
 ## Project: rgaa-rs

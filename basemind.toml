@@ -53,16 +53,23 @@
 
 [documents]
 # Document RAG tier (PDF / Office / HTML / email / images). Requires a `documents` build.
-# enabled = true
+enabled = true
 # Embed documents for semantic search. ON by default — embeddings pay off on real prose / OCR.
-# embed = true
+embed = true
 # Embedding model preset. Changing it forces a FULL RE-EMBED of the corpus (time + CPU): every
 # document is re-encoded at the new model's dimension.
 #   fast        — smallest / fastest, lowest quality
 #   balanced    — default; 768-dim, good quality/cost tradeoff
 #   quality     — larger model, best English quality, slower
 #   multilingual— multilingual model for non-English corpora
-# embedding_preset = "balanced"
+# "quality" (bge-large-en-v1.5, 335M params) a tourne plus de 40 min a 960%+ CPU sur cette
+# machine CPU-only pour deux notes de recherche : disproportionne pour la taille du corpus.
+# "fast" DECLENCHE UN BUG dans cette version : preset_dim("fast") attend 384 mais l'embedder
+# calcule reellement 768 a l'execution (src/scanner_docs.rs:616, "preset/runtime dim
+# mismatch"), donc basemind refuse d'ecrire la moindre ligne et la table reste vide en
+# permanence. "balanced" (le defaut documente, 768-dim) est le seul preset verifie ici :
+# c'est celui qui a cree le store avec succes avant toute modification de ce fichier.
+embedding_preset = "balanced"
 # Globs for documents that are still extracted + indexed but NOT embedded (keyword-only).
 # embed_exclude = []
 # Route archives (.zip/.tar/.jar/…) into the recursive archive extractor. Off by default so one
@@ -71,12 +78,15 @@
 
 [code_search]
 # Semantic code-search tier. Requires a `code-search` build.
-# enabled = true
+enabled = true
 # Embed source code for VECTOR search. OFF by default — local embeddings on code aren't worth the
 # cost (code is embedded with a general English model, and NL→symbol is already served by the BM25
 # keyword lane over the same text). Chunking + BM25 keyword search work regardless. Turn on only if
 # you specifically want vector search over code (downloads an ONNX model, re-embeds on preset change).
-# embed = false
+# Desactive : sur CPU seul, ce flag ajoute un deuxieme modele ONNX et re-embed tout le code
+# a chaque scan sur 20 crates. Le commentaire d'origine ci-dessus a raison sur cette machine
+# -> BM25/mots-cles suffit, pas de gain mesure qui justifie le cout.
+embed = false
 # Globs for source files that are still chunked + BM25-indexed but NOT embedded (only used when
 # embed = true).
 # embed_exclude = []

@@ -259,3 +259,92 @@ Two bots review pull requests here, and only one of them runs on its own:
 So the absence of CodeRabbit findings on a PR means nothing was asked, not that nothing was found. Decide per PR whether to request one; a small, well-tested change with a clean Sourcery review does not need it.
 
 Whatever review does arrive, treat its inline comments and summary like feedback from a human reviewer: read them before merging, and address or explicitly dismiss each finding rather than ignoring it.
+
+<!-- BEGIN basemind (managed by `basemind init`) -->
+
+## basemind — prefer it over grep / read / git
+
+basemind is this repo's indexed context layer. Prefer it BEFORE grep, before reading files to find structure, and before naked `git` — it's the default, not a preference. basemind returns paths, lines, and signatures at a fraction of the tokens of reading source.
+
+### Routing
+
+| Reach for | Instead of |
+|---|---|
+| `code` modes `symbols` / `definition` / `references` / `callers` / `implementations` / `grep`, `graph` mode `calls` | `grep` / `rg` / opening files to find a symbol |
+| `code` mode `outline` (code files only) / `graph` mode `map` | reading whole files to learn their shape |
+| `git` modes `recent` / `blame_symbol` / `touching` / `diff` | `git log` / `git blame` / `git diff` |
+| `code` mode `find` (fuzzy path search) | `find` / `fd` / `ls -R` to locate a file by name |
+| `agents` (modes `post` / `inbox` / `thread_list`) | assuming you're the only agent in the repo |
+| `workspace` (modes `workspaces` / `worktrees` / `claim`) | editing a worktree another session may already own |
+| `memory` mode `documents` (PDFs, Office, markdown, config and data files; the code map holds code only) / `web` (modes `scrape` / `crawl` / `map`) | manually reading PDFs / docs / config files or ad-hoc fetching |
+| `code` mode `semantic` (then `chunk`) | keyword-only guessing at where a concept lives |
+
+### Red flags — stop and re-route
+
+- About to `grep` / `rg`? → `code` mode `grep`.
+- About to open a file just to find a symbol? → `code` modes `outline` / `symbols`.
+- About to `git log` / `git blame`? → `git` modes `recent` / `blame_symbol`.
+- Already mapped a file with basemind? Don't re-read it.
+
+### Setup & maintenance
+
+- Install the basemind Claude Code plugin from its marketplace (`/plugin marketplace add Goldziher/basemind`, then install `basemind`).
+- Keep basemind current: enable plugin auto-update, or update the binary regularly so the index format and tools stay in sync.
+- Re-run `basemind init` (or `/bm-init`) after enabling new capabilities to refresh this block.
+
+<!-- END basemind -->
+
+### basemind: project-specific policy
+
+The block above is managed by `basemind init` and gets overwritten on re-run; everything
+below it is this project's own policy and survives that.
+
+**Version.** Pin to the npm release, not whatever shipped at install time: a stale binary
+silently loses features. We hit this directly — `basemind@0.23.1` was installed (7 minor
+versions behind) and lacked the markdown/JSON/YAML/CSV → documents-tier routing that landed
+in 0.29.0, so `reports/` and `research_notes/` were parsed as *code* (tree-sitter) and never
+embedded or semantically searchable, with no error to say so. `npm install -g basemind@latest`
+fixed it silently — no config change needed. Check `basemind --version` against `npm view
+basemind version` occasionally; a mismatch this large is the kind of thing that breaks a whole
+subsystem without ever raising.
+
+**Config: `basemind.toml` (committed).** `[documents] embedding_preset = "balanced"`. Two
+other presets were tried and rejected, and the reasons are worth keeping so nobody retries them
+blind:
+- `"quality"` (bge-large-en-v1.5, 335M params): ran 40+ minutes at 960%+ CPU on a CPU-only dev
+  box for two small research notes. Correct output, wrong cost for this corpus.
+- `"fast"`: hit a real bug in the then-installed 0.23.1 binary — `preset_dim("fast")` expects
+  384 dims but the embedder actually produced 768, so every write was silently refused
+  (`preset/runtime dim mismatch`) and the documents table stayed empty with no visible error.
+  Confirmed fixed by the 0.30.0 upgrade; not re-verified since `"balanced"` already works.
+- `[code_search] embed = false`: left off. BM25/keyword search over code is free with scanning;
+  vector embeddings on code are a second ONNX model and a second full re-embed pass for a gain
+  nobody has measured a need for here. Flip it on only with a concrete reason.
+
+**Shared agent memory (`basemind memory`).** Visibility defaults to `group` — every agent
+working this repo reads and writes the same notes; `individual` is this agent's own scratch,
+invisible to others.
+- `put` a durable fact nobody could re-derive from the code or git history in under a minute:
+  an architectural decision and *why* (not just what), a measured number (a benchmark, a
+  timeout that needed tuning), a dead end worth not retrying (a config that looked right and
+  wasn't, a workaround for a tool bug). Tag it so `list`/`search` can filter later.
+- Don't `put` what the repo already records (that's what `code`/`git` modes are for) or
+  anything that only matters to the current task.
+- Before starting unfamiliar work in this repo, `search` or `list` first — another agent (or a
+  past session) may have already found the gotcha.
+- Run `audit` occasionally (`dry_run: true` first) to catch notes that drifted from the code
+  they describe; a note that no longer matches what it references is worse than no note.
+
+**Keeping the index fresh.**
+- `.claude/settings.json` (committed): a `PostToolUse` hook on `Write|Edit|MultiEdit` runs
+  `basemind rescan <path>` incrementally after every file Claude touches, and a `SessionStart`
+  hook runs a quiet full `basemind scan -q` to catch changes from outside Claude (`git pull`,
+  another agent, a manual edit). Both are `async: true` (fire-and-forget, never block the tool
+  call or session start) and silently no-op if `basemind` isn't on `PATH` — this repo must stay
+  usable on a machine without it installed.
+- `.git/hooks/pre-commit` (installed via `basemind hook install`, **not committed** — git
+  hooks never are; re-run the install command on a fresh clone): runs `basemind scan --staged`
+  before every commit, fail-open so a `basemind` problem never blocks a commit.
+- None of this replaces running `basemind rescan` yourself after a large out-of-band change
+  (a rebase, a branch switch) if you need the index current *right now* rather than on the
+  next edit.

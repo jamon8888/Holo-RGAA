@@ -295,14 +295,14 @@
  },
  {
   "criterion_id": "5.7",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "td-headers-attr",
    "th-has-data-cells",
    "scope-attr-valid",
    "td-has-header"
   ],
-  "deterministic": "scope/headers/id corrects, ARIA columnheader/rowheader",
+  "deterministic": "scope/headers/id corrects, ARIA columnheader/rowheader ; aucune règle axe ne vérifie la cohérence orientation/valeur de scope ou role (5.7.1/2/3/5 NON couverts, 5.7.4 seul avec appui partiel)",
   "holo": "",
   "human_residual": ""
  },

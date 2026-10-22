@@ -391,8 +391,14 @@ genuinely ambiguous and now returns `NeedsReview` rather than a guess.
 
 Criteria **1.1** and **1.2** received the *identical* `alt=""` patch. They are
 opposite requirements: 1.1 asks an informative image to carry a text
-alternative, 1.2 asks a decorative one to be ignored. `alt=""` satisfies 1.2 and
-defeats 1.1.
+alternative, 1.2 asks a decorative one to be ignored. `alt=""` is what 1.2
+requires of an image that is genuinely decorative, and it defeats 1.1.
+
+It does not make 1.2 conforming on its own. Decorativeness is an editorial
+judgement that markup does not carry, so `gapfix-1-2` only ever returns `fail`
+on a decidable contradiction — markup declaring the image decorative while it
+still exposes a textual alternative — and `review` otherwise. It never returns
+`pass`.
 
 So read `criteria` on the outcome and judge the patch against it. Remember
 `confidence` is the hardcoded string `"high"` and carries no signal.

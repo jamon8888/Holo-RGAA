@@ -69,7 +69,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 5.4 | `Deterministic` | `table-fake-caption` | conforming |
 | 5.5 | `Holo` | — | **nothing** — not evaluated here |
 | 5.6 | `Holo` | `th-has-data-cells`, `scope-attr-valid`, `td-has-header` | **nothing** — not evaluated here |
-| 5.7 | `AxeCore` | `td-headers-attr`, `th-has-data-cells`, `scope-attr-valid`, `td-has-header` | conforming |
+| 5.7 | `Deterministic` | `td-headers-attr`, `th-has-data-cells`, `scope-attr-valid`, `td-has-header` | conforming |
 | 5.8 | `Deterministic` | — | conforming |
 | 6.1 | `Holo` | `identical-links-same-purpose` | **nothing** — not evaluated here |
 | 6.2 | `AxeCore` | `link-name` | conforming |

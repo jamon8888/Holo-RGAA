@@ -125,7 +125,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 12.4 | `Deterministic` | — | conforming |
 | 12.5 | `Deterministic` | — | conforming |
 | 12.6 | `Deterministic` | `landmark-one-main`, `region`, `landmark-unique`, `landmark-banner-is-top-level` | conforming |
-| 12.7 | `AxeCore` | `bypass`, `skip-link` | conforming |
+| 12.7 | `Deterministic` | `bypass`, `skip-link` | conforming |
 | 12.8 | `Deterministic` | `focus-order-semantics` | **nothing conclusive** — residual judgement |
 | 12.9 | `Deterministic` | — | conforming |
 | 12.10 | `Deterministic` | `accesskeys` | conforming |

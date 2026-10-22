@@ -84,7 +84,10 @@ async fn criterion_10_6_never_passes_on_a_link_distinguished_by_color_alone() {
         .run_axe_batch(vec![url.clone()], 1)
         .await
         .expect("run_axe_batch");
-    let violations = axe.remove(&url).unwrap_or_default();
+    let axe_keys: Vec<String> = axe.keys().cloned().collect();
+    let violations = axe
+        .remove(&url)
+        .unwrap_or_else(|| panic!("pas de résultat axe pour {url} ; clés reçues : {axe_keys:?}"));
     let mapped = AxeMapper::map(&violations).expect("mapping axe");
     let status = mapped.get("10.6").map(|r| r.status.clone());
     eprintln!("lien distingué uniquement par une couleur proche : axe -> {status:?}");

@@ -97,7 +97,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 10.3 | `Holo` | — | **nothing** — not evaluated here |
 | 10.4 | `Deterministic` | `meta-viewport` | **nothing conclusive** — residual judgement |
 | 10.5 | `Deterministic` | — | conforming |
-| 10.6 | `AxeCore` | `link-in-text-block` | **nothing conclusive** — residual judgement |
+| 10.6 | `Deterministic` | `link-in-text-block` | **nothing conclusive** — residual judgement |
 | 10.7 | `Deterministic` | `focus-order-semantics` | **nothing conclusive** — residual judgement |
 | 10.8 | `AxeCore` | `aria-hidden-focus`, `hidden-content` | **nothing conclusive** — residual judgement |
 | 10.9 | `Holo` | — | **nothing** — not evaluated here |

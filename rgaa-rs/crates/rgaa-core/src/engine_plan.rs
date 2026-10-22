@@ -111,8 +111,10 @@ mod tests {
         // valident qu'une liste déjà balisée, jamais une liste visuelle sans balisage.
         // 12.7 aussi : `bypass`/`skip-link` n'examinent qu'une seule page, et 12.7.2 porte
         // sur la cohérence du lien d'évitement à travers tout un ensemble de pages.
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 10);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 56);
+        // 3.2 aussi : `color-contrast` ne se déclenche pas via ce pipeline (#371), et 3.2.5
+        // porte sur un mécanisme d'affichage de contraste qu'axe n'active jamais.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 9);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 57);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

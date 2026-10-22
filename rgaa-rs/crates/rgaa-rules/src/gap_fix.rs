@@ -1077,12 +1077,12 @@ mod tests {
     /// ne prouve rien. Pour 1.2, le caractère décoratif d'une image ne se lit pas dans le
     /// balisage : la sonde ne rend plus de `pass` du tout, sur aucun des six porteurs.
     /// 12.7 en est sortie aussi : le repérage de texte ne regarde jamais qu'une seule
-    /// page, et 12.7.2 porte sur la cohérence à travers tout un ensemble de pages.
+    /// page, et 12.7.2 porte sur la cohérence à travers tout un ensemble de pages. 3.2 en
+    /// est sortie aussi : le snippet renvoie `pass: true` sans condition, et 3.2.5 comme
+    /// `color-contrast` (#371) échappent de toute façon à ce qu'une sonde JS peut trancher.
     #[test]
     fn migrated_probe_coverage_matches_the_former_constant() {
-        const FORMER: &[&str] = &[
-            "2.1", "3.2", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4",
-        ];
+        const FORMER: &[&str] = &["2.1", "6.1", "8.3", "8.5", "10.2", "10.14", "11.1", "11.4"];
         for id in GapFixRules::snippets().keys() {
             assert_eq!(
                 GapFixRules::covers_whole_criterion(id),

@@ -52,13 +52,22 @@ axe_rules = ["frame-title", "frame-title-unique", "frame-focusable-content"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Complete: the criterion has one test - every frame has a frame title - and frame-title decides exactly that, so axe's silence proves it. This is what disproves the NotAutomatable label (#201 AC4)." }
 
 [[mechanism]]
+# 3.2 est resté « complète » jusqu'ici pour deux raisons distinctes, chacune suffisante :
+# (1) 3.2.5 porte sur le mécanisme d'affichage de contraste une fois activé — un scan
+# statique au chargement ne clique jamais sur rien ; (2) en instrumentant l'exécution
+# réelle, `color-contrast` ne se déclenche carrément jamais via ce pipeline (ni violation,
+# ni `incomplete` — toujours `inapplicable`), alors que la même version d'axe-core la
+# détecte sans ambiguïté dans un Chrome normal sur une violation flagrante (#371, défaut
+# d'infrastructure du navigateur piloté par obscura, hors du périmètre de ce fichier). Un
+# `Pass` sur le silence d'axe y était fabriqué dans les deux cas (voir
+# `criterion_3_2_coverage.rs`).
 id        = "axe-3-2"
 criterion = "3.2"
 kind      = "axe-native"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["3.2.1", "3.2.2", "3.2.3", "3.2.4"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["color-contrast"]
@@ -499,13 +508,20 @@ fixtures  = []
 legacy    = true
 
 [[mechanism]]
+# Le snippet (`gap_fix.rs`) renvoie `pass: true` sans condition, quel que soit le contenu
+# de la page — il compte un nombre de « paires de couleurs suspectes » puis l'ignore
+# totalement pour le verdict. En couverture complète, ce `pass` systématique suffisait à
+# lui seul à fabriquer un `Pass` sur 3.2, indépendamment d'axe. Passé en partiel, ce `pass`
+# codé en dur est neutralisé (`covers_whole_criterion` ne l'emporte plus jamais) ; la
+# logique du snippet elle-même reste à revoir séparément si on veut qu'il serve à quelque
+# chose.
 id        = "gapfix-3-2"
 criterion = "3.2"
 kind      = "js-static"
 engine    = "obscura"
-coverage  = "complete"
-tests     = []
-outcomes  = ["fail", "pass"]
+coverage  = "partial"
+tests     = ["3.2.1", "3.2.2", "3.2.3", "3.2.4"]
+outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 

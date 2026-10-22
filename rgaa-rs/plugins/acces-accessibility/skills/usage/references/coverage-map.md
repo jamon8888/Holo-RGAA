@@ -48,7 +48,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 2.1 | `AxeCore` | `frame-title`, `frame-title-unique` | conforming |
 | 2.2 | `Holo` | — | **nothing** — not evaluated here |
 | 3.1 | `Holo` | `link-in-text-block` | **nothing** — not evaluated here |
-| 3.2 | `AxeCore` | `color-contrast` | **nothing conclusive** — residual judgement |
+| 3.2 | `Deterministic` | `color-contrast` | **nothing conclusive** — residual judgement |
 | 3.3 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 4.1 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 4.2 | `Human` | — | **nothing** — not evaluated here |

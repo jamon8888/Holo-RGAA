@@ -115,8 +115,10 @@ mod tests {
         // porte sur un mécanisme d'affichage de contraste qu'axe n'active jamais.
         // 10.6 aussi : `link-in-text-block` rend un faux `passes` via ce même pipeline
         // (#371), confirmé contre un vrai Chrome sur la même page.
-        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 8);
-        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 58);
+        // 10.8 aussi : `aria-hidden-focus`/`hidden-content` ne décident jamais l'intention
+        // d'un contenu caché par CSS et non marqué aria-hidden.
+        assert_eq!(EnginePlan::owned_by(PlanEngine::AxeCore).len(), 7);
+        assert_eq!(EnginePlan::owned_by(PlanEngine::Deterministic).len(), 59);
         assert_eq!(EnginePlan::owned_by(PlanEngine::Holo).len(), 32);
 
         let human: std::collections::HashSet<&str> = EnginePlan::owned_by(PlanEngine::Human)

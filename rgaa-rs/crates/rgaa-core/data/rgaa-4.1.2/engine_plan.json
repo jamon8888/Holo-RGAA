@@ -589,12 +589,12 @@
  },
  {
   "criterion_id": "10.8",
-  "primary": "AxeCore",
+  "primary": "Deterministic",
   "axe_rules": [
    "aria-hidden-focus",
    "hidden-content"
   ],
-  "deterministic": "CSS display:none/visibility/hidden/aria-hidden vs intention (texte caché pour AT)",
+  "deterministic": "CSS display:none/visibility/hidden/aria-hidden vs intention (texte caché pour AT) ; contenu caché sans aria-hidden ni mécanisme de révélation établi NON couvert",
   "holo": "contenu masqué à tort",
   "human_residual": ""
  },

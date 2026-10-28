@@ -79,7 +79,8 @@ class PartialExportBuild(unittest.TestCase):
         labels = export(self.tmp, "a.json", {f"u{i:02d}": "pertinent" for i in range(9, 21)})
         _, err = run(recheck.cmd_build, build_args(d, labels))
         self.assertIn("8 carte(s)", err, "l'absence d'étiquette sur 8 cartes n'est pas signalée")
-        self.assertIn("u01", err)
+        for q in (f"u{i:02d}" for i in range(1, 9)):
+            self.assertIn(q, err, f"{q} n'est pas nommée alors qu'elle est ignorée")
 
     def test_divergent_cards_are_still_flagged_on_a_partial_export(self):
         d = lot(self.tmp, 20)
@@ -109,6 +110,55 @@ class PartialExportBuild(unittest.TestCase):
         labels = export(self.tmp, "a.json", {})
         with self.assertRaises(SystemExit):
             run(recheck.cmd_build, build_args(d, labels))
+
+    def divergent_export(self, n_cards, divergent):
+        """Export complet où les cartes `divergent` (qids) contredisent la règle, les autres la suivent."""
+        verdicts = {}
+        for i in range(1, n_cards + 1):
+            q = f"u{i:02d}"
+            follows = "pertinent" if i % 2 else "non_pertinent"          # = la règle
+            contradicts = "non_pertinent" if i % 2 else "pertinent"
+            verdicts[q] = contradicts if q in divergent else follows
+        return export(self.tmp, "a.json", verdicts)
+
+    def sample(self, d):
+        key = self.recheck_key(d)
+        divergent = [v for v in key.values() if (v["first"] == "pertinent") != (v["pred"] == "P")]
+        return key, divergent
+
+    def test_the_sample_keeps_at_least_as_many_concordant_cards_as_divergent_ones(self):
+        """Protocole §3 : sinon la re-vérification fabrique l'accord (lot R : 17 divergentes sur 21)."""
+        d = lot(self.tmp, 30)
+        # 8 divergentes sur 30. Avant le correctif : n=14 -> 6 concordantes seulement, 6 < 8.
+        labels = self.divergent_export(30, {f"u{i:02d}" for i in range(1, 9)})
+        _, err = run(recheck.cmd_build, build_args(d, labels, n=14))
+        key, divergent = self.sample(d)
+        concordant = len(key) - len(divergent)
+        self.assertEqual(len(divergent), 8)
+        self.assertGreaterEqual(concordant, len(divergent),
+                                f"{concordant} concordantes pour {len(divergent)} divergentes")
+        self.assertNotIn("déséquilibr", err)
+
+    def test_an_unbalanceable_sample_is_warned_not_hidden(self):
+        """Pas assez de cartes concordantes dans l'export : on le dit au lieu de publier un biais muet."""
+        d = lot(self.tmp, 20)
+        # 14 divergentes, 6 concordantes seulement : l'équilibre est impossible.
+        labels = self.divergent_export(20, {f"u{i:02d}" for i in range(1, 15)})
+        _, err = run(recheck.cmd_build, build_args(d, labels, n=14))
+        key, divergent = self.sample(d)
+        self.assertEqual(len(key) - len(divergent), 6, "toutes les concordantes disponibles doivent être prises")
+        self.assertIn("déséquilibré", err)
+        self.assertIn("6", err)
+        self.assertIn("14", err)
+
+    def test_a_repeated_extra_card_is_resubmitted_once(self):
+        """Un doublon ferait compter deux fois la même carte dans la cohérence mesurée."""
+        d = lot(self.tmp, 20)
+        labels = self.divergent_export(20, set())
+        run(recheck.cmd_build, build_args(d, labels, extra="u03,u03,u03"))
+        origs = [v["orig"] for v in self.recheck_key(d).values()]
+        self.assertEqual(origs.count("u03"), 1, f"u03 re-soumise {origs.count('u03')} fois")
+        self.assertEqual(len(origs), len(set(origs)), "une carte apparaît plusieurs fois")
 
     def test_a_full_export_behaves_as_before(self):
         d = lot(self.tmp, 20)

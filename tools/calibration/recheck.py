@@ -63,9 +63,13 @@ def cmd_build(a):
     if unlabeled:
         print(f"{len(unlabeled)} carte(s) du lot sans étiquette valide dans cet export, non re-soumises : "
               f"{', '.join(unlabeled)}", file=sys.stderr)
-    flagged = [q for q in labeled
-               if (first_verdict(labels, q) == VERDICTS[0]) != (key[q]["pred"] == "P")]   # humain != prédiction
-    extra = [q for q in (a.extra.split(",") if a.extra else []) if q in key and q not in flagged]
+    divergent = [q for q in labeled
+                 if (first_verdict(labels, q) == VERDICTS[0]) != (key[q]["pred"] == "P")]   # humain != prédiction
+    flagged = list(divergent)
+    # `dict.fromkeys` : une carte répétée dans --extra serait re-soumise plusieurs fois, et
+    # `compare` la compterait autant de fois dans la cohérence mesurée.
+    extra_ids = list(dict.fromkeys(q for q in (a.extra.split(",") if a.extra else []) if q))
+    extra = [q for q in extra_ids if q in key and q not in flagged]
     # Une carte demandée explicitement mais jamais étiquetée n'a pas de 1re passe à comparer :
     # l'écarter en silence ferait croire qu'elle a été re-vérifiée.
     missing = [q for q in extra if q not in labeled]
@@ -78,7 +82,13 @@ def cmd_build(a):
     by_v = {v: [q for q in rest if first_verdict(labels, q) == v] for v in VERDICTS}
     for v in by_v:
         rng.shuffle(by_v[v])
-    need = max(0, a.n - len(flagged))
+    # Protocole §3 : « au moins autant de cartes concordantes que de cartes divergentes ». Sur une
+    # carte choisie parce que l'étiqueteur s'écarte de la règle, tout changement de verdict ne peut
+    # aller que vers la règle : un échantillon dominé par les divergentes fabrique l'accord (lot R,
+    # 17 divergentes sur 21 : 9 changements sur 9 vers la prédiction). Compléter jusqu'à `n` ne
+    # suffit donc pas ; l'équilibre passe avant `n`, qui n'est qu'une cible. Les cartes --extra
+    # suivent la règle (elles ne sont pas divergentes) : elles comptent comme concordantes.
+    need = max(0, a.n - len(flagged), len(divergent) - len(extra))
     pick = []
     while len(pick) < need and (by_v[VERDICTS[0]] or by_v[VERDICTS[1]]):
         for v in VERDICTS:
@@ -86,6 +96,12 @@ def cmd_build(a):
                 pick.append(by_v[v].pop())
     chosen = flagged + pick
     rng.shuffle(chosen)
+    concordant = len(extra) + len(pick)
+    if concordant < len(divergent):
+        print(f"ATTENTION : échantillon déséquilibré : {concordant} carte(s) concordante(s) pour "
+              f"{len(divergent)} divergente(s). Le protocole (§3) exige au moins autant de concordantes ; "
+              f"l'export n'en contient pas assez, et un changement de verdict ne pourra aller que vers la "
+              f"règle. La stabilité mesurée serait biaisée : à ne pas publier telle quelle.", file=sys.stderr)
 
     new_items, new_key = [], {}
     for n, orig in enumerate(chosen, 1):

@@ -103,21 +103,37 @@ pub(crate) fn validate_axe_violation_array(
             serde_json::from_value::<AxeViolationPayload>(item.clone()).map_err(|error| {
                 ObscuraError::Json(format!("invalid axe violation at index {index}: {error}"))
             })?;
-        if violation.id.trim().is_empty()
-            || violation.description.trim().is_empty()
-            || violation.nodes.is_empty()
-        {
+        // Name the rule and the empty field: « required fields are empty » alone sent a
+        // CI run chasing which of the three it was, on an entry it could not identify.
+        let mut empty = Vec::new();
+        if violation.id.trim().is_empty() {
+            empty.push("id");
+        }
+        if violation.description.trim().is_empty() {
+            empty.push("description");
+        }
+        if violation.nodes.is_empty() {
+            empty.push("nodes");
+        }
+        if !empty.is_empty() {
             return Err(ObscuraError::Json(format!(
-                "invalid axe violation at index {index}: required fields are empty"
+                "invalid axe violation at index {index} (rule '{}'): required fields are empty: {}",
+                violation.id,
+                empty.join(", ")
             )));
         }
-        if violation
+        if let Some((node_index, node)) = violation
             .nodes
             .iter()
-            .any(|node| node.target.is_empty() || node.html.trim().is_empty())
+            .enumerate()
+            .find(|(_, node)| node.target.is_empty() || node.html.trim().is_empty())
         {
             return Err(ObscuraError::Json(format!(
-                "invalid axe violation at index {index}: malformed node"
+                "invalid axe violation at index {index} (rule '{}'): malformed node at index \
+                 {node_index} (target empty: {}, html blank: {})",
+                violation.id,
+                node.target.is_empty(),
+                node.html.trim().is_empty()
             )));
         }
         payload.push(violation);

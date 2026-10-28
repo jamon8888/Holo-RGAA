@@ -9,3 +9,6 @@ edition = "2021"
 rgaa-core = { path = "../rgaa-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Abonné `tracing` des tests E2E : sans lui, les `warn!` du pont (« axe-core failed »,
+# avec la raison) vont nulle part et un test échoue sans dire pourquoi.
+tracing-subscriber = { workspace = true }

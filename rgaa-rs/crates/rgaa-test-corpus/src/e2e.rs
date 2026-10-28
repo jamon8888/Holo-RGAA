@@ -22,6 +22,7 @@
 pub fn enabled(test_name: &str) -> bool {
     let run_e2e = std::env::var("RUN_E2E").ok();
     if run_e2e.as_deref() == Some("1") {
+        init_tracing();
         return true;
     }
     assert!(
@@ -46,4 +47,20 @@ pub fn enabled(test_name: &str) -> bool {
 pub fn allow_private_network() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1"));
+}
+
+/// Installe un abonné `tracing` pour la durée du processus de test.
+///
+/// Le pont consigne ses échecs par `warn!` — par exemple `axe-core failed` avec l'erreur —
+/// puis les omet du résultat du lot. Sans abonné ces événements sont perdus : le test
+/// échoue sur « pas de résultat pour <url> » sans la raison, et il faut un second cycle de CI
+/// pour la découvrir. Niveau `warn` par défaut, surchargeable par `RUST_LOG`. Idempotent :
+/// `try_init` ignore un abonné déjà posé.
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_test_writer()
+        .try_init();
 }

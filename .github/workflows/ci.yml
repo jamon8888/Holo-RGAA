@@ -329,8 +329,22 @@ jobs:
         # pinned by rig-lancedb 0.42) requires zstd ^0.13. arrow-ipc 60 and
         # lance-encoding 14 moved to ^0.14, so the real fix is one coordinated
         # lancedb 0.30 -> 0.40 / rig 0.42 -> 0.45 / arrow -> 60 migration, not a
-        # lockfile bump. Tracked in the issue linked from the PR that added these
-        # ignores; DROP THEM when that migration lands.
+        # lockfile bump. Tracked in #380; DROP THESE IGNORES when that migration lands.
+        #
+        # Reachability, read from the vendored sources (arrow-ipc 58.4.0,
+        # lance-encoding 7.0.0, lance-file 7.0.0, lance 7.0.0) — an analysis, not a proof:
+        #   - 0398 (`Seekable::decompress`): NOT reachable. `Seekable` does not appear in
+        #     any of the four crates.
+        #   - 0391 (abandoned stream leaking into the next on a REUSED context): lance
+        #     reuses the *compressor* context (ZstdBufferCompressor); decompression goes
+        #     through `decompress_to_buffer` / `stream::copy_decode`, which build a fresh
+        #     decoder per call. No reused decoding context was found.
+        #   - 0403 (uninitialised memory when streaming decompression of a legacy frame
+        #     fails): reachable only by feeding `copy_decode` a malformed buffer, i.e. by
+        #     writing a crafted file into the local vector store directory. An attacker
+        #     with that write access already controls the store.
+        # None of this is an argument that the advisories are harmless in general; it is
+        # why ignoring them is a defensible stopgap for THIS use of the crates.
         #
         # The reachable half of the same advisories IS fixed: zstd 0.14.3,
         # zstd-safe 8.2.0 and zstd-sys 2.1.2 (the 0.14 branch, via async-compression)

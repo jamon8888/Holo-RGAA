@@ -10,7 +10,16 @@ et la clé avait tort.
     python3 images.py OUT_DIR      # écrit OUT_DIR/<nom>.jpg
 """
 import os, sys
-import matplotlib
+try:
+    import matplotlib
+except ModuleNotFoundError as exc:  # message utile : l'import est a trois niveaux de profondeur
+    raise SystemExit(
+        "matplotlib est absent, et les schemas de la famille « description detaillee » "
+        "(1.7.x) en dependent.\n"
+        "Installer les dependances de l'outillage :\n"
+        "    python3 -m venv .venv && . .venv/bin/activate\n"
+        "    pip install -r tools/calibration/requirements.txt"
+    ) from exc
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle

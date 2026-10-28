@@ -177,7 +177,26 @@ seconde rédaction (IC modèle [65 % ; …] contre repère trivial [… ; 70 %])
 | `swift-1.5-27b` (API) | 4/4 | 33/39 = 85 %, kappa 0,68 | **19 %** | admis en *Assisté*, échoue le seuil |
 | `gemma4:e2b` (local) | — | lot D2 : 22/39 = 56 %, IC95 [41 % ; 71 %], **sous son repère trivial de 67 %**, kappa 0,26, faux « pertinent » 17/26 = 65 % | — | insuffisant (figure antérieure 67 % vs 70 % tirée du lot C vicié, remplacée) |
 
-Famille « résumé de tableau » (lot de 36 cartes, test-retest 94 %, repère trivial 58 %) :
+Famille « résumé de tableau » — **provenance incertaine, à refaire avant de servir à une
+admission.** L'en-tête annonçait « lot de 36 cartes, test-retest 94 %, repère trivial 58 % », mais
+ces chiffres ne se raccordent pas au reste du document, alors qu'ils y sont arrivés par le même
+commit :
+
+- le §8 note que **28 des 36 cartes du lot T restent à étiqueter**. Le test-retest se mesure sur un
+  sous-ensemble re-soumis, d'**au moins 12 cartes** (§3) ; or seules 8 cartes du lot T sont étiquetées,
+  soit **sous le minimum**. Un test-retest de 94 % n'a donc pas pu être mesuré sur ce lot ;
+- le §4 bis relève que `Opus` est d'accord avec la clé sur **8/8 sur le lot T**, pas sur 33/36.
+
+L'écart de repère trivial, lui, ne prouve rien : `lots/resume_tableau.py` produit 36 cartes
+équilibrées 18/18, soit 50 % par construction, et un repère mesuré sur l'étiquetage humain diffère
+légitimement du repère conçu — le §8 écrit d'ailleurs 59 % pour un lot « résumé et libellé » conçu
+à 50 %.
+
+Les mesures sont conservées ci-dessous : elles ont été faites, et les deux erreurs qualitatives
+qu'elles ont révélées — l'accord des juges sur les mêmes cartes, et l'effet de bord de l'exigence
+d'effectif — tiennent indépendamment du lot. Mais **elles ne décident pas de l'admission d'un modèle
+sur cette famille** tant que le lot qui les porte n'est pas identifié. À refaire sur le lot T une
+fois ses 36 cartes étiquetées.
 
 | Modèle | Consigne | Accord | Faux « pert. » | Faux « non pert. » | Verdict |
 |---|---|---|---|---|---|
@@ -285,8 +304,8 @@ avec le porteur est l'extraction, traitée au §5.
 |---|---|---|---|
 | alternative d'image | 1.3.1–1.3.9 | **calibrée** — 33/39 = 85 %, kappa 0,68, ancres 4/4, repère trivial 67 % | (campagne #339) |
 | description détaillée | 1.7.1–1.7.6 | **étiqueté, mesure non discriminante** — ancres 4/4, test-retest 13/14 = 93 % ; `swift` 39/39 = 100 %, `gemma4:e2b` 36/39 = 92 % (2 faux « pertinent » sur 21 = 10 %, admis). Un modèle de 2 Md passe : famille **non déclarée calibrée** tant qu'un lot plus difficile n'existe pas | `lots/description_detaillee.py` — 39 cartes, repère trivial 53,8 %, 4 ancres |
-| résumé et libellé | 5.5.1, 8.6.1, 11.7.1, 11.8.3 | **étiqueté, non admis** — ancres 6/6, repère trivial 59 %, mais test-retest 12/21 = 57 % (seuil : 80 %). La tranche 5.2.1 en est retirée (ADR 0002) | `lots/resume_libelle.py` — 40 cartes, repère trivial 50 %, 6 ancres |
-| résumé de tableau | 5.2.1 | **en cours** — définition du glossaire rappelée sur chaque carte (ADR 0002). 8 premières cartes : étiqueteur 8/8 conforme, ancres 3/3, `Opus` 8/8, mais lot trop facile. Porté à 36 cartes avec des cas limites, étiquetage des 28 restantes à faire | `lots/resume_tableau.py` — 36 cartes, repère trivial 50 %, 6 ancres, 9 tableaux complexes |
+| résumé et libellé | 5.5.1, 8.6.1, 11.7.1, 11.8.3 | **étiqueté, non admis** — ancres 6/6, repère trivial 59 %, mais test-retest 12/21 = 57 % (seuil : 80 %). La tranche 5.2.1 en est retirée (ADR 0002) | `lots/resume_libelle.py` — **32 cartes** (4 tests), repère trivial 50 %, 5 ancres dont 3 factuellement fausses. `--avec-5-2-1-retire` reproduit le lot R d'origine à 40 cartes et 6 ancres, pour relire ces mesures |
+| résumé de tableau | 5.2.1 | **en cours** — définition du glossaire rappelée sur chaque carte (ADR 0002). 8 premières cartes : étiqueteur 8/8 conforme, ancres 3/3, `Opus` 8/8, mais lot trop facile. Porté à 36 cartes avec des cas limites, **étiquetage des 28 restantes à faire**. Les mesures de modèles du §4 portent sur un lot antérieur déséquilibré et sont à refaire sur celui-ci | `lots/resume_tableau.py` — 36 cartes, repère trivial 50 %, 6 ancres, 9 tableaux complexes |
 | transcription et sous-titres | 4.2.1, 4.4.1 | **bloquée** | — |
 | audiodescription | 4.6.1, 4.6.2, 4.9.1 | **sans objet** | — |
 

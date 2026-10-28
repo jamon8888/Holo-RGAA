@@ -107,7 +107,7 @@ Deux lectures à ne pas manquer :
 | **1.3.1**, **1.3.2**, **1.3.3**, **1.3.4**, **1.3.5**, **1.3.6**, **1.3.7**, **1.3.8**, **1.3.9** | Assisté | VLM — famille de preuve « alternative d'image », **calibrée** [^1_3_1] | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | vignette de l'image, extrait du contexte de la page, texte de l'alternative, **complétude vis-à-vis de l'image** (oui/non/sans objet) et **cohérence avec le contexte** (oui/non), chacune motivée — **sans verdict** | `review` |
 | **1.4.1**, **1.4.2**, **1.4.3**, **1.4.4**, **1.4.5**, **1.4.6**, **1.4.7** | Irréductible | — [^1_4_1] | — | inventaire : CAPTCHA détecté (`iframe[src*=recaptcha]`, `h-captcha`…) et alternative présente ou non | `review` d'inventaire |
 | **1.7.1**, **1.7.2**, **1.7.3**, **1.7.4**, **1.7.5**, **1.7.6** | Assisté | VLM — famille « description détaillée », **non calibrée** [^1_7_1] | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | image, description détaillée (`aria-describedby`, `longdesc`, lien adjacent), conditions structurées — sans verdict | `review` |
-| **5.2.1** | Assisté | LLM texte seul — famille « résumé et libellé », **non calibrée** [^5_2_1] | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | structure du tableau (en-têtes, portées), texte du résumé, conditions structurées | `review` |
+| **5.2.1** | Assisté | LLM texte seul — famille « résumé de tableau » (ADR 0002), **non calibrée** [^5_2_1] | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | structure du tableau (en-têtes, portées), texte du résumé, conditions structurées | `review` |
 | **5.5.1** | Assisté | LLM texte seul — famille « résumé et libellé », **non calibrée** | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | titre du tableau (`<caption>` ou `aria-labelledby`), contenu du tableau, conditions structurées | `review` |
 | **8.6.1** | Assisté | LLM texte seul — famille « résumé et libellé », **non calibrée** [^8_6_1] | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | titre de page, contenu principal extrait, conditions structurées | `review` |
 | **11.7.1** | Assisté | LLM texte seul — famille « résumé et libellé », **non calibrée** | modèle servi par API (§4) — `Qwen3.8-27B` ou `Holo4-35B-A3B` (Apache-2.0) auto-hébergés, ou passerelle admise | texte de la `<legend>` (ou du libellé du groupe), libellés des champs regroupés, conditions structurées | `review` |
@@ -293,7 +293,8 @@ Aucun lot d'implémentation ne démarre avant leur résolution.
 | description détaillée | 1.7.1–1.7.6 | non calibrée |
 | transcription et sous-titres | 4.2.1, 4.4.1 | non calibrée |
 | audiodescription | 4.6.1, 4.6.2, 4.9.1 | non calibrée (ces tests sont Irréductibles : la calibration ne porterait que sur la preuve d'inventaire) |
-| résumé et libellé | 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3 | non calibrée |
+| résumé et libellé | 5.5.1, 8.6.1, 11.7.1, 11.8.3 | non calibrée |
+| résumé de tableau | 5.2.1 | non calibrée (en cours : ADR 0002 a retiré 5.2.1 de « résumé et libellé » ; voir `calibration-protocol.md` §8) |
 
 Protocole et outillage : [#354](https://github.com/jamon8888/Holo-RGAA/issues/354). Budget
 ~200 cartes, ~5 h d'étiquetage, à doubler pour le second étiqueteur.

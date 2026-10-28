@@ -182,8 +182,9 @@ admission.** L'en-tête annonçait « lot de 36 cartes, test-retest 94 %, repèr
 ces chiffres ne se raccordent pas au reste du document, alors qu'ils y sont arrivés par le même
 commit :
 
-- le §8 note que **28 des 36 cartes du lot T restent à étiqueter**. Un test-retest de 94 % sur
-  36 cartes exige les 36 étiquetées deux fois ; il n'a donc pas pu être mesuré sur ce lot ;
+- le §8 note que **28 des 36 cartes du lot T restent à étiqueter**. Le test-retest se mesure sur un
+  sous-ensemble re-soumis, d'**au moins 12 cartes** (§3) ; or seules 8 cartes du lot T sont étiquetées,
+  soit **sous le minimum**. Un test-retest de 94 % n'a donc pas pu être mesuré sur ce lot ;
 - le §4 bis relève que `Opus` est d'accord avec la clé sur **8/8 sur le lot T**, pas sur 33/36.
 
 L'écart de repère trivial, lui, ne prouve rien : `lots/resume_tableau.py` produit 36 cartes

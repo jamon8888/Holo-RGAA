@@ -16,6 +16,7 @@ Les générateurs de lots dessinent leurs contextes, donc ils ont besoin de `Pil
 ces paquets ne servent qu'à fabriquer des lots d'étiquetage.
 
 ```bash
+cd tools/calibration                      # depuis la racine du dépôt ; tout le reste de ce README s'y exécute
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 ```

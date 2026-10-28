@@ -24,7 +24,7 @@ pertinence n'est écrite dans la feuille, seulement le texte officiel de chaque 
 
     python3 resume_libelle.py OUT_DIR [--avec-5-2-1-retire]
 """
-import html, json, os, random, sys
+import html, json, os, random, shutil, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import images_rl
 
@@ -153,9 +153,16 @@ def image_of(ctx):
     return hits[0]
 
 
-def rubric():
-    lis = "".join(f"<li><strong>{t}</strong> — <em>{html.escape(v['official'])}</em></li>" for t, v in TESTS.items())
-    return f"""<p>Chaque carte porte sur l'un de ces cinq tests RGAA, indiqué sur la carte. Lisez le contexte, puis
+NOMBRES = {1: "un", 2: "deux", 3: "trois", 4: "quatre", 5: "cinq"}
+
+
+def rubric(tests=None):
+    """La rubrique que lit l'etiqueteur : elle ne doit nommer QUE les tests presents dans le lot.
+    Un test retire (ADR 0002) qui y figurerait serait presente comme faisant partie de la mesure."""
+    tests = list(TESTS) if tests is None else [t for t in TESTS if t in set(tests)]
+    lis = "".join(f"<li><strong>{t}</strong> — <em>{html.escape(TESTS[t]['official'])}</em></li>" for t in tests)
+    nombre = NOMBRES.get(len(tests), str(len(tests)))
+    return f"""<p>Chaque carte porte sur l'un de ces {nombre} tests RGAA, indiqué sur la carte. Lisez le contexte, puis
 dites si le texte proposé est pertinent. L'image montre l'élément concerné sans ce texte
 (tableau sans titre ni résumé, groupe sans légende, liste sans libellé de groupe, page sans titre d'onglet). Texte officiel de chaque test :</p><ul>{lis}</ul>
 <p><strong>Aucune règle supplémentaire n'est donnée, volontairement.</strong> Jugez selon votre pratique
@@ -166,6 +173,32 @@ RETIRED_TESTS = ("5.2.1",)  # ADR 0002 — voir le docstring
 
 
 def build(out, include_retired=False):
+    """Ecrit le lot dans un repertoire de travail unique, puis le publie d'un bloc.
+
+    items.json, key.json, rubric.html et img/ forment un ensemble : un lot dont `key.json` vient
+    d'une variante et `items.json` d'une autre ferait corriger des cartes avec la cle d'un autre
+    lot, sans qu'aucun controle statique ne le voie. Deux constructions concurrentes, ou une
+    construction interrompue, ne doivent donc jamais laisser un repertoire hybride."""
+    out = os.path.abspath(out)
+    parent = os.path.dirname(out)
+    os.makedirs(parent, exist_ok=True)
+    stage = tempfile.mkdtemp(prefix=os.path.basename(out) + ".build-", dir=parent)
+    try:
+        _write(stage, include_retired)
+        trash = None
+        if os.path.lexists(out):
+            trash = tempfile.mkdtemp(prefix=os.path.basename(out) + ".old-", dir=parent)
+            os.rmdir(trash)
+            os.rename(out, trash)
+        os.rename(stage, out)
+        if trash:
+            shutil.rmtree(trash, ignore_errors=True)
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+
+
+def _write(out, include_retired):
     os.makedirs(out, exist_ok=True)
     # La numerotation R### suit ROWS en entier, pour que les identifiants d'une carte
     # conservee soient les memes avec et sans la tranche retiree.
@@ -187,7 +220,7 @@ def build(out, include_retired=False):
     images_rl.make(os.path.join(out, "img"))
     json.dump(public, open(os.path.join(out, "items.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     json.dump(key, open(os.path.join(out, "key.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    open(os.path.join(out, "rubric.html"), "w", encoding="utf-8").write(rubric())
+    open(os.path.join(out, "rubric.html"), "w", encoding="utf-8").write(rubric({x["test"] for x in items}))
     p = sum(1 for x in items if x["pred"] == "P")
     par_test = {t: n for t in TESTS if (n := sum(1 for x in items if x["test"] == t))}
     retire = "" if include_retired else f" | retire (ADR 0002) {', '.join(RETIRED_TESTS)}"

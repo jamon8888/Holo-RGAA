@@ -226,12 +226,17 @@ link-local addresses by default, as a deliberate SSRF fix. Without it, `analyze`
 on `http://localhost:…` returns `completed: false` and
 `cdp_transport: Access to private/internal IP address 127.0.0.1 is not allowed`.
 
-There is a trap on top of it. `rgaa-obscura` starts its CDP server on a
-**hardcoded port 9222** and **reuses a server already listening there**, and it
-never passes `--allow-private-network` itself — the flag only arrives through the
-inherited environment of a server it spawns. So if any obscura server is already
-running (they outlive their parent and get reparented to `init`), your variable
-has **no effect at all** and the block persists with no hint as to why.
+There is a trap on top of it. `rgaa-obscura` never passes
+`--allow-private-network` itself — the flag only arrives through the inherited
+environment of a server it *spawns*. So a server started earlier without the
+variable keeps blocking localhost, and setting the variable now changes nothing
+for it.
+
+`start_server` no longer attaches to such a server silently: it pre-flights its
+port (default 9222) and refuses an occupied one with a message naming the port,
+rather than accepting any `/json/version` answer there as its own readiness. The
+symptom is therefore a clear startup error, not an unexplained SSRF block — but
+the fix is still to retire the stale server.
 
 Diagnose it before concluding the variable is wrong:
 

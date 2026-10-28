@@ -1,0 +1,11 @@
+{
+  "name": "rgaa-probe-harness",
+  "private": true,
+  "description": "Harnais DOM Node des sondes JS embarquées (sans navigateur). Lancé par le job CI `probe-harness`.",
+  "scripts": {
+    "test": "./run-harnesses.sh"
+  },
+  "devDependencies": {
+    "jsdom": "25.0.1"
+  }
+}

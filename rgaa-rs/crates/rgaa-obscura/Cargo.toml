@@ -24,4 +24,6 @@ uuid = { version = "1.0", features = ["v4"] }
 libc = "0.2"
 
 [dev-dependencies]
+# Politique partagée du garde-fou E2E (`rgaa_test_corpus::e2e::enabled`).
+rgaa-test-corpus = { path = "../rgaa-test-corpus" }
 tokio = { workspace = true, features = ["full"] }

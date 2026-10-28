@@ -13,8 +13,13 @@
 //! le banc n'est pas aveugle : sans lui, un résultat « non conforme » sur la bonne page ne
 //! prouverait rien.
 //!
-//! Non câblé dans le job E2E de la CI : il énonce le comportement **attendu**, et tant que
-//! la couverture de 12.7 est surdéclarée il échoue. Lancer à la main avec `RUN_E2E=1`.
+//! Il énonce le comportement **attendu** de la couverture de 12.7 : il a été écrit
+//! contre une couverture surdéclarée, où il échouait, et c'est sa correction qui l'a
+//! fait passer. Il reste en place comme garde contre une régression de la
+//! surdéclaration.
+//!
+//! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
+//! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -25,7 +30,6 @@ use std::sync::Arc;
 use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::{AxeMapper, GapFixRules};
-
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -104,15 +108,16 @@ async fn audit_12_7(
 
 #[tokio::test]
 async fn criterion_12_7_does_not_pass_a_site_from_a_single_page() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_12_7_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_12_7_coverage") {
         return;
     }
     std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
-    let mut server = ObscuraBridge::new().with_port(9343);
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
     server
         .start_server()
         .await

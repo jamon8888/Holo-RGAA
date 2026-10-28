@@ -5,8 +5,7 @@ use rgaa_orchestrator::Orchestrator;
 async fn test_full_audit_example_com() {
     // Full-pipeline E2E: requires an LLM API key and network access to the
     // target page. Skipped unless RUN_E2E=1 is set (e.g. in the CI `e2e` job).
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("skipping full_audit E2E (set RUN_E2E=1 to enable)");
+    if !rgaa_test_corpus::e2e::enabled("full_audit") {
         return;
     }
 

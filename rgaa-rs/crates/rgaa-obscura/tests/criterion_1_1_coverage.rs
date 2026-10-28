@@ -8,8 +8,13 @@
 //! l'audit doit voir — sans lui, un résultat « conforme » ne prouverait rien) et la page à
 //! canvas + embed.
 //!
-//! Non câblé dans le job E2E de la CI : il énonce le comportement **attendu**, et tant que la
-//! couverture de 1.1 est surdéclarée il échoue. Lancer à la main avec `RUN_E2E=1`.
+//! Il énonce le comportement **attendu** de la couverture de 1.1 : il a été écrit
+//! contre une couverture surdéclarée, où il échouait, et c'est sa correction qui l'a
+//! fait passer. Il reste en place comme garde contre une régression de la
+//! surdéclaration.
+//!
+//! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
+//! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -20,7 +25,6 @@ use std::sync::Arc;
 use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::{AxeMapper, GapFixRules};
-
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -68,7 +72,9 @@ async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<CriterionStatu
     // `run_axe_batch` pilote une session CDP par URL : le serveur doit être démarré. Sans lui
     // la fonction rend une carte vide (l'échec par URL est journalisé, jamais remonté), ce
     // qui ressemblerait à « axe n'a rien trouvé ».
-    let mut server = ObscuraBridge::new().with_port(9341);
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
     server
         .start_server()
         .await
@@ -107,8 +113,7 @@ async fn audit_1_1(url: &str) -> (Option<CriterionStatus>, Option<CriterionStatu
 
 #[tokio::test]
 async fn criterion_1_1_does_not_pass_a_page_whose_canvas_and_embed_lack_an_alternative() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_1_1_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_1_1_coverage") {
         return;
     }
     std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
@@ -179,8 +184,7 @@ async fn probe_1_1(url: &str) -> Option<(CriterionStatus, usize)> {
 /// les autres relèvent de la revue, avec la preuve.
 #[tokio::test]
 async fn criterion_1_1_covers_embed_canvas_and_server_side_maps() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_1_1_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_1_1_coverage") {
         return;
     }
     std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");

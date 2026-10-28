@@ -37,7 +37,9 @@ async fn test_obscura_bridge_sync() {
 async fn test_obscura_bridge_axe_via_cdp() {
     // Single-audit callers route through the batch entry point (N=1) — this is
     // the live production path, not a one-off; see pipeline::audit_one.
-    let mut bridge = ObscuraBridge::new().with_port(9223);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
 
     // Start CDP server
     let server_result = bridge.start_server().await;
@@ -73,7 +75,9 @@ async fn test_obscura_bridge_axe_via_cdp() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_axe_batch_multiple_urls() {
-    let mut bridge = ObscuraBridge::new().with_port(9224);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
 
     let server_result = bridge.start_server().await;
     println!("Server start result: {:?}", server_result);
@@ -114,7 +118,9 @@ async fn test_obscura_bridge_axe_batch_multiple_urls() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_extract_page_context_batch() {
-    let mut bridge = ObscuraBridge::new().with_port(9225);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
 
     let server_result = bridge.start_server().await;
     assert!(
@@ -160,7 +166,9 @@ async fn test_obscura_bridge_extract_page_context_batch() {
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_obscura_bridge_axe_batch_performance() {
     // run_axe_batch drives per-URL CDP sessions, so the CDP server must be up.
-    let mut bridge = ObscuraBridge::new().with_port(9226);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
     assert!(
         bridge.start_server().await.is_ok(),
         "failed to start CDP server"
@@ -209,7 +217,9 @@ async fn test_obscura_bridge_axe_batch_performance() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
-    let mut bridge = ObscuraBridge::new().with_port(9227);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
     assert!(
         bridge.start_server().await.is_ok(),
         "failed to start CDP server"
@@ -265,7 +275,9 @@ async fn test_structured_analyze_applies_configuration_and_captures_evidence() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
-    let mut bridge = ObscuraBridge::new().with_port(9228);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
     bridge
         .start_server()
         .await
@@ -315,7 +327,9 @@ async fn test_guided_test_captures_trace_tree_screenshot_and_mapping() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
-    let mut bridge = ObscuraBridge::new().with_port(9229);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
     bridge
         .start_server()
         .await
@@ -370,7 +384,9 @@ async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_prescan_fill_on_labeled_form_completes_without_label_findings() {
-    let mut bridge = ObscuraBridge::new().with_port(9230);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
     bridge
         .start_server()
         .await
@@ -422,7 +438,9 @@ async fn test_prescan_fill_on_labeled_form_completes_without_label_findings() {
 #[tokio::test]
 #[ignore = "requires the obscura substrate binary + network access"]
 async fn test_prescan_submit_click_audits_post_navigation_page() {
-    let mut bridge = ObscuraBridge::new().with_port(9231);
+    let mut bridge = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("free CDP port");
     bridge
         .start_server()
         .await

@@ -12,7 +12,10 @@
 //! page), elle atterrit en `passes` — axe conclut, à tort, qu'il n'y a rien à redire.
 //!
 //! Ce test pose la question à l'audit réel : axe ne doit jamais rendre `Pass` pour 10.6 sur
-//! cette page. Non câblé dans le job E2E de la CI. Lancer à la main avec `RUN_E2E=1`.
+//! cette page.
+//!
+//! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
+//! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -22,7 +25,6 @@ use std::sync::Arc;
 use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::AxeMapper;
-
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -64,15 +66,16 @@ fn serve(dir: PathBuf) -> std::io::Result<u16> {
 
 #[tokio::test]
 async fn criterion_10_6_never_passes_on_a_link_distinguished_by_color_alone() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_10_6_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_10_6_coverage") {
         return;
     }
     std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
-    let mut server = ObscuraBridge::new().with_port(9345);
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
     server
         .start_server()
         .await

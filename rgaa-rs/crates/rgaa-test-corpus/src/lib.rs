@@ -1,3 +1,5 @@
+pub mod e2e;
+
 use rgaa_core::Classification;
 use serde::Deserialize;
 use std::collections::HashSet;

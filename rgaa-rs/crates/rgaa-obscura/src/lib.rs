@@ -299,9 +299,65 @@ impl ObscuraBridge {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    /// Pin the CDP server to a fixed port.
+    ///
+    /// Prefer [`with_ephemeral_port`](Self::with_ephemeral_port) for anything
+    /// that may run more than once at a time (tests above all): a fixed port is
+    /// shared state between processes, and [`start_server`](Self::start_server)
+    /// refuses to start when it is already taken rather than attaching to a
+    /// server this bridge does not own.
+    #[must_use]
     pub fn with_port(mut self, port: u16) -> Self {
         self.server_port = port;
         self
+    }
+
+    /// Pin the CDP server to a port the OS reports free at call time, instead
+    /// of a fixed one.
+    ///
+    /// Two concurrent runs on a fixed port used to steal each other's server:
+    /// `start_server`'s readiness probe accepted *any* successful
+    /// `/json/version` on that port, so the second run attached to the first
+    /// run's server and lost its CDP connection the moment that run exited. A
+    /// per-invocation port removes the shared state entirely.
+    ///
+    /// The port is allocated by binding `127.0.0.1:0` and reading back the
+    /// assigned port, so there is a small window between the probe and
+    /// `start_server`'s own bind in which another process could take it. That
+    /// window is why `start_server` still pre-flights the port and reports a
+    /// clear error instead of silently attaching.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no loopback port can be allocated. Deliberately
+    /// fallible rather than falling back to the default port: a silent fallback
+    /// to shared state is the failure this method exists to prevent.
+    pub fn with_ephemeral_port(mut self) -> Result<Self, String> {
+        self.server_port = Self::allocate_ephemeral_port()?;
+        Ok(self)
+    }
+
+    /// Ask the OS for a free loopback port by binding port 0 and reading back
+    /// what it assigned.
+    fn allocate_ephemeral_port() -> Result<u16, String> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|error| format!("failed to allocate an ephemeral CDP port: {error}"))?;
+        listener
+            .local_addr()
+            .map(|addr| addr.port())
+            .map_err(|error| format!("failed to read back the allocated CDP port: {error}"))
+    }
+
+    /// True when `127.0.0.1:port` cannot be bound, i.e. something already
+    /// holds it.
+    fn port_is_taken(port: u16) -> bool {
+        std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+    }
+
+    /// The port this bridge's CDP server listens on.
+    #[must_use]
+    pub fn server_port(&self) -> u16 {
+        self.server_port
     }
 
     /// Analyze one page using the structured audit contract.
@@ -812,6 +868,21 @@ impl ObscuraBridge {
     /// a drifted or missing `RGAA_OBSCURA_BIN` should fail fast here with a
     /// clear error, not silently run against the wrong (or no) backend.
     pub async fn start_server(&mut self) -> Result<(), String> {
+        // Refuse a port someone else already holds, before spawning anything.
+        // The readiness probe below only asks whether *a* CDP server answers on
+        // this port — it cannot tell ours from a foreign one, so without this
+        // check two concurrent runs on the same fixed port silently share one
+        // server and the second loses its CDP connection when the first exits.
+        // Checked here rather than after the version check so the diagnosis is
+        // the first thing reported, and so it is reachable without the binary.
+        if Self::port_is_taken(self.server_port) {
+            return Err(format!(
+                "port {} is already in use: refusing to attach to a CDP server this bridge \
+                 does not own (use ObscuraBridge::with_ephemeral_port() for a per-invocation port)",
+                self.server_port
+            ));
+        }
+
         // One worker per CPU by default (docs.obscura.sh run-in-production-at-scale),
         // overridable for deploys that want to under/over-subscribe.
         let cpu_count = std::thread::available_parallelism().map_or(1, |n| n.get());
@@ -913,10 +984,30 @@ impl ObscuraBridge {
                     return Ok(());
                 }
             }
+            // A server that died on startup will never answer: report its exit
+            // status now instead of spending the whole budget on a dead child
+            // and then blaming a timeout. Scoped so the (!Send) guard is
+            // dropped before the await below.
+            let exited = {
+                let mut guard = self.server_process.lock().unwrap();
+                match guard.as_mut() {
+                    Some(child) => child.try_wait().ok().flatten(),
+                    None => None,
+                }
+            };
+            if let Some(status) = exited {
+                return Err(format!(
+                    "obscura serve exited during startup with {status} (port {})",
+                    self.server_port
+                ));
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        Err("Obscura CDP server failed to start within 5s".to_string())
+        Err(format!(
+            "Obscura CDP server failed to start within 5s (port {})",
+            self.server_port
+        ))
     }
 
     /// Stop the background CDP server
@@ -2594,6 +2685,58 @@ mod tests {
     }
 
     #[test]
+    fn ephemeral_ports_differ_between_bridges() {
+        let ports: Vec<u16> = (0..8)
+            .map(|_| {
+                ObscuraBridge::new()
+                    .with_ephemeral_port()
+                    .expect("free CDP port")
+                    .server_port()
+            })
+            .collect();
+
+        for port in &ports {
+            assert_ne!(*port, 0, "the OS-assigned port was never read back");
+            // Not the shared default: that is the whole point of the method.
+            assert_ne!(*port, 9222);
+        }
+        // Asserted over a batch rather than a single pair: each allocation
+        // releases its listener before the next binds, so the kernel is free to
+        // hand the same port back once. It is not free to hand back one port
+        // eight times.
+        let distinct: std::collections::HashSet<u16> = ports.iter().copied().collect();
+        assert!(distinct.len() > 1, "every allocation returned {ports:?}");
+    }
+
+    /// A port already held by someone else must be reported as such, not
+    /// accepted as readiness. Before this check, `start_server` attached to
+    /// whatever answered `/json/version` there — another test run's server, or
+    /// an unrelated listener — and then failed obscurely when that owner left.
+    #[tokio::test]
+    async fn start_server_refuses_a_port_already_in_use() {
+        let squatter = std::net::TcpListener::bind("127.0.0.1:0").expect("bind squatter");
+        let port = squatter.local_addr().expect("squatter addr").port();
+
+        let mut bridge = ObscuraBridge::new().with_port(port);
+        let error = bridge
+            .start_server()
+            .await
+            .expect_err("a taken port must not be reported as ready");
+
+        assert!(
+            error.contains(&format!("port {port} is already in use")),
+            "unexpected error: {error}"
+        );
+        // Reported before the substrate is even consulted, so the diagnosis is
+        // the port and not a missing binary.
+        assert!(
+            !error.contains("substrate unavailable"),
+            "port conflict was masked by a binary error: {error}"
+        );
+        assert!(bridge.server_process.lock().unwrap().is_none());
+    }
+
+    #[test]
     fn bridge_handle_shares_config_but_not_the_server_process() {
         let bridge = ObscuraBridge::new().with_port(9999);
         let handle = bridge.handle();
@@ -2610,7 +2753,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires the obscura substrate binary + network access"]
     async fn test_run_axe_with_broken_script_surfaces_error() {
-        let mut bridge = ObscuraBridge::new().with_port(9244);
+        let mut bridge = ObscuraBridge::new()
+            .with_ephemeral_port()
+            .expect("free CDP port");
         bridge.start_server().await.expect("failed to start server");
 
         // A broken axe source throws during injection, which must surface as Err
@@ -2768,7 +2913,7 @@ mod tests {
     /// Regression: dropping the bridge must stop the server *and* its forked
     /// workers. Killing only the parent used to leave the workers orphaned.
     #[cfg(target_os = "linux")]
-    #[ignore = "needs the pinned obscura binary and port 9340"]
+    #[ignore = "needs the pinned obscura binary"]
     #[tokio::test]
     async fn drop_stops_server_and_worker_processes() {
         fn children_of(pid: u32) -> Vec<u32> {
@@ -2779,7 +2924,9 @@ mod tests {
                 .collect()
         }
 
-        let mut bridge = ObscuraBridge::new().with_port(9340);
+        let mut bridge = ObscuraBridge::new()
+            .with_ephemeral_port()
+            .expect("free CDP port");
         bridge.start_server().await.expect("server starts");
         let parent = bridge
             .server_process
@@ -2807,10 +2954,12 @@ mod tests {
 
     /// Same guarantee through the public async API.
     #[cfg(target_os = "linux")]
-    #[ignore = "needs the pinned obscura binary and port 9341"]
+    #[ignore = "needs the pinned obscura binary"]
     #[tokio::test]
     async fn stop_server_stops_server_and_worker_processes() {
-        let mut bridge = ObscuraBridge::new().with_port(9341);
+        let mut bridge = ObscuraBridge::new()
+            .with_ephemeral_port()
+            .expect("free CDP port");
         bridge.start_server().await.expect("server starts");
         let parent = bridge
             .server_process

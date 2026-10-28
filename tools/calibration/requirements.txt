@@ -1,0 +1,13 @@
+# Dependances de l'outillage de calibration (tools/calibration/).
+# Rien ici n'est utilise par un audit : ces paquets ne servent qu'a fabriquer les
+# lots d'etiquetage. Ils ne sont volontairement pas dans les dependances du projet.
+#
+#   python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+
+# Dessin des contextes de carte (tableaux, groupes de champs, listes, pages).
+# Utilise par lots/images_rl.py et lots/images.py.
+Pillow>=10
+
+# Schemas de la famille « description detaillee » (1.7.x) : graphiques, diagrammes,
+# flux annotes. Utilise par lots/images.py, donc par lots/description_detaillee.py.
+matplotlib>=3.7

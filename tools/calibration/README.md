@@ -9,12 +9,24 @@ Ce n'est pas du code de production : rien ici n'est appelé par un audit. C'est 
 qui permet d'affirmer, chiffres en main, qu'un test est *Assisté calibré* plutôt que
 *non calibré*.
 
+## Dépendances
+
+Les générateurs de lots dessinent leurs contextes, donc ils ont besoin de `Pillow`, et
+`description_detaillee.py` de `matplotlib`. Rien de tout cela n'est une dépendance du projet :
+ces paquets ne servent qu'à fabriquer des lots d'étiquetage.
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## Chaîne
 
 ```bash
 # 0. générer un lot (items.json, key.json, rubric.html, et les images s'il y en a)
 python3 lots/description_detaillee.py lot_dd        # famille « description détaillée » (1.7.x)
-python3 lots/resume_libelle.py lot_rl               # famille « résumé et libellé »
+python3 lots/resume_libelle.py lot_rl               # famille « résumé et libellé » (5.2.1 exclu, ADR 0002)
+python3 lots/resume_tableau.py lot_t                # famille « résumé de tableau » (5.2.1)
 
 # 1. feuille d'étiquetage, à remplir par DEUX personnes en aveugle l'une de l'autre
 python3 sheet.py lot_dd/items.json --out lot_dd/serve/etiquetage.html \

@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""Lot de calibration — famille « résumé et libellé » (tests RGAA 5.2.1, 5.5.1, 8.6.1, 11.7.1, 11.8.3).
+"""Lot de calibration — famille « résumé et libellé » (tests RGAA 5.5.1, 8.6.1, 11.7.1, 11.8.3).
 
-Cinq tests qui posent la même question sur le même type de preuve : un court texte, produit
-par l'auteur de la page, désigne-t-il correctement ce qu'il étiquette ? Quarante cartes, huit par
-test, quatre pertinentes et quatre non pertinentes attendues pour chacun : repère trivial de 50 %
-(protocole §3 : <= 60 %). Six ancres.
+Des tests qui posent la même question sur le même type de preuve : un court texte, produit
+par l'auteur de la page, désigne-t-il correctement ce qu'il étiquette ? Huit cartes par test,
+quatre pertinentes et quatre non pertinentes attendues pour chacun : repère trivial de 50 %
+(protocole §3 : <= 60 %).
+
+5.2.1 ne fait PLUS partie de cette famille. L'ADR 0002 a retenu la définition du glossaire
+RGAA — le résumé porte la nature et la structure du tableau, pas le contenu des cellules — et
+l'étiquetage du lot R appliquait un critère plus strict. Ses 8 cartes 5.2.1 sont donc invalides,
+et deux d'entre elles portaient en outre sur un tableau non complexe, hors du champ du test.
+La famille « résumé de tableau » est désormais mesurée à part, par `resume_tableau.py`.
+
+Les cartes 5.2.1 restent dans `ROWS` pour pouvoir reproduire le lot R d'origine à l'identique
+(`--avec-5-2-1-retire`), ce que demande toute relecture des mesures publiées. Elles sont exclues
+par défaut : les régénérer sans le savoir reconstituerait du matériel écarté.
 
 Chaque contexte est une IMAGE (`images_rl.py`) : le tableau, le groupe de champs, la liste ou la page
 que le texte désigne, dessiné SANS ce texte. Un contexte seulement écrit prédisait la réponse et ne
@@ -12,7 +22,7 @@ laissait rien à vérifier. Aucune règle de
 pertinence n'est écrite dans la feuille, seulement le texte officiel de chaque test — voir
 `description_detaillee.py` pour la raison. `pred` est ma prédiction, pas une vérité.
 
-    python3 resume_libelle.py OUT_DIR
+    python3 resume_libelle.py OUT_DIR [--avec-5-2-1-retire]
 """
 import html, json, os, random, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -152,11 +162,18 @@ dites si le texte proposé est pertinent. L'image montre l'élément concerné s
 d'audit. C'est ce que vous écrivez dans la justification qui établit le critère retenu.</p>"""
 
 
-def build(out):
+RETIRED_TESTS = ("5.2.1",)  # ADR 0002 — voir le docstring
+
+
+def build(out, include_retired=False):
     os.makedirs(out, exist_ok=True)
+    # La numerotation R### suit ROWS en entier, pour que les identifiants d'une carte
+    # conservee soient les memes avec et sans la tranche retiree.
+    rows = [(n, r) for n, r in enumerate(ROWS, 1)
+            if include_retired or r[0] not in RETIRED_TESTS]
     items = [dict(id=f"R{n:03d}", ctx=ctx, alt=txt, pred=p, kind=k, anchor=bool(a), test=t,
                   label=TESTS[t]["label"], question=TESTS[t]["question"])
-             for n, (t, ctx, txt, p, k, a) in enumerate(ROWS, 1)]
+             for n, (t, ctx, txt, p, k, a) in rows]
     for x in items:
         x["image"] = f"img/{image_of(x['ctx'])}.jpg"
         x["ctx_ecrit"] = x["ctx"]
@@ -172,12 +189,15 @@ def build(out):
     json.dump(key, open(os.path.join(out, "key.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     open(os.path.join(out, "rubric.html"), "w", encoding="utf-8").write(rubric())
     p = sum(1 for x in items if x["pred"] == "P")
-    par_test = {t: sum(1 for x in items if x["test"] == t) for t in TESTS}
+    par_test = {t: n for t in TESTS if (n := sum(1 for x in items if x["test"] == t))}
+    retire = "" if include_retired else f" | retire (ADR 0002) {', '.join(RETIRED_TESTS)}"
     print(f"{len(items)} cartes | attendues pertinentes {p}, non pertinentes {len(items)-p} | "
-          f"repère trivial {max(p, len(items)-p)/len(items):.1%} | ancres {sum(x['anchor'] for x in items)} | par test {par_test}")
+          f"repère trivial {max(p, len(items)-p)/len(items):.1%} | ancres {sum(x['anchor'] for x in items)} | "
+          f"par test {par_test}{retire}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if a != "--avec-5-2-1-retire"]
+    if len(args) != 1:
         sys.exit(__doc__)
-    build(sys.argv[1])
+    build(args[0], include_retired="--avec-5-2-1-retire" in sys.argv[1:])

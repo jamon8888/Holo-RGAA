@@ -156,7 +156,8 @@ Three layers, all unconditional in CI (no repo variable, no secret): Rust
 unit/integration (`Build & Test`), the Node DOM probe harnesses
 (`Probe harness`), and browser E2E (`E2E (navigateur)`) — plus a fourth,
 `E2E (agent + orchestrator)`, which stays gated on `MYIA_API_KEY` and is
-therefore still unverified. What each one proves,
+therefore still unverified — as are the `rgaa-spider` network tests, which no CI
+job runs at all. What each one proves,
 how to run them locally, and why the E2E suite used to run nowhere at all:
 `docs/testing-layers.md`. Two rules worth knowing before touching that suite:
 

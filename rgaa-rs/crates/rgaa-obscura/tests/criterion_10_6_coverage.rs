@@ -69,7 +69,7 @@ async fn criterion_10_6_never_passes_on_a_link_distinguished_by_color_alone() {
     if !rgaa_test_corpus::e2e::enabled("criterion_10_6_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

@@ -71,7 +71,7 @@ async fn page_context_extracts_every_alt_carrier_of_criterion_1_3() {
     // Les fixtures sont servies sur 127.0.0.1, qu'Obscura bloque par défaut (garde SSRF) ;
     // sans cette variable la page se charge en document vide de 39 octets et le test
     // passerait pour de mauvaises raisons.
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
 
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");

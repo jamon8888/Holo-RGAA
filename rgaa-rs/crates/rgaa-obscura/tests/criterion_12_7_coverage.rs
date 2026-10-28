@@ -111,7 +111,7 @@ async fn criterion_12_7_does_not_pass_a_site_from_a_single_page() {
     if !rgaa_test_corpus::e2e::enabled("criterion_12_7_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

@@ -8,6 +8,7 @@ Ce qui tourne, où, et ce que chaque couche prouve — ou ne prouve pas.
 | Harnais DOM des sondes JS | `Probe harness (DOM, sans navigateur)` | Node 20 | oui |
 | E2E navigateur | `E2E (navigateur)` | binaire Obscura 0.2.4 | oui |
 | E2E pipeline complet | `E2E (agent + orchestrator…)` | Obscura **+ clé LLM** | **non** |
+| E2E réseau du crawler | *(aucun)* | accès réseau sortant | **non** |
 
 Les trois premières sont inconditionnelles : aucune variable de dépôt, aucun
 secret à provisionner.
@@ -18,8 +19,17 @@ La quatrième reste conditionnée à `vars.MYIA_E2E_ENABLED == 'true'` et au sec
 complet et ont réellement besoin d'une clé LLM : **ils ne sont donc pas
 vérifiés**, et ne le seront pas avant que la variable et le secret existent.
 C'est un choix assumé — on ne peut pas provisionner une clé API dans un commit —
-et non un oubli. La différence avec l'état précédent est que c'est maintenant le
-seul endroit où du non-vérifié subsiste, et qu'il est écrit.
+et non un oubli.
+
+La cinquième ligne est un **second** endroit non vérifié, et il n'est lié à aucun
+secret : les trois tests de `rgaa-spider/tests/spider_tool_test.rs` interrogent le
+réseau et ne s'exécutent que sous `RUN_E2E=1`, que `Build & Test` ne pose pas. Leur
+commentaire dit « e.g. in the CI `e2e` job », mais ce job ne les lance pas — sa
+liste de `--test` est explicite et ne les contient pas — et il est de toute façon
+conditionnel. Ils ne tournent donc nulle part. Les rendre effectifs demande une
+politique sur les tests qui sortent du runner (quels sites, quelle tolérance aux
+pannes réseau), pas un correctif de couverture : ce n'est pas tranché ici. La
+différence avec l'état précédent est que le non-vérifié est maintenant **écrit**.
 
 ## Pourquoi cette page existe
 
@@ -72,11 +82,24 @@ la sonde de disponibilité de `start_server` acceptait *n'importe quelle*
 réponse `/json/version` sur le port, donc la seconde exécution s'attachait au
 serveur de la première et perdait sa connexion CDP dès que celle-ci sortait.
 
-`start_server` refuse en plus, en préalable, un port déjà occupé, avec un
-message qui nomme le port : un listener étranger ne peut plus se faire passer
-pour notre serveur. Et il signale un `obscura serve` mort au démarrage avec son
-code de sortie, au lieu de dépenser tout le budget de 5 s puis d'accuser un
-timeout.
+Pour un port alloué par `with_ephemeral_port()`, `start_server` refuse en plus, en
+préalable, un port déjà occupé, avec un message qui nomme le port, et n'accepte la
+disponibilité que tant que l'enfant qu'il a lancé tourne encore : un enfant qui perd
+le `bind` sort en quelques millisecondes, donc la réponse d'un serveur étranger n'est
+plus prise pour la nôtre. Ça réduit la fenêtre entre l'allocation du port et le `bind`
+d'`obscura serve` ; ça ne la ferme pas entièrement. Il signale aussi un `obscura
+serve` mort au démarrage avec son code de sortie, et **arrête l'enfant sur toute
+erreur de démarrage**, pour qu'un nouvel essai sur le même pont ne soit pas refusé par
+son propre serveur résiduel.
+
+**Ce que ça ne change pas : la production.** Le port par défaut (`from_env()`, utilisé
+par `rgaa-api`, `rgaa-mcp` et la CLI) et `with_port(...)` gardent leur comportement
+d'avant, sans refus de port occupé : plusieurs audits qui se chevauchent démarrent un
+pont sur 9222 et partagent le serveur du premier. Ce partage est fragile — le pont qui
+possède le serveur l'arrête en sortant, y compris sous un audit encore en cours — mais
+passer chaque lot à un port propre multiplie les processus `obscura serve` (un worker
+par CPU chacun) et change le modèle de concurrence de la production. C'est une décision
+séparée, pas un effet de bord d'un changement de harnais de test.
 
 ## Harnais DOM des sondes (complément, pas substitut)
 

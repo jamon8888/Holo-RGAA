@@ -116,7 +116,7 @@ async fn criterion_1_1_does_not_pass_a_page_whose_canvas_and_embed_lack_an_alter
     if !rgaa_test_corpus::e2e::enabled("criterion_1_1_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
@@ -187,7 +187,7 @@ async fn criterion_1_1_covers_embed_canvas_and_server_side_maps() {
     if !rgaa_test_corpus::e2e::enabled("criterion_1_1_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

@@ -93,7 +93,7 @@ async fn criterion_3_2_never_passes_on_silence_alone() {
     if !rgaa_test_corpus::e2e::enabled("criterion_3_2_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

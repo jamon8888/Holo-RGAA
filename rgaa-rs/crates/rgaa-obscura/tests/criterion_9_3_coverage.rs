@@ -84,7 +84,7 @@ async fn criterion_9_3_does_not_pass_a_visually_styled_list_with_no_list_markup(
     if !rgaa_test_corpus::e2e::enabled("criterion_9_3_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

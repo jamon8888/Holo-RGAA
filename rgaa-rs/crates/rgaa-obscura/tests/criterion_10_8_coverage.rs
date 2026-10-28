@@ -89,7 +89,7 @@ async fn criterion_10_8_does_not_pass_hidden_content_of_undecided_intent() {
     if !rgaa_test_corpus::e2e::enabled("criterion_10_8_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

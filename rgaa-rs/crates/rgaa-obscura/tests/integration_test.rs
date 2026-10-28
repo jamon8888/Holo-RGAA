@@ -360,12 +360,15 @@ async fn test_guided_stateful_ax_ref_fill_and_observed_state() {
         .run_guided_test(&test)
         .await
         .expect("stateful guided run returns an envelope");
-    let targets: serde_json::Value = reqwest::get("http://127.0.0.1:9229/json/list")
-        .await
-        .expect("read CDP targets")
-        .json()
-        .await
-        .expect("parse CDP targets");
+    let targets: serde_json::Value = reqwest::get(format!(
+        "http://127.0.0.1:{}/json/list",
+        bridge.server_port()
+    ))
+    .await
+    .expect("read CDP targets")
+    .json()
+    .await
+    .expect("parse CDP targets");
     bridge.stop_server().await;
 
     assert!(result.is_pass(), "state did not persist: {result:?}");

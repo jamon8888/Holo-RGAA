@@ -32,3 +32,18 @@ pub fn enabled(test_name: &str) -> bool {
     eprintln!("{test_name} ignoré (poser RUN_E2E=1 pour l'activer)");
     false
 }
+
+/// Autorise Obscura à joindre le serveur de fixtures en loopback.
+///
+/// `std::env::set_var` mute l'environnement du processus entier ; appelée depuis
+/// plusieurs fils de test, pendant que d'autres lisent l'environnement ou lancent
+/// Obscura, c'est une course de données. `Once` fait de l'écriture un événement
+/// unique : tout test qui passe ici attend qu'elle soit faite avant de continuer.
+///
+/// Sous `cargo nextest`, chaque test tourne dans son propre processus et la course
+/// n'existe pas ; sous `cargo test`, les tests d'un même binaire partagent le
+/// processus, et c'est là que ça compte.
+pub fn allow_private_network() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1"));
+}

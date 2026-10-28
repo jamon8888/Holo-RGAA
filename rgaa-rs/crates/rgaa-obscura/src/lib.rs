@@ -94,6 +94,31 @@ fn validate_axe_payload(
 pub(crate) fn validate_axe_violation_array(
     value: &serde_json::Value,
 ) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
+    validate_axe_entries(value, true)
+}
+
+/// Like [`validate_axe_violation_array`], for the `incomplete` array — with one difference.
+///
+/// A violation is a proven failure: it must name the nodes it was proven on. An
+/// `incomplete` entry is axe saying « I could not decide », and axe-core also files there
+/// a rule that **threw an exception**, with `nodes: []` and a description saying so. That
+/// entry carries no node, yet it is exactly the kind of « I don't know » this pipeline must
+/// not lose: dropping it would let a criterion pass on the silence of a rule that never ran
+/// — the defect #364 exists to close. Rejecting it instead failed the whole page, so one
+/// rule that cannot run in this DOM took every other axe result with it.
+///
+/// So `nodes` may be empty here, but the entry must still name the rule and say what
+/// happened: an entry with no `id` or no `description` is malformed, not undecided.
+pub(crate) fn validate_axe_incomplete_array(
+    value: &serde_json::Value,
+) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
+    validate_axe_entries(value, false)
+}
+
+fn validate_axe_entries(
+    value: &serde_json::Value,
+    require_nodes: bool,
+) -> Result<Vec<AxeViolationPayload>, ObscuraError> {
     let array = value
         .as_array()
         .ok_or_else(|| ObscuraError::Json("axe violations must be an array".into()))?;
@@ -112,7 +137,7 @@ pub(crate) fn validate_axe_violation_array(
         if violation.description.trim().is_empty() {
             empty.push("description");
         }
-        if violation.nodes.is_empty() {
+        if require_nodes && violation.nodes.is_empty() {
             empty.push("nodes");
         }
         if !empty.is_empty() {

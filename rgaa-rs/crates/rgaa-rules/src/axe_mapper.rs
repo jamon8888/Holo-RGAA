@@ -122,17 +122,18 @@ impl AxeMapper {
     /// Accepte le tableau de violations nu comme l'objet complet d'`axe.run()`.
     fn split_run(
         parsed: serde_json::Value,
-    ) -> Result<(Vec<AxeViolation>, Vec<AxeViolation>), RgaaError> {
-        let field = |value: Option<serde_json::Value>,
-                     name: &str|
-         -> Result<Vec<AxeViolation>, RgaaError> {
+    ) -> Result<(Vec<AxeViolation>, Vec<AxeIncomplete>), RgaaError> {
+        fn field<T: serde::de::DeserializeOwned>(
+            value: Option<serde_json::Value>,
+            name: &str,
+        ) -> Result<Vec<T>, RgaaError> {
             match value {
                 None | Some(serde_json::Value::Null) => Ok(Vec::new()),
                 Some(value) => serde_json::from_value(value).map_err(|e| {
                     RgaaError::AxeCore(format!("Failed to parse axe '{name}' JSON: {e}"))
                 }),
             }
-        };
+        }
         match parsed {
             serde_json::Value::Array(_) => Ok((field(Some(parsed), "violations")?, Vec::new())),
             serde_json::Value::Object(mut run) => Ok((
@@ -153,7 +154,7 @@ impl AxeMapper {
     fn apply_incomplete(
         results: &mut IndexMap<String, CriterionResult>,
         mapping: &IndexMap<String, CriterionMechanism>,
-        incomplete: &[AxeViolation],
+        incomplete: &[AxeIncomplete],
     ) {
         for item in incomplete {
             for (rgaa_id, mechanism) in mapping {
@@ -252,6 +253,21 @@ struct AxeViolation {
     impact: String,
     description: String,
     nodes: Vec<serde_json::Value>,
+}
+
+/// Une entrée `incomplete` d'axe — « je n'ai pas pu trancher ».
+///
+/// Distincte d'[`AxeViolation`] à dessein. Une violation est un manquement prouvé : elle
+/// porte un `impact` et les nœuds sur lesquels elle l'est. Une entrée `incomplete` n'en
+/// porte pas forcément : axe-core y range aussi une règle qui a LEVÉ une exception, avec
+/// `impact: null` et `nodes: []`. Lui imposer la forme d'une violation faisait échouer
+/// toute la page sur cette seule règle, alors que ce que le mapper en tire — l'identifiant
+/// et la description, pour nommer la règle dans la raison de revue — est toujours présent.
+/// Les champs qu'on ne lit pas (`impact`, `nodes`) sont ignorés, pas exigés.
+#[derive(serde::Deserialize)]
+struct AxeIncomplete {
+    id: String,
+    description: String,
 }
 
 #[cfg(test)]
@@ -597,6 +613,34 @@ mod tests {
                 .as_deref()
                 .is_some_and(|reason| reason.contains("area-alt")),
             "la raison de revue doit nommer la règle, obtenu {:?}",
+            result.review_reason
+        );
+    }
+
+    /// axe-core range dans `incomplete` une règle qui a LEVÉ une exception, avec `nodes: []`.
+    /// Le mapper n'a besoin que de l'identifiant et de la description : une telle règle doit
+    /// donc passer le critère en revue en la nommant, comme n'importe quel cas indécis —
+    /// la jeter laisserait le critère à `Pass` sur le silence d'une règle qui n'a jamais tourné.
+    #[test]
+    fn an_incomplete_rule_that_could_not_run_still_needs_review() {
+        let axe_json = r#"{"violations":[],"incomplete":[{"id":"area-alt","impact":null,
+            "description":"An error occured while running this rule","nodes":[]}]}"#;
+        let results = AxeMapper::map(axe_json).expect("une règle sans nœud doit être acceptée");
+        let result = results
+            .get("1.1")
+            .expect("area-alt doit produire un résultat pour 1.1");
+        assert_eq!(
+            result.status,
+            CriterionStatus::NeedsReview,
+            "une règle qui n'a pas pu tourner ne peut pas laisser le critère à Pass"
+        );
+        assert!(
+            result
+                .review_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("area-alt")
+                    && reason.contains("An error occured while running this rule")),
+            "la raison doit nommer la règle et dire ce qui s'est passé, obtenu {:?}",
             result.review_reason
         );
     }

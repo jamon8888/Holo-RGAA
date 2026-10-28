@@ -13,7 +13,8 @@
 //! Elle ne doit **jamais** rendre `pass` sur le balisage seul, et 1.2 ne peut pas être
 //! déclaré en couverture complète : la sonde ne regarde que `<img>`, un porteur sur six.
 //!
-//! Lancer à la main avec `RUN_E2E=1`.
+//! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
+//! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -23,7 +24,6 @@ use std::path::{Path, PathBuf};
 use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::GapFixRules;
-
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -95,11 +95,10 @@ async fn probe_1_2_detailed(url: &str) -> Option<(CriterionStatus, usize)> {
 
 #[tokio::test]
 async fn criterion_1_2_judges_only_what_the_markup_settles() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_1_2_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_1_2_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
@@ -169,11 +168,10 @@ async fn criterion_1_2_judges_only_what_the_markup_settles() {
 /// passe au travers — le défaut même qui a fait ouvrir #366.
 #[tokio::test]
 async fn every_carrier_of_criterion_1_2_is_examined() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_1_2_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_1_2_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 

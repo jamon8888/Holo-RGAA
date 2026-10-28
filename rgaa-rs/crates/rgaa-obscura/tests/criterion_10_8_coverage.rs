@@ -21,7 +21,8 @@
 //! prouverait rien) et une page à contenu caché par CSS, non marqué `aria-hidden`, dont le
 //! seul bouton visible ne le révèle jamais.
 //!
-//! Non câblé dans le job E2E de la CI. Lancer à la main avec `RUN_E2E=1`.
+//! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
+//! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -31,7 +32,6 @@ use std::sync::Arc;
 use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::AxeMapper;
-
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -86,15 +86,16 @@ async fn audit_10_8(bridge: &Arc<ObscuraBridge>, url: &str) -> Option<CriterionS
 
 #[tokio::test]
 async fn criterion_10_8_does_not_pass_hidden_content_of_undecided_intent() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_10_8_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_10_8_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
-    let mut server = ObscuraBridge::new().with_port(9346);
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
     server
         .start_server()
         .await

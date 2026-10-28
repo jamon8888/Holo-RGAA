@@ -24,3 +24,7 @@ tracing = { workspace = true }
 anyhow = { workspace = true }
 uuid = { version = "1.0", features = ["v4"] }
 reqwest = { workspace = true }
+
+[dev-dependencies]
+# Politique partagée du garde-fou E2E (`rgaa_test_corpus::e2e::enabled`).
+rgaa-test-corpus = { path = "../rgaa-test-corpus" }

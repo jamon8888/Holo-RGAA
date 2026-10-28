@@ -10,8 +10,13 @@
 //! balisé, qu'axe doit voir — sans lui, un résultat « conforme » sur l'autre page ne prouverait
 //! rien) et la page à liste visuelle sans balisage.
 //!
-//! Non câblé dans le job E2E de la CI : il énonce le comportement **attendu**, et tant que la
-//! couverture de 9.3 est surdéclarée il échoue. Lancer à la main avec `RUN_E2E=1`.
+//! Il énonce le comportement **attendu** de la couverture de 9.3 : il a été écrit
+//! contre une couverture surdéclarée, où il échouait, et c'est sa correction qui l'a
+//! fait passer. Il reste en place comme garde contre une régression de la
+//! surdéclaration.
+//!
+//! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
+//! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -21,7 +26,6 @@ use std::sync::Arc;
 use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::AxeMapper;
-
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
@@ -77,15 +81,16 @@ async fn audit_9_3(bridge: &Arc<ObscuraBridge>, url: &str) -> Option<CriterionSt
 
 #[tokio::test]
 async fn criterion_9_3_does_not_pass_a_visually_styled_list_with_no_list_markup() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("criterion_9_3_coverage ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("criterion_9_3_coverage") {
         return;
     }
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");
 
-    let mut server = ObscuraBridge::new().with_port(9342);
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
     server
         .start_server()
         .await

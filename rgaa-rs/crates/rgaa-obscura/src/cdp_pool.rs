@@ -416,7 +416,7 @@ pub(crate) fn extract_axe_violations(result: &Value) -> Result<String, String> {
     // elements with the same rule the single-page path uses.
     crate::validate_axe_violation_array(violations)
         .map_err(|error| format!("invalid axe violations: {error}"))?;
-    crate::validate_axe_violation_array(&incomplete)
+    crate::validate_axe_incomplete_array(&incomplete)
         .map_err(|error| format!("invalid axe incomplete entries: {error}"))?;
 
     serde_json::to_string(&serde_json::json!({
@@ -739,6 +739,55 @@ mod tests {
         let response = evaluate_response(json!({
             "violations": [],
             "incomplete": [{"id": "", "impact": "serious", "description": "", "nodes": []}],
+        }));
+        assert!(extract_axe_violations(&response).is_err());
+    }
+
+    /// axe-core files a rule that threw an exception under `incomplete`, with `nodes: []`.
+    /// It must survive extraction: rejecting it failed the whole page, and dropping it
+    /// would let the criterion pass on the silence of a rule that never ran.
+    #[test]
+    fn an_incomplete_entry_with_no_nodes_is_kept_not_fatal() {
+        let response = evaluate_response(json!({
+            "violations": [],
+            "incomplete": [{
+                "id": "td-headers-attr",
+                "impact": null,
+                "description": "An error occured while running this rule",
+                "nodes": [],
+            }],
+        }));
+        let extracted = extract_axe_violations(&response)
+            .expect("a rule that could not run must not fail the page");
+        let parsed: Value = serde_json::from_str(&extracted).expect("the output is JSON");
+        assert_eq!(parsed["incomplete"].as_array().map(Vec::len), Some(1));
+        assert_eq!(parsed["incomplete"][0]["id"], "td-headers-attr");
+    }
+
+    /// The relaxation is for `nodes` only. An entry that does not even name its rule or say
+    /// what happened is malformed, not undecided.
+    #[test]
+    fn an_incomplete_entry_must_still_name_its_rule_and_say_why() {
+        for entry in [
+            json!({"id": "", "description": "x", "nodes": []}),
+            json!({"id": "td-headers-attr", "description": "  ", "nodes": []}),
+        ] {
+            let response = evaluate_response(json!({"violations": [], "incomplete": [entry]}));
+            assert!(
+                extract_axe_violations(&response).is_err(),
+                "an entry without id or description must stay rejected"
+            );
+        }
+    }
+
+    /// A *violation* is a proven failure and still has to carry its nodes: the relaxation
+    /// above must not leak to `violations`.
+    #[test]
+    fn a_violation_with_no_nodes_is_still_rejected() {
+        let response = evaluate_response(json!({
+            "violations": [{"id": "image-alt", "impact": "critical",
+                            "description": "Images must have alternate text", "nodes": []}],
+            "incomplete": [],
         }));
         assert!(extract_axe_violations(&response).is_err());
     }

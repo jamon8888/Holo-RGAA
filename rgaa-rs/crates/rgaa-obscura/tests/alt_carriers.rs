@@ -10,7 +10,6 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 
 use rgaa_obscura::ObscuraBridge;
-
 /// Sert le répertoire de fixtures en HTTP sur la boucle locale : Obscura refuse `file://`.
 fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -66,14 +65,13 @@ const CARRIERS: &[(&str, &str, &str)] = &[
 #[tokio::test]
 async fn page_context_extracts_every_alt_carrier_of_criterion_1_3() {
     // Même porte que `fixture_classification` : ce test a besoin du binaire Obscura.
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("alt_carriers ignoré (poser RUN_E2E=1 pour l'activer)");
+    if !rgaa_test_corpus::e2e::enabled("alt_carriers") {
         return;
     }
     // Les fixtures sont servies sur 127.0.0.1, qu'Obscura bloque par défaut (garde SSRF) ;
     // sans cette variable la page se charge en document vide de 39 octets et le test
     // passerait pour de mauvaises raisons.
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
 
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let port = serve(dir).expect("fixture server");

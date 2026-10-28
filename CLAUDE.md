@@ -150,6 +150,24 @@ impl PromptBuilder {
 }
 ```
 
+## Testing Layers
+
+Three layers, all unconditional in CI (no repo variable, no secret): Rust
+unit/integration (`Build & Test`), the Node DOM probe harnesses
+(`Probe harness`), and browser E2E (`E2E (navigateur)`) — plus a fourth,
+`E2E (agent + orchestrator)`, which stays gated on `MYIA_API_KEY` and is
+therefore still unverified — as are the `rgaa-spider` network tests, which no CI
+job runs at all. What each one proves,
+how to run them locally, and why the E2E suite used to run nowhere at all:
+`docs/testing-layers.md`. Two rules worth knowing before touching that suite:
+
+- Never give an `ObscuraBridge` a fixed CDP port — use
+  `ObscuraBridge::with_ephemeral_port()`. A fixed port is shared state between
+  processes, and concurrent runs used to steal each other's server.
+- A test that skips must never be able to pass silently in CI. The guard lives
+  in `rgaa_test_corpus::e2e::enabled`; CI sets `RGAA_E2E_REQUIRED=1` so a lost
+  `RUN_E2E` fails the job instead of reporting an empty green.
+
 ## Testing Gaps
 
 | Crate | Has Tests | Needs |
@@ -220,6 +238,12 @@ cargo nextest run --workspace --no-capture
 # Lint
 cargo clippy --workspace --all-targets
 cargo fmt --check
+
+# E2E navigateur (nécessite le binaire Obscura 0.2.4 ; voir docs/testing-layers.md)
+RUN_E2E=1 cargo nextest run -p rgaa-obscura -E 'binary(/^criterion_.+_coverage$/)'
+
+# Harnais DOM des sondes JS (Node, sans navigateur, quelques secondes)
+(cd crates/rgaa-rules/tests/js && npm ci && ./run-harnesses.sh)
 
 # Profile
 RUSTFLAGS="-C force-frame-pointers=yes" cargo build --profile profiling

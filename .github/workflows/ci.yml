@@ -358,13 +358,100 @@ jobs:
         # sole path pulling in xcb and wasn't referenced anywhere in the crate.
         # `cargo tree -i xcb` confirms xcb no longer appears in the tree.
 
-  e2e:
-    name: E2E (browser + agent + orchestrator)
+  probe-harness:
+    name: Probe harness (DOM, sans navigateur)
+    runs-on: ubuntu-latest
+    steps:
+      # Les sondes JS embarquées dans `plan_snippets.rs` / `gap_fix.rs` sont
+      # exécutées contre un `document` factice sous Node : pas de navigateur,
+      # pas de binaire Obscura, quelques secondes. Ça ne remplace pas l'E2E
+      # navigateur (aucun rendu, aucun layout, aucun calcul de style réel) mais
+      # ça couvre à coût nul le parsing et la sélection de candidats, qui est
+      # l'essentiel de ce que les sondes doivent garantir. Ces harnais
+      # existaient déjà dans l'arbre sans être lancés par personne.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install harness dependencies
+        working-directory: rgaa-rs/crates/rgaa-rules/tests/js
+        run: npm ci
+      - name: Run DOM probe harnesses
+        working-directory: rgaa-rs/crates/rgaa-rules/tests/js
+        run: ./run-harnesses.sh
+
+  e2e-browser:
+    name: E2E (navigateur)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: rgaa-rs
     steps:
+      # Les tests de couverture de `rgaa-obscura` n'ont besoin que du substrat
+      # Obscura : pas de LLM, pas de secret. Ils vivaient pourtant dans le job
+      # `e2e` ci-dessous, conditionné à `vars.MYIA_E2E_ENABLED` (variable jamais
+      # définie) et au secret `MYIA_API_KEY` — donc jamais exécutés, verts par
+      # défaut, alors qu'ils ressemblaient à une couverture automatisée. Ils
+      # payaient un coût qu'ils n'avaient pas. D'où ce job séparé et sans
+      # condition : un échec de couverture doit se voir sur la PR.
+      #
+      # Les trois tests E2E de `rgaa-orchestrator` restent dans `e2e` : eux
+      # traversent le pipeline complet et ont réellement besoin d'une clé LLM.
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rgaa-rs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
+      - uses: taiki-e/install-action@nextest
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      - name: Prepare Obscura backend
+        working-directory: ${{ github.workspace }}
+        run: |
+          curl -fSL -o obscura.tar.gz "https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.4/obscura-x86_64-linux.tar.gz"
+          echo "757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000  obscura.tar.gz" | sha256sum -c -
+          tar -xzf obscura.tar.gz
+          chmod +x obscura obscura-worker
+          [ "$(./obscura --version | awk '{print $1" "$2}')" = "obscura 0.2.4" ] || { echo "obscura version drift: $(./obscura --version)"; exit 1; }
+          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+      - name: Run browser coverage tests
+        env:
+          RUN_E2E: "1"
+          # Rend fatale la perte de RUN_E2E : sans ça, ces tests sortent en tête
+          # sans rien affirmer et le job passe au vert pour rien.
+          RGAA_E2E_REQUIRED: "1"
+          # Un worker par serveur : deux tests tournent en parallèle
+          # (`--test-threads 2`), donc deux `obscura serve` coexistent, et un
+          # worker par CPU chacun sature la mémoire du runner.
+          OBSCURA_WORKERS: "1"
+          RUSTC_WRAPPER: sccache
+        # Filtre par expression plutôt que par liste de `--test` : un nouveau
+        # `criterion_*_coverage.rs` est pris automatiquement, au lieu d'être
+        # oublié en silence. `--no-tests=fail` refuse un filtre qui ne
+        # sélectionne rien — sans quoi une faute de frappe dans l'expression
+        # ramènerait le vert-par-défaut qu'on vient de retirer.
+        #
+        # Deux tests à la fois, délibérément : c'est l'isolation des ports CDP
+        # (`with_ephemeral_port`) qui rend ça possible, et la faire exercer par
+        # la CI est la meilleure garde contre son retour à un port fixe.
+        run: |
+          filter='binary(/^criterion_.+_coverage$/) + binary(=alt_carriers)'
+          cargo nextest run -p rgaa-obscura --no-tests=fail --test-threads 2 -E "$filter"
+
+  e2e:
+    name: E2E (agent + orchestrator, nécessite MYIA_API_KEY)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      # Ce job reste conditionnel, et ses trois tests restent donc non
+      # vérifiés jusqu'à ce que `MYIA_E2E_ENABLED` et `MYIA_API_KEY` existent.
+      # C'est un choix assumé, pas un oubli : voir docs/testing-layers.md.
       - name: Check E2E prerequisites
         if: ${{ vars.MYIA_E2E_ENABLED != 'true' }}
         working-directory: .
@@ -414,7 +501,13 @@ jobs:
         working-directory: rgaa-rs
         env:
           RUN_E2E: "1"
+          # Même garde que dans `E2E (navigateur)` : quand ce job tourne enfin,
+          # la perte de RUN_E2E doit le faire échouer, pas passer à vide.
+          RGAA_E2E_REQUIRED: "1"
           RGAA_LLM_PROVIDER: myia
           MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
           RUSTC_WRAPPER: sccache
-        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification --test alt_carriers -- --nocapture
+        # `alt_carriers` est passé dans `E2E (navigateur)`, qui tourne sans
+        # condition : il n'a pas besoin de clé LLM. Ne restent ici que les
+        # trois tests qui traversent le pipeline complet.
+        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification -- --nocapture

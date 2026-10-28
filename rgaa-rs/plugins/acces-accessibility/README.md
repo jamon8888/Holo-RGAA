@@ -92,10 +92,12 @@ export OBSCURA_ALLOW_PRIVATE_NETWORK=1   # obscura blocks loopback by default (S
 export RGAA_SOURCE_MAP_ROOTS=/path/to/project   # source_map is confined to the server's cwd
 ```
 
-The first has a trap: `obscura`'s CDP server uses a hardcoded port 9222 and
-**reuses one already listening there**, so a server started earlier without the
-flag keeps blocking localhost and your variable has no effect. Check with
-`ss -ltnp | grep 9222`. See `skills/setup/SKILL.md`.
+The first has a trap: the flag reaches `obscura` only through the environment of
+a server `rgaa-obscura` itself spawns, so a server started earlier without it
+keeps blocking localhost. `start_server` refuses to attach to a server already
+holding its port (default 9222) and says so, so this surfaces as a startup
+error rather than an unexplained block. Check with `ss -ltnp | grep 9222`. See
+`skills/setup/SKILL.md`.
 
 ## Skills
 

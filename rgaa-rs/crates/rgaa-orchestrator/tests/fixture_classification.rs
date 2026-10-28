@@ -107,8 +107,7 @@ fn cases() -> Vec<Case> {
 
 #[tokio::test]
 async fn registry_fixtures_are_classified_under_obscura() {
-    if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
-        eprintln!("skipping fixture classification (set RUN_E2E=1 to enable)");
+    if !rgaa_test_corpus::e2e::enabled("fixture_classification") {
         return;
     }
     let cases = cases();

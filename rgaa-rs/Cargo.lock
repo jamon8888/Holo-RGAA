@@ -7097,6 +7097,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rgaa-core",
  "rgaa-rules",
+ "rgaa-test-corpus",
  "serde",
  "serde_json",
  "sha2",
@@ -7123,6 +7124,7 @@ dependencies = [
  "rgaa-rules",
  "rgaa-spider",
  "rgaa-storage",
+ "rgaa-test-corpus",
  "rig-core",
  "serde",
  "serde_json",
@@ -7210,6 +7212,7 @@ dependencies = [
  "rgaa-core",
  "serde",
  "serde_json",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -60,6 +60,11 @@ Re-soumet les cartes où l'étiqueteur diverge de la règle, celles que vous dé
 équilibré de cartes concordantes — ré-identifiées, mélangées, sans rien qui les distingue. Elle mesure la
 cohérence test-retest, qui plafonne ce qu'un modèle peut atteindre.
 
+Un export **partiel** — un lot étiqueté en plusieurs séances — est accepté : seules les cartes qui ont
+une étiquette valide sont re-soumises, les autres sont nommées sur stderr, et le script signale quand
+le résultat tombe sous le minimum de 12 cartes du protocole. Une carte demandée par `--extra` mais
+jamais étiquetée est refusée plutôt qu'écartée en silence. Les tests : `python3 -m unittest test_recheck`.
+
 ## Ce que chaque script garantit
 
 **`sheet.py`** applique la contrainte du §2 du protocole : **justification obligatoire sur

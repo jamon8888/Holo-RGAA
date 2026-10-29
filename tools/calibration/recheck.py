@@ -10,6 +10,10 @@ une raison particulière, ni le verdict précédent. La justification reste obli
 
     python3 recheck.py build   --lot-dir lot --labels export.json [--extra g03,g19] [--n 14] [--seed 7]
     python3 recheck.py compare --lot-dir lot --labels export.json --labels2 export2.json
+
+Un export PARTIEL est le cas normal (on étiquette un lot en plusieurs séances) : seules les cartes
+qui ont une étiquette valide sont re-soumises, les autres sont nommées et ignorées, et le script
+dit quand le résultat tombe sous le minimum du protocole (§3 : au moins 12 cartes).
 """
 import argparse, collections, hashlib, json, math, os, random, sys
 
@@ -17,6 +21,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sheet import build as build_sheet
 
 VERDICTS = ("pertinent", "non_pertinent")
+
+# Protocole §3 : une re-vérification porte sur « au moins 12 cartes ». En dessous, la cohérence
+# test-retest mesurée n'a plus la précision qui lui permet de plafonner un modèle.
+MIN_RECHECK = 12
+
+
+def first_verdict(labels, qid):
+    """Verdict de la première passe, ou None si la carte n'a pas d'étiquette valide.
+
+    Toute carte de la clé n'est pas forcément dans l'export : il est partiel quand l'étiquetage
+    a été fait en plusieurs séances. Indexer `labels[qid]` plantait sur la première absente.
+    """
+    verdict = labels.get(qid, {}).get("verdict")
+    return verdict if verdict in VERDICTS else None
 
 
 def wilson(k, n, z=1.96):
@@ -38,15 +56,39 @@ def cmd_build(a):
     items, key = load(a.lot_dir)
     labels = {l["qid"]: l for l in json.load(open(a.labels, encoding="utf-8"))["labels"]}
     rng = random.Random(a.seed)
-    flagged = [q for q in key if labels[q]["verdict"] in VERDICTS
-               and (labels[q]["verdict"] == VERDICTS[0]) != (key[q]["pred"] == "P")]   # humain != prédiction
-    flagged += [q for q in (a.extra.split(",") if a.extra else []) if q in key and q not in flagged]
-    rest = [q for q in key if q not in flagged and not key[q].get("anchor")]
+    labeled = [q for q in key if first_verdict(labels, q)]
+    unlabeled = [q for q in key if q not in labeled]
+    if not labeled:
+        sys.exit("aucune carte du lot n'a d'étiquette valide dans cet export : rien à re-soumettre")
+    if unlabeled:
+        print(f"{len(unlabeled)} carte(s) du lot sans étiquette valide dans cet export, non re-soumises : "
+              f"{', '.join(unlabeled)}", file=sys.stderr)
+    divergent = [q for q in labeled
+                 if (first_verdict(labels, q) == VERDICTS[0]) != (key[q]["pred"] == "P")]   # humain != prédiction
+    flagged = list(divergent)
+    # `dict.fromkeys` : une carte répétée dans --extra serait re-soumise plusieurs fois, et
+    # `compare` la compterait autant de fois dans la cohérence mesurée.
+    extra_ids = list(dict.fromkeys(q for q in (a.extra.split(",") if a.extra else []) if q))
+    extra = [q for q in extra_ids if q in key and q not in flagged]
+    # Une carte demandée explicitement mais jamais étiquetée n'a pas de 1re passe à comparer :
+    # l'écarter en silence ferait croire qu'elle a été re-vérifiée.
+    missing = [q for q in extra if q not in labeled]
+    if missing:
+        sys.exit(f"--extra : carte(s) sans étiquette valide dans cet export, impossibles à re-vérifier : "
+                 f"{', '.join(missing)}")
+    flagged += extra
+    rest = [q for q in labeled if q not in flagged and not key[q].get("anchor")]
     # compléter à n en gardant l'équilibre pertinent / non pertinent de l'étiquetage initial
-    by_v = {v: [q for q in rest if labels[q]["verdict"] == v] for v in VERDICTS}
+    by_v = {v: [q for q in rest if first_verdict(labels, q) == v] for v in VERDICTS}
     for v in by_v:
         rng.shuffle(by_v[v])
-    need = max(0, a.n - len(flagged))
+    # Protocole §3 : « au moins autant de cartes concordantes que de cartes divergentes ». Sur une
+    # carte choisie parce que l'étiqueteur s'écarte de la règle, tout changement de verdict ne peut
+    # aller que vers la règle : un échantillon dominé par les divergentes fabrique l'accord (lot R,
+    # 17 divergentes sur 21 : 9 changements sur 9 vers la prédiction). Compléter jusqu'à `n` ne
+    # suffit donc pas ; l'équilibre passe avant `n`, qui n'est qu'une cible. Les cartes --extra
+    # suivent la règle (elles ne sont pas divergentes) : elles comptent comme concordantes.
+    need = max(0, a.n - len(flagged), len(divergent) - len(extra))
     pick = []
     while len(pick) < need and (by_v[VERDICTS[0]] or by_v[VERDICTS[1]]):
         for v in VERDICTS:
@@ -54,6 +96,12 @@ def cmd_build(a):
                 pick.append(by_v[v].pop())
     chosen = flagged + pick
     rng.shuffle(chosen)
+    concordant = len(extra) + len(pick)
+    if concordant < len(divergent):
+        print(f"ATTENTION : échantillon déséquilibré : {concordant} carte(s) concordante(s) pour "
+              f"{len(divergent)} divergente(s). Le protocole (§3) exige au moins autant de concordantes ; "
+              f"l'export n'en contient pas assez, et un changement de verdict ne pourra aller que vers la "
+              f"règle. La stabilité mesurée serait biaisée : à ne pas publier telle quelle.", file=sys.stderr)
 
     new_items, new_key = [], {}
     for n, orig in enumerate(chosen, 1):
@@ -62,7 +110,7 @@ def cmd_build(a):
         x.update(qid=r, id=f"H{n:03d}")
         new_items.append(x)
         new_key[r] = {"id": f"H{n:03d}", "orig": orig, "flagged": orig in flagged,
-                      "first": labels[orig]["verdict"], "pred": key[orig]["pred"],
+                      "first": first_verdict(labels, orig), "pred": key[orig]["pred"],
                       "kind": key[orig].get("kind", ""), "anchor": bool(key[orig].get("anchor"))}
 
     out = os.path.join(a.lot_dir, "recheck")
@@ -80,6 +128,9 @@ def cmd_build(a):
         if leak in html:
             sys.exit(f"fuite possible dans la page : {leak!r}")
     open(os.path.join(out, "serve", "etiquetage.html"), "w", encoding="utf-8").write(html)
+    if len(new_items) < MIN_RECHECK:
+        print(f"ATTENTION : {len(new_items)} carte(s) seulement, sous le minimum de {MIN_RECHECK} du protocole "
+              f"(§3) : la cohérence test-retest mesurée ne suffira pas à conclure.", file=sys.stderr)
     print(f"{len(new_items)} cartes dont {len(flagged)} signalées ({', '.join(flagged)}) -> {out}/serve/etiquetage.html")
 
 
@@ -87,6 +138,15 @@ def cmd_compare(a):
     key = json.load(open(os.path.join(a.lot_dir, "recheck", "key.json"), encoding="utf-8"))
     second = {l["qid"]: l for l in json.load(open(a.labels2, encoding="utf-8"))["labels"]}
     rows = [dict(v, rid=r, second=second[r]["verdict"], c2=second[r].get("comment", "")) for r, v in key.items() if r in second]
+    if not rows:
+        sys.exit("aucune carte de la re-vérification n'a été re-étiquetée dans cet export : rien à comparer")
+    unanswered = [r for r in key if r not in second]
+    if unanswered:
+        print(f"{len(unanswered)} carte(s) sur {len(key)} non re-étiquetée(s), exclues de la comparaison.",
+              file=sys.stderr)
+    if len(rows) < MIN_RECHECK:
+        print(f"ATTENTION : {len(rows)} carte(s) comparée(s), sous le minimum de {MIN_RECHECK} du protocole (§3).",
+              file=sys.stderr)
     ok = [r for r in rows if r["first"] == r["second"]]
     lo, hi = wilson(len(ok), len(rows))
     print(f"COHÉRENCE TEST-RETEST : {len(ok)}/{len(rows)} = {len(ok)/len(rows):.0%}   IC95 [{lo:.0%} ; {hi:.0%}]\n")

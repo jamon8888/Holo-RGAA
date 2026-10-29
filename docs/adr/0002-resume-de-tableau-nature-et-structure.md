@@ -1,6 +1,6 @@
 # 0002 — Un résumé de tableau porte la nature et la structure, pas le contenu des cellules
 
-- Statut : accepté
+- Statut : accepté, précisé par l'ADR 0003 (les en-têtes y sont nommés)
 - Date : 2026-10-18
 - Contexte d'origine : lot R (famille « résumé et libellé »), carte #330, ticket #354
 

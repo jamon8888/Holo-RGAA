@@ -442,6 +442,39 @@ jobs:
           filter='binary(/^criterion_.+_coverage$/) + binary(=alt_carriers)'
           cargo nextest run -p rgaa-obscura --no-tests=fail --test-threads 2 -E "$filter"
 
+  spider-e2e:
+    name: E2E (spider, serveur local)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rgaa-rs
+    steps:
+      # Les trois tests de `rgaa-spider` ne tournaient dans aucun job : ils
+      # se sautent sans `RUN_E2E=1`, que seul le job `e2e` (gated, jamais activé)
+      # positionnait. Ni LLM, ni secret, ni réseau sortant : les tests crawlent un
+      # petit serveur HTTP local, donc une panne du runner ne peut pas les faire
+      # échouer.
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rgaa-rs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.7
+      - uses: rui314/setup-mold@v1
+      - uses: taiki-e/install-action@nextest
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cmake clang libssl-dev binutils
+      - name: Run spider network tests
+        env:
+          RUN_E2E: "1"
+          # Rend fatale la perte de RUN_E2E (voir `E2E (navigateur)`).
+          RGAA_E2E_REQUIRED: "1"
+          RUSTC_WRAPPER: sccache
+        # `--no-tests=fail` : un filtre qui ne sélectionne rien ne doit pas passer.
+        run: cargo nextest run -p rgaa-spider --no-tests=fail --test spider_tool_test
+
   e2e:
     name: E2E (agent + orchestrator, nécessite MYIA_API_KEY)
     runs-on: ubuntu-latest

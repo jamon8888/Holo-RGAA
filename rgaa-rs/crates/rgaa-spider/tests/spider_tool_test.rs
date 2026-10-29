@@ -7,6 +7,12 @@ use rig_core::tool::PortableTool;
 
 fn e2e_enabled() -> bool {
     if std::env::var("RUN_E2E").ok().as_deref() != Some("1") {
+        // Même garde que `rgaa_test_corpus::e2e::enabled` : en CI, perdre RUN_E2E
+        // doit faire échouer le job, pas le laisser passer à vide.
+        assert!(
+            std::env::var("RGAA_E2E_REQUIRED").ok().as_deref() != Some("1"),
+            "RGAA_E2E_REQUIRED=1 mais RUN_E2E n'est pas 1 : ces tests se sauteraient en silence"
+        );
         eprintln!("skipping rgaa-spider E2E (set RUN_E2E=1 to enable)");
         return false;
     }

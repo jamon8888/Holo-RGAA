@@ -21,15 +21,15 @@ vérifiés**, et ne le seront pas avant que la variable et le secret existent.
 C'est un choix assumé — on ne peut pas provisionner une clé API dans un commit —
 et non un oubli.
 
-La cinquième ligne est un **second** endroit non vérifié, et il n'est lié à aucun
-secret : les trois tests de `rgaa-spider/tests/spider_tool_test.rs` interrogent le
-réseau et ne s'exécutent que sous `RUN_E2E=1`, que `Build & Test` ne pose pas. Leur
-commentaire dit « e.g. in the CI `e2e` job », mais ce job ne les lance pas — sa
-liste de `--test` est explicite et ne les contient pas — et il est de toute façon
-conditionnel. Ils ne tournent donc nulle part. Les rendre effectifs demande une
-politique sur les tests qui sortent du runner (quels sites, quelle tolérance aux
-pannes réseau), pas un correctif de couverture : ce n'est pas tranché ici. La
-différence avec l'état précédent est que le non-vérifié est maintenant **écrit**.
+Les trois tests de `rgaa-spider/tests/spider_tool_test.rs` interrogent le réseau
+(`example.com`) et ne s'exécutent que sous `RUN_E2E=1`. Ils ne tournaient nulle part :
+le job `e2e` qui devait les lancer est conditionnel et ne les contient pas dans sa
+liste de `--test`. Ils ont maintenant leur propre job, `E2E (spider, réseau)`, sans
+condition ni secret, qui pose `RUN_E2E=1` et `RGAA_E2E_REQUIRED=1` : perdre `RUN_E2E`
+fait échouer le job au lieu de le laisser passer à vide. La politique est la plus
+simple possible : un seul site, `example.com`, et une panne réseau passagère se voit
+sur la PR au lieu d'être masquée. Si elle devient gênante, on la traitera par un
+site de test local, pas en réactivant le saut silencieux.
 
 ## Pourquoi cette page existe
 

@@ -198,6 +198,17 @@ d'effectif — tiennent indépendamment du lot. Mais **elles ne décident pas de
 sur cette famille** tant que le lot qui les porte n'est pas identifié. À refaire sur le lot T une
 fois ses 36 cartes étiquetées.
 
+**Mise à jour du 2026-10-29 — le lot T est maintenant entièrement étiqueté, ce qui lève l'incertitude
+ci-dessus.** Les 36 cartes l'ont été (28 le 2026-10-28, 8 le 2026-10-29), ancres **6/6**, et une
+re-vérification en aveugle de **14 cartes** (≥ 12, §3) donne un test-retest de **13/14 = 93 %**
+(IC95 [69 % ; 99 %]). Le repère trivial *mesuré* est de **81 %** (29/36 non pertinentes, IC95
+[65 % ; 90 %]) : l'étiqueteur n'a retenu que 7 résumés pertinents, bien au-dessus du plafond de
+60 % du §3. Le lot est donc fiable (stable, ancres justes) mais **ne discrimine rien** : il ne
+peut pas servir à admettre un modèle. La raison est un critère plus strict que le glossaire —
+l'étiqueteur exige que le résumé nomme les en-têtes —, retenu par l'ADR 0003. Le lot W
+(`lots/resume_tableau_noms.py`) est le test hors échantillon de ce critère ; tant qu'il n'est pas
+étiqueté, les mesures du tableau ci-dessous restent sans effet sur l'admission.
+
 | Modèle | Consigne | Accord | Faux « pert. » | Faux « non pert. » | Verdict |
 |---|---|---|---|---|---|
 | `Opus` | règle du glossaire | 33/36 = 92 %, kappa 0,83 | 15 % | 0 % | refusé (faux « pertinent ») |

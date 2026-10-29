@@ -443,17 +443,17 @@ jobs:
           cargo nextest run -p rgaa-obscura --no-tests=fail --test-threads 2 -E "$filter"
 
   spider-e2e:
-    name: E2E (spider, réseau)
+    name: E2E (spider, serveur local)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: rgaa-rs
     steps:
-      # Les trois tests réseau de `rgaa-spider` ne tournaient dans aucun job : ils
+      # Les trois tests de `rgaa-spider` ne tournaient dans aucun job : ils
       # se sautent sans `RUN_E2E=1`, que seul le job `e2e` (gated, jamais activé)
-      # positionnait. Pas de LLM ni de secret ici : seulement du réseau sortant,
-      # vers example.com. Un échec réseau passager se verra sur la PR ; c'est le
-      # prix d'un test qui crawle pour de vrai.
+      # positionnait. Ni LLM, ni secret, ni réseau sortant : les tests crawlent un
+      # petit serveur HTTP local, donc une panne du runner ne peut pas les faire
+      # échouer.
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:

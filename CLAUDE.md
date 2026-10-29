@@ -155,7 +155,7 @@ impl PromptBuilder {
 Four layers, all unconditional in CI (no repo variable, no secret): Rust
 unit/integration (`Build & Test`), the Node DOM probe harnesses
 (`Probe harness`), browser E2E (`E2E (navigateur)`) and the `rgaa-spider`
-network tests (`E2E (spider, réseau)`) — plus a fifth,
+tests against a local server (`E2E (spider, serveur local)`) — plus a fifth,
 `E2E (agent + orchestrator)`, which stays gated on `MYIA_API_KEY` and is
 therefore still unverified. What each one proves,
 how to run them locally, and why the E2E suite used to run nowhere at all:

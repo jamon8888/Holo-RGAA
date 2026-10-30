@@ -583,7 +583,9 @@ pub enum ServeError {
 /// than the process refusing to start and taking `/health` down with it.
 pub fn default_tool_server() -> ToolServer {
     let bridge = Arc::new(rgaa_mcp::LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::from_env(),
+        rgaa_obscura::ObscuraBridge::from_env()
+            .with_ephemeral_port()
+            .expect("failed to allocate an ephemeral CDP port"),
     ));
     ToolServer::new(
         Arc::new(rgaa_mcp::ObscuraAnalyzeService::new(Arc::clone(&bridge))),

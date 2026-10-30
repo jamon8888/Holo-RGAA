@@ -30,7 +30,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_writer(std::io::stderr)
         .init();
     let bridge = Arc::new(LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::from_env(),
+        rgaa_obscura::ObscuraBridge::from_env()
+            .with_ephemeral_port()
+            .map_err(|e| format!("failed to allocate an ephemeral CDP port: {e}"))?,
     ));
     let service = ToolServer::new(
         Arc::new(ObscuraAnalyzeService::new(Arc::clone(&bridge))),

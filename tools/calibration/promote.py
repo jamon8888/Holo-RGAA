@@ -21,6 +21,15 @@ sys.path.insert(0, HERE)
 from score import wilson  # même intervalle de Wilson que le seuil §4
 
 
+def _run(argv, **kw):
+    """Seul point d'appel à subprocess. `argv` est une LISTE (jamais de shell) : aucun argument n'est
+    interprété par un shell, donc pas d'injection de commande. Ses éléments viennent des options de la
+    ligne de commande et de candidates.toml (relu en PR), jamais d'une sortie de modèle ni du réseau."""
+    assert isinstance(argv, list) and all(isinstance(x, str) for x in argv)
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
+    return subprocess.run(argv, shell=False, **kw)
+
+
 def run_cmd(c, lot_dir, prompt_file):
     cmd = [sys.executable, os.path.join(HERE, "run_models.py"), "--lot-dir", lot_dir,
            "--prompt-file", prompt_file, "--model", c["model"], "--tag", c["name"]]
@@ -71,8 +80,8 @@ def main():
             sys.exit(f"{c['name']} est external=true : relancez avec --allow-external pour confirmer l'envoi.")
         if external and not os.environ.get(c["key_env"]):
             sys.exit(f"variable {c['key_env']} absente : exportez-la dans votre shell.")
-        subprocess.run(cmd, check=True)
-        sc = subprocess.run([sys.executable, os.path.join(HERE, "score.py"),
+        _run(cmd, check=True)
+        sc = _run([sys.executable, os.path.join(HERE, "score.py"),
                              "--key", os.path.join(a.lot_dir, "key.json"), "--labels", a.labels,
                              "--model", results_path(c, a.lot_dir)],
                             capture_output=True, text=True)

@@ -1,0 +1,80 @@
+name: Promotion de juge LLM
+
+# Passe les candidats de tools/calibration/candidates.toml sur le lot étiqueté et publie un rapport
+# de promotion. NE BASCULE RIEN : le rapport propose des variables RGAA_LLM_*, une PR les applique.
+#
+# Prérequis (à faire par l'humain, une fois) :
+#   1. secret de dépôt NVIDIA_API_KEY (Settings > Secrets and variables > Actions) ;
+#   2. l'export d'étiquettes de l'humain dans tools/calibration/labels/etiquettes.json.
+# Sans l'un des deux, le job s'arrête proprement (« rien à faire ») au lieu d'échouer.
+#
+# Accord d'envoi (2026-11-04) : permanent pour les 3 modèles NIM de candidates.toml et des cartes
+# SYNTHÉTIQUES uniquement. Ne jamais faire passer de vraies captures de sites audités.
+
+on:
+  schedule:
+    - cron: "0 6 1 * *"   # le 1er de chaque mois, 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      lot:
+        description: "Générateur de lot (lots/<nom>.py)"
+        default: "resume_tableau_noms"
+      prompt_file:
+        description: "Consigne (prompts/<nom>.txt)"
+        default: "prompts/resume_tableau_v3.txt"
+      simulate:
+        description: "Simulation seulement (rien n'est envoyé)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      LOT: ${{ inputs.lot || 'resume_tableau_noms' }}
+      PROMPT: ${{ inputs.prompt_file || 'prompts/resume_tableau_v3.txt' }}
+      SIMULATE: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prérequis présents ?
+        id: pre
+        working-directory: tools/calibration
+        run: |
+          if [ -z "$NVIDIA_API_KEY" ] && [ "$SIMULATE" != "true" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"; echo "Secret NVIDIA_API_KEY absent : rien à faire."
+          elif [ ! -f labels/etiquettes.json ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"; echo "labels/etiquettes.json absent : rien à faire."
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Installer les dépendances
+        if: steps.pre.outputs.ok == 'true'
+        run: pip install -r tools/calibration/requirements.txt
+      - name: Générer le lot
+        if: steps.pre.outputs.ok == 'true'
+        working-directory: tools/calibration
+        run: python3 "lots/${LOT}.py" lot
+      - name: Promotion (simulation ou réelle)
+        if: steps.pre.outputs.ok == 'true'
+        working-directory: tools/calibration
+        run: |
+          if [ "$SIMULATE" = "true" ]; then
+            python3 promote.py --lot-dir lot --labels labels/etiquettes.json --prompt-file "$PROMPT"
+          else
+            python3 promote.py --lot-dir lot --labels labels/etiquettes.json --prompt-file "$PROMPT" \
+              --run --allow-external --report promotion-report.md
+          fi
+      - name: Publier le rapport
+        if: steps.pre.outputs.ok == 'true' && env.SIMULATE != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-report
+          path: tools/calibration/promotion-report.md

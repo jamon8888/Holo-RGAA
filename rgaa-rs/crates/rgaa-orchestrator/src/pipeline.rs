@@ -675,7 +675,9 @@ impl Orchestrator {
         use futures::stream::{self, StreamExt};
 
         let bridge = {
-            let mut b = ObscuraBridge::from_env();
+            let mut b = ObscuraBridge::from_env()
+                .with_ephemeral_port()
+                .map_err(|e| format!("failed to allocate an ephemeral CDP port: {e}"))?;
             b.start_server().await?;
             b
         };
@@ -770,7 +772,9 @@ impl Orchestrator {
         on_phase: impl Fn(AuditPhase) + Send + Sync + 'static,
     ) -> Result<HashMap<String, AuditResult>, String> {
         let bridge = {
-            let mut b = ObscuraBridge::from_env();
+            let mut b = ObscuraBridge::from_env()
+                .with_ephemeral_port()
+                .map_err(|e| format!("failed to allocate an ephemeral CDP port: {e}"))?;
             b.start_server().await?;
             b
         };

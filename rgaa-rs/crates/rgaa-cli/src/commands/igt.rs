@@ -45,7 +45,11 @@ pub async fn run(args: IgtArgs) -> Result<i32, CliError> {
         evidence_requirements: Vec::new(),
     };
 
-    let mut bridge = ObscuraBridge::from_env();
+    let mut bridge = ObscuraBridge::from_env()
+        .with_ephemeral_port()
+        .map_err(|e| {
+            CliError::execution(format!("failed to allocate an ephemeral CDP port: {e}"))
+        })?;
     bridge
         .start_server()
         .await

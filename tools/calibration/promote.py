@@ -14,7 +14,7 @@ Garde-fous :
     python3 promote.py --lot-dir lot_t --labels etiquettes-...json --prompt-file prompts/resume_tableau.txt \\
         --run --allow-external
 """
-import argparse, os, re, subprocess, sys, tomllib
+import argparse, json, os, re, subprocess, sys, tomllib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -48,6 +48,8 @@ def main():
     ap.add_argument("--run", action="store_true", help="exécute (sinon simulation)")
     ap.add_argument("--allow-external", action="store_true", help="autorise l'envoi aux candidats external=true")
     ap.add_argument("--report", default="")
+    ap.add_argument("--min-cards", type=int, default=36,
+                    help="taille minimale du lot pour proposer une promotion (calibration-protocol, #358 Q3 : >= 36)")
     ap.add_argument("--skip-witness", action="store_true",
                     help="n'exécute pas le témoin (ex. runner sans Ollama) : aucune promotion n'est alors proposée, "
                          "car le pouvoir discriminant du lot (§4) n'est pas mesuré")
@@ -89,6 +91,11 @@ def main():
         return
 
     lines.append("## Proposition (non appliquée)")
+    n_cards = len(json.load(open(os.path.join(a.lot_dir, "items.json"), encoding="utf-8")))
+    if n_cards < a.min_cards:
+        admitted = []
+        lines.append(f"Lot trop petit ({n_cards} cartes < {a.min_cards}) : échantillon sous-dimensionné, "
+                     "aucune promotion proposée. Les verdicts ci-dessus restent indicatifs.")
     # §4, pouvoir discriminant : le lot doit faire tomber le témoin nettement sous le candidat
     # (intervalles de Wilson disjoints). Sans témoin mesuré, ou si le témoin fait aussi bien,
     # aucun candidat n'est proposé : le lot est « non discriminant ».
@@ -115,6 +122,8 @@ def main():
                       f"RGAA_LLM_FALLBACK_BASE_URL={rest[0]['base_url']}",
                       f"RGAA_LLM_FALLBACK_API_KEY=${{{rest[0]['key_env']}}}"]
         lines.append("```")
+    elif n_cards < a.min_cards:
+        pass   # déjà expliqué plus haut
     elif wit is not None and not admitted:
         lines.append("Aucun candidat admis : on garde le modèle actuel (jamais de bascule forcée).")
     elif wit is not None:

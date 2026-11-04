@@ -17,6 +17,8 @@ Garde-fous :
 import argparse, os, re, subprocess, sys, tomllib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from score import wilson  # même intervalle de Wilson que le seuil §4
 
 
 def run_cmd(c, lot_dir, prompt_file):
@@ -46,12 +48,17 @@ def main():
     ap.add_argument("--run", action="store_true", help="exécute (sinon simulation)")
     ap.add_argument("--allow-external", action="store_true", help="autorise l'envoi aux candidats external=true")
     ap.add_argument("--report", default="")
+    ap.add_argument("--skip-witness", action="store_true",
+                    help="n'exécute pas le témoin (ex. runner sans Ollama) : aucune promotion n'est alors proposée, "
+                         "car le pouvoir discriminant du lot (§4) n'est pas mesuré")
     a = ap.parse_args()
 
     cfg = tomllib.load(open(a.candidates, "rb"))
-    cands = [cfg["witness"]] + cfg["candidate"]
+    witness = cfg["witness"]
+    cands = ([] if a.skip_witness else [witness]) + cfg["candidate"]
     lines = ["# Rapport de promotion", f"Lot : `{a.lot_dir}` — étiquettes : `{a.labels}`", ""]
     admitted = []
+    wit = None   # (k, n) accord du témoin avec l'humain
     for c in cands:
         external = bool(c.get("external"))
         cmd = run_cmd(c, a.lot_dir, a.prompt_file)
@@ -71,24 +78,47 @@ def main():
         verdict = re.search(r"seuil d'admission[^*]*\*\*(\w+)\*\*", out)
         verdict = verdict.group(1) if verdict else "INCONNU"
         lines += [f"## {c['name']} (`{c['model']}`) — {verdict}", "```", out.strip(), "```", ""]
-        if verdict == "ADMIS" and c is not cfg["witness"]:
-            admitted.append(c)
+        m = re.search(r"MODÈLE vs HUMAIN : (\d+)/(\d+)", out)
+        k_n = (int(m.group(1)), int(m.group(2))) if m else None
+        if c is witness:
+            wit = k_n
+        elif verdict == "ADMIS":
+            admitted.append((c, k_n))
     if not a.run:
         print("\nSimulation : rien n'a été appelé. Ajoutez --run (et --allow-external) pour exécuter.")
         return
 
     lines.append("## Proposition (non appliquée)")
-    if admitted:
-        best, rest = admitted[0], admitted[1:]
-        lines += ["À reporter dans une PR relue par l'humain :", "```",
-                  f"RGAA_LLM_MODEL={best['model']}", f"RGAA_LLM_BASE_URL={best['base_url']}"]
-        if rest:
-            lines += [f"RGAA_LLM_FALLBACK_MODEL={rest[0]['model']}",
-                      f"RGAA_LLM_FALLBACK_BASE_URL={rest[0]['base_url']}"]
-        lines.append("```")
-        lines.append("Vérifier aussi : le témoin doit tomber nettement sous le meilleur candidat (§4, pouvoir discriminant).")
+    # §4, pouvoir discriminant : le lot doit faire tomber le témoin nettement sous le candidat
+    # (intervalles de Wilson disjoints). Sans témoin mesuré, ou si le témoin fait aussi bien,
+    # aucun candidat n'est proposé : le lot est « non discriminant ».
+    if wit is None:
+        retained = []
+        lines.append("Témoin non mesuré : pouvoir discriminant du lot non vérifié (§4). "
+                     "Aucune promotion proposée, même pour un candidat ADMIS.")
     else:
+        wit_hi = wilson(*wit)[1]
+        retained = [c for c, k_n in admitted if k_n and wilson(*k_n)[0] > wit_hi]
+        dropped = [c["name"] for c, _ in admitted if c not in retained]
+        if dropped:
+            lines.append("Écartés faute de pouvoir discriminant (IC du candidat non disjoint de celui du témoin) : "
+                         + ", ".join(dropped) + ".")
+    if retained:
+        best, rest = retained[0], retained[1:]
+        lines += ["À reporter dans une PR relue par l'humain (la clé n'est jamais écrite : on référence la variable) :", "```",
+                  "RGAA_LLM_PROVIDER=custom",
+                  f"RGAA_LLM_MODEL={best['model']}", f"RGAA_LLM_BASE_URL={best['base_url']}",
+                  f"RGAA_LLM_API_KEY=${{{best['key_env']}}}   # le fournisseur « custom » lit RGAA_LLM_API_KEY"]
+        if rest:
+            lines += ["RGAA_LLM_FALLBACK_PROVIDER=custom",
+                      f"RGAA_LLM_FALLBACK_MODEL={rest[0]['model']}",
+                      f"RGAA_LLM_FALLBACK_BASE_URL={rest[0]['base_url']}",
+                      f"RGAA_LLM_FALLBACK_API_KEY=${{{rest[0]['key_env']}}}"]
+        lines.append("```")
+    elif wit is not None and not admitted:
         lines.append("Aucun candidat admis : on garde le modèle actuel (jamais de bascule forcée).")
+    elif wit is not None:
+        lines.append("Aucun candidat retenu : on garde le modèle actuel.")
     rep = a.report or os.path.join(a.lot_dir, "promotion-report.md")
     open(rep, "w", encoding="utf-8").write("\n".join(lines) + "\n")
     print(f"rapport : {rep}")

@@ -257,6 +257,27 @@ async fn analyze_service_returns_typed_unavailable_error_without_browser() {
     assert_eq!(error.code(), "UNSUPPORTED_CONFIGURATION");
 }
 
+/// The production wiring (`rgaa-mcp`, `rgaa-mcp-http`): a deferred ephemeral
+/// port. Building the service allocates nothing, so it cannot fail at startup;
+/// a browser tool that cannot start its server gets a typed error, not a panic.
+#[tokio::test]
+async fn analyze_service_on_deferred_ephemeral_port_fails_typed_not_at_startup() {
+    let bridge = Arc::new(LazyObscuraBridge::new(
+        rgaa_obscura::ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into())
+            .with_deferred_ephemeral_port(),
+    ));
+    let service = ObscuraAnalyzeService::new(bridge);
+    let request = rgaa_obscura::AnalyzeRequest {
+        url: "https://example.test".into(),
+        config: rgaa_obscura::AnalyzeConfig::default(),
+    };
+    let error = service
+        .analyze(request)
+        .await
+        .expect_err("no browser available");
+    assert_eq!(error.code(), "UNSUPPORTED_CONFIGURATION");
+}
+
 fn unwrap_err<T>(result: Result<T, rmcp::ErrorData>, message: &str) -> rmcp::ErrorData {
     match result {
         Err(err) => err,

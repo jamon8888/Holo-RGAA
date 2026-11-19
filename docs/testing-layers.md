@@ -81,24 +81,30 @@ la sonde de disponibilité de `start_server` acceptait *n'importe quelle*
 réponse `/json/version` sur le port, donc la seconde exécution s'attachait au
 serveur de la première et perdait sa connexion CDP dès que celle-ci sortait.
 
-Pour un port alloué par `with_ephemeral_port()`, `start_server` refuse en plus, en
-préalable, un port déjà occupé, avec un message qui nomme le port, et n'accepte la
-disponibilité que tant que l'enfant qu'il a lancé tourne encore : un enfant qui perd
-le `bind` sort en quelques millisecondes, donc la réponse d'un serveur étranger n'est
-plus prise pour la nôtre. Ça réduit la fenêtre entre l'allocation du port et le `bind`
-d'`obscura serve` ; ça ne la ferme pas entièrement. Il signale aussi un `obscura
-serve` mort au démarrage avec son code de sortie, et **arrête l'enfant sur toute
-erreur de démarrage**, pour qu'un nouvel essai sur le même pont ne soit pas refusé par
-son propre serveur résiduel.
+Pour un port alloué par `with_ephemeral_port()`, `start_server` ne s'attache jamais
+à un port déjà occupé, et n'accepte la disponibilité que tant que l'enfant qu'il a
+lancé tourne encore : un enfant qui perd le `bind` sort en quelques millisecondes, donc
+la réponse d'un serveur étranger n'est plus prise pour la nôtre. Un port perdu ainsi
+(entre l'allocation et le `bind` d'`obscura serve`, que l'allocation ne peut pas
+réserver) est abandonné pour un nouveau port éphémère, au plus trois tentatives en tout
+(`MAX_PORT_ATTEMPTS`) : la course coûte un nouvel essai, plus l'audit. Il signale aussi
+un `obscura serve` mort au démarrage avec son code de sortie, et **arrête l'enfant sur
+toute erreur de démarrage**, pour qu'un nouvel essai sur le même pont ne soit pas refusé
+par son propre serveur résiduel.
 
-**Ce que ça ne change pas : la production.** Le port par défaut (`from_env()`, utilisé
-par `rgaa-api`, `rgaa-mcp` et la CLI) et `with_port(...)` gardent leur comportement
-d'avant, sans refus de port occupé : plusieurs audits qui se chevauchent démarrent un
-pont sur 9222 et partagent le serveur du premier. Ce partage est fragile — le pont qui
-possède le serveur l'arrête en sortant, y compris sous un audit encore en cours — mais
-passer chaque lot à un port propre multiplie les processus `obscura serve` (un worker
-par CPU chacun) et change le modèle de concurrence de la production. C'est une décision
-séparée, pas un effet de bord d'un changement de harnais de test.
+**La production aussi (#383).** Les lots de l'orchestrateur (`rgaa-api`), `rgaa-mcp`,
+`rgaa-mcp-http` et la CLI `igt` ont chacun leur port éphémère : plus aucun serveur
+partagé sur 9222 que le premier audit sorti arrêtait sous les autres. Les serveurs MCP
+utilisent `with_deferred_ephemeral_port()`, qui n'alloue le port qu'au premier outil qui
+démarre le navigateur — un échec d'allocation est alors l'erreur de cet outil, pas
+l'arrêt du serveur entier. Le revers : un serveur `obscura serve` par lot. Pour ne pas
+multiplier les workers par le nombre de lots qui se chevauchent, `OBSCURA_WORKERS` (une
+par CPU par défaut) est un **budget pour tout le processus** : un serveur démarré
+pendant que d'autres tournent reçoit les workers encore disponibles. Si le budget est
+épuisé, le démarrage renvoie une erreur et peut être retenté après l’arrêt d’un
+serveur. Chaque processus dispose de son propre plafond.
+Seul `with_port(...)` garde la sémantique partagée d'un port fixe, pour qui la demande
+explicitement.
 
 ## Harnais DOM des sondes (complément, pas substitut)
 

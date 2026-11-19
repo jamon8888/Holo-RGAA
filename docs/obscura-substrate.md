@@ -59,7 +59,7 @@ resolved on issue #35.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OBSCURA_WORKERS` | one per CPU (`std::thread::available_parallelism()`) | Worker budget for the whole process, passed as `serve --workers N`. Each bridge starts its own server on its own ephemeral port; a server started while others run in the same process gets what is left of the budget (at least one worker), so overlapping batches do not multiply it. Override to under/over-subscribe a shared host. |
+| `OBSCURA_WORKERS` | one per CPU (`std::thread::available_parallelism()`) | Worker budget for the whole process, passed as `serve --workers N`. Each bridge starts its own server on its own ephemeral port; a server started while others run in the same process gets the remaining workers. Startup returns a capacity error if all workers are leased. Override to under/over-subscribe a shared host. |
 | `OBSCURA_VERBOSE` | unset (silent) | `1` drops the always-on `--quiet` flag and stops nulling the child's stdout/stderr, so `RUST_LOG`/obscura's own logs are actually visible — previously `--quiet` + null stdio was unconditional, which defeated any `RUST_LOG` setting regardless of what an operator configured. |
 | `OBSCURA_V8_FLAGS` | unset (obscura's own default heap) | Opt-in passthrough as `serve --v8-flags "<value>"`, e.g. `--max-old-space-size=4096`. Left unset by default rather than guessing a heap size for every deploy's memory budget. |
 

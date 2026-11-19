@@ -100,8 +100,9 @@ démarre le navigateur — un échec d'allocation est alors l'erreur de cet outi
 l'arrêt du serveur entier. Le revers : un serveur `obscura serve` par lot. Pour ne pas
 multiplier les workers par le nombre de lots qui se chevauchent, `OBSCURA_WORKERS` (une
 par CPU par défaut) est un **budget pour tout le processus** : un serveur démarré
-pendant que d'autres tournent reçoit ce qui reste, au moins un worker. Ce plafond est
-par processus ; plusieurs processus (deux CLI, une API et un MCP) ne le partagent pas.
+pendant que d'autres tournent reçoit les workers encore disponibles. Si le budget est
+épuisé, le démarrage renvoie une erreur et peut être retenté après l’arrêt d’un
+serveur. Chaque processus dispose de son propre plafond.
 Seul `with_port(...)` garde la sémantique partagée d'un port fixe, pour qui la demande
 explicitement.
 

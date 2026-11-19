@@ -247,39 +247,35 @@ const MAX_PORT_ATTEMPTS: usize = 3;
 /// [`WorkerLease`]).
 static WORKERS_IN_USE: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
 
-/// Workers granted to a new server, given the process-wide `budget` and what
-/// running servers already hold: whatever is left, but never less than one — a
-/// server with no worker cannot audit anything, and waiting for capacity
-/// instead could deadlock a process that keeps a server alive for its whole
-/// life (the MCP servers do).
-fn grant_workers(budget: usize, in_use: usize) -> usize {
-    budget.saturating_sub(in_use).max(1)
-}
-
 /// A share of the process-wide worker budget, held for as long as the server it
 /// was granted to runs, and given back on drop.
 #[derive(Debug)]
-struct WorkerLease {
+struct WorkerLease<'a> {
+    in_use: &'a std::sync::Mutex<usize>,
     workers: usize,
 }
 
-impl WorkerLease {
-    fn acquire(budget: usize) -> Self {
-        let mut in_use = WORKERS_IN_USE
+impl<'a> WorkerLease<'a> {
+    fn acquire(in_use: &'a std::sync::Mutex<usize>, budget: usize) -> Option<Self> {
+        let mut count = in_use
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let workers = grant_workers(budget, *in_use);
-        *in_use += workers;
-        Self { workers }
+        let workers = budget.saturating_sub(*count);
+        if workers == 0 {
+            return None;
+        }
+        *count += workers;
+        Some(Self { in_use, workers })
     }
 }
 
-impl Drop for WorkerLease {
+impl Drop for WorkerLease<'_> {
     fn drop(&mut self) {
-        let mut in_use = WORKERS_IN_USE
+        let mut count = self
+            .in_use
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *in_use = in_use.saturating_sub(self.workers);
+        *count -= self.workers;
     }
 }
 
@@ -317,7 +313,7 @@ pub struct ObscuraBridge {
     server_process: std::sync::Mutex<Option<Child>>,
     /// This server's share of the process-wide worker budget; `None` while no
     /// server runs, and always `None` on clones and handles.
-    worker_lease: Option<WorkerLease>,
+    worker_lease: Option<WorkerLease<'static>>,
     cdp_pool: Option<Arc<CdpSessionPool>>,
 }
 
@@ -1036,6 +1032,11 @@ impl ObscuraBridge {
     /// `with_deferred_ephemeral_port`), a port lost to another process between
     /// allocation and `obscura serve`'s bind is retried on a fresh port, up to
     /// [`MAX_PORT_ATTEMPTS`] attempts in all. A fixed port is never retried.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the worker budget is exhausted, port allocation
+    /// fails, or the pinned Obscura server cannot start and become ready.
     pub async fn start_server(&mut self) -> Result<(), String> {
         self.start_server_with(Self::allocate_ephemeral_port).await
     }
@@ -1114,10 +1115,15 @@ impl ObscuraBridge {
         // is the budget for the whole process, not for each server: every
         // bridge on its own port starts its own server, and overlapping batches
         // must not multiply it. A server started while others run gets what is
-        // left of it (at least one worker).
+        // left of it. Report saturation immediately because a long-lived MCP
+        // server may hold its workers for the lifetime of the process.
         let cpu_count = std::thread::available_parallelism().map_or(1, |n| n.get());
         let budget = resolve_workers(std::env::var("OBSCURA_WORKERS").ok().as_deref(), cpu_count);
-        let lease = WorkerLease::acquire(budget);
+        let lease = WorkerLease::acquire(&WORKERS_IN_USE, budget).ok_or_else(|| {
+            StartFailure::Fatal(format!(
+                "obscura worker budget exhausted ({budget} workers); retry after a running server stops"
+            ))
+        })?;
         let workers = lease.workers;
 
         // Silenced by default (`--quiet` + null stdio) defeated RUST_LOG/verbose
@@ -3135,30 +3141,16 @@ mod tests {
     }
 
     #[test]
-    fn worker_budget_grants_what_is_left_but_never_zero() {
-        assert_eq!(
-            grant_workers(8, 0),
-            8,
-            "a lone server gets the whole budget"
-        );
-        assert_eq!(grant_workers(8, 6), 2, "a second server gets the rest");
-        assert_eq!(
-            grant_workers(8, 8),
-            1,
-            "an exhausted budget still grants one"
-        );
-        assert_eq!(grant_workers(8, 20), 1);
-    }
+    fn worker_budget_rejects_startup_until_capacity_is_released() {
+        let in_use = std::sync::Mutex::new(0);
+        let first = WorkerLease::acquire(&in_use, 8).unwrap();
+        assert_eq!(first.workers, 8);
+        assert!(WorkerLease::acquire(&in_use, 8).is_none());
+        assert!(WorkerLease::acquire(&in_use, 6).is_none());
 
-    #[test]
-    fn worker_lease_returns_its_share_on_drop() {
-        let in_use = || *WORKERS_IN_USE.lock().unwrap();
-        let before = in_use();
-        let lease = WorkerLease::acquire(before + 3);
-        assert_eq!(lease.workers, 3);
-        assert_eq!(in_use(), before + 3);
-        drop(lease);
-        assert_eq!(in_use(), before);
+        drop(first);
+        let next = WorkerLease::acquire(&in_use, 8).unwrap();
+        assert_eq!(next.workers, 8);
     }
 
     #[test]

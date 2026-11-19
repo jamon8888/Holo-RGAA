@@ -6984,6 +6984,7 @@ dependencies = [
  "hmac",
  "reqwest 0.12.28",
  "rgaa-core",
+ "rgaa-license",
  "rgaa-obscura",
  "rgaa-orchestrator",
  "rgaa-remediation",

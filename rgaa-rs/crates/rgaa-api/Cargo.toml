@@ -14,6 +14,7 @@ dotenvy = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }
 rgaa-storage = { path = "../rgaa-storage" }
 rgaa-orchestrator = { path = "../rgaa-orchestrator" }
+rgaa-license = { path = "../rgaa-license", features = ["axum"] }
 rgaa-remediation = { path = "../rgaa-remediation" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 axum = "0.7"

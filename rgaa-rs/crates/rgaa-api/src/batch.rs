@@ -13,7 +13,8 @@
 use async_trait::async_trait;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderName, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -24,6 +25,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use rgaa_core::{AuditResult, CrawlConfig};
+use rgaa_license::{Feature, LicenseGate};
 use rgaa_orchestrator::Orchestrator;
 
 /// How long a batch stays readable after creation. Batch records hold every
@@ -401,16 +403,36 @@ pub struct BatchService {
     store: Arc<dyn BatchStore>,
     runner: Arc<dyn BatchRunner>,
     clock: Clock,
+    /// Meters `POST /v1/batches` at one unit per URL (#87). The route-level
+    /// licence layer only checks access, because it cannot see the body.
+    license: Arc<LicenseGate>,
 }
 
 impl BatchService {
+    /// `license` is required rather than defaulted: a service built without
+    /// one would silently run batches unmetered. Tests that are not about
+    /// licensing pass `Arc::new(LicenseGate::unrestricted())`.
     #[must_use]
-    pub fn new(store: Arc<dyn BatchStore>, runner: Arc<dyn BatchRunner>, clock: Clock) -> Self {
+    pub fn new(
+        store: Arc<dyn BatchStore>,
+        runner: Arc<dyn BatchRunner>,
+        clock: Clock,
+        license: Arc<LicenseGate>,
+    ) -> Self {
         Self {
             store,
             runner,
             clock,
+            license,
         }
+    }
+
+    /// Replaces the licence gate, so [`crate::build_app`] can guarantee the
+    /// batch handler meters against the same gate as the route layer.
+    #[must_use]
+    pub fn with_license(mut self, license: Arc<LicenseGate>) -> Self {
+        self.license = license;
+        self
     }
 
     fn now(&self) -> DateTime<Utc> {
@@ -500,18 +522,65 @@ fn bad_request(message: &str) -> (StatusCode, Json<ErrorBody>) {
     )
 }
 
+/// Licence headers computed by a handler that metered its own request.
+///
+/// The route-level licence layer runs before the handler and writes its own
+/// (pre-consumption) `X-RateLimit-*` values over the response afterwards, so
+/// a handler that consumes quota stashes the fresh values here and
+/// [`restore_handler_license_headers`], layered outside the licence layer,
+/// puts them back.
+#[derive(Clone)]
+struct HandlerLicenseHeaders(Vec<(&'static str, String)>);
+
+fn set_license_headers(response: &mut Response, pairs: Vec<(&'static str, String)>) {
+    for (name, value) in &pairs {
+        if let Ok(value) = HeaderValue::from_str(value) {
+            response
+                .headers_mut()
+                .insert(HeaderName::from_static(name), value);
+        }
+    }
+    response
+        .extensions_mut()
+        .insert(HandlerLicenseHeaders(pairs));
+}
+
+/// Middleware: re-applies the licence headers a handler computed after
+/// metering (see [`HandlerLicenseHeaders`]). Must sit *outside* the licence
+/// layer, i.e. be added with `route_layer` after it.
+pub async fn restore_handler_license_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    if let Some(HandlerLicenseHeaders(pairs)) = response.extensions_mut().remove() {
+        set_license_headers(&mut response, pairs);
+    }
+    response
+}
+
 pub async fn create_batch(
     State(service): State<BatchService>,
     Json(payload): Json<CreateBatchRequest>,
-) -> Result<(StatusCode, Json<CreateBatchResponse>), (StatusCode, Json<ErrorBody>)> {
+) -> Response {
     if payload.urls.is_empty() {
-        return Err(bad_request("urls must not be empty"));
+        return bad_request("urls must not be empty").into_response();
     }
     if payload.urls.len() > MAX_BATCH_URLS {
-        return Err(bad_request(&format!(
-            "at most {MAX_BATCH_URLS} urls per batch"
-        )));
+        return bad_request(&format!("at most {MAX_BATCH_URLS} urls per batch")).into_response();
     }
+
+    // One unit per URL, all or nothing: a batch the quota cannot cover is
+    // refused whole and consumes nothing, rather than half-run. Checked after
+    // validation so a malformed request costs nothing, and before the insert
+    // so a refused batch never exists.
+    let cost = u32::try_from(payload.urls.len()).unwrap_or(u32::MAX);
+    let admission = match service.license.check(Feature::Batch, cost) {
+        Ok(admission) => admission,
+        // The denial carries its own status, headers (`Retry-After`,
+        // `X-RateLimit-*`) and body.
+        Err(denial) => return (*denial).into_response(),
+    };
 
     let now = service.now();
 
@@ -529,15 +598,16 @@ pub async fn create_batch(
         now,
     );
 
-    service.store.insert(&record).await.map_err(|e| {
+    if let Err(e) = service.store.insert(&record).await {
         tracing::error!(error = %e, "batch store insert failed");
-        (
+        return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorBody {
                 error: "failed to persist batch".to_string(),
             }),
         )
-    })?;
+            .into_response();
+    }
 
     let response = CreateBatchResponse {
         batch_id: record.batch_id.clone(),
@@ -550,7 +620,9 @@ pub async fn create_batch(
 
     // 202: the batch is recorded and will run, but nothing has been audited
     // yet — a 201 would imply the results resource is already readable.
-    Ok((StatusCode::ACCEPTED, Json(response)))
+    let mut response = (StatusCode::ACCEPTED, Json(response)).into_response();
+    set_license_headers(&mut response, admission.headers());
+    response
 }
 
 /// Detaches the audit work from the creating request. The task owns only

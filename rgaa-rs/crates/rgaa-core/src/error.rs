@@ -43,6 +43,10 @@ pub enum RgaaError {
     InvalidStatus(String),
     #[error("incomplete evidence for {0}")]
     IncompleteEvidence(String),
+    /// A licence refusal or licence loading failure (see `rgaa-license`).
+    /// Distinct from `RateLimited`, which is an upstream LLM provider throttle.
+    #[error("Licence error: {0}")]
+    License(String),
 }
 
 pub type Result<T> = std::result::Result<T, RgaaError>;

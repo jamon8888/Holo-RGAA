@@ -200,6 +200,7 @@ impl McpFailure {
             | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
             RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
             RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
+            RgaaError::License(_) => Self::policy(err.to_string()),
             RgaaError::Llm { .. }
             | RgaaError::RateLimited { .. }
             | RgaaError::Timeout { .. }

@@ -1,7 +1,7 @@
 //! HTTP + SSE transport for the RGAA MCP tool server (JSON-RPC over POST /mcp).
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -18,6 +18,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::{AllowHeaders, CorsLayer};
 
+pub use rgaa_license::LicenseGate;
+use rgaa_mcp::LicenseOutcome;
 pub use rgaa_mcp::ToolServer;
 
 /// Shared server state: the tool server plus a progress event bus for SSE.
@@ -37,6 +39,14 @@ pub struct ProgressEvent {
 }
 
 impl AppState {
+    /// State whose tool server checks every call against `gate` (#87).
+    ///
+    /// The licence decision lives in the tool server, so it covers stdio and
+    /// HTTP alike; this is shorthand for `server.with_license(gate)`.
+    pub fn with_license(server: ToolServer, gate: Arc<LicenseGate>) -> Self {
+        Self::new(server.with_license(gate))
+    }
+
     pub fn new(server: ToolServer) -> Self {
         let (events, _) = tokio::sync::broadcast::channel(64);
         let (shutdown, _) = tokio::sync::watch::channel(false);
@@ -87,6 +97,22 @@ pub fn app_with_cors(state: AppState, cors_origins: Option<&str>) -> Router {
         cors_origins,
         std::env::var("RGAA_MCP_TOKEN").ok().as_deref(),
     )
+}
+
+/// Build the router with a caller-supplied licence gate.
+///
+/// Production HTTP startup uses [`LicenseGate::from_env`] in [`run`], while
+/// tests and embedders can inject an in-memory gate with a deterministic
+/// clock and counter.  The gate is installed on the [`ToolServer`] before
+/// the state is shared by the router, so every transport path makes exactly
+/// one licence decision per tool call.
+pub fn app_with_license(
+    server: ToolServer,
+    gate: Arc<LicenseGate>,
+    cors_origins: Option<&str>,
+    token: Option<&str>,
+) -> Router {
+    app_with_auth(AppState::with_license(server, gate), cors_origins, token)
 }
 
 /// Build the router for `/health`, `/mcp` (JSON-RPC) and `/mcp/events` (SSE)
@@ -264,6 +290,15 @@ pub fn cors_from_origins(raw: Option<&str>) -> CorsLayer {
             axum::http::Method::POST,
             axum::http::Method::OPTIONS,
         ])
+        // Named one by one, not `Any`: a wildcard `expose-headers` is ignored
+        // on credentialed requests, the same trap as `allow-headers` below.
+        // Without these a browser client cannot read its tier or quota.
+        .expose_headers(
+            rgaa_license::gate::headers::EXPOSED
+                .iter()
+                .map(|&name| HeaderName::from_static(name))
+                .collect::<Vec<_>>(),
+        )
         // `mirror_request`, not `Any`. `Any` emits
         // `Access-Control-Allow-Headers: *`, and under the Fetch spec that
         // wildcard deliberately does NOT cover `Authorization`. With a token
@@ -378,19 +413,58 @@ async fn jsonrpc(State(state): State<AppState>, headers: HeaderMap, body: String
                 event: "tool_started",
                 tool: tool_name.clone(),
             });
-            let outcome = call_tool(&state.server, params).await;
+            // The tool method makes the licence decision itself (one check
+            // for stdio and HTTP); capturing it here gives the HTTP response
+            // the refusal's status and headers without checking twice.
+            let (outcome, licence) =
+                rgaa_mcp::capture_license_outcome(call_tool(&state.server, params)).await;
             let _ = state.events.send(ProgressEvent {
                 event: "tool_completed",
                 tool: tool_name,
             });
-            match outcome {
-                Ok(result) => rpc_ok(id, result),
-                Err(error) => error_data_to_rpc(id, error),
+            match licence {
+                Some(LicenseOutcome::Denied(denial)) => return denial_response(id, &denial),
+                Some(LicenseOutcome::Admitted(admission)) => {
+                    let envelope = match outcome {
+                        Ok(result) => rpc_ok(id, result),
+                        Err(error) => error_data_to_rpc(id, error),
+                    };
+                    let mut response = Json(envelope).into_response();
+                    append_headers(&mut response, admission.headers());
+                    return response;
+                }
+                Some(LicenseOutcome::Exempt) | None => match outcome {
+                    Ok(result) => rpc_ok(id, result),
+                    Err(error) => error_data_to_rpc(id, error),
+                },
             }
         }
         other => rpc_err(id, ErrorCode::METHOD_NOT_FOUND.0, other),
     };
     Json(envelope).into_response()
+}
+
+/// A licence refusal over HTTP: the denial's status (401/402/429) and headers
+/// (`Retry-After` on quota), with a JSON-RPC envelope whose `error` is
+/// [`rgaa_license::Denial::jsonrpc_error`].
+fn denial_response(id: Option<Value>, denial: &rgaa_license::Denial) -> Response {
+    let status = StatusCode::from_u16(denial.http_status()).unwrap_or(StatusCode::PAYMENT_REQUIRED);
+    let envelope = json!({"jsonrpc": "2.0", "id": id, "error": denial.jsonrpc_error()});
+    let mut response = (status, Json(envelope)).into_response();
+    append_headers(&mut response, denial.headers());
+    response
+}
+
+fn append_headers(response: &mut Response, pairs: Vec<(&'static str, String)>) {
+    let headers = response.headers_mut();
+    for (name, value) in pairs {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(&value),
+        ) {
+            headers.insert(name, value);
+        }
+    }
 }
 
 fn parse_args<T: serde::de::DeserializeOwned>(name: &str, args: Value) -> Result<T, ErrorData> {
@@ -607,7 +681,13 @@ pub async fn run(args: McpServerArgs) -> Result<(), ServeError> {
             "serving MCP off loopback with no --auth-token: every tool is open to the network"
         );
     }
-    let state = AppState::new(default_tool_server());
+    // Hosted HTTP: tier gating *and* the daily quota (#87). stdio keeps the
+    // tool server's local default, which does not meter.
+    let gate = Arc::new(LicenseGate::from_env(
+        true,
+        rgaa_mcp::upgrade_url_from_env(),
+    ));
+    let state = AppState::with_license(default_tool_server(), gate);
     let app = app_with_auth(
         state.clone(),
         args.cors_origin.as_deref(),

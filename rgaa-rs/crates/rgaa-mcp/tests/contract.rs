@@ -192,7 +192,8 @@ async fn analyze_handler_distinguishes_execution_failure_and_redacts_secrets() {
         Arc::new(PanickingGuided),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
-    );
+    )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()));
     let result = server
         .analyze(Parameters(AnalyzeRequest {
             url: "https://example.test".into(),
@@ -224,7 +225,8 @@ fn remediate_handler_rejects_mismatched_outcomes() {
         Arc::new(PanickingGuided),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
-    );
+    )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()));
     let result = server.remediate(Parameters(RemediationRequest {
         issues: vec![valid_issue_input("one")],
     }));
@@ -308,6 +310,7 @@ fn test_server() -> ToolServer {
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
     )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()))
 }
 
 struct PanickingAnalyze;

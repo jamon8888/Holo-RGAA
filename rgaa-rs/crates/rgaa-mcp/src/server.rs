@@ -6,7 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use rgaa_core::CrawlConfig;
+use rgaa_license::LicenseGate;
 use rgaa_orchestrator::Orchestrator;
+
+use crate::license::{denial_error_data, tool_license, LicenseOutcome, ToolLicense};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AnalyzeRequest {
@@ -645,6 +648,7 @@ pub struct ToolServer {
     guided_service: Arc<dyn GuidedService>,
     audit_service: Arc<dyn AuditOrchestrationService>,
     storage_service: Arc<dyn AuditStorageService>,
+    license: Arc<LicenseGate>,
 }
 
 impl ToolServer {
@@ -675,7 +679,67 @@ impl ToolServer {
             guided_service: guided,
             audit_service: audit,
             storage_service: storage,
+            // Local default: tier gating from the installed licence, no
+            // quota (a counter in a user-writable file is not enforceable on
+            // the user's own machine). The hosted HTTP server replaces it
+            // with a metering gate through `with_license`.
+            license: Arc::new(LicenseGate::from_env(
+                false,
+                crate::license::upgrade_url_from_env(),
+            )),
         }
+    }
+
+    /// Replaces the licence gate every tool call is checked against.
+    pub fn with_license(mut self, gate: Arc<LicenseGate>) -> Self {
+        self.license = gate;
+        self
+    }
+
+    pub fn license(&self) -> &Arc<LicenseGate> {
+        &self.license
+    }
+
+    /// The licence decision for one call of `tool`. Consumes quota when the
+    /// tool is metered and the call is admitted; a refusal consumes nothing.
+    ///
+    /// The tool methods call this themselves, so call it directly only to
+    /// ask, never before calling a tool (that would meter twice).
+    pub fn check_tool(&self, tool: &str) -> Option<LicenseOutcome> {
+        let (feature, cost) = match tool_license(tool)? {
+            ToolLicense::Exempt => return Some(LicenseOutcome::Exempt),
+            ToolLicense::Access(feature) => (feature, 0),
+            ToolLicense::Metered(feature, units) => (feature, units),
+        };
+        Some(match self.license.check(feature, cost) {
+            Ok(admission) => LicenseOutcome::Admitted(admission),
+            Err(denial) => LicenseOutcome::Denied(denial),
+        })
+    }
+
+    /// The check at the top of every tool method.
+    fn admit(&self, tool: &'static str) -> Result<(), ErrorData> {
+        let Some(outcome) = self.check_tool(tool) else {
+            // A tool without a licence class is a wiring bug: refuse rather
+            // than run it unmetered.
+            return Err(
+                McpFailure::policy(format!("no licence class for tool `{tool}`")).into_error_data(),
+            );
+        };
+        let refused = match &outcome {
+            LicenseOutcome::Denied(denial) => {
+                tracing::info!(
+                    tool,
+                    code = denial.error.code(),
+                    tier = %denial.tier,
+                    "licence refused tool call"
+                );
+                Some(denial_error_data(denial))
+            }
+            LicenseOutcome::Exempt | LicenseOutcome::Admitted(_) => None,
+        };
+        crate::license::record(outcome);
+        refused.map_or(Ok(()), Err)
     }
 }
 
@@ -726,6 +790,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<AnalyzeRequest>,
     ) -> Result<rmcp::handler::server::wrapper::Json<AnalyzeResponse>, ErrorData> {
+        self.admit("analyze")?;
         let domain = request.0.to_domain().map_err(McpFailure::into_error_data)?;
         let result = self
             .analyze_service
@@ -751,6 +816,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<RemediationRequest>,
     ) -> Result<rmcp::handler::server::wrapper::Json<RemediationResponse>, ErrorData> {
+        self.admit("remediate")?;
         let inputs = request.0.issues;
         RemediationRequest::validate_issue_count(inputs.len())
             .map_err(McpFailure::into_error_data)?;
@@ -775,6 +841,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<GuidedTestRequest>,
     ) -> Result<rmcp::handler::server::wrapper::Json<GuidedTestResponse>, ErrorData> {
+        self.admit("igt")?;
         let test: rgaa_obscura::GuidedTest = request.0.test.into();
         let result = self
             .guided_service
@@ -794,6 +861,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<AuditUrlInput>,
     ) -> Result<rmcp::handler::server::wrapper::Json<AuditUrlResult>, ErrorData> {
+        self.admit("audit_url")?;
         let input = request.0;
         let config = input.config.unwrap_or_default().into();
         let result = self
@@ -814,6 +882,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<GetAuditInput>,
     ) -> Result<rmcp::handler::server::wrapper::Json<Option<AuditResultDto>>, ErrorData> {
+        self.admit("get_audit_result")?;
         let result = self
             .storage_service
             .get_audit(&request.0.audit_id)
@@ -832,6 +901,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<SourceMapRequest>,
     ) -> Result<rmcp::handler::server::wrapper::Json<SourceMapResponse>, ErrorData> {
+        self.admit("source_map")?;
         let request = request.0;
         SourceMapRequest::validate_finding_count(request.findings.len())
             .map_err(McpFailure::into_error_data)?;
@@ -859,6 +929,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<VerifyFixRequest>,
     ) -> Result<rmcp::handler::server::wrapper::Json<VerifyFixResponse>, ErrorData> {
+        self.admit("verify_fix")?;
         let input = request.0;
         if input.files.is_empty() || input.files.len() > MAX_FILES {
             return Err(McpFailure::invalid(format!(
@@ -954,6 +1025,7 @@ impl ToolServer {
     pub fn list_criteria(
         &self,
     ) -> Result<rmcp::handler::server::wrapper::Json<ListCriteriaResponse>, ErrorData> {
+        self.admit("list_criteria")?;
         let criteria = rgaa_core::RgaaCriteria::all()
             .iter()
             .map(|c| CriterionDto {
@@ -975,6 +1047,7 @@ impl ToolServer {
         &self,
         request: rmcp::handler::server::wrapper::Parameters<LintStaticRequest>,
     ) -> Result<rmcp::handler::server::wrapper::Json<LintStaticResponse>, ErrorData> {
+        self.admit("lint_static")?;
         let report = request.0.run().map_err(McpFailure::into_error_data)?;
         Ok(rmcp::handler::server::wrapper::Json(report))
     }

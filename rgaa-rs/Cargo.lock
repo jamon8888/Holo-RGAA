@@ -7123,8 +7123,10 @@ dependencies = [
 name = "rgaa-mcp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dotenvy",
  "rgaa-core",
+ "rgaa-license",
  "rgaa-linter",
  "rgaa-obscura",
  "rgaa-orchestrator",
@@ -7144,9 +7146,11 @@ name = "rgaa-mcp-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "clap",
  "futures",
  "reqwest 0.12.28",
+ "rgaa-license",
  "rgaa-mcp",
  "rgaa-obscura",
  "rmcp",

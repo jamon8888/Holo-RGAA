@@ -6,6 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rgaa-license = { path = "../rgaa-license", default-features = false }
 rgaa-mcp = { path = "../rgaa-mcp" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 axum = { version = "0.7", features = ["json"] }
@@ -21,5 +22,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
 tower = { version = "0.5", features = ["util"] }

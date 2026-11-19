@@ -1,0 +1,360 @@
+{
+  "source": "rgaa-rs/crates/rgaa-core/data/rgaa-4.1.2/axe_mapping.json at 08bf2cb7e2e27d250d3b02c7ff58dba7fef85a29 (parent of the registry migration 9b819a3, #261)",
+  "note": "Only the fields the mapper read. Entries with axe_rules: [] carried no mechanism and were never loaded into the mapper, so they are omitted, as the migration dropped them.",
+  "mapping": [
+    {
+      "criterion_id": "1.1",
+      "coverage": "complete",
+      "axe_rules": [
+        "image-alt",
+        "input-image-alt",
+        "area-alt",
+        "object-alt",
+        "role-img-alt",
+        "svg-img-alt"
+      ]
+    },
+    {
+      "criterion_id": "1.2",
+      "coverage": "complete",
+      "axe_rules": [
+        "image-alt",
+        "image-redundant-alt"
+      ]
+    },
+    {
+      "criterion_id": "1.5",
+      "coverage": "complete",
+      "axe_rules": [
+        "image-alt"
+      ]
+    },
+    {
+      "criterion_id": "1.6",
+      "coverage": "complete",
+      "axe_rules": [
+        "image-alt"
+      ]
+    },
+    {
+      "criterion_id": "2.1",
+      "coverage": "complete",
+      "axe_rules": [
+        "frame-title",
+        "frame-title-unique",
+        "frame-focusable-content"
+      ]
+    },
+    {
+      "criterion_id": "3.2",
+      "coverage": "complete",
+      "axe_rules": [
+        "color-contrast"
+      ]
+    },
+    {
+      "criterion_id": "3.3",
+      "coverage": "partial",
+      "axe_rules": [
+        "color-contrast"
+      ]
+    },
+    {
+      "criterion_id": "4.3",
+      "coverage": "complete",
+      "axe_rules": [
+        "video-caption"
+      ]
+    },
+    {
+      "criterion_id": "4.10",
+      "coverage": "partial",
+      "axe_rules": [
+        "no-autoplay-audio"
+      ]
+    },
+    {
+      "criterion_id": "5.4",
+      "coverage": "partial",
+      "axe_rules": [
+        "table-fake-caption",
+        "table-duplicate-name"
+      ]
+    },
+    {
+      "criterion_id": "5.6",
+      "coverage": "partial",
+      "axe_rules": [
+        "td-headers-attr"
+      ]
+    },
+    {
+      "criterion_id": "5.7",
+      "coverage": "complete",
+      "axe_rules": [
+        "td-headers-attr",
+        "th-has-data-cells",
+        "td-has-header"
+      ]
+    },
+    {
+      "criterion_id": "6.1",
+      "coverage": "complete",
+      "axe_rules": [
+        "link-name"
+      ]
+    },
+    {
+      "criterion_id": "6.2",
+      "coverage": "complete",
+      "axe_rules": [
+        "link-name"
+      ]
+    },
+    {
+      "criterion_id": "7.1",
+      "coverage": "partial",
+      "axe_rules": [
+        "aria-roles",
+        "aria-valid-attr",
+        "aria-valid-attr-value",
+        "aria-allowed-attr",
+        "aria-required-attr",
+        "aria-required-children",
+        "aria-required-parent",
+        "aria-prohibited-attr",
+        "aria-conditional-attr",
+        "aria-deprecated-role",
+        "aria-hidden-body",
+        "nested-interactive",
+        "aria-command-name",
+        "aria-meter-name",
+        "aria-progressbar-name",
+        "aria-tab-name"
+      ]
+    },
+    {
+      "criterion_id": "7.3",
+      "coverage": "partial",
+      "axe_rules": [
+        "scrollable-region-focusable",
+        "server-side-image-map",
+        "focus-order-semantics"
+      ]
+    },
+    {
+      "criterion_id": "8.2",
+      "coverage": "partial",
+      "axe_rules": [
+        "html-has-lang",
+        "html-lang-valid",
+        "duplicate-id-aria"
+      ]
+    },
+    {
+      "criterion_id": "8.3",
+      "coverage": "complete",
+      "axe_rules": [
+        "html-has-lang"
+      ]
+    },
+    {
+      "criterion_id": "8.4",
+      "coverage": "partial",
+      "axe_rules": [
+        "html-xml-lang-mismatch"
+      ]
+    },
+    {
+      "criterion_id": "8.8",
+      "coverage": "partial",
+      "axe_rules": [
+        "valid-lang"
+      ]
+    },
+    {
+      "criterion_id": "9.1",
+      "coverage": "complete",
+      "axe_rules": [
+        "heading-order",
+        "landmark-one-main",
+        "region",
+        "p-as-heading"
+      ]
+    },
+    {
+      "criterion_id": "9.3",
+      "coverage": "complete",
+      "axe_rules": [
+        "list",
+        "listitem",
+        "definition-list",
+        "dlitem"
+      ]
+    },
+    {
+      "criterion_id": "10.2",
+      "coverage": "complete",
+      "axe_rules": [
+        "color-contrast",
+        "image-alt"
+      ]
+    },
+    {
+      "criterion_id": "10.4",
+      "coverage": "partial",
+      "axe_rules": [
+        "meta-viewport"
+      ]
+    },
+    {
+      "criterion_id": "10.5",
+      "coverage": "complete",
+      "axe_rules": [
+        "color-contrast"
+      ]
+    },
+    {
+      "criterion_id": "10.6",
+      "coverage": "complete",
+      "axe_rules": [
+        "link-in-text-block"
+      ]
+    },
+    {
+      "criterion_id": "10.8",
+      "coverage": "complete",
+      "axe_rules": [
+        "aria-hidden-focus",
+        "hidden-content"
+      ]
+    },
+    {
+      "criterion_id": "10.9",
+      "coverage": "complete",
+      "axe_rules": [
+        "color-contrast",
+        "image-alt"
+      ]
+    },
+    {
+      "criterion_id": "10.11",
+      "coverage": "partial",
+      "axe_rules": [
+        "meta-viewport"
+      ]
+    },
+    {
+      "criterion_id": "11.1",
+      "coverage": "complete",
+      "axe_rules": [
+        "label",
+        "label-title-only",
+        "input-image-alt",
+        "button-name",
+        "input-button-name",
+        "select-name",
+        "aria-input-field-name",
+        "aria-toggle-field-name",
+        "form-field-multiple-labels"
+      ]
+    },
+    {
+      "criterion_id": "11.2",
+      "coverage": "partial",
+      "axe_rules": [
+        "label-content-name-mismatch"
+      ]
+    },
+    {
+      "criterion_id": "11.4",
+      "coverage": "complete",
+      "axe_rules": [
+        "label"
+      ]
+    },
+    {
+      "criterion_id": "11.13",
+      "coverage": "partial",
+      "axe_rules": [
+        "autocomplete-valid"
+      ]
+    },
+    {
+      "criterion_id": "12.1",
+      "coverage": "partial",
+      "axe_rules": [
+        "landmark-one-main",
+        "region"
+      ]
+    },
+    {
+      "criterion_id": "12.4",
+      "coverage": "partial",
+      "axe_rules": [
+        "landmark-one-main",
+        "region"
+      ]
+    },
+    {
+      "criterion_id": "12.6",
+      "coverage": "complete",
+      "axe_rules": [
+        "landmark-one-main",
+        "region",
+        "bypass"
+      ]
+    },
+    {
+      "criterion_id": "12.7",
+      "coverage": "complete",
+      "axe_rules": [
+        "bypass",
+        "skip-link"
+      ]
+    },
+    {
+      "criterion_id": "13.1",
+      "coverage": "partial",
+      "axe_rules": [
+        "meta-refresh"
+      ]
+    },
+    {
+      "criterion_id": "13.3",
+      "coverage": "complete",
+      "axe_rules": [
+        "document-title"
+      ]
+    },
+    {
+      "criterion_id": "13.4",
+      "coverage": "complete",
+      "axe_rules": [
+        "document-title"
+      ]
+    },
+    {
+      "criterion_id": "13.5",
+      "coverage": "complete",
+      "axe_rules": [
+        "image-alt"
+      ]
+    },
+    {
+      "criterion_id": "13.8",
+      "coverage": "partial",
+      "axe_rules": [
+        "blink",
+        "marquee"
+      ]
+    },
+    {
+      "criterion_id": "13.9",
+      "coverage": "partial",
+      "axe_rules": [
+        "css-orientation-lock"
+      ]
+    }
+  ]
+}

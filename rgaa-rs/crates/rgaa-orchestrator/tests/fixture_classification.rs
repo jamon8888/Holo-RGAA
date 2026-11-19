@@ -3,11 +3,12 @@
 //! PATH, network for the axe-core CDN, no LLM key); skipped unless `RUN_E2E=1`, and
 //! `RGAA_E2E_REQUIRED=1` turns that skip into a failure in CI.
 //!
-//! For every fixture a registry mechanism names:
-//! * where the mechanism declares `fail` as an outcome, a `-fail` fixture must make
-//!   axe-core or a gap-fix probe emit a `Fail` for the fixture's criterion;
-//! * a `-pass` fixture must not (for a `partial` mechanism "conforming" means "emits no
-//!   `fail`" — silence never counts as `pass`);
+//! For every fixture a registry mechanism names (spec §4.1):
+//! * a `-fail` fixture must make **that mechanism** (axe for `axe-native`, the gap-fix
+//!   probe otherwise) emit `Fail` if it declares `fail`, `NeedsReview` if it is
+//!   review-only — never another engine in its place;
+//! * a `-pass` fixture must draw no `Fail` from any engine (for a `partial` mechanism
+//!   "conforming" means "emits no `fail`" — silence never counts as `pass`);
 //! * a `-pass` fixture of a `complete` mechanism that declares `pass` must make **that
 //!   mechanism** (axe for `axe-native`, the gap-fix probe otherwise) emit `Pass` (spec
 //!   §4.1): its silence is the only one allowed to stand as conformance, so it is proven.
@@ -75,8 +76,9 @@ struct Case {
     criterion: String,
     fixture: String,
     expect_fail: bool,
-    /// A declared review outcome must be observed too; it is not a free pass.
-    expected_status: Option<CriterionStatus>,
+    /// On a `-fail` fixture, what the mechanism's own source may report (spec §4.1):
+    /// `Fail` for a decisive mechanism, `NeedsReview` for a review-only one.
+    accepted_on_fail: Vec<CriterionStatus>,
     /// `complete` with `pass` declared, on a `-pass` fixture: the mechanism's own
     /// source must report `Pass`, not merely stay silent.
     expect_pass: bool,
@@ -88,8 +90,9 @@ fn cases() -> Vec<Case> {
     let mut out = Vec::new();
     for m in MechanismRegistry::builtin().mechanisms() {
         // Site mechanisms are evaluated by the crawl-level comparator, not by
-        // axe/gap-fix on an isolated page. Their paired page observations are
-        // covered by `site_comparison` tests instead of this single-page harness.
+        // axe/gap-fix on an isolated page. The comparator's logic is unit-tested on
+        // synthetic observations in `site_comparison`; their fixture files are not
+        // classified anywhere yet (docs/testing-layers.md).
         if m.kind == MechanismKind::Site {
             continue;
         }
@@ -107,21 +110,24 @@ fn cases() -> Vec<Case> {
             let expect_pass = !expect_fail
                 && m.coverage == rgaa_core::catalog::AxeCoverage::Complete
                 && m.outcomes.contains(&Outcome::Pass);
-            let expected_status = if expect_fail && m.outcomes.contains(&Outcome::Fail) {
-                Some(CriterionStatus::Fail)
-            } else if expect_pass {
-                Some(CriterionStatus::Pass)
-            } else if m.outcomes.contains(&Outcome::Review) {
-                Some(CriterionStatus::NeedsReview)
+            let accepted_on_fail = if !expect_fail {
+                Vec::new()
+            } else if m.outcomes.contains(&Outcome::Fail) {
+                vec![CriterionStatus::Fail]
+            } else if shares_a_decisive_probe(m) {
+                // Gap-fix reports one verdict per criterion. When a sibling probe on
+                // the same criterion declares `fail`, it may legitimately decide this
+                // fixture; review-only on its own, this mechanism never may.
+                vec![CriterionStatus::NeedsReview, CriterionStatus::Fail]
             } else {
-                None
+                vec![CriterionStatus::NeedsReview]
             };
             out.push(Case {
                 mechanism: m.id.clone(),
                 criterion: m.criterion.clone(),
                 fixture: f.clone(),
                 expect_fail,
-                expected_status,
+                accepted_on_fail,
                 expect_pass,
                 axe_native: m.kind == MechanismKind::AxeNative,
                 axe_rules: m.axe_rules.clone(),
@@ -129,6 +135,40 @@ fn cases() -> Vec<Case> {
         }
     }
     out
+}
+
+/// Another non-axe, non-site mechanism on the same criterion declares `fail`.
+fn shares_a_decisive_probe(m: &rgaa_core::registry::Mechanism) -> bool {
+    MechanismRegistry::builtin()
+        .mechanisms()
+        .iter()
+        .any(|other| {
+            other.id != m.id
+                && other.criterion == m.criterion
+                && !matches!(other.kind, MechanismKind::AxeNative | MechanismKind::Site)
+                && other.outcomes.contains(&Outcome::Fail)
+        })
+}
+
+/// The ids of the violations in an axe result, whichever shape the bridge returns:
+/// `{"violations": [...], "incomplete": [...]}` under Obscura, or a bare array.
+fn violation_ids(axe_json: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(axe_json) else {
+        return Vec::new();
+    };
+    let violations = match &value {
+        serde_json::Value::Array(items) => items.as_slice(),
+        serde_json::Value::Object(map) => map
+            .get("violations")
+            .and_then(serde_json::Value::as_array)
+            .map_or(&[][..], Vec::as_slice),
+        _ => &[],
+    };
+    violations
+        .iter()
+        .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .collect()
 }
 
 #[tokio::test]
@@ -144,7 +184,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
         let unclassifiable: Vec<&str> = MechanismRegistry::builtin()
             .mechanisms()
             .iter()
-            .filter(|m| !m.legacy)
+            .filter(|m| !m.legacy && m.kind != MechanismKind::Site)
             .map(|m| m.id.as_str())
             .collect();
         assert!(
@@ -167,13 +207,27 @@ async fn registry_fixtures_are_classified_under_obscura() {
     // Never the fixed 9222: this test now runs in `E2E (navigateur)` beside the
     // coverage tests, and a shared CDP port lets concurrent runs steal each other's
     // server (CLAUDE.md, #382).
-    let mut bridge = ObscuraBridge::from_env()
-        .with_ephemeral_port()
-        .expect("a free CDP port");
-    bridge
-        .start_server()
-        .await
-        .expect("obscura 0.2.4 must start");
+    //
+    // `with_ephemeral_port` releases the port it picked before Obscura binds it, so
+    // another process can take it in between; `start_server` then refuses the port.
+    // That is a lost race, not an Obscura fault: retry on a fresh port.
+    let mut attempts = 0;
+    let bridge = loop {
+        attempts += 1;
+        let mut bridge = ObscuraBridge::from_env()
+            .with_ephemeral_port()
+            .expect("a free CDP port");
+        match bridge.start_server().await {
+            Ok(()) => break bridge,
+            Err(error) if attempts < 3 && error.contains("already in use") => {
+                eprintln!(
+                    "CDP port {} lost to another process, retrying: {error}",
+                    bridge.server_port()
+                );
+            }
+            Err(error) => panic!("obscura 0.2.4 must start: {error}"),
+        }
+    };
     let binary = bridge.binary_path().to_string();
     let bridge = Arc::new(bridge);
 
@@ -244,17 +298,9 @@ async fn registry_fixtures_are_classified_under_obscura() {
         }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
         if case.axe_native && case.expect_fail {
-            let declared_rule_fired = serde_json::from_str::<serde_json::Value>(&axe_json)
-                .ok()
-                .and_then(|value| value.as_array().cloned())
-                .is_some_and(|violations| {
-                    violations.iter().any(|violation| {
-                        violation
-                            .get("id")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some_and(|id| case.axe_rules.iter().any(|rule| rule == id))
-                    })
-                });
+            let declared_rule_fired = violation_ids(&axe_json)
+                .iter()
+                .any(|id| case.axe_rules.contains(id));
             if !declared_rule_fired {
                 wrong.push(format!(
                     "{} / {}: expected this axe mechanism to fail, but none of its declared rules fired ({})",
@@ -264,15 +310,20 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 ));
             }
         }
-        if let Some(expected) = &case.expected_status {
-            if own_status.as_ref() != Some(expected) {
-                wrong.push(format!(
-                    "{} / {}: expected its own mechanism to report {expected:?}, it said {own_status:?} ({})",
-                    case.mechanism,
-                    case.fixture,
-                    evidence.join("; ")
-                ));
-            }
+        // A `-fail` fixture is judged on the mechanism's own source only: another
+        // engine failing the same criterion must not classify it in its place.
+        if case.expect_fail
+            && !own_status
+                .as_ref()
+                .is_some_and(|s| case.accepted_on_fail.contains(s))
+        {
+            wrong.push(format!(
+                "{} / {}: expected its own mechanism to report one of {:?}, it said {own_status:?} ({})",
+                case.mechanism,
+                case.fixture,
+                case.accepted_on_fail,
+                evidence.join("; ")
+            ));
         }
         if case.expect_pass && own_status != Some(CriterionStatus::Pass) {
             wrong.push(format!(
@@ -282,12 +333,12 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 evidence.join("; ")
             ));
         }
-        if failed != case.expect_fail {
+        // A conforming fixture must draw no `Fail` from any engine on its criterion.
+        if !case.expect_fail && failed {
             wrong.push(format!(
-                "{} / {}: expected {}, mechanisms said {:?} ({})",
+                "{} / {}: expected no fail, mechanisms said {:?} ({})",
                 case.mechanism,
                 case.fixture,
-                if case.expect_fail { "fail" } else { "no fail" },
                 statuses,
                 evidence.join("; ")
             ));

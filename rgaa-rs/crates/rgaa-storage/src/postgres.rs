@@ -33,9 +33,10 @@ impl PostgresStorage {
             .acquire_timeout(POOL_ACQUIRE_TIMEOUT)
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
-                    conn.execute(
-                        format!("SET statement_timeout = {STATEMENT_TIMEOUT_MS}").as_str(),
-                    )
+                    // Built from a compile-time constant only, never from input.
+                    conn.execute(sqlx::AssertSqlSafe(format!(
+                        "SET statement_timeout = {STATEMENT_TIMEOUT_MS}"
+                    )))
                     .await?;
                     Ok(())
                 })

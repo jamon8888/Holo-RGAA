@@ -461,6 +461,24 @@ axe_rules = ["bypass", "skip-link"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
 
 [[mechanism]]
+# §12.8 : tabindex positif est un indice « suspect », jamais un échec ferme.
+# Plafond de verdict `review` : une violation de cette règle produit
+# `NeedsReview` (critère en revue), jamais `Fail` (issue #279). La seule règle
+# axe-core qui signale un tabindex positif est `tabindex` (axe_rules.json).
+id        = "axe-12-8"
+criterion = "12.8"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = []
+legacy    = true
+axe_rules = ["tabindex"]
+outcome_cap = "review"
+provenance = { source = "spec §7.1 / 12.8 (issue #279)", validated_by = "axe rule identification (tabindex)", validated_at = "2026-10-15", notes = "Plafond review : tabindex positif sur 12.8 est suspect, jamais fail ferme. Règle axe : tabindex." }
+
+[[mechanism]]
 id        = "axe-13-1"
 criterion = "13.1"
 kind      = "axe-native"

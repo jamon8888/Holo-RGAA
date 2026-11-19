@@ -1,4 +1,5 @@
 use crate::registry::MechanismRegistry;
+use crate::types::Classification;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -13,6 +14,20 @@ pub enum Automatable {
     PartiallyAutomatable,
     #[default]
     NotAutomatable,
+}
+
+impl From<Automatable> for Classification {
+    /// Derive a [`Classification`] from the catalog's [`Automatable`] label.
+    ///
+    /// A criterion whose every test is automatable is deterministic; one with only
+    /// some automatable tests is IA-assisted; one with none is manual.
+    fn from(automatable: Automatable) -> Self {
+        match automatable {
+            Automatable::FullyAutomatable => Classification::Deterministe,
+            Automatable::PartiallyAutomatable => Classification::IaAssiste,
+            Automatable::NotAutomatable => Classification::Manuel,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

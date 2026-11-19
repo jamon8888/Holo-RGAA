@@ -200,6 +200,7 @@ impl McpFailure {
             | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
             RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
             RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
+            RgaaError::License(_) => Self::policy(err.to_string()),
             RgaaError::Llm { .. }
             | RgaaError::RateLimited { .. }
             | RgaaError::Timeout { .. }
@@ -208,7 +209,8 @@ impl McpFailure {
             | RgaaError::AxeCore(_)
             | RgaaError::Holo3(_)
             | RgaaError::Media(_)
-            | RgaaError::Storage(_) => Self::execution(err.to_string()),
+            | RgaaError::Storage(_)
+            | RgaaError::Http(_) => Self::execution(err.to_string()),
         }
     }
     pub fn into_error_data(self) -> ErrorData {

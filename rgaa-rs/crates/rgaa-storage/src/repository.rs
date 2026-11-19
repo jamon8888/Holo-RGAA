@@ -354,9 +354,15 @@ impl Repository {
         );
         let mut param_count = 2;
 
+        // Stored statuses are `Debug` names (`Fail`, `NeedsReview`); callers send
+        // the API vocabulary (`fail`, `needs_review`). Both sides are normalised
+        // the same way, see `status_key`.
         if let Some(_status) = status {
             param_count += 1;
-            query.push_str(&format!(" AND status = ${}", param_count - 1));
+            query.push_str(&format!(
+                " AND lower(regexp_replace(status, '[-_ ]', '', 'g')) = ${}",
+                param_count - 1
+            ));
         }
         if let Some(_severity) = severity {
             param_count += 1;
@@ -377,7 +383,7 @@ impl Repository {
         // every value goes through `bind`, so the string carries no input.
         let mut q = sqlx::query_as(sqlx::AssertSqlSafe(query)).bind(audit_id);
         if let Some(status) = status {
-            q = q.bind(status);
+            q = q.bind(status_key(status));
         }
         if let Some(severity) = severity {
             q = q.bind(severity);
@@ -416,11 +422,31 @@ impl Repository {
     }
 }
 
+/// Hashes an API key for storage. The raw key is **never** persisted or
+/// logged — only its SHA-256 hex digest is stored, and callers must not
+/// record the plaintext key in tracing spans or logs.
+///
+/// # Security
+///
+/// Uses SHA-256 (not a password hash) because API keys are already
+/// high-entropy random values; the goal is to prevent key exfiltration
+/// from a database dump, not to slow down brute force.
 pub fn hash_api_key(key: &str) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();
     hasher.update(key.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Comparison key for a status: lowercase, with `-`, `_` and spaces removed.
+/// `Fail`, `fail` and `needs_review` / `NeedsReview` map to the same key, which
+/// is what the SQL side computes with `regexp_replace` + `lower`.
+fn status_key(status: &str) -> String {
+    status
+        .chars()
+        .filter(|c| !matches!(c, '-' | '_' | ' '))
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn compute_audit_status(bundle: &rgaa_core::AuditBundle) -> String {

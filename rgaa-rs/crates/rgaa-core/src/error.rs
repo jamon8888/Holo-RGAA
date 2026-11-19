@@ -1,3 +1,4 @@
+use reqwest::Error as ReqwestError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,6 +14,9 @@ pub enum RgaaError {
 
     #[error("Timeout after {duration}s")]
     Timeout { duration: u64 },
+
+    #[error("HTTP error: {0}")]
+    Http(#[from] ReqwestError),
 
     #[error("Criterion not found: {0}")]
     CriterionNotFound(String),
@@ -43,6 +47,23 @@ pub enum RgaaError {
     InvalidStatus(String),
     #[error("incomplete evidence for {0}")]
     IncompleteEvidence(String),
+    /// A licence refusal or licence loading failure (see `rgaa-license`).
+    /// Distinct from `RateLimited`, which is an upstream LLM provider throttle.
+    #[error("Licence error: {0}")]
+    License(String),
 }
 
 pub type Result<T> = std::result::Result<T, RgaaError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `From<reqwest::Error> for RgaaError` must exist so `?` can be used
+    /// directly in `rgaa-holo` transport code (issue M4, AGENTS.md CRITICAL).
+    #[test]
+    fn reqwest_error_converts_into_rgaa_error() {
+        fn assert_from_reqwest_error<T: From<reqwest::Error>>() {}
+        assert_from_reqwest_error::<RgaaError>();
+    }
+}

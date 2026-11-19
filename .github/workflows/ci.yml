@@ -303,12 +303,19 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
       - name: Audit dependencies
         working-directory: rgaa-rs
-        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0253 --ignore RUSTSEC-2026-0002 --ignore RUSTSEC-2025-0057 --ignore RUSTSEC-2026-0391 --ignore RUSTSEC-2026-0398 --ignore RUSTSEC-2026-0403
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0253 --ignore RUSTSEC-2026-0002 --ignore RUSTSEC-2025-0057 --ignore RUSTSEC-2026-0459 --ignore RUSTSEC-2026-0391 --ignore RUSTSEC-2026-0398 --ignore RUSTSEC-2026-0403
+        # RUSTSEC-2026-0459: libsqlite3-sys 0.30 est imposé par sqlx 0.8 (champ `links`), qui
+        # interdit rusqlite >= 0.33. À lever avec sqlx 0.9 ou en retirant rusqlite de rgaa-tui.
         # RUSTSEC-2023-0071: ReDoS in regex-lite via bstr dependency chain (fastembed).
         # Not introduced by our code; transitive dependency on regex 1.x through fastembed.
         # Tracking: https://github.com/oxalorg/regex/issues/702
         #
         # RUSTSEC-2026-0253, RUSTSEC-2026-0002: unsound `lru` 0.12.5 (panic-safety /
+        #
+        # RUSTSEC-2026-0391, RUSTSEC-2026-0398, RUSTSEC-2026-0403: zstd / zstd-safe
+        # transitive via lance-encoding 7.0.0 → lancedb 0.30 (rgaa-agent). Pinned to
+        # zstd ^0.13 by lance-encoding; cannot upgrade without bumping lance-encoding.
+        # Tracking: https://github.com/jamon8888/Holo-RGAA/issues/391
         # Stacked-Borrows issues in LruCache::pop/IterMut), transitive via lancedb's
         # dependency tree (rgaa-agent's vector-store feature). Not introduced by our
         # code; upgrading past it means upgrading lancedb, out of scope here.

@@ -131,15 +131,24 @@ pub struct RgaaCriteria;
 impl RgaaCriteria {
     /// Built once per process and shared read-only — cloning happens only for the
     /// filtered subsets below, never for the full 106-item catalog on every call.
+    /// `classification` is derived from the catalog's [`Automatable`] label
+    /// ([`crate::catalog::Automatable`] → [`Classification`]), so `RgaaCriteria` is a
+    /// shim over [`RgaaCatalog`]: wcag references come from `CLASSIFICATION`, but
+    /// classification and title come from the catalog.
     pub fn all() -> &'static [Criterion] {
         CRITERIA_CACHE.get_or_init(|| {
             CLASSIFICATION
                 .iter()
-                .map(|(id, classification, wcag_refs)| Criterion {
-                    id,
-                    title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
-                    classification: *classification,
-                    wcag_refs,
+                .map(|(id, _classification, wcag_refs)| {
+                    let classification = RgaaCatalog::by_id(id)
+                        .map(|(_, c)| c.automatable.into())
+                        .unwrap_or(Classification::Manuel);
+                    Criterion {
+                        id,
+                        title: RgaaCatalog::title(id).unwrap_or("unknown").to_string(),
+                        classification,
+                        wcag_refs,
+                    }
                 })
                 .collect()
         })

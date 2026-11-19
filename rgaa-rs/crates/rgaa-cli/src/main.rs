@@ -65,7 +65,9 @@ async fn main() {
         };
     eprintln!("Monitoring log: {}", log_path.display());
 
-    let result = rgaa_cli::commands::dispatch(args.command).await;
+    let result =
+        rgaa_cli::commands::dispatch_licensed(args.command, &rgaa_cli::license::gate_from_env())
+            .await;
     let code = match &result {
         Ok(code) => *code,
         Err(error) => {

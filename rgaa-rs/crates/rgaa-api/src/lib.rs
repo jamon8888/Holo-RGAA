@@ -103,11 +103,62 @@ where
     router.layer(resilience)
 }
 
-pub fn build_app(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+/// Configuration error for `RGAA_API_CORS_ORIGINS`, reported at startup.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum CorsConfigError {
+    /// `*` would emit a wildcard policy: refused, the origins must be listed.
+    #[error("RGAA_API_CORS_ORIGINS: wildcard `*` is not allowed, list explicit origins")]
+    Wildcard,
+    /// An entry that is not a bare `http(s)://host[:port]` origin.
+    #[error("RGAA_API_CORS_ORIGINS: invalid origin `{0}` (expected http:// or https:// origin)")]
+    Invalid(String),
+}
+
+/// Parses a comma-separated list of explicit origins.
+///
+/// An empty or absent value means no cross-origin access. `*` and any entry that
+/// is not a bare origin (scheme + host, no path, query or wildcard) are errors:
+/// silently dropping them would start the API without the origins the operator
+/// intended.
+pub fn parse_cors_origins(
+    raw: Option<&str>,
+) -> Result<Vec<axum::http::HeaderValue>, CorsConfigError> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    let mut origins = Vec::new();
+    for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+        if entry == "*" {
+            return Err(CorsConfigError::Wildcard);
+        }
+        let rest = entry
+            .strip_prefix("https://")
+            .or_else(|| entry.strip_prefix("http://"))
+            .ok_or_else(|| CorsConfigError::Invalid(entry.to_string()))?;
+        if rest.is_empty() || rest.contains(['/', '*', '?', '#', ' ']) {
+            return Err(CorsConfigError::Invalid(entry.to_string()));
+        }
+        let value = entry
+            .parse::<axum::http::HeaderValue>()
+            .map_err(|_| CorsConfigError::Invalid(entry.to_string()))?;
+        origins.push(value);
+    }
+    Ok(origins)
+}
+
+pub fn build_app(state: AppState) -> Result<Router, CorsConfigError> {
+    // CORS origins: comma-separated list from RGAA_API_CORS_ORIGINS, or empty
+    // (no cross-origin access) in production. Never `*` — that exposes audit
+    // bundles to any site a user visits while authenticated.
+    let raw_origins = std::env::var("RGAA_API_CORS_ORIGINS").ok();
+    let cors_origins = parse_cors_origins(raw_origins.as_deref())?;
+
+    let mut cors = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    if !cors_origins.is_empty() {
+        cors = cors.allow_origin(cors_origins);
+    }
+    // With no origins configured, CorsLayer defaults to denying all
+    // cross-origin requests — no `allow_origin` call at all.
 
     let public_routes = Router::new()
         .route("/health", get(routes::health))
@@ -157,7 +208,7 @@ pub fn build_app(state: AppState) -> Router {
         middleware::from_fn_with_state(state.storage.clone(), routes::auth_middleware),
     );
 
-    Router::new()
+    Ok(Router::new()
         .merge(public_routes)
         .merge(protected_routes)
         .merge(legacy_routes)
@@ -168,5 +219,51 @@ pub fn build_app(state: AppState) -> Router {
         // every route rather than only the ones declared above it.
         .with_state(state)
         .merge(batch_routes)
-        .layer(cors)
+        .layer(cors))
+}
+
+#[cfg(test)]
+mod cors_tests {
+    use super::{parse_cors_origins, CorsConfigError};
+
+    #[test]
+    fn absent_or_empty_means_no_origins() {
+        assert_eq!(parse_cors_origins(None), Ok(Vec::new()));
+        assert_eq!(parse_cors_origins(Some("  , ")), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn explicit_origins_are_accepted() {
+        let origins = parse_cors_origins(Some("https://app.example.org, http://localhost:5173"))
+            .expect("valid origins");
+        assert_eq!(origins.len(), 2);
+    }
+
+    #[test]
+    fn wildcard_is_rejected_not_emitted() {
+        assert_eq!(
+            parse_cors_origins(Some("*")),
+            Err(CorsConfigError::Wildcard)
+        );
+        assert_eq!(
+            parse_cors_origins(Some("https://a.example.org,*")),
+            Err(CorsConfigError::Wildcard)
+        );
+    }
+
+    #[test]
+    fn malformed_entries_are_rejected_not_dropped() {
+        for bad in [
+            "app.example.org",
+            "https://",
+            "https://a.example.org/path",
+            "https://*.example.org",
+        ] {
+            assert_eq!(
+                parse_cors_origins(Some(bad)),
+                Err(CorsConfigError::Invalid(bad.to_string())),
+                "{bad} must be a config error"
+            );
+        }
+    }
 }

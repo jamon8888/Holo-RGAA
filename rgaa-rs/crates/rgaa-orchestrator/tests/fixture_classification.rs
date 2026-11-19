@@ -6,8 +6,11 @@
 //! For every fixture a registry mechanism names:
 //! * where the mechanism declares `fail` as an outcome, a `-fail` fixture must make
 //!   axe-core or a gap-fix probe emit a `Fail` for the fixture's criterion;
-//! * a `-pass` fixture must not (for a `partial` mechanism "conforming" means "emits no
-//!   `fail`" — silence never counts as `pass`);
+//! * a `-fail` fixture of a review-only mechanism must make that mechanism emit
+//!   `NeedsReview`, never `Fail` (spec §4.1, "orienté") — unless a decisive probe
+//!   shares its criterion, since gap-fix reports one verdict per criterion;
+//! * a `-pass` fixture must not draw a `Fail` from any engine (for a `partial`
+//!   mechanism "conforming" means "emits no `fail`" — silence never counts as `pass`);
 //! * a `-pass` fixture of a `complete` mechanism that declares `pass` must make **that
 //!   mechanism** (axe for `axe-native`, the gap-fix probe otherwise) emit `Pass` (spec
 //!   §4.1): its silence is the only one allowed to stand as conformance, so it is proven.
@@ -93,8 +96,9 @@ fn cases() -> Vec<Case> {
     let mut out = Vec::new();
     for m in MechanismRegistry::builtin().mechanisms() {
         // Site mechanisms are evaluated by the crawl-level comparator, not by
-        // axe/gap-fix on an isolated page. Their paired page observations are
-        // covered by `site_comparison` tests instead of this single-page harness.
+        // axe/gap-fix on an isolated page. The comparator's logic is unit-tested on
+        // synthetic observations in `site_comparison`; their fixture files are not
+        // classified anywhere yet (docs/testing-layers.md).
         if m.kind == MechanismKind::Site {
             continue;
         }
@@ -117,8 +121,14 @@ fn cases() -> Vec<Case> {
             let expect_failure = expect_fail && declares_fail;
             let expected_statuses = if expect_fail && declares_fail {
                 vec![CriterionStatus::Fail]
+            } else if expect_fail && declares_review && shares_a_decisive_probe(m) {
+                // Gap-fix reports one verdict per criterion: a sibling probe that
+                // declares `fail` on the same criterion (12.9) may decide this fixture.
+                vec![CriterionStatus::NeedsReview, CriterionStatus::Fail]
             } else if expect_fail && declares_review {
-                vec![CriterionStatus::Fail, CriterionStatus::NeedsReview]
+                // Review-only ("orienté", spec §4.1): an adverse fixture is `review`,
+                // never `fail`.
+                vec![CriterionStatus::NeedsReview]
             } else if expect_pass {
                 vec![CriterionStatus::Pass]
             } else if declares_review {
@@ -140,6 +150,40 @@ fn cases() -> Vec<Case> {
         }
     }
     out
+}
+
+/// Another non-axe, non-site mechanism on the same criterion declares `fail`.
+fn shares_a_decisive_probe(m: &rgaa_core::registry::Mechanism) -> bool {
+    MechanismRegistry::builtin()
+        .mechanisms()
+        .iter()
+        .any(|other| {
+            other.id != m.id
+                && other.criterion == m.criterion
+                && !matches!(other.kind, MechanismKind::AxeNative | MechanismKind::Site)
+                && other.outcomes.contains(&Outcome::Fail)
+        })
+}
+
+/// The ids of the violations in an axe result, whichever shape the bridge returns:
+/// `{"violations": [...], "incomplete": [...]}` under Obscura, or a bare array.
+fn violation_ids(axe_json: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(axe_json) else {
+        return Vec::new();
+    };
+    let violations = match &value {
+        serde_json::Value::Array(items) => items.as_slice(),
+        serde_json::Value::Object(map) => map
+            .get("violations")
+            .and_then(serde_json::Value::as_array)
+            .map_or(&[][..], Vec::as_slice),
+        _ => &[],
+    };
+    violations
+        .iter()
+        .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .collect()
 }
 
 /// Retry when another process claims the selected port before Obscura binds it.
@@ -179,7 +223,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
         let unclassifiable: Vec<&str> = MechanismRegistry::builtin()
             .mechanisms()
             .iter()
-            .filter(|m| !m.legacy)
+            .filter(|m| !m.legacy && m.kind != MechanismKind::Site)
             .map(|m| m.id.as_str())
             .collect();
         assert!(
@@ -275,17 +319,9 @@ async fn registry_fixtures_are_classified_under_obscura() {
         }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
         if case.axe_native && case.expect_fail {
-            let declared_rule_fired = serde_json::from_str::<serde_json::Value>(&axe_json)
-                .ok()
-                .and_then(|value| value.as_array().cloned())
-                .is_some_and(|violations| {
-                    violations.iter().any(|violation| {
-                        violation
-                            .get("id")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some_and(|id| case.axe_rules.iter().any(|rule| rule == id))
-                    })
-                });
+            let declared_rule_fired = violation_ids(&axe_json)
+                .iter()
+                .any(|id| case.axe_rules.contains(id));
             if !declared_rule_fired {
                 wrong.push(format!(
                     "{} / {}: expected this axe mechanism to fail, but none of its declared rules fired ({})",
@@ -317,12 +353,16 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 evidence.join("; ")
             ));
         }
-        if failed != case.expect_fail {
+        // A `Fail` is mandatory only where the mechanism declares it; a conforming
+        // fixture must draw none from any engine on its criterion.
+        let fail_expected = case.expect_failure;
+        let fail_forbidden = !case.expect_fail;
+        if (fail_expected && !failed) || (fail_forbidden && failed) {
             wrong.push(format!(
                 "{} / {}: expected {}, mechanisms said {:?} ({})",
                 case.mechanism,
                 case.fixture,
-                if case.expect_fail { "fail" } else { "no fail" },
+                if fail_expected { "fail" } else { "no fail" },
                 statuses,
                 evidence.join("; ")
             ));

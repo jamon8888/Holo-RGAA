@@ -448,7 +448,8 @@ jobs:
           OBSCURA_WORKERS: "1"
           RUSTC_WRAPPER: sccache
         # Spec criteria-coverage-expansion §4.6-7 (#261) : chaque mécanisme non
-        # hérité du registre doit classer ses fixtures `-pass`/`-fail` sous
+        # hérité à portée d'une page (donc hors `site`, voir
+        # docs/testing-layers.md) doit classer ses fixtures `-pass`/`-fail` sous
         # Obscura, et un mauvais classement bloque la PR. Ce test n'a besoin que
         # d'Obscura et du CDN d'axe, pas d'une clé LLM : il vivait dans le job
         # `e2e` (jamais activé), donc ne tournait nulle part.

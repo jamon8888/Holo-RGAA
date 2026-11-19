@@ -1,6 +1,6 @@
 # Moteur d'évaluation et de préétiquetage (`rig`, sans boucle d'agent)
 
-Statut : **proposition**. Rien n'est implémenté. Carte : #330. Prolonge le protocole de
+Statut : **proposition, décisions de conception prises (#358)**. Rien n'est implémenté. Carte : #330. Prolonge le protocole de
 calibration (`docs/specs/calibration-protocol.md`) ; n'en change aucune règle.
 
 ## 1. Ce que c'est, et ce que ce n'est pas
@@ -56,7 +56,7 @@ externe : accord de l'utilisateur par exécution.
 
 ## 4. Architecture proposée
 
-Un crate `rgaa-eval` (placement à confirmer, §7) avec quatre briques indépendantes :
+Un nouveau crate `rgaa-eval` sur `rig` (décidé, §7) avec quatre briques indépendantes :
 
 - **`Judge`** : un modèle, une consigne, une température fixe ; entrée = une carte (image
   optionnelle, contexte, texte, test) ; sortie typée `{verdict, cohérence, complétude, justification}`.
@@ -90,15 +90,24 @@ Format d'échange : les JSON existants, pour que `sheet.py` et `score.py` resten
 - La référence humaine ne disparaît pas : elle se réduit à un **jeu gelé** par famille, plus les
   cartes de désaccord. La taille de ce jeu est une hypothèse à mesurer, non un résultat.
 
-## 7. Décisions ouvertes (ticket de grilling)
+## 7. Décisions (ticket de grilling #358)
 
-1. Qui valide un juge, et sur quel seuil : le seuil du protocole §4 suffit-il, sachant qu'il a
-   admis un modèle de 2 Md de paramètres sur le lot G ?
-2. Où vit le code : nouveau crate `rgaa-eval` ou module de `rgaa-holo` (qui a déjà ses clients
-   Ollama/OpenAI et n'utilise pas `rig`) ? Un seul chemin d'appel aux modèles doit servir l'éval.
-3. Taille minimale du jeu humain gelé par famille.
-4. Nombre de juges et échantillonnage des cartes d'accord relues par l'humain.
-5. Les étiquettes par construction comptent-elles comme référence, ou comme complément du jeu humain ?
+Prises avec l'utilisateur ; Q1, Q3 et Q4 le 19/10/2026 (inscrites dans
+`calibration-protocol.md` §4 bis), Q2 et Q5 le 19/11/2026. Principe commun : **un modèle juge ne
+devient jamais la référence** ; il réduit le travail humain.
+
+1. **Seuil d'admission d'un juge.** Le seuil du protocole §4 seul ne suffit pas (il a admis un
+   modèle de 2 Md de paramètres sur le lot G) : l'admission exige en plus le **pouvoir
+   discriminant** du lot (modèle faible nettement sous le fort, intervalles disjoints), et le taux
+   d'erreur du juge est publié. Aucun juge n'est promu aujourd'hui.
+2. **Emplacement du code.** Nouveau crate **`rgaa-eval`** sur `rig`, avec un seul chemin d'appel
+   aux modèles pour l'éval ; `rgaa-holo` reste inchangé.
+3. **Jeu humain gelé par famille.** Le lot calibré lui-même (≥ 36 cartes) plus ses cartes de
+   re-contrôle ; pas de nombre plus petit sans mesure. C'est la seule référence.
+4. **Juges et relecture.** Plusieurs juges (cible : trois, de fournisseurs différents) ; l'humain
+   arbitre toutes les cartes en désaccord plus un échantillon tiré au sort des cartes d'accord.
+5. **Étiquettes par construction.** **Complément** du jeu humain, **jamais référence** de
+   calibration : elles établissent la présence d'un défaut connu, pas le critère de l'auditeur (§6).
 
 ## 8. Prototype (critère d'acceptation)
 

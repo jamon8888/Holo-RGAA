@@ -68,6 +68,7 @@ fn test_server(delay: Duration) -> ToolServer {
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
     )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()))
 }
 
 async fn spawn(delay: Duration) -> (SocketAddr, tokio::task::JoinHandle<()>) {

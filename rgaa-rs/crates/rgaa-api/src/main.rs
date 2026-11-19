@@ -1,5 +1,6 @@
 use rgaa_api::batch::{system_clock, BatchService, OrchestratorRunner, PostgresBatchStore};
 use rgaa_api::{build_app, AppState};
+use rgaa_license::LicenseGate;
 use rgaa_orchestrator::Orchestrator;
 use rgaa_storage::PostgresStorage;
 use std::sync::Arc;
@@ -19,6 +20,8 @@ OPTIONS:
 ENVIRONMENT:
     DATABASE_URL     Postgres connection string (default: postgres://localhost/rgaa)
     LISTEN_ADDR      Address to bind the HTTP server on (default: 0.0.0.0:3000)
+    RGAA_LICENSE_KEY Licence token (else ~/.config/rgaa/license.toml; none = Free tier)
+    RGAA_UPGRADE_URL URL returned in 402 responses as `upgrade_url`
 
 Runs until stopped (Ctrl-C or SIGTERM); does not exit on its own once serving.";
 
@@ -60,6 +63,20 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(PostgresStorage::new(&database_url).await?);
     let orchestrator = Arc::new(Orchestrator::with_storage(storage.clone()));
 
+    // Licence (#87): quota enforced (a server counter is not user-editable,
+    // unlike the CLI's). Never fails at startup — an unusable licence is
+    // reported per request as 401, not by refusing to boot.
+    let upgrade_url = std::env::var("RGAA_UPGRADE_URL")
+        .ok()
+        .filter(|u| !u.trim().is_empty());
+    let license = Arc::new(LicenseGate::from_env(true, upgrade_url));
+    let snapshot = license.snapshot();
+    tracing::info!(
+        tier = snapshot.tier.as_str(),
+        status = snapshot.status.as_str(),
+        "licence loaded"
+    );
+
     // Postgres-backed, not in-memory: a batch is readable for 24h and the
     // API process is restarted far more often than that, so in-memory state
     // would hand clients a batch id that stops resolving after a deploy.
@@ -67,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(PostgresBatchStore::new(storage.pool().clone())),
         Arc::new(OrchestratorRunner::new(orchestrator.clone())),
         system_clock(),
+        license.clone(),
     );
 
     let state = AppState {
@@ -75,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
         batches,
     };
 
-    let app = build_app(state);
+    let app = build_app(state, license);
 
     let addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;

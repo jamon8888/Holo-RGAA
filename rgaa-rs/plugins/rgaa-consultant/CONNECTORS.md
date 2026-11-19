@@ -62,7 +62,8 @@ cargo install --path rgaa-rs/crates/rgaa-mcp
       "type": "stdio",
       "command": "rgaa-mcp",
       "env": {
-        "RGAA_OBSCURA_BIN": "${CLAUDE_PLUGIN_ROOT}/bin/obscura"
+        "RGAA_OBSCURA_BIN": "${CLAUDE_PLUGIN_ROOT}/bin/obscura",
+        "RGAA_LICENSE_KEY": "<your licence key — or omit it after `rgaa licence activate`>"
       }
     }
   }
@@ -86,6 +87,11 @@ export RGAA_OBSCURA_BIN=/path/to/obscura
 |----------|---------|-------------|
 | `MYIA_API_KEY` | rgaa-holo | LLM API key for AI-assisted evaluation |
 | `RGAA_OBSCURA_BIN` | rgaa-mcp, rgaa-cli | Path to Obscura browser binary |
+| `RGAA_LICENSE_KEY` | rgaa-mcp, rgaa-mcp-http, rgaa-api, rgaa-cli | Licence token; overrides `~/.config/rgaa/license.toml`. Unset: Free tier. A blank value is ignored (the file applies) but still shadows a value in `.env` |
+| `RGAA_LICENSE_PUBLIC_KEYS` | same | `k4.public.…` keys trusted to sign licences (needed until a built-in key ships) |
+| `RGAA_LICENSE_SERVER` | same | Licence service URL; enables online revalidation and the offline grace period |
+| `RGAA_LICENSE_GRACE_DAYS` | same | Offline grace period in days (default 7) |
+| `RGAA_LICENSE_UPGRADE_URL` | rgaa-cli | Upgrade page quoted in licence refusal messages |
 | `DATABASE_URL` | rgaa-api | PostgreSQL connection string |
 | `RUST_LOG` | All | Logging level (debug, info, warn) |
 

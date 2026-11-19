@@ -1,6 +1,8 @@
 // JSON-RPC envelope and error taxonomy for the MCP HTTP transport.
 // Hand-written: the envelope is defined by the transport, not by schemars.
 
+import type { LicenseErrorBody } from "./rest";
+
 /** Stable failure classes. Match on these, never on the message text. */
 export type RgaaErrorCode =
   | "INVALID_INPUT"
@@ -24,12 +26,33 @@ export interface JsonRpcRequest<P = unknown> {
   params?: P;
 }
 
+/**
+ * JSON-RPC error codes for licence refusals (#87). MCP clients on stdio never
+ * see an HTTP status, so the class travels here; `error.data` is then a
+ * `LicenseErrorBody` (discriminate on `data.code`).
+ *
+ * -32002: licence invalid, expired, or feature not in tier (HTTP 401 / 402).
+ */
+export type JsonRpcLicenseRequiredCode = -32002;
+/** Daily quota used up (HTTP 429). */
+export type JsonRpcQuotaExceededCode = -32003;
+
 export interface JsonRpcError {
-  /** Transport codes: -32700 parse, -32601 method not found, -32602 invalid params. */
+  /**
+   * Transport codes: -32700 parse, -32601 method not found, -32602 invalid
+   * params. Licence: -32002 licence required, -32003 quota exceeded.
+   */
   code: number;
   /** Prefixed with the `RgaaErrorCode`; secret-looking values are redacted. */
   message: string;
   data?: { code?: RgaaErrorCode } & Record<string, unknown>;
+}
+
+/** A licence refusal on an MCP transport. */
+export interface JsonRpcLicenseError {
+  code: JsonRpcLicenseRequiredCode | JsonRpcQuotaExceededCode;
+  message: string;
+  data: LicenseErrorBody;
 }
 
 export interface JsonRpcResponse<R = unknown> {

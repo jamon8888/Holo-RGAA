@@ -19,6 +19,8 @@ rgaa-storage = { path = "../rgaa-storage" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-spider = { path = "../rgaa-spider" }
 rgaa-mcp-http = { path = "../rgaa-mcp-http" }
+rgaa-cli = { path = "../rgaa-cli" }
+rgaa-license = { path = "../rgaa-license", default-features = false }
 
 clap = { workspace = true }
 tokio = { workspace = true }
@@ -35,6 +37,9 @@ anyhow = { workspace = true }
 dirs = "6"
 reqwest = { version = "0.12", features = ["json"] }
 uuid = { version = "1.0", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser"] }

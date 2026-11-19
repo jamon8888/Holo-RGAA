@@ -198,8 +198,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
-axe_rules = ["aria-roles", "aria-valid-attr", "aria-valid-attr-value", "aria-allowed-attr", "aria-required-attr", "aria-required-children", "aria-required-parent", "aria-prohibited-attr", "aria-conditional-attr", "aria-deprecated-role", "aria-hidden-body", "nested-interactive", "aria-command-name", "aria-meter-name", "aria-progressbar-name", "aria-tab-name"]
-provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "16 ARIA rules axe tags RGAAv4. Partial: they decide ARIA validity, not the criterion's 11 tests on script/AT compatibility as a whole." }
+axe_rules = ["aria-roles", "aria-valid-attr", "aria-valid-attr-value", "aria-allowed-attr", "aria-required-attr", "aria-required-children", "aria-required-parent", "aria-prohibited-attr", "aria-conditional-attr", "aria-deprecated-role", "aria-hidden-body", "nested-interactive", "aria-command-name", "aria-meter-name", "aria-progressbar-name"]
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "15 ARIA rules axe tags RGAAv4. Partial: they decide ARIA validity, not the criterion's 11 tests on script/AT compatibility as a whole. aria-tab-name removed (#261): absent from the injected axe-core 4.9.1, so it never fired; re-add it with the axe upgrade." }
 
 [[mechanism]]
 id        = "axe-7-3"

@@ -81,14 +81,7 @@ async fn union_schema_supports_every_live_api_path() {
 
     // Multi-filter: status + rule together (severity is None in sample).
     let filtered = repo
-        .list_findings(
-            &audit_id,
-            Some("fail"),
-            None,
-            Some("image-alt"),
-            100,
-            0,
-        )
+        .list_findings(&audit_id, Some("fail"), None, Some("image-alt"), 100, 0)
         .await
         .expect("list_findings multi-filter");
     assert_eq!(filtered.len(), 1);

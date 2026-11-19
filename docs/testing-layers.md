@@ -21,7 +21,8 @@ avant que la variable et le secret existent.
 
 `fixture_classification` (`rgaa-orchestrator`) vivait aussi dans ce job, sans
 avoir besoin de clé : il ne lit qu'Obscura et le CDN d'axe-core. Il classe sous
-Obscura les fixtures `-pass`/`-fail` de chaque mécanisme non hérité du registre
+Obscura les fixtures `-pass`/`-fail` de chaque mécanisme **à portée d'une page**
+non hérité du registre
 (`mechanisms.toml`, spec `criteria-coverage-expansion` §4, #261). Il tourne
 désormais dans `E2E (navigateur)`, sans condition, sur un port CDP éphémère.
 C'est un choix assumé — on ne peut pas provisionner une clé API dans un commit —

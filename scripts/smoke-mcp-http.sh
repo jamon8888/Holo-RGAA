@@ -161,7 +161,9 @@ if [ -z "$ready" ]; then
     exit 1
 fi
 
-live_tools="$(printf '%s' "$ready" | jq -r '.result.tools[].name' | sort)"
+# jq on the Windows runner ends lines with CRLF; strip the CR before comparing
+# (otherwise every name but the last differs from the source list by one byte).
+live_tools="$(printf '%s' "$ready" | jq -r '.result.tools[].name' | tr -d '\r' | sort)"
 echo
 echo "== tools/list over HTTP =="
 echo "$live_tools" | sed 's/^/   /'
@@ -187,8 +189,10 @@ classify() {
         return 0
     fi
     local code msg
-    code="$(printf '%s' "$body" | jq -r '.error.code // empty')"
-    msg="$(printf '%s' "$body" | jq -r '.error.message // empty')"
+    # tr -d '\r': see live_tools. A trailing CR here would make the -32601 test
+    # below never match, turning an unwired tools/call into a false PASS.
+    code="$(printf '%s' "$body" | jq -r '.error.code // empty' | tr -d '\r')"
+    msg="$(printf '%s' "$body" | jq -r '.error.message // empty' | tr -d '\r')"
     if [ -z "$code" ]; then
         echo "   FAIL ${name}: neither result nor error envelope: ${body}"
         return 1

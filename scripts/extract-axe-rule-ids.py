@@ -21,8 +21,10 @@ Usage :
 
 import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 OUT = (
@@ -57,7 +59,17 @@ def main() -> int:
         "generated_by": "scripts/extract-axe-rule-ids.py",
         "rules": ids,
     }
-    OUT.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # Never leave the checked-in invariant half-written: regeneration is often
+    # run from a shell and can be interrupted at any point.  `replace` is atomic
+    # when both paths live in the same directory.
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=OUT.parent, delete=False
+    ) as temporary:
+        temporary.write(json.dumps(data, indent=2) + "\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    temporary_path.replace(OUT)
     print(f"{len(ids)} règles axe {version} -> {OUT}")
     return 0
 

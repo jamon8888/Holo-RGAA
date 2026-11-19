@@ -82,7 +82,10 @@ impl AxeMapper {
                         criterion_id: rgaa_id.clone(),
                         title: String::new(),
                         classification: Classification::Deterministe,
-                        status: CriterionStatus::Fail,
+                        status: match mechanism.outcome_cap {
+                            Some(rgaa_core::Outcome::Review) => CriterionStatus::NeedsReview,
+                            _ => CriterionStatus::Fail,
+                        },
                         violations: vec![],
                         confidence: None,
                         raw_confidence: None,
@@ -104,7 +107,15 @@ impl AxeMapper {
                         verified_status: None,
                         review_events: Vec::new(),
                     });
-                result.status = CriterionStatus::Fail;
+                // A proven Fail from any mechanism outranks a capped NeedsReview: never
+                // degrade a hard failure to review (issue #279).
+                let capped_status = match mechanism.outcome_cap {
+                    Some(rgaa_core::Outcome::Review) => CriterionStatus::NeedsReview,
+                    _ => CriterionStatus::Fail,
+                };
+                if result.status != CriterionStatus::Fail {
+                    result.status = capped_status;
+                }
                 result.violations.push(Violation {
                     rule_id: violation.id.clone(),
                     impact: violation.impact.clone(),
@@ -232,6 +243,7 @@ impl AxeMapper {
                     CriterionMechanism {
                         rules: mechanism.axe_rules.clone(),
                         coverage: mechanism.coverage,
+                        outcome_cap: mechanism.outcome_cap,
                     },
                 );
             }
@@ -245,6 +257,10 @@ impl AxeMapper {
 struct CriterionMechanism {
     rules: Vec<String>,
     coverage: AxeCoverage,
+    /// Ceiling on the verdict this mechanism may emit. `Some(Outcome::Review)`
+    /// means a proven violation degrades to `NeedsReview` instead of `Fail`
+    /// (issue #279, criterion 12.8).
+    outcome_cap: Option<rgaa_core::Outcome>,
 }
 
 #[derive(serde::Deserialize)]

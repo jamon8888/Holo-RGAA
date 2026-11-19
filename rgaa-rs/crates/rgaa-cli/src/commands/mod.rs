@@ -86,6 +86,18 @@ pub async fn dispatch(command: AuditCommand) -> Result<i32, crate::CliError> {
     }
 }
 
+/// Dispatches a command after the local licence gate has admitted its feature.
+pub async fn dispatch_licensed(
+    command: AuditCommand,
+    gate: &rgaa_license::LicenseGate,
+) -> Result<i32, crate::CliError> {
+    let feature = crate::license::feature_for(&command);
+    if let Some(warning) = crate::license::admit(gate, feature, chrono::Utc::now())? {
+        eprintln!("{warning}");
+    }
+    dispatch(command).await
+}
+
 pub(crate) fn parse_format(value: Option<String>) -> Result<crate::ReportFormat, crate::CliError> {
     match value {
         Some(format) => format

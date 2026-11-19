@@ -7031,6 +7031,7 @@ dependencies = [
  "rgaa-agent",
  "rgaa-core",
  "rgaa-holo",
+ "rgaa-license",
  "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
@@ -7051,6 +7052,7 @@ dependencies = [
 name = "rgaa-core"
 version = "0.1.0"
 dependencies = [
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

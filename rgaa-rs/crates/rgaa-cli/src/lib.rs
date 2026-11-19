@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod license;
 pub mod monitoring;
 pub mod sitemap;
 
@@ -27,6 +28,9 @@ pub enum CliError {
     /// Execution error (browser, network, file system).
     #[error("{0}")]
     Execution(String),
+    /// Refused by the licence gate (tier, expiry, invalid licence).
+    #[error("{0}")]
+    License(String),
 }
 
 impl CliError {
@@ -55,6 +59,7 @@ impl CliError {
             Self::PolicyFailure(_) => 1,
             Self::InvalidInput(_) => 2,
             Self::Execution(_) => 3,
+            Self::License(_) => license::LICENSE_EXIT_CODE,
         }
     }
 }

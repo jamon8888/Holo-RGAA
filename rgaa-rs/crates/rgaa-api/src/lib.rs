@@ -104,10 +104,32 @@ where
 }
 
 pub fn build_app(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // CORS origins: comma-separated list from RGAA_API_CORS_ORIGINS, or empty
+    // (no cross-origin access) in production. Never `*` — that exposes audit
+    // bundles to any site a user visits while authenticated.
+    let cors_origins: Vec<String> = std::env::var("RGAA_API_CORS_ORIGINS")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            v.split(',')
+                .map(|o| o.trim().to_string())
+                .filter(|o| !o.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut cors = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    if !cors_origins.is_empty() {
+        cors = cors.allow_origin(
+            cors_origins
+                .iter()
+                .map(|o| o.parse::<axum::http::HeaderValue>())
+                .filter_map(Result::ok)
+                .collect::<Vec<_>>(),
+        );
+    }
+    // With no origins configured, CorsLayer defaults to denying all
+    // cross-origin requests — no `allow_origin` call at all.
 
     let public_routes = Router::new()
         .route("/health", get(routes::health))

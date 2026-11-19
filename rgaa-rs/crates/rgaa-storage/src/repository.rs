@@ -414,6 +414,15 @@ impl Repository {
     }
 }
 
+/// Hashes an API key for storage. The raw key is **never** persisted or
+/// logged — only its SHA-256 hex digest is stored, and callers must not
+/// record the plaintext key in tracing spans or logs.
+///
+/// # Security
+///
+/// Uses SHA-256 (not a password hash) because API keys are already
+/// high-entropy random values; the goal is to prevent key exfiltration
+/// from a database dump, not to slow down brute force.
 pub fn hash_api_key(key: &str) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();

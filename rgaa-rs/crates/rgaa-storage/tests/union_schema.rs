@@ -79,6 +79,34 @@ async fn union_schema_supports_every_live_api_path() {
     assert_eq!(findings[0].criterion_id.as_deref(), Some("1.1"));
     assert_eq!(findings[0].audit_id.to_string(), audit_id);
 
+    // Multi-filter: status + severity + rule together.
+    let filtered = repo
+        .list_findings(
+            &audit_id,
+            Some("fail"),
+            Some("critical"),
+            Some("image-alt"),
+            100,
+            0,
+        )
+        .await
+        .expect("list_findings multi-filter");
+    assert_eq!(filtered.len(), 1);
+
+    // Multi-filter: no match when status contradicts.
+    let empty = repo
+        .list_findings(&audit_id, Some("pass"), None, None, 100, 0)
+        .await
+        .expect("list_findings empty");
+    assert!(empty.is_empty());
+
+    // Multi-filter: limit/offset respected.
+    let limited = repo
+        .list_findings(&audit_id, None, None, None, 1, 0)
+        .await
+        .expect("list_findings limit");
+    assert_eq!(limited.len(), 1);
+
     // Auth path: api_keys provisioning + validation.
     let scopes = vec!["audit:write".to_string()];
     let (_, plain_key) = repo

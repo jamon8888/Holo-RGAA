@@ -75,8 +75,13 @@ struct Case {
     criterion: String,
     fixture: String,
     expect_fail: bool,
-    /// A declared review outcome must be observed too; it is not a free pass.
-    expected_status: Option<CriterionStatus>,
+    /// A criterion-wide `Fail` is only mandatory when the mechanism declares it:
+    /// a review-only probe can flag an adverse fixture as `NeedsReview` instead.
+    expect_failure: bool,
+    /// Statuses the declared mechanism may report on this fixture. A review-only
+    /// probe is constrained too, but either a detected failure or an explicit
+    /// review request is an acceptable adverse answer.
+    expected_statuses: Vec<CriterionStatus>,
     /// `complete` with `pass` declared, on a `-pass` fixture: the mechanism's own
     /// source must report `Pass`, not merely stay silent.
     expect_pass: bool,
@@ -107,21 +112,27 @@ fn cases() -> Vec<Case> {
             let expect_pass = !expect_fail
                 && m.coverage == rgaa_core::catalog::AxeCoverage::Complete
                 && m.outcomes.contains(&Outcome::Pass);
-            let expected_status = if expect_fail && m.outcomes.contains(&Outcome::Fail) {
-                Some(CriterionStatus::Fail)
+            let declares_fail = m.outcomes.contains(&Outcome::Fail);
+            let declares_review = m.outcomes.contains(&Outcome::Review);
+            let expect_failure = expect_fail && declares_fail;
+            let expected_statuses = if expect_fail && declares_fail {
+                vec![CriterionStatus::Fail]
+            } else if expect_fail && declares_review {
+                vec![CriterionStatus::Fail, CriterionStatus::NeedsReview]
             } else if expect_pass {
-                Some(CriterionStatus::Pass)
-            } else if m.outcomes.contains(&Outcome::Review) {
-                Some(CriterionStatus::NeedsReview)
+                vec![CriterionStatus::Pass]
+            } else if declares_review {
+                vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
             } else {
-                None
+                Vec::new()
             };
             out.push(Case {
                 mechanism: m.id.clone(),
                 criterion: m.criterion.clone(),
                 fixture: f.clone(),
                 expect_fail,
-                expected_status,
+                expect_failure,
+                expected_statuses,
                 expect_pass,
                 axe_native: m.kind == MechanismKind::AxeNative,
                 axe_rules: m.axe_rules.clone(),
@@ -129,6 +140,30 @@ fn cases() -> Vec<Case> {
         }
     }
     out
+}
+
+/// Retry when another process claims the selected port before Obscura binds it.
+async fn start_fixture_browser() -> Result<ObscuraBridge, String> {
+    const MAX_RETRIES: usize = 2;
+
+    let mut retries = 0;
+    loop {
+        let mut bridge = ObscuraBridge::from_env().with_ephemeral_port()?;
+        let error = match bridge.start_server().await {
+            Ok(()) => return Ok(bridge),
+            Err(error) => error,
+        };
+        let port = bridge.server_port();
+        let collision = error.starts_with(&format!("port {port} is already in use"))
+            || (error.contains("obscura serve exited during startup")
+                && TcpListener::bind(("127.0.0.1", port))
+                    .is_err_and(|err| err.kind() == std::io::ErrorKind::AddrInUse));
+        if !collision || retries == MAX_RETRIES {
+            return Err(error);
+        }
+        retries += 1;
+        tracing::warn!(port, retries, "retrying Obscura after a CDP port collision");
+    }
 }
 
 #[tokio::test]
@@ -167,11 +202,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
     // Never the fixed 9222: this test now runs in `E2E (navigateur)` beside the
     // coverage tests, and a shared CDP port lets concurrent runs steal each other's
     // server (CLAUDE.md, #382).
-    let mut bridge = ObscuraBridge::from_env()
-        .with_ephemeral_port()
-        .expect("a free CDP port");
-    bridge
-        .start_server()
+    let bridge = start_fixture_browser()
         .await
         .expect("obscura 0.2.4 must start");
     let binary = bridge.binary_path().to_string();
@@ -264,15 +295,19 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 ));
             }
         }
-        if let Some(expected) = &case.expected_status {
-            if own_status.as_ref() != Some(expected) {
-                wrong.push(format!(
-                    "{} / {}: expected its own mechanism to report {expected:?}, it said {own_status:?} ({})",
-                    case.mechanism,
-                    case.fixture,
-                    evidence.join("; ")
-                ));
-            }
+        if !case.expected_statuses.is_empty()
+            && !case
+                .expected_statuses
+                .iter()
+                .any(|expected| own_status.as_ref() == Some(expected))
+        {
+            wrong.push(format!(
+                "{} / {}: expected its own mechanism to report one of {:?}, it said {own_status:?} ({})",
+                case.mechanism,
+                case.fixture,
+                case.expected_statuses,
+                evidence.join("; ")
+            ));
         }
         if case.expect_pass && own_status != Some(CriterionStatus::Pass) {
             wrong.push(format!(

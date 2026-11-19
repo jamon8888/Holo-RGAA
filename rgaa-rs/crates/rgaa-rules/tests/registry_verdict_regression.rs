@@ -11,11 +11,11 @@
 //! table gelée sur la sortie vide et sur une violation isolée de **chaque** règle que la
 //! version injectée d'axe-core peut lever couvre donc tous les verdicts possibles.
 //!
-//! Ce qui n'entre pas dans la comparaison, et pourquoi :
-//! * les corrections de couverture **postérieures** à la migration, chacune décidée par
-//!   sa propre issue : listées dans [`INTENTIONAL_CHANGES`]. La liste ne peut pas
-//!   pourrir : un critère listé qui ne diffère plus fait échouer
-//!   `every_listed_change_really_differs` ;
+//! Les différences approuvées après la migration sont appliquées à la table gelée
+//! avant de calculer les verdicts attendus, selon la couverture et les règles
+//! explicitement revues pour chaque correction.
+//!
+//! Autres limites de la comparaison :
 //! * les règles absentes d'axe-core 4.9.1 (la version injectée) : elles ne lèvent
 //!   jamais de violation, donc ne décident aucun verdict ([`NOT_INJECTED`]) ;
 //! * les entrées `incomplete` d'axe, prises en compte après la migration (prérequis
@@ -31,68 +31,33 @@ use std::collections::{BTreeMap, BTreeSet};
 const PRE_REGISTRY: &str = include_str!("data/pre_registry_axe_mapping.json");
 const INJECTED: &str = include_str!("../../rgaa-core/data/rgaa-4.1.2/axe_rules_injected.json");
 
-/// Changements de verdict assumés depuis la migration, chacun par une issue revue.
-/// Aucun ne vient de la migration elle-même : à `9b819a3`, la table dérivée du registre
-/// était identique à `axe_mapping.json`.
-const INTENTIONAL_CHANGES: &[(&str, &str)] = &[
-    (
-        "1.1",
-        "#366 : partielle, aucune règle ne décide 1.1.4, 1.1.7, 1.1.8",
-    ),
-    (
-        "1.2",
-        "#280 puis #366 : partielle, le décoratif ne se lit pas dans le balisage",
-    ),
-    ("1.5", "#280 : image-alt ne décide pas 1.5, mapping retiré"),
-    ("1.6", "#280 : image-alt ne décide pas 1.6, mapping retiré"),
-    (
-        "3.2",
-        "#372 : partielle (3.2.5, color-contrast inerte sous ce pipeline, #371)",
-    ),
-    (
-        "5.7",
-        "#375 : partielle, cohérence scope/orientation non vérifiée par axe",
-    ),
-    ("6.1", "#280 : partielle"),
-    ("8.5", "#280 : document-title déplacée ici depuis 13.3/13.4"),
-    ("9.1", "#280 : partielle"),
-    (
-        "9.3",
-        "#369 : partielle, une liste non balisée échappe à axe",
-    ),
-    ("10.2", "#280 : mapping retiré"),
-    ("10.5", "#280 : mapping retiré"),
-    (
-        "10.6",
-        "#373 : partielle, link-in-text-block faussement verte (#371)",
-    ),
-    (
-        "10.8",
-        "#374 : partielle, 10.8.1 est un jugement d'intention",
-    ),
-    ("10.9", "#280 : mapping retiré"),
-    ("11.4", "#280 : mapping retiré"),
-    (
-        "11.9",
-        "#280 : button-name et input-button-name ajoutées, partielle",
-    ),
-    ("12.6", "#280 : partielle"),
-    (
-        "12.7",
-        "#377 : partielle, 12.7.2 porte sur un ensemble de pages",
-    ),
-    (
-        "13.3",
-        "#280 : document-title ne décide pas 13.3, mapping retiré",
-    ),
-    (
-        "13.4",
-        "#280 : document-title ne décide pas 13.4, mapping retiré",
-    ),
-    (
-        "13.5",
-        "#280 : image-alt ne décide pas 13.5, mapping retiré",
-    ),
+/// Critères dont la couverture complète a été retirée après la migration.
+const NO_LONGER_COMPLETE: &[&str] = &[
+    "1.1", "1.2", // #366
+    "1.5", "1.6", // #280
+    "3.2", // #372
+    "5.7", // #375
+    "6.1", "9.1", // #280
+    "9.3", // #369
+    "10.2", "10.5", // #280
+    "10.6", // #373
+    "10.8", // #374
+    "10.9", "11.4", "12.6", // #280
+    "12.7", // #377
+    "13.3", "13.4", "13.5", // #280
+];
+
+/// Associations retirées par #280.
+const REMOVED_RULES: &[(&str, &[&str])] = &[
+    ("1.5", &["image-alt"]),
+    ("1.6", &["image-alt"]),
+    ("10.2", &["color-contrast", "image-alt"]),
+    ("10.5", &["color-contrast"]),
+    ("10.9", &["color-contrast", "image-alt"]),
+    ("11.4", &["label"]),
+    ("13.3", &["document-title"]),
+    ("13.4", &["document-title"]),
+    ("13.5", &["image-alt"]),
 ];
 
 /// Règles de la table d'avant qu'axe-core 4.9.1 ne contient pas : jamais levées, elles
@@ -163,16 +128,48 @@ fn violation(rule: &str) -> String {
     )
 }
 
-fn is_intentional(criterion: &str) -> bool {
-    INTENTIONAL_CHANGES.iter().any(|(c, _)| *c == criterion)
+/// Applique les corrections approuvées à la référence d'avant migration.
+fn reviewed_mapping() -> Vec<Entry> {
+    let mut mapping = frozen();
+    for id in NO_LONGER_COMPLETE {
+        let entry = mapping
+            .iter_mut()
+            .find(|entry| entry.criterion_id == *id)
+            .expect("reviewed coverage change must target a legacy criterion");
+        assert_eq!(entry.coverage, "complete", "{id}");
+        entry.coverage = "partial".into();
+    }
+    for (id, rules) in REMOVED_RULES {
+        let entry = mapping
+            .iter_mut()
+            .find(|entry| entry.criterion_id == *id)
+            .expect("reviewed rule removal must target a legacy criterion");
+        let before = entry.axe_rules.len();
+        entry
+            .axe_rules
+            .retain(|rule| !rules.contains(&rule.as_str()));
+        assert_eq!(before - entry.axe_rules.len(), rules.len(), "{id}");
+    }
+
+    // #280 : titre de page (couverture complète) et noms des boutons (partielle).
+    for (id, coverage, rules) in [
+        ("8.5", "complete", &["document-title"][..]),
+        ("11.9", "partial", &["button-name", "input-button-name"][..]),
+    ] {
+        assert!(mapping.iter().all(|entry| entry.criterion_id != id), "{id}");
+        mapping.push(Entry {
+            criterion_id: id.into(),
+            coverage: coverage.into(),
+            axe_rules: rules.iter().map(|rule| (*rule).into()).collect(),
+        });
+    }
+    mapping
 }
 
-/// Les critères dont le verdict diffère entre les deux tables, hors liste assumée si
-/// `skip_intentional`.
-fn differences(expected: &Verdicts, actual: &Verdicts, skip_intentional: bool) -> Vec<String> {
+/// Les critères dont le verdict diffère entre les deux tables.
+fn differences(expected: &Verdicts, actual: &Verdicts) -> Vec<String> {
     let keys: BTreeSet<&String> = expected.keys().chain(actual.keys()).collect();
     keys.into_iter()
-        .filter(|id| !(skip_intentional && is_intentional(id)))
         .filter(|id| expected.get(*id) != actual.get(*id))
         .map(|id| {
             format!(
@@ -196,12 +193,12 @@ fn probes() -> Vec<(String, Option<String>)> {
 
 #[test]
 fn verdicts_are_unchanged_except_reviewed_changes() {
-    let frozen = frozen();
+    let mapping = reviewed_mapping();
     let mut regressions = Vec::new();
     for (axe_json, fired) in probes() {
-        let expected = legacy_verdicts(&frozen, fired.as_deref());
+        let expected = legacy_verdicts(&mapping, fired.as_deref());
         let actual = current_verdicts(&axe_json);
-        for difference in differences(&expected, &actual, true) {
+        for difference in differences(&expected, &actual) {
             regressions.push(format!(
                 "[{}] {difference}",
                 fired.as_deref().unwrap_or("aucune violation")
@@ -213,33 +210,6 @@ fn verdicts_are_unchanged_except_reviewed_changes() {
         "{} verdict(s) changed by the registry without a reviewed reason:\n  {}",
         regressions.len(),
         regressions.join("\n  ")
-    );
-}
-
-/// Un changement assumé qui ne change plus rien est une exemption morte : elle
-/// masquerait une régression future sur ce critère.
-#[test]
-fn every_listed_change_really_differs() {
-    let frozen = frozen();
-    let mut changed: BTreeSet<String> = BTreeSet::new();
-    for (axe_json, fired) in probes() {
-        let expected = legacy_verdicts(&frozen, fired.as_deref());
-        let actual = current_verdicts(&axe_json);
-        let keys: BTreeSet<&String> = expected.keys().chain(actual.keys()).collect();
-        for id in keys {
-            if expected.get(id) != actual.get(id) {
-                changed.insert(id.clone());
-            }
-        }
-    }
-    let stale: Vec<&str> = INTENTIONAL_CHANGES
-        .iter()
-        .map(|(c, _)| *c)
-        .filter(|c| !changed.contains(*c))
-        .collect();
-    assert!(
-        stale.is_empty(),
-        "listed as intentional but no verdict differs any more, remove them: {stale:?}"
     );
 }
 

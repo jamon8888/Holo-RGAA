@@ -1,12 +1,16 @@
 //! Classification of the registry's fixtures under Obscura (spec §4 points 6-7,
-//! issue #261). Runs in the E2E job (Obscura 0.2.4 on PATH, network for the axe-core
-//! CDN); skipped unless `RUN_E2E=1`.
+//! issue #261). Runs in the unconditional `E2E (navigateur)` CI job (Obscura 0.2.4 on
+//! PATH, network for the axe-core CDN, no LLM key); skipped unless `RUN_E2E=1`, and
+//! `RGAA_E2E_REQUIRED=1` turns that skip into a failure in CI.
 //!
 //! For every fixture a registry mechanism names:
 //! * where the mechanism declares `fail` as an outcome, a `-fail` fixture must make
 //!   axe-core or a gap-fix probe emit a `Fail` for the fixture's criterion;
 //! * a `-pass` fixture must not (for a `partial` mechanism "conforming" means "emits no
-//!   `fail`" — silence never counts as `pass`).
+//!   `fail`" — silence never counts as `pass`);
+//! * a `-pass` fixture of a `complete` mechanism that declares `pass` must make **that
+//!   mechanism** (axe for `axe-native`, the gap-fix probe otherwise) emit `Pass` (spec
+//!   §4.1): its silence is the only one allowed to stand as conformance, so it is proven.
 //!
 //! A mechanism that misclassifies its fixture blocks the PR. The presence of the
 //! fixture files is checked separately, without a browser, in
@@ -71,6 +75,10 @@ struct Case {
     criterion: String,
     fixture: String,
     expect_fail: bool,
+    /// `complete` with `pass` declared, on a `-pass` fixture: the mechanism's own
+    /// source must report `Pass`, not merely stay silent.
+    expect_pass: bool,
+    axe_native: bool,
 }
 
 fn cases() -> Vec<Case> {
@@ -94,11 +102,16 @@ fn cases() -> Vec<Case> {
             if !expect_fail && !f.ends_with("-pass") {
                 continue;
             }
+            let expect_pass = !expect_fail
+                && m.coverage == rgaa_core::catalog::AxeCoverage::Complete
+                && m.outcomes.contains(&rgaa_core::registry::Outcome::Pass);
             out.push(Case {
                 mechanism: m.id.clone(),
                 criterion: m.criterion.clone(),
                 fixture: f.clone(),
                 expect_fail,
+                expect_pass,
+                axe_native: m.kind == MechanismKind::AxeNative,
             });
         }
     }
@@ -138,7 +151,12 @@ async fn registry_fixtures_are_classified_under_obscura() {
     std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
 
     let port = serve(corpus_dir()).expect("fixture server must bind");
-    let mut bridge = ObscuraBridge::from_env();
+    // Never the fixed 9222: this test now runs in `E2E (navigateur)` beside the
+    // coverage tests, and a shared CDP port lets concurrent runs steal each other's
+    // server (CLAUDE.md, #382).
+    let mut bridge = ObscuraBridge::from_env()
+        .with_ephemeral_port()
+        .expect("a free CDP port");
     bridge
         .start_server()
         .await
@@ -167,11 +185,15 @@ async fn registry_fixtures_are_classified_under_obscura() {
         let url = url_of(case);
         let axe_json = axe_by_url.remove(&url).unwrap_or_else(|| "[]".to_string());
         let mut statuses: Vec<CriterionStatus> = Vec::new();
+        let mut own_status: Option<CriterionStatus> = None;
         let mut evidence = Vec::new();
         match AxeMapper::map(&axe_json) {
             Ok(axe) => {
                 if let Some(result) = axe.get(&case.criterion) {
                     statuses.push(result.status.clone());
+                    if case.axe_native {
+                        own_status = Some(result.status.clone());
+                    }
                     evidence.push(format!(
                         "axe: {:?} {:?}",
                         result.status, result.justification
@@ -187,12 +209,23 @@ async fn registry_fixtures_are_classified_under_obscura() {
         let gap_js = gap_by_url.remove(&url).unwrap_or_default();
         if let Some(result) = GapFixRules::parse_results(&gap_js).get(&case.criterion) {
             statuses.push(result.status.clone());
+            if !case.axe_native {
+                own_status = Some(result.status.clone());
+            }
             evidence.push(format!(
                 "gap-fix: {:?} {:?}",
                 result.status, result.justification
             ));
         }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
+        if case.expect_pass && own_status != Some(CriterionStatus::Pass) {
+            wrong.push(format!(
+                "{} / {}: complete mechanism expected Pass, it said {own_status:?} ({})",
+                case.mechanism,
+                case.fixture,
+                evidence.join("; ")
+            ));
+        }
         if failed != case.expect_fail {
             wrong.push(format!(
                 "{} / {}: expected {}, mechanisms said {:?} ({})",

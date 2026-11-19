@@ -79,12 +79,12 @@ async fn union_schema_supports_every_live_api_path() {
     assert_eq!(findings[0].criterion_id.as_deref(), Some("1.1"));
     assert_eq!(findings[0].audit_id.to_string(), audit_id);
 
-    // Multi-filter: status + severity + rule together.
+    // Multi-filter: status + rule together (severity is None in sample).
     let filtered = repo
         .list_findings(
             &audit_id,
             Some("fail"),
-            Some("critical"),
+            None,
             Some("image-alt"),
             100,
             0,

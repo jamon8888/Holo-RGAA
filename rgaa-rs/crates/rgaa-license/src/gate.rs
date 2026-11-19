@@ -53,6 +53,47 @@ pub const LICENSE_SERVER_ENV: &str = "RGAA_LICENSE_SERVER";
 pub const GRACE_DAYS_ENV: &str = "RGAA_LICENSE_GRACE_DAYS";
 pub const DEFAULT_GRACE_DAYS: i64 = 7;
 
+/// Records when an `RGAA_LICENSE_KEY` token was last seen validated. Kept apart
+/// from `license.toml` so an env override never replaces the stored licence.
+const ENV_LICENSE_FILE: &str = "license-env.toml";
+
+/// `last_validated` for a token given through `RGAA_LICENSE_KEY` when grace is
+/// enabled. Without this, every process start would stamp the token "validated
+/// now" and a restart would reset the offline grace window indefinitely.
+///
+/// - The same token already recorded: its persisted time is returned, so a
+///   restart continues the existing window.
+/// - A token seen for the first time (or a different one): `now` is recorded
+///   and returned.
+///
+/// No config directory means the time cannot be recorded, and granting a
+/// window that every restart would reset is refused instead.
+fn env_token_last_validated(
+    dir: Option<&std::path::Path>,
+    token: &str,
+    now: DateTime<Utc>,
+) -> Result<DateTime<Utc>, LicenseError> {
+    let Some(dir) = dir else {
+        return Err(LicenseError::Cache(format!(
+            "{LICENSE_KEY_ENV} with {LICENSE_SERVER_ENV} needs a config directory to record its validation time"
+        )));
+    };
+    let path = dir.join(ENV_LICENSE_FILE);
+    match LicenseCache::load_license(&path)? {
+        Some(recorded) if recorded.token == token => Ok(recorded.last_validated),
+        _ => {
+            LicenseCache::store_license(
+                &path,
+                &LicenseFile {
+                    token: token.to_string(),
+                    last_validated: now,
+                },
+            )?;
+            Ok(now)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LicenseStatus {
     /// No licence installed: Free tier.
@@ -198,6 +239,7 @@ impl LicenseGate {
                     .unwrap_or(DEFAULT_GRACE_DAYS);
                 Duration::days(days)
             });
+        let grace_enabled = grace.is_some();
         let config = GateConfig {
             grace,
             enforce_quota,
@@ -222,6 +264,14 @@ impl LicenseGate {
             .ok()
             .filter(|t| !t.trim().is_empty());
         let file = match (env_token, &dir) {
+            (Some(token), _) if grace_enabled => {
+                env_token_last_validated(dir.as_deref(), &token, now).map(|last_validated| {
+                    Some(LicenseFile {
+                        token,
+                        last_validated,
+                    })
+                })
+            }
             (Some(token), _) => Ok(Some(LicenseFile {
                 token,
                 last_validated: now,
@@ -556,5 +606,66 @@ impl Denial {
             "message": self.error.to_string(),
             "data": self.body(),
         })
+    }
+}
+
+#[cfg(test)]
+mod env_token_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn day(d: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, d, 12, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn first_sight_records_now_and_persists_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let got = env_token_last_validated(Some(dir.path()), "tok-a", day(1)).unwrap();
+        assert_eq!(got, day(1));
+        let recorded = LicenseCache::load_license(&dir.path().join(ENV_LICENSE_FILE))
+            .unwrap()
+            .unwrap();
+        assert_eq!(recorded.token, "tok-a");
+        assert_eq!(recorded.last_validated, day(1));
+    }
+
+    /// The restart case: a later start with the same token must keep the
+    /// original validation time, so the grace window keeps running down.
+    #[test]
+    fn restart_keeps_the_persisted_validation_time() {
+        let dir = tempfile::tempdir().unwrap();
+        env_token_last_validated(Some(dir.path()), "tok-a", day(1)).unwrap();
+        let after_restart = env_token_last_validated(Some(dir.path()), "tok-a", day(6)).unwrap();
+        assert_eq!(after_restart, day(1));
+        // Repeated restarts do not move it either.
+        let again = env_token_last_validated(Some(dir.path()), "tok-a", day(9)).unwrap();
+        assert_eq!(again, day(1));
+    }
+
+    #[test]
+    fn a_different_token_starts_a_new_window() {
+        let dir = tempfile::tempdir().unwrap();
+        env_token_last_validated(Some(dir.path()), "tok-a", day(1)).unwrap();
+        let got = env_token_last_validated(Some(dir.path()), "tok-b", day(6)).unwrap();
+        assert_eq!(got, day(6));
+    }
+
+    #[test]
+    fn missing_config_dir_is_refused_not_granted_a_fresh_window() {
+        assert!(matches!(
+            env_token_last_validated(None, "tok-a", day(1)),
+            Err(LicenseError::Cache(_))
+        ));
+    }
+
+    #[test]
+    fn corrupt_record_is_an_error_not_a_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(ENV_LICENSE_FILE), "token = [broken").unwrap();
+        assert!(matches!(
+            env_token_last_validated(Some(dir.path()), "tok-a", day(1)),
+            Err(LicenseError::Cache(_))
+        ));
     }
 }

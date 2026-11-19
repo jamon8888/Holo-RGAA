@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
         batches,
     };
 
-    let app = build_app(state);
+    let app = build_app(state)?;
 
     let addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;

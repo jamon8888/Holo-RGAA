@@ -13,6 +13,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -100,30 +101,68 @@ fn load_toml<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, LicenseError
         .map_err(|e| LicenseError::Cache(format!("{}: {e}", path.display())))
 }
 
+/// Sequence number that makes every temp file name unique within this process.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
 /// Atomic write: a sibling temp file, created `0600` on unix (the token is a
 /// credential), then renamed over the target.
+///
+/// The temp name is unique per write (pid + sequence) and opened with
+/// `create_new`, so an existing file is never reused: a stale file left by an
+/// earlier run, possibly with broader permissions and an old token, cannot be
+/// truncated and renamed into place. The mode is also set explicitly after
+/// open, so the result does not depend on the umask. A legacy fixed-name
+/// `<path>.tmp` from an earlier version is removed.
 fn store_toml<T: Serialize>(path: &Path, value: &T) -> Result<(), LicenseError> {
     let err = |e: &dyn std::fmt::Display| LicenseError::Cache(format!("{}: {e}", path.display()));
     let text = toml::to_string(value).map_err(|e| err(&e))?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| err(&e))?;
     }
+    let mut legacy_name = path.as_os_str().to_owned();
+    legacy_name.push(".tmp");
+    match fs::remove_file(PathBuf::from(legacy_name)) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(err(&e)),
+    }
+
+    let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
     let mut tmp_name = path.as_os_str().to_owned();
-    tmp_name.push(".tmp");
+    tmp_name.push(format!(".{}.{seq}.tmp", std::process::id()));
     let tmp = PathBuf::from(tmp_name);
 
+    let written = write_private_tmp(&tmp, text.as_bytes());
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(err(&e));
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        err(&e)
+    })
+}
+
+/// Creates `tmp` exclusively (never an existing file), makes it `0600`, writes
+/// and syncs it.
+fn write_private_tmp(tmp: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
         options.mode(0o600);
+        let mut f = options.open(tmp)?;
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        f.write_all(bytes)?;
+        f.sync_all()
     }
-    let mut f = options.open(&tmp).map_err(|e| err(&e))?;
-    f.write_all(text.as_bytes()).map_err(|e| err(&e))?;
-    f.sync_all().map_err(|e| err(&e))?;
-    drop(f);
-    fs::rename(&tmp, path).map_err(|e| err(&e))
+    #[cfg(not(unix))]
+    {
+        let mut f = options.open(tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +226,50 @@ mod tests {
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
         assert!(!dir.path().join("license.toml.tmp").exists());
+    }
+
+    /// A stale `license.toml.tmp` with broad permissions (left by an earlier run)
+    /// must not receive the token: the write goes to a fresh private file and the
+    /// stale one is removed.
+    #[cfg(unix)]
+    #[test]
+    fn stale_broad_tmp_file_never_receives_the_token() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(LICENSE_FILE);
+        let stale = dir.path().join("license.toml.tmp");
+        fs::write(&stale, "old = 1").unwrap();
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let file = LicenseFile {
+            token: "v4.public.secret".into(),
+            last_validated: Utc::now(),
+        };
+        LicenseCache::store_license(&path, &file).unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert!(!stale.exists(), "legacy tmp file must be removed");
+        assert_eq!(LicenseCache::load_license(&path).unwrap(), Some(file));
+    }
+
+    /// Unique temp names: after a write, the directory holds only the target.
+    #[test]
+    fn writes_leave_no_temp_files_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(USAGE_FILE);
+        for count in 0..3 {
+            let usage = UsageFile {
+                day: NaiveDate::from_ymd_opt(2026, 11, 19).unwrap(),
+                count,
+            };
+            LicenseCache::store_usage(&path, &usage).unwrap();
+        }
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, vec![USAGE_FILE.to_string()]);
     }
 
     #[test]

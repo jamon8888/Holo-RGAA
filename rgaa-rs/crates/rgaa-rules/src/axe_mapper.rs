@@ -499,7 +499,7 @@ mod tests {
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
         "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "5.7", "6.1", "7.1", "7.3", "8.2", "8.4",
         "8.8", "9.1", "9.3", "10.4", "10.6", "10.8", "10.11", "11.2", "11.9", "11.13", "12.1",
-        "12.4", "12.6", "12.7", "13.1", "13.8", "13.9",
+        "12.4", "12.6", "12.7", "12.8", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -775,12 +775,12 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            36,
+            37,
             "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
              decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
-             to 8.5 and button-name to 11.9"
+             to 8.5 and button-name to 11.9; 12.8 gained its capped `tabindex` rule (#279)"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
-        assert_eq!(rule_refs, 88, "expected 88 criterion/rule pairs");
+        assert_eq!(rule_refs, 89, "expected 89 criterion/rule pairs");
     }
 }

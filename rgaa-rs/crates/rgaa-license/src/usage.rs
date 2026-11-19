@@ -40,9 +40,18 @@ fn next_midnight(day: NaiveDate) -> DateTime<Utc> {
 
 /// Units consumed today (UTC), for the whole installation.
 ///
-/// A single mutex guards the count, so concurrent requests can never admit
-/// more than the limit. Optionally mirrored to `usage.toml` so a restart does
-/// not reset the quota.
+/// Within one process, `persist_lock` and `state` serialise every admission, so
+/// concurrent requests never admit more than the limit (lock order:
+/// `persist_lock`, then `state`). Optionally mirrored to `usage.toml` so a
+/// restart does not reset the quota. When persistent, each admission first
+/// re-reads the file and adopts a higher count for the same day, so a second
+/// counter sharing the file sees the first one's consumption and cannot
+/// overwrite it with a smaller count.
+///
+/// Limit: this is not atomic across processes. Two processes can read the same
+/// count between their read and their write and both admit; the later write
+/// then wins. Closing that needs an advisory file lock held across the whole
+/// read-modify-write, which is deliberately out of scope here.
 pub struct UsageCounter {
     state: Mutex<UsageFile>,
     persist: Option<PathBuf>,
@@ -99,11 +108,29 @@ impl UsageCounter {
         }
     }
 
+    /// Adopts a higher count for today from the shared file, if another counter
+    /// (or process) has written one. Never lowers the count, so a stale file
+    /// cannot undo consumption. A missing, unreadable or other-day file is
+    /// ignored: the in-memory state stays authoritative.
+    ///
+    /// Must be called with `persist_lock` held (see the lock order on
+    /// [`UsageCounter`]).
+    fn refresh_from_disk(&self, state: &mut UsageFile, today: NaiveDate) {
+        let Some(path) = &self.persist else { return };
+        if let Ok(Some(on_disk)) = LicenseCache::load_usage(path) {
+            if on_disk.day == today && on_disk.count > state.count {
+                state.count = on_disk.count;
+            }
+        }
+    }
+
     /// Current position without consuming anything.
     pub fn peek(&self, limit: u32, now: DateTime<Utc>) -> RateInfo {
         let today = now.date_naive();
+        let _file = self.persist_lock();
         let mut state = self.lock();
         Self::roll(&mut state, today);
+        self.refresh_from_disk(&mut state, today);
         RateInfo {
             limit,
             remaining: limit.saturating_sub(state.count),
@@ -121,9 +148,12 @@ impl UsageCounter {
     ) -> Result<RateInfo, RateInfo> {
         let today = now.date_naive();
         let reset_at = next_midnight(today);
-        let after = {
+        // Lock order everywhere: `persist_lock`, then `state`.
+        let file = self.persist_lock();
+        let (after, snapshot) = {
             let mut state = self.lock();
             Self::roll(&mut state, today);
+            self.refresh_from_disk(&mut state, today);
             let remaining = limit.saturating_sub(state.count);
             if cost > remaining {
                 return Err(RateInfo {
@@ -133,9 +163,10 @@ impl UsageCounter {
                 });
             }
             state.count += cost;
-            limit.saturating_sub(state.count)
+            (limit.saturating_sub(state.count), *state)
         };
-        self.persist();
+        self.write_snapshot(&snapshot);
+        drop(file);
         Ok(RateInfo {
             limit,
             remaining: after,
@@ -143,13 +174,15 @@ impl UsageCounter {
         })
     }
 
-    /// Writes the latest snapshot. Serialised by `persist_lock` and re-reading
-    /// the state inside it, so an older count can never overwrite a newer one.
-    fn persist(&self) {
+    fn persist_lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.persist_lock.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Writes the snapshot to `usage.toml` through a per-write unique temp file
+    /// (see `LicenseCache::store_usage`). Called with `persist_lock` held.
+    fn write_snapshot(&self, snapshot: &UsageFile) {
         let Some(path) = &self.persist else { return };
-        let _guard = self.persist_lock.lock().unwrap_or_else(|p| p.into_inner());
-        let snapshot = *self.lock();
-        if let Err(e) = LicenseCache::store_usage(path, &snapshot) {
+        if let Err(e) = LicenseCache::store_usage(path, snapshot) {
             tracing::warn!(error = %e, "failed to persist usage counter");
         }
     }
@@ -346,5 +379,39 @@ mod tests {
         std::fs::write(&path, "garbage = [").unwrap();
         let c = UsageCounter::persistent(path);
         assert_eq!(c.peek(10, at(10, 0, 0)).remaining, 10);
+    }
+
+    /// Two counters on one file: the second, created before the first consumed,
+    /// must see that consumption instead of writing its stale count over it.
+    #[test]
+    fn two_counters_sharing_a_file_do_not_clobber_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.toml");
+        let first = UsageCounter::persistent(path.clone());
+        let second = UsageCounter::persistent(path.clone());
+        for _ in 0..4 {
+            first.try_consume(1, 10, at(10, 0, 0)).unwrap();
+        }
+        let info = second.try_consume(1, 10, at(10, 0, 0)).unwrap();
+        assert_eq!(
+            info.remaining, 5,
+            "second counter must include the first's 4"
+        );
+        let on_disk = LicenseCache::load_usage(&path).unwrap().unwrap();
+        assert_eq!(on_disk.count, 5);
+    }
+
+    /// The limit holds across counters: the second cannot admit beyond what the
+    /// first left, even though its own in-memory state started at zero.
+    #[test]
+    fn shared_file_enforces_the_limit_across_counters() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.toml");
+        let first = UsageCounter::persistent(path.clone());
+        let second = UsageCounter::persistent(path);
+        first.try_consume(6, 10, at(10, 0, 0)).unwrap();
+        second.try_consume(4, 10, at(10, 0, 0)).unwrap();
+        assert!(second.try_consume(1, 10, at(10, 0, 0)).is_err());
+        assert!(first.try_consume(1, 10, at(10, 0, 0)).is_err());
     }
 }

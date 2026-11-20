@@ -461,6 +461,22 @@ axe_rules = ["bypass", "skip-link"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
 
 [[mechanism]]
+id        = "axe-12-8"
+criterion = "12.8"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+# Verdict ceiling "review" (spec §7.1) is a separate issue (#279); until then AxeMapper maps a
+# violation to fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
+# on 4.9.1), so today only `tabindex` (positive values) can fire.
+outcomes  = ["fail"]
+fixtures  = ["12.8-focus-order-pass", "12.8-focus-order-fail"]
+legacy    = false
+axe_rules = ["tabindex", "focus-order-semantics"]
+provenance = { source = "axe-core rule metadata (axe_rules.json): focus-order-semantics carries tag RGAA-12.8.1; tabindex is best-practice", validated_by = "both rule ids checked against the injected axe 4.9.1 by the registry invariants", validated_at = "2026-11-20", notes = "Partial: neither rule observes the real Tab traversal." }
+
+[[mechanism]]
 id        = "axe-13-1"
 criterion = "13.1"
 kind      = "axe-native"
@@ -468,8 +484,11 @@ engine    = "obscura"
 coverage  = "partial"
 tests     = []
 outcomes  = ["fail"]
-fixtures  = []
-legacy    = true
+# meta-refresh-no-exceptions (spec §7.2) is deliberately NOT mapped (#263): it exists in axe 4.9.1
+# but is `enabled: false` (wcag2aaa), so a plain `axe.run()` never runs it, and it fails only for
+# delays > 72000 s (a 5 s refresh passes). Delay detection belongs to the 13.1 script-redirect issue.
+fixtures  = ["13.1-meta-refresh-pass", "13.1-meta-refresh-fail"]
+legacy    = false
 axe_rules = ["meta-refresh"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-refresh catches one mechanism out of the criterion's 15 tests on time limits." }
 

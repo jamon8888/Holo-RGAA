@@ -19,7 +19,8 @@ pub use catalog::RgaaCatalog;
 pub use checkpoints::*;
 pub use citations::Citation;
 pub use completion::{
-    CompletionParams, LlmProvenance, ResponseFormat, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+    CompletionParams, LlmProvenance, ReasoningEffort, ResponseFormat, DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
 };
 pub use criteria::{Criterion, RgaaCriteria};
 pub use engine_plan::{EnginePlan, EnginePlanEntry, PlanEngine};

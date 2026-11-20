@@ -64,7 +64,29 @@ struct ChatChoice {
 
 #[derive(Debug, Deserialize)]
 struct ChatChoiceMessage {
-    content: Option<String>,
+    /// A plain string for most models; a list of typed chunks (`thinking`,
+    /// `text`) for a model that always reasons, such as Mistral Large 4.
+    content: Option<serde_json::Value>,
+}
+
+/// The answer text of a message `content`, whatever its shape.
+///
+/// A string is the answer. For a chunk list only the `text` chunks count,
+/// joined in order: a `thinking` chunk is the model's scratch work and may
+/// hold a draft verdict that must never be read as the answer.
+fn answer_text(content: &serde_json::Value) -> Option<String> {
+    match content {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(chunks) => {
+            let text: String = chunks
+                .iter()
+                .filter(|c| c.get("type").and_then(|t| t.as_str()) == Some("text"))
+                .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
+                .collect();
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
 }
 
 #[derive(Clone)]
@@ -338,9 +360,10 @@ pub fn extract_json(text: &str) -> Option<HoloResponse> {
             .next()
             .and_then(|c| c.message.content)
         {
-            if let Some(parsed) = extract_from_content(&content) {
-                return Some(parsed);
-            }
+            // A recognised envelope is authoritative: its content is the
+            // answer or there is none. Falling through to the raw body would
+            // let a `thinking` draft inside it be mistaken for the verdict.
+            return answer_text(&content).and_then(|t| extract_from_content(&t));
         }
     }
     extract_from_content(text)
@@ -422,6 +445,28 @@ mod tests {
         let r = extract_json(body).unwrap();
         assert_eq!(r.verdict, "fail");
         assert_eq!(r.justification, "alt manquant");
+    }
+
+    /// Mistral Large 4 always reasons, so `message.content` is a list of
+    /// chunks (`thinking` then `text`), not a string. The `thinking` chunk
+    /// holds a *draft* verdict that must never be taken for the answer.
+    #[test]
+    fn extract_json_from_chunked_content_uses_text_not_thinking() {
+        let body = r#"{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":[
+            {"type":"thinking","thinking":[{"type":"text","text":"Brouillon: {\"verdict\":\"pass\",\"confidence\":0.2,\"justification\":\"draft\"}"}]},
+            {"type":"text","text":"{\"verdict\":\"fail\",\"confidence\":0.9,\"justification\":\"alt manquant\"}"}
+        ]}}]}"#;
+        let r = extract_json(body).expect("chunked content must parse");
+        assert_eq!(r.verdict, "fail");
+        assert_eq!(r.justification, "alt manquant");
+    }
+
+    #[test]
+    fn extract_json_chunked_content_without_text_chunk_is_none() {
+        let body = r#"{"choices":[{"message":{"content":[
+            {"type":"thinking","thinking":[{"type":"text","text":"{\"verdict\":\"pass\",\"confidence\":1.0,\"justification\":\"draft\"}"}]}
+        ]}}]}"#;
+        assert!(extract_json(body).is_none());
     }
 
     #[test]

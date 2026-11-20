@@ -27,7 +27,7 @@ pub use error::{Result, RgaaError};
 pub use evidence::*;
 pub use findings::*;
 pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
-pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
+pub use registry::{Mechanism, MechanismKind, MechanismRegistry, Outcome};
 pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};
 pub use types::{
     is_deterministic_source, reduce_test_outcomes, AuditResult, AutomatedVerdict, Classification,

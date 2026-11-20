@@ -467,10 +467,11 @@ kind      = "axe-native"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-# Verdict ceiling "review" (spec §7.1) is a separate issue (#279); until then AxeMapper maps a
-# violation to fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
+# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
+# hard fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
 # on 4.9.1), so today only `tabindex` (positive values) can fire.
-outcomes  = ["fail"]
+outcomes  = ["review"]
+outcome_cap = "review"
 fixtures  = ["12.8-focus-order-pass", "12.8-focus-order-fail"]
 legacy    = false
 axe_rules = ["tabindex", "focus-order-semantics"]

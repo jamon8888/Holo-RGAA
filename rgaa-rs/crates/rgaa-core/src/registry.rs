@@ -66,6 +66,11 @@ pub struct Mechanism {
     #[serde(default)]
     pub tests: Vec<String>,
     pub outcomes: Vec<Outcome>,
+    /// Plafond de verdict (#279). `Some(Review)` : une violation de ce mécanisme ne
+    /// produit jamais `fail`, seulement `review` (indice « suspect », spec §7.1).
+    /// Absent : comportement inchangé.
+    #[serde(default)]
+    pub outcome_cap: Option<Outcome>,
     /// Fixture names (file stems in `rgaa-test-corpus/criteria/`).
     #[serde(default)]
     pub fixtures: Vec<String>,
@@ -146,7 +151,8 @@ impl MechanismRegistry {
     /// * `legacy = false` implies fixtures present on disk under `fixtures_dir`: a
     ///   `-pass` and a `-fail` one, or such a pair per test when `complete`;
     /// * every cited axe rule is in `known_axe_rules`;
-    /// * an `axe-native` mechanism cites at least one rule.
+    /// * an `axe-native` mechanism cites at least one rule;
+    /// * a mechanism capped at `review` declares neither `fail` nor `pass`.
     /// * every catalog test has exactly one valid route in the embedded test plan.
     pub fn check(&self, fixtures_dir: &Path, known_axe_rules: &HashSet<String>) -> Vec<String> {
         let mut problems = self.check_mechanisms(fixtures_dir, known_axe_rules);
@@ -170,6 +176,17 @@ impl MechanismRegistry {
                     "{}: outcomes contain \"pass\" but coverage is not \"complete\"",
                     m.id
                 ));
+            }
+            if let Some(cap) = m.outcome_cap {
+                if cap != Outcome::Review {
+                    problems.push(format!("{}: outcome_cap only supports \"review\"", m.id));
+                } else if m.outcomes.contains(&Outcome::Fail) || m.outcomes.contains(&Outcome::Pass)
+                {
+                    problems.push(format!(
+                        "{}: capped at \"review\" but outcomes declare fail or pass",
+                        m.id
+                    ));
+                }
             }
             if m.kind == MechanismKind::AxeNative && m.axe_rules.is_empty() {
                 problems.push(format!("{}: axe-native mechanism cites no axe rule", m.id));
@@ -377,6 +394,20 @@ mod tests {
         let problems = check(&t, &dir);
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(problems[0].contains("11.6-x-fail.html"));
+    }
+
+    #[test]
+    fn a_review_cap_forbids_fail_and_pass_outcomes() {
+        let dir = tmp_dir("cap", &[]);
+        let t =
+            entry("coverage=\"partial\"\noutcomes=[\"fail\"]\noutcome_cap=\"review\"\nlegacy=true");
+        let problems = check(&t, &dir);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("capped"));
+        let ok = entry(
+            "coverage=\"partial\"\noutcomes=[\"review\"]\noutcome_cap=\"review\"\nlegacy=true",
+        );
+        assert!(check(&ok, &dir).is_empty());
     }
 
     #[test]

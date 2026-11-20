@@ -786,6 +786,19 @@ fixtures  = ["13.1-script-redirect-pass", "13.1-script-redirect-fail", "13.1-scr
 legacy    = false
 
 [[mechanism]]
+id        = "probe-13-2-popup-hook"
+criterion = "13.2"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# `window.open` hooked before page scripts; a call with no prior interaction in ~6 s is the
+# fail. `target="_blank"` alone is never reported (#266).
+tests     = ["1"]
+outcomes  = ["fail", "review"]
+fixtures  = ["13.2-popup-pass", "13.2-popup-load-fail", "13.2-popup-timer-fail"]
+legacy    = false
+
+[[mechanism]]
 id        = "probe-13-1"
 criterion = "13.1"
 kind      = "js-static"

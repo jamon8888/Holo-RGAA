@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 13.2 - Aucune ouverture automatique</title>
+</head>
+<body>
+    <main>
+        <h1>Critère 13.2</h1>
+        <p><a href="13.2-popup-load-fail.html" target="_blank" rel="noopener">Lien vers une nouvelle fenêtre (annoncé)</a></p>
+        <button type="button" id="open">Ouvrir l'aide</button>
+    </main>
+    <script>
+        document.getElementById('open').addEventListener('click', function () {
+            window.open('13.2-popup-load-fail.html', '_blank');
+        });
+    </script>
+</body>
+</html>

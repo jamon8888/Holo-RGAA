@@ -1550,6 +1550,30 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // 13.2 popups without user action (#266), same hook infrastructure as 13.1.
+    let popup_is_routed = criterion_has_routed_mechanism("13.2", "probe-13-2-popup-hook");
+    let popup_results = if popup_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::POPUP_HOOK,
+                rgaa_rules::script_hooks::REDIRECT_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::popup_results(
+                rgaa_rules::script_hooks::parse_popup_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura popup probe failed; 13.2 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1581,6 +1605,7 @@ async fn audit_one(
         .chain(gap_results.values())
         .chain(keyboard_results.values())
         .chain(script_hook_results.values())
+        .chain(popup_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1621,6 +1646,7 @@ async fn audit_one(
         .chain(gap_results)
         .chain(keyboard_results)
         .chain(script_hook_results)
+        .chain(popup_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

@@ -1795,7 +1795,9 @@
   {
     "criterion_id": "13.2",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-2-popup-hook"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },

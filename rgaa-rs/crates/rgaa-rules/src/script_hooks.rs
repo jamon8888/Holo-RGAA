@@ -198,6 +198,95 @@ pub fn redirect_results(finding: Option<&RedirectFinding>) -> HashMap<String, Cr
     HashMap::from([("13.1".to_string(), result)])
 }
 
+/// 13.2 (issue #266): windows opened without any user action. `window.open` is wrapped
+/// before the page's scripts run (Obscura 0.2.4 lets a hook replace it); every call is
+/// recorded with whether a real interaction had happened. `target="_blank"` on a link is
+/// not an automatic opening and is never reported: only script calls are seen here.
+pub const POPUP_HOOK: &str = r#"
+(() => {
+  const log = [];
+  const state = { log, interacted: false };
+  window.__rgaa = state;
+  for (const t of ['click', 'keydown', 'pointerdown', 'touchstart', 'mousedown']) {
+    try { document.addEventListener(t, () => { state.interacted = true; }, true); } catch (e) {}
+  }
+  const rec = (kind, detail) => log.push(Object.assign({ kind, interacted: state.interacted, t: Date.now() }, detail));
+  const src = fn => typeof fn === 'function'
+    ? Function.prototype.toString.call(fn).slice(0, 300)
+    : String(fn).slice(0, 300);
+  try {
+    window.open = function (url, ...rest) { rec('window.open', { url: String(url) }); return null; };
+  } catch (e) {}
+  const wt = window.setTimeout;
+  window.setTimeout = function (fn, ms, ...rest) { rec('setTimeout', { ms: Number(ms) || 0, src: src(fn) }); return wt.call(this, fn, ms, ...rest); };
+})();
+"#;
+
+/// Outcome of the popup probe for 13.2 (same shape as [`RedirectFinding`]).
+#[must_use]
+pub fn parse_popup_observation(observation: &serde_json::Value) -> Option<RedirectFinding> {
+    let after = observation.get("after")?;
+    let entries = after.get("log")?.as_array()?;
+    let opened: Vec<String> = entries
+        .iter()
+        .filter(|e| e.get("kind").and_then(serde_json::Value::as_str) == Some("window.open"))
+        .filter(|e| e.get("interacted").and_then(serde_json::Value::as_bool) == Some(false))
+        .map(|e| {
+            format!(
+                "window.open({})",
+                e.get("url")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("?")
+            )
+        })
+        .collect();
+    if !opened.is_empty() {
+        return Some(RedirectFinding {
+            status: CriterionStatus::Fail,
+            details: format!(
+                "fenêtre ouverte sans action de l'utilisateur en moins de {} s: {}",
+                REDIRECT_OBSERVATION_MS / 1000,
+                opened.join(", ")
+            ),
+        });
+    }
+    // A timer that mentions window.open but has not fired in the window: deferred opening.
+    let deferred: Vec<String> = entries
+        .iter()
+        .filter(|e| e.get("kind").and_then(serde_json::Value::as_str) == Some("setTimeout"))
+        .filter(|e| {
+            e.get("src")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|s| s.contains("window.open") || s.contains(".open("))
+        })
+        .map(|e| {
+            format!(
+                "setTimeout({} ms)",
+                e.get("ms").and_then(serde_json::Value::as_u64).unwrap_or(0)
+            )
+        })
+        .collect();
+    (!deferred.is_empty()).then(|| RedirectFinding {
+        status: CriterionStatus::NeedsReview,
+        details: format!(
+            "ouverture de fenêtre différée suspecte, non survenue dans la fenêtre de {} s: {}",
+            REDIRECT_OBSERVATION_MS / 1000,
+            deferred.join(", ")
+        ),
+    })
+}
+
+/// The 13.2 result in the shape the pipeline merges.
+#[must_use]
+pub fn popup_results(finding: Option<&RedirectFinding>) -> HashMap<String, CriterionResult> {
+    let mut map = redirect_results(finding);
+    if let Some(mut result) = map.remove("13.1") {
+        result.criterion_id = "13.2".to_string();
+        map.insert("13.2".to_string(), result);
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +356,30 @@ mod tests {
             }));
             assert_ne!(map["13.1"].status, CriterionStatus::Pass);
         }
+    }
+
+    #[test]
+    fn popups_without_interaction_fail_and_interacted_or_silent_pages_do_not() {
+        let fail = json!({"after": {"log": [
+            {"kind": "window.open", "interacted": false, "url": "http://x/ad"}]}});
+        let finding = parse_popup_observation(&fail).expect("finding");
+        assert_eq!(finding.status, CriterionStatus::Fail);
+        assert!(finding.details.contains("window.open(http://x/ad)"));
+        let clicked = json!({"after": {"log": [
+            {"kind": "window.open", "interacted": true, "url": "http://x/ad"}]}});
+        assert_eq!(parse_popup_observation(&clicked), None);
+        let quiet = json!({"after": {"log": []}});
+        assert_eq!(parse_popup_observation(&quiet), None);
+    }
+
+    #[test]
+    fn a_pending_open_timer_is_review_and_popup_results_target_13_2() {
+        let pending = json!({"after": {"log": [
+            {"kind": "setTimeout", "ms": 30000, "src": "() => window.open('/x')"}]}});
+        let finding = parse_popup_observation(&pending).expect("finding");
+        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        let map = popup_results(Some(&finding));
+        assert!(map.contains_key("13.2") && !map.contains_key("13.1"));
+        assert_ne!(map["13.2"].status, CriterionStatus::Pass);
     }
 }

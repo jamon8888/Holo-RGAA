@@ -197,12 +197,19 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 result.status, result.justification
             ));
         }
-        if case.mechanism == "probe-13-1-script-redirect" {
+        if case.mechanism == "probe-13-1-script-redirect"
+            || case.mechanism == "probe-13-2-popup-hook"
+        {
+            let popup = case.mechanism == "probe-13-2-popup-hook";
             // Hook probe: installed before the page's scripts, ~6 s without interaction.
             match bridge
                 .observe_with_hook(
                     &url,
-                    rgaa_rules::script_hooks::REDIRECT_HOOK,
+                    if popup {
+                        rgaa_rules::script_hooks::POPUP_HOOK
+                    } else {
+                        rgaa_rules::script_hooks::REDIRECT_HOOK
+                    },
                     rgaa_rules::script_hooks::REDIRECT_READ,
                     std::time::Duration::from_millis(
                         rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS,
@@ -211,8 +218,11 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 .await
             {
                 Ok(observation) => {
-                    let finding =
-                        rgaa_rules::script_hooks::parse_redirect_observation(&observation);
+                    let finding = if popup {
+                        rgaa_rules::script_hooks::parse_popup_observation(&observation)
+                    } else {
+                        rgaa_rules::script_hooks::parse_redirect_observation(&observation)
+                    };
                     evidence.push(format!("script-hook: {finding:?}"));
                     if let Some(finding) = finding {
                         statuses.push(finding.status);

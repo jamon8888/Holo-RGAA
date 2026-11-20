@@ -73,6 +73,7 @@ pub async fn config_show() -> anyhow::Result<()> {
     {
         println!("Keyring: a legacy Holo3 key is stored; it is not used for MyIA");
     }
+    println!("{}", crate::licence::config_row_from_env());
     println!("Storage: ~/.rgaa/audits.db");
 
     Ok(())

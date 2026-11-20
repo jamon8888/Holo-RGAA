@@ -8,6 +8,9 @@ edition = "2021"
 [dependencies]
 dotenvy = { workspace = true }
 rgaa-core = { path = "../rgaa-core" }
+# Per-tool licence check (#87). No Axum middleware needed here: the HTTP
+# transport lives in rgaa-mcp-http.
+rgaa-license = { path = "../rgaa-license", default-features = false }
 rgaa-linter = { path = "../rgaa-linter" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-orchestrator = { path = "../rgaa-orchestrator" }
@@ -22,6 +25,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
 serde_json = { workspace = true }
 # `test-util` for `#[tokio::test(start_paused = true)]`: the timeout
 # tests advance virtual time instead of sleeping 30 real seconds.

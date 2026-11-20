@@ -17,6 +17,7 @@ tier 0 is a useful degraded mode, **not** a failure.
 | 0 | the `rgaa-mcp` binary | `list_criteria`, `lint_static`, `source_map`, `remediate`, `get_audit_result` |
 | 1 | + `obscura` **exactly 0.2.4** | `analyze`, `igt`, `verify_fix` |
 | 2 | + a model, **and** a key *or* a local provider | `audit_url` |
+| Licence | Free without a licence; **Professional** or **Team** for full audits, guided tests (`igt`) and remediation | the licence **gates tools across every tier above** — see below |
 
 Only three tools touch the browser. `source_map` and `remediate` are local
 computation — `rgaa-remediation` has no `rgaa-obscura` dependency at all — so
@@ -215,6 +216,33 @@ one wins and the `.env` entry is never read.
 
 If the user only wants the remediation loop, they need **no key at all**: say so
 instead of walking them through credentials they will never use.
+
+## The licence is a separate axis (#87)
+
+The three tiers above are about *dependencies*. The licence is about *what
+the user paid for*, and it cuts across them: with no licence the server runs
+on **Free**, which keeps static lint and refuses full audits, guided tests and
+remediation even when `obscura` and a model are installed.
+
+- Check it with `rgaa licence status` (tier, status, expiry, quota). Do not
+  guess from a refusal message.
+- Activate with `rgaa licence activate <key>` (or `--file`), or set the
+  plugin's `license_key` setting, which maps to `RGAA_LICENSE_KEY`.
+- A refusal comes back as JSON-RPC `-32002` (licence required) with
+  `error.data.code` = `feature_not_in_tier`, `license_expired` or
+  `license_invalid`. Report it as a licensing problem with the
+  `required_tier`; do **not** retry, and do **not** report it as a broken
+  install. `-32003` is a daily quota (HTTP servers only): say when it resets
+  (`retry_after`), once, and stop.
+- Verification is offline, against `RGAA_LICENSE_PUBLIC_KEYS` until a
+  built-in key ships. "aucune clé de vérification n'est configurée" means that
+  variable is missing, not that the licence is bad.
+
+The `license_key` setting has the same shadowing trap as the LLM key, with
+one difference: a blank `RGAA_LICENSE_KEY` is ignored by the server, so
+`license.toml` (from `rgaa licence activate`) still applies — but an
+`RGAA_LICENSE_KEY` in `.env` is never read while the plugin passes a blank
+one.
 
 ## Running against a local project needs two environment variables
 

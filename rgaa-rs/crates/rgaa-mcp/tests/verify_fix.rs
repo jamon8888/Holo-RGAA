@@ -88,6 +88,7 @@ fn server(findings: Vec<Finding>, delay: Duration) -> ToolServer {
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
     )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()))
 }
 
 /// The evidence the reference scan attached to every one of its findings: a

@@ -252,6 +252,28 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 Err(error) => evidence.push(format!("orientation error: {error}")),
             }
         }
+        if case.mechanism == "probe-13-8-script-motion" {
+            match bridge
+                .observe_with_hook(
+                    &url,
+                    rgaa_rules::script_hooks::MOTION_HOOK,
+                    rgaa_rules::script_hooks::MOTION_READ,
+                    std::time::Duration::from_millis(
+                        rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS,
+                    ),
+                )
+                .await
+            {
+                Ok(observation) => {
+                    let finding = rgaa_rules::script_hooks::parse_motion_observation(&observation);
+                    evidence.push(format!("motion: {finding:?}"));
+                    if let Some(finding) = finding {
+                        statuses.push(finding.status);
+                    }
+                }
+                Err(error) => evidence.push(format!("motion error: {error}")),
+            }
+        }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
         if failed != case.expect_fail {
             wrong.push(format!(

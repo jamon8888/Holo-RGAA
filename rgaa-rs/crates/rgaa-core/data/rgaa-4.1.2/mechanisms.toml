@@ -860,6 +860,19 @@ fixtures  = ["13.9-orientation-pass", "13.9-orientation-hidden-fail", "13.9-orie
 legacy    = false
 
 [[mechanism]]
+id        = "probe-13-8-script-motion"
+criterion = "13.8"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# DOM mutations observed ~6 s without interaction, pause/stop control heuristic (#267). CSS
+# animations are NOT detected: Obscura 0.2.4 returns no animation from document.getAnimations().
+tests     = ["1"]
+outcomes  = ["fail", "review"]
+fixtures  = ["13.8-script-motion-pass", "13.8-script-motion-fail", "13.8-script-motion-spinner-pass", "13.8-script-motion-static-pass"]
+legacy    = false
+
+[[mechanism]]
 id        = "probe-13-1"
 criterion = "13.1"
 kind      = "js-static"

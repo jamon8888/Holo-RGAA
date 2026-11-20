@@ -1631,6 +1631,31 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // 13.8 automatic movement by script (#267): DOM mutations without interaction. CSS
+    // animations are not detectable on Obscura 0.2.4 and are left to the existing mechanisms.
+    let motion_is_routed = criterion_has_routed_mechanism("13.8", "probe-13-8-script-motion");
+    let motion_results = if motion_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::MOTION_HOOK,
+                rgaa_rules::script_hooks::MOTION_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::motion_results(
+                rgaa_rules::script_hooks::parse_motion_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura motion probe failed; 13.8 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1665,6 +1690,7 @@ async fn audit_one(
         .chain(popup_results.values())
         .chain(listener_results.values())
         .chain(orientation_results.values())
+        .chain(motion_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1708,6 +1734,7 @@ async fn audit_one(
         .chain(popup_results)
         .chain(listener_results)
         .chain(orientation_results)
+        .chain(motion_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

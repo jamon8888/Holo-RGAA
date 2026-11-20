@@ -626,6 +626,146 @@ pub fn orientation_results(finding: Option<&RedirectFinding>) -> HashMap<String,
     map
 }
 
+/// 13.8 (issue #267): automatic movement by script. A `MutationObserver` started at
+/// `DOMContentLoaded` counts DOM changes with no interaction; the bridge reads it at load
+/// and again after the observation window, and only the **difference** counts (the page's
+/// own start-up work is not motion).
+///
+/// Capability gap, stated rather than worked around: on Obscura 0.2.4 `document.getAnimations()`
+/// exists but returns no animation for a running CSS `infinite` animation, and `getComputedStyle`
+/// reports empty `animation-*` properties. CSS animations are therefore **not** detected here;
+/// `blink`/`marquee` stay with the axe rules. Canvas/WebGL motion is undetectable.
+pub const MOTION_HOOK: &str = r#"
+(() => {
+  const state = { n: 0, targets: {}, interacted: false };
+  window.__rgaa = state;
+  for (const t of ['click', 'keydown', 'pointerdown', 'touchstart', 'mousedown']) {
+    try { document.addEventListener(t, () => { state.interacted = true; }, true); } catch (e) {}
+  }
+  const label = n => {
+    const e = n && n.nodeType === 1 ? n : (n && n.parentElement);
+    return e ? e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') : 'node';
+  };
+  const start = () => {
+    try {
+      const mo = new MutationObserver(list => {
+        for (const m of list) {
+          state.n++;
+          const k = label(m.target);
+          state.targets[k] = (state.targets[k] || 0) + 1;
+        }
+      });
+      mo.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
+    } catch (e) {}
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+"#;
+
+/// Snapshot: mutation counters and the pause/stop controls found in the page.
+pub const MOTION_READ: &str = r#"
+(() => {
+  const st = window.__rgaa || { n: 0, targets: {} };
+  const name = e => ((e.getAttribute('aria-label') || '') + ' ' + (e.textContent || '') + ' ' + (e.getAttribute('title') || '')).replace(/\s+/g, ' ').trim();
+  const controls = Array.from(document.querySelectorAll('button, [role=button], a, input[type=button], input[type=submit]'))
+    .map(name).filter(n => /\b(pause|stop|arr[êe]t|arr[êe]ter|suspendre|freeze|mettre en pause)\b/i.test(n));
+  const loaders = Array.from(document.querySelectorAll('[role=progressbar], [role=status], [aria-busy=true], [class*=spin], [class*=load], [id*=spin], [id*=load]'))
+    .map(e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : ''));
+  return JSON.stringify({ n: st.n, targets: st.targets, interacted: !!st.interacted, controls, loaders });
+})()
+"#;
+
+/// Minimum number of DOM changes during the window to call it movement (one-off updates —
+/// a late-loaded widget — are not).
+const MOTION_MIN_MUTATIONS: u64 = 3;
+
+/// Verdict for 13.8 from the `{at_load, after}` snapshots. `fail`: repeated DOM changes with
+/// no pause/stop control. `review`: the same with a control, or when the moving element looks
+/// like a spinner/loader (movement that may be essential). Never `pass`; `None` when the page
+/// is static.
+#[must_use]
+pub fn parse_motion_observation(observation: &serde_json::Value) -> Option<RedirectFinding> {
+    let at_load = observation.get("at_load")?;
+    let after = observation.get("after")?;
+    let count = |v: &serde_json::Value| v.get("n").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let delta = count(after).saturating_sub(count(at_load));
+    if delta < MOTION_MIN_MUTATIONS {
+        return None;
+    }
+    let targets = |v: &serde_json::Value| -> std::collections::BTreeMap<String, u64> {
+        v.get("targets")
+            .and_then(serde_json::Value::as_object)
+            .map(|o| {
+                o.iter()
+                    .filter_map(|(k, n)| Some((k.clone(), n.as_u64()?)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let (before_t, after_t) = (targets(at_load), targets(after));
+    let mut moving: Vec<(String, u64)> = after_t
+        .iter()
+        .map(|(k, n)| (k.clone(), n.saturating_sub(*before_t.get(k).unwrap_or(&0))))
+        .filter(|(_, n)| *n >= 2)
+        .collect();
+    moving.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    if moving.is_empty() {
+        return None;
+    }
+    let trace = moving
+        .iter()
+        .take(3)
+        .map(|(k, n)| format!("{k} ({n} mutations)"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let controls = after
+        .get("controls")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    let loaders: Vec<String> = after
+        .get("loaders")
+        .and_then(serde_json::Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let on_loader = moving.iter().any(|(k, _)| loaders.contains(k));
+    let window = format!(
+        "{} mutations en {} s sans interaction",
+        delta,
+        REDIRECT_OBSERVATION_MS / 1000
+    );
+    if on_loader {
+        return Some(RedirectFinding {
+            status: CriterionStatus::NeedsReview,
+            details: format!("mouvement sur un indicateur de chargement (caractère essentiel à confirmer): {trace}; {window}"),
+        });
+    }
+    if controls > 0 {
+        return Some(RedirectFinding {
+            status: CriterionStatus::NeedsReview,
+            details: format!("mouvement automatique avec {controls} contrôle(s) pause/stop repéré(s) (efficacité à vérifier): {trace}; {window}"),
+        });
+    }
+    Some(RedirectFinding {
+        status: CriterionStatus::Fail,
+        details: format!("mouvement automatique sans contrôle pause/stop: {trace}; {window}"),
+    })
+}
+
+/// The 13.8 result in the shape the pipeline merges.
+#[must_use]
+pub fn motion_results(finding: Option<&RedirectFinding>) -> HashMap<String, CriterionResult> {
+    let mut map = redirect_results(finding);
+    if let Some(mut result) = map.remove("13.1") {
+        result.criterion_id = "13.8".to_string();
+        map.insert("13.8".to_string(), result);
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -806,6 +946,55 @@ mod tests {
         assert_ne!(
             orientation_results(Some(&finding))["13.9"].status,
             CriterionStatus::Pass
+        );
+    }
+
+    fn motion(
+        n_load: u64,
+        n_after: u64,
+        target: &str,
+        controls: &[&str],
+        loaders: &[&str],
+    ) -> serde_json::Value {
+        json!({
+            "at_load": {"n": n_load, "targets": {target: n_load}, "controls": [], "loaders": []},
+            "after": {"n": n_after, "targets": {target: n_after}, "controls": controls, "loaders": loaders},
+        })
+    }
+
+    #[test]
+    fn automatic_motion_without_control_fails_with_a_control_or_a_loader_it_is_review() {
+        let fail = parse_motion_observation(&motion(0, 6, "div#c", &[], &[])).unwrap();
+        assert_eq!(fail.status, CriterionStatus::Fail);
+        assert!(
+            fail.details.contains("div#c (6 mutations)"),
+            "{}",
+            fail.details
+        );
+        let paused = parse_motion_observation(&motion(0, 6, "div#c", &["Pause"], &[])).unwrap();
+        assert_eq!(paused.status, CriterionStatus::NeedsReview);
+        let loader =
+            parse_motion_observation(&motion(0, 6, "div#spin", &[], &["div#spin"])).unwrap();
+        assert_eq!(loader.status, CriterionStatus::NeedsReview);
+        assert_ne!(
+            motion_results(Some(&fail))["13.8"].status,
+            CriterionStatus::Pass
+        );
+    }
+
+    #[test]
+    fn start_up_work_and_one_off_updates_are_not_motion() {
+        assert_eq!(
+            parse_motion_observation(&motion(40, 41, "div#c", &[], &[])),
+            None
+        );
+        assert_eq!(
+            parse_motion_observation(&motion(0, 0, "div#c", &[], &[])),
+            None
+        );
+        assert_eq!(
+            parse_motion_observation(&motion(30, 30, "div#c", &[], &[])),
+            None
         );
     }
 }

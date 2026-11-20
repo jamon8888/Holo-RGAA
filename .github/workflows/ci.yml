@@ -441,6 +441,19 @@ jobs:
         run: |
           filter='binary(/^criterion_.+_coverage$/) + binary(=alt_carriers)'
           cargo nextest run -p rgaa-obscura --no-tests=fail --test-threads 2 -E "$filter"
+      - name: Run registry fixture classification
+        env:
+          RUN_E2E: "1"
+          RGAA_E2E_REQUIRED: "1"
+          OBSCURA_WORKERS: "1"
+          RUSTC_WRAPPER: sccache
+        # Spec criteria-coverage-expansion §4.6-7 (#261) : chaque mécanisme non
+        # hérité à portée d'une page (donc hors `site`, voir
+        # docs/testing-layers.md) doit classer ses fixtures `-pass`/`-fail` sous
+        # Obscura, et un mauvais classement bloque la PR. Ce test n'a besoin que
+        # d'Obscura et du CDN d'axe, pas d'une clé LLM : il vivait dans le job
+        # `e2e` (jamais activé), donc ne tournait nulle part.
+        run: cargo nextest run -p rgaa-orchestrator --no-tests=fail -E 'binary(=fixture_classification)'
 
   spider-e2e:
     name: E2E (spider, serveur local)
@@ -540,7 +553,7 @@ jobs:
           RGAA_LLM_PROVIDER: myia
           MYIA_API_KEY: ${{ secrets.MYIA_API_KEY }}
           RUSTC_WRAPPER: sccache
-        # `alt_carriers` est passé dans `E2E (navigateur)`, qui tourne sans
-        # condition : il n'a pas besoin de clé LLM. Ne restent ici que les
-        # trois tests qui traversent le pipeline complet.
-        run: cargo test --workspace --test full_audit --test obscura_audit --test fixture_classification -- --nocapture
+        # `alt_carriers` et `fixture_classification` sont passés dans
+        # `E2E (navigateur)`, qui tourne sans condition : ils n'ont pas besoin de
+        # clé LLM. Ne restent ici que les tests qui traversent le pipeline complet.
+        run: cargo test --workspace --test full_audit --test obscura_audit -- --nocapture

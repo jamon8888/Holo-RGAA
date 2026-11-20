@@ -373,7 +373,9 @@ impl Repository {
         query.push_str(" OFFSET $");
         query.push_str(&param_count.to_string());
 
-        let mut q = sqlx::query_as(&query).bind(audit_id);
+        // Audited dynamic SQL: every fragment appended above is a fixed literal
+        // and a numeric placeholder; all caller-provided values are bound.
+        let mut q = sqlx::query_as(sqlx::AssertSqlSafe(query)).bind(audit_id);
         if let Some(status) = status {
             q = q.bind(status);
         }

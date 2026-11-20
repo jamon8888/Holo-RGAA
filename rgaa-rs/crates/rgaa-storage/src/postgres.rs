@@ -17,10 +17,8 @@ const MAX_POOL_CONNECTIONS: u32 = 10;
 /// How long a caller waits for a free connection before giving up loudly
 /// instead of queueing indefinitely under a connection-pool burst.
 const POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
-/// Per-statement ceiling, set on every pooled connection via
-/// `SET statement_timeout`, so one pathological query can't hold a
-/// connection (and thus shrink the effective pool) indefinitely.
-const STATEMENT_TIMEOUT_MS: i64 = 30_000;
+/// Cap each statement at 30 seconds so one query cannot hold a pooled connection indefinitely.
+const STATEMENT_TIMEOUT_SQL: &str = "SET statement_timeout = 30000";
 
 pub struct PostgresStorage {
     pool: PgPool,
@@ -33,10 +31,7 @@ impl PostgresStorage {
             .acquire_timeout(POOL_ACQUIRE_TIMEOUT)
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
-                    conn.execute(
-                        format!("SET statement_timeout = {STATEMENT_TIMEOUT_MS}").as_str(),
-                    )
-                    .await?;
+                    conn.execute(STATEMENT_TIMEOUT_SQL).await?;
                     Ok(())
                 })
             })

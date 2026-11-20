@@ -24,7 +24,7 @@ rgaa-license = { path = "../rgaa-license", default-features = false }
 
 clap = { workspace = true }
 tokio = { workspace = true }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 keyring = "3"
 ratatui = "0.28"
 thiserror = { workspace = true }

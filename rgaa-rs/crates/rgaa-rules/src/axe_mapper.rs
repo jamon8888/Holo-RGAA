@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
 use rgaa_core::{
-    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
+    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry, Outcome,
     RgaaCatalog, RgaaError, Violation,
 };
 use std::sync::OnceLock;
@@ -104,7 +104,20 @@ impl AxeMapper {
                         verified_status: None,
                         review_events: Vec::new(),
                     });
-                result.status = CriterionStatus::Fail;
+                if mechanism.review_only {
+                    // Une entrée neuve naît en `Fail` : seule une violation déjà enregistrée
+                    // prouve un échec qu'on ne dégrade pas.
+                    if result.violations.is_empty() {
+                        result.status = CriterionStatus::NeedsReview;
+                        result.review_required = true;
+                        result.review_reason = Some(format!(
+                            "{} : indice suspect, non concluant à lui seul (plafond review)",
+                            violation.id
+                        ));
+                    }
+                } else {
+                    result.status = CriterionStatus::Fail;
+                }
                 result.violations.push(Violation {
                     rule_id: violation.id.clone(),
                     impact: violation.impact.clone(),
@@ -232,6 +245,7 @@ impl AxeMapper {
                     CriterionMechanism {
                         rules: mechanism.axe_rules.clone(),
                         coverage: mechanism.coverage,
+                        review_only: mechanism.outcome_cap == Some(Outcome::Review),
                     },
                 );
             }
@@ -245,6 +259,8 @@ impl AxeMapper {
 struct CriterionMechanism {
     rules: Vec<String>,
     coverage: AxeCoverage,
+    /// Plafond `review` (#279) : une violation produit `NeedsReview`, jamais `Fail`.
+    review_only: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -489,7 +505,7 @@ mod tests {
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
         "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "5.7", "6.1", "7.1", "7.3", "8.2", "8.4",
         "8.8", "9.1", "9.3", "10.4", "10.6", "10.8", "10.11", "11.2", "11.9", "11.13", "12.1",
-        "12.4", "12.6", "12.7", "13.1", "13.8", "13.9",
+        "12.4", "12.6", "12.7", "12.8", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -767,16 +783,33 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            36,
+            37,
             "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
              decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
-             to 8.5 and button-name to 11.9"
+             to 8.5 and button-name to 11.9, then #263 added 12.8 (tabindex, focus-order-semantics)"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 87,
-            "expected 87 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-             the injected axe-core 4.9.1)"
+            rule_refs, 89,
+            "expected 89 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
+             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8)"
         );
+    }
+
+    /// #279 : 12.8 est plafonné à `review` — un `tabindex` positif est un indice, pas un échec.
+    #[test]
+    fn a_review_capped_mechanism_never_fails() {
+        let json = r#"[{"id":"tabindex","impact":"serious","description":"d","nodes":[{},{}]}]"#;
+        let r = &AxeMapper::map(json).unwrap()["12.8"];
+        assert_eq!(r.status, CriterionStatus::NeedsReview);
+        assert!(r.review_required);
+        assert_eq!(r.violations.len(), 1);
+        assert_eq!(r.violations[0].nodes_affected, 2);
+        assert!(r.review_reason.as_deref().unwrap().contains("tabindex"));
+    }
+
+    #[test]
+    fn a_review_capped_mechanism_is_silent_without_violation() {
+        assert!(!AxeMapper::map("[]").unwrap().contains_key("12.8"));
     }
 }

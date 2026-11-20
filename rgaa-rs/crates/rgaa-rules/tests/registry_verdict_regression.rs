@@ -64,6 +64,10 @@ const REMOVED_RULES: &[(&str, &[&str])] = &[
 /// ne décidaient rien. `aria-tab-name` a quitté 7.1 avec #261 pour cette raison.
 const NOT_INJECTED: &[&str] = &["aria-tab-name"];
 
+/// Mécanismes axe ajoutés après la migration (#263), dont le verdict est plafonné à
+/// `review` par `outcome_cap` (#279) : une violation y donne `needs_review`, jamais `fail`.
+const NEW_REVIEW_CAPPED: &[(&str, &[&str])] = &[("12.8", &["tabindex", "focus-order-semantics"])];
+
 #[derive(serde::Deserialize)]
 struct Frozen {
     mapping: Vec<Entry>,
@@ -196,7 +200,13 @@ fn verdicts_are_unchanged_except_reviewed_changes() {
     let mapping = reviewed_mapping();
     let mut regressions = Vec::new();
     for (axe_json, fired) in probes() {
-        let expected = legacy_verdicts(&mapping, fired.as_deref());
+        let mut expected = legacy_verdicts(&mapping, fired.as_deref());
+        // #263/#279 : mécanismes nouveaux, plafonnés à `review` (jamais `fail`).
+        for (id, rules) in NEW_REVIEW_CAPPED {
+            if fired.as_deref().is_some_and(|rule| rules.contains(&rule)) {
+                expected.insert((*id).into(), CriterionStatus::NeedsReview);
+            }
+        }
         let actual = current_verdicts(&axe_json);
         for difference in differences(&expected, &actual) {
             regressions.push(format!(

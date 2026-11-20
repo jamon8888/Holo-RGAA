@@ -16,6 +16,7 @@ pub mod cdp_pool;
 pub mod config;
 pub mod evidence;
 pub mod guided;
+pub mod listener_probe;
 pub mod redirect_probe;
 pub mod results;
 

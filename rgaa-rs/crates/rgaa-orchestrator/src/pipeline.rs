@@ -110,6 +110,15 @@ impl std::error::Error for CoverageError {}
 pub fn validate_automatic_verdict_coverage(
     results: &[CriterionResult],
 ) -> Result<(), CoverageError> {
+    validate_coverage(results, false)
+}
+
+/// Same gate for pages whose site-level criteria (12.1-12.5, #269) were already moved
+/// to the site result: those are validated where they live, not per page.
+fn validate_coverage(
+    results: &[CriterionResult],
+    skip_site_level: bool,
+) -> Result<(), CoverageError> {
     let mut by_id = HashMap::with_capacity(results.len());
     let mut duplicate_ids = std::collections::HashSet::new();
     for result in results {
@@ -121,6 +130,9 @@ pub fn validate_automatic_verdict_coverage(
     let mut missing = Vec::new();
     for criterion in RgaaCriteria::all() {
         let id = criterion.id;
+        if skip_site_level && rgaa_core::is_site_level_criterion(id) {
+            continue;
+        }
         let Some(result) = by_id.get(id).copied() else {
             missing.push(id.to_owned());
             continue;
@@ -312,22 +324,38 @@ fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
             .into_iter()
             .partition(|c| rgaa_core::is_site_level_criterion(&c.criterion_id));
         page.criteria = page_level;
-        for mut criterion in site_level {
-            if site
-                .iter()
-                .any(|c| c.criterion_id == criterion.criterion_id)
+        for criterion in site_level {
+            match site
+                .iter_mut()
+                .find(|c| c.criterion_id == criterion.criterion_id)
             {
-                continue;
+                // A real comparison verdict (`site-comparison`) outranks a page's own
+                // placeholder: each page carries the same copy of it.
+                Some(existing)
+                    if existing.source != "site-comparison"
+                        && criterion.source == "site-comparison" =>
+                {
+                    *existing = criterion;
+                }
+                Some(_) => {}
+                None => site.push(criterion),
             }
-            criterion.status = CriterionStatus::NeedsReview;
-            criterion.violations.clear();
-            criterion.tests.clear();
-            criterion.justification = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
-            criterion.source = "site".to_string();
-            criterion.review_required = true;
-            criterion.review_reason = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
-            site.push(criterion);
         }
+    }
+    for criterion in &mut site {
+        if criterion.source == "site-comparison" {
+            continue;
+        }
+        // No comparison mechanism decided this criterion: it is not evaluated at site
+        // level, whatever a single page said.
+        criterion.status = CriterionStatus::NeedsReview;
+        // `tests` and `automated_verdict` stay as the evidence of the page the result was
+        // taken from; only the verdict and its explanation are the site's.
+        criterion.violations.clear();
+        criterion.justification = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
+        criterion.source = "site".to_string();
+        criterion.review_required = true;
+        criterion.review_reason = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
     }
     site.sort_by(|a, b| a.criterion_id.cmp(&b.criterion_id));
     site
@@ -343,16 +371,16 @@ pub fn assemble_site_audit(
     mut all_pages: Vec<PageResult>,
     duration_ms: u64,
 ) -> AuditResult {
-    // The completion gate looks at every catalog criterion, so it runs before the
-    // site-level criteria leave the pages.
+    // The completion gate and the coverage metrics look at every catalog criterion, so
+    // they run before the site-level criteria leave the pages.
     let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
+    let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
     let site_criteria = split_site_criteria(&mut all_pages);
     for page in &mut all_pages {
         page.compliance_rate = calculate_compliance(&page.criteria);
     }
     let (taux_global, coverage_percent, etat_conformite) =
         aggregate_compliance_with_site_criteria(&all_pages, &site_criteria);
-    let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
     let all_criteria: Vec<CriterionResult> = all_pages
         .iter()
         .flat_map(|page| page.criteria.clone())
@@ -464,9 +492,15 @@ fn admit_routed_results(
 
 fn pages_have_complete_automatic_coverage(pages: &[PageResult]) -> bool {
     !pages.is_empty()
-        && pages
-            .iter()
-            .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok())
+        && pages.iter().all(|page| {
+            // Pages already split (no site-level criterion left) are checked on
+            // their page-level criteria only.
+            let split = !page
+                .criteria
+                .iter()
+                .any(|c| rgaa_core::is_site_level_criterion(&c.criterion_id));
+            validate_coverage(&page.criteria, split).is_ok()
+        })
 }
 
 fn record_site_comparison_evidence(

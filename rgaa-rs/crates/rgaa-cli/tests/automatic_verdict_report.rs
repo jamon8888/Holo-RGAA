@@ -387,7 +387,15 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             &na_map,
             1,
         );
-        assert_eq!(page_audit.pages[0].criteria.len(), 106);
+        // 12.1-12.5 are decided once at site level (#269), not per page.
+        assert_eq!(
+            page_audit.pages[0].criteria.len(),
+            106 - rgaa_core::SITE_LEVEL_CRITERIA.len()
+        );
+        assert_eq!(
+            page_audit.site_criteria.len(),
+            rgaa_core::SITE_LEVEL_CRITERIA.len()
+        );
         assert!(page_audit.audit_complete);
 
         if page_index == 0 {
@@ -414,7 +422,12 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             assert_eq!(human_review.review_events.len(), 1);
         }
 
-        pages.extend(page_audit.pages);
+        // The engine hands site-level criteria back separately (#269); put them back so
+        // the multi-page assembly sees the full per-page set it would get from a crawl.
+        pages.extend(rgaa_core::pages_with_site_criteria(
+            &page_audit.pages,
+            &page_audit.site_criteria,
+        ));
     }
 
     assert!(
@@ -429,8 +442,14 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         .flat_map(|page| &page.criteria)
         .filter(|criterion| criterion.automated_verdict.is_some())
         .count();
-    assert_eq!(row_count, 4 * 106);
-    assert_eq!(verdict_count, 424);
+    // 12.1-12.5 are reported once at site level (#269), so each page carries 101 rows.
+    let page_rows = 106 - rgaa_core::SITE_LEVEL_CRITERIA.len();
+    assert_eq!(row_count, 4 * page_rows);
+    assert_eq!(verdict_count, 4 * page_rows);
+    assert_eq!(
+        audit.site_criteria.len(),
+        rgaa_core::SITE_LEVEL_CRITERIA.len()
+    );
     assert!(audit.audit_complete);
     assert_eq!(audit.automatic_verdict_coverage_percent, 100.0);
     let complete_route_count = TestRoutePlan::builtin()

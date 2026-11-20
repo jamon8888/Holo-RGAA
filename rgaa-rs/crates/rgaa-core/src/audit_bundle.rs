@@ -66,6 +66,10 @@ pub struct AuditBundle {
     pub audit_complete: Option<bool>,
     pub config: AuditConfig,
     pub pages: Vec<PageAudit>,
+    /// Site-level criteria (RGAA 12.1-12.5), decided once for the whole site (#269).
+    /// Defaults to empty so bundles persisted before this field existed still load.
+    #[serde(default)]
+    pub site_criteria: Vec<CriterionResult>,
     pub findings: Vec<Finding>,
     pub checkpoints: Vec<CheckpointResult>,
     pub summary: AuditSummary,
@@ -80,6 +84,7 @@ impl AuditBundle {
             audit_complete: None,
             config,
             pages: Vec::new(),
+            site_criteria: Vec::new(),
             findings: Vec::new(),
             checkpoints: Vec::new(),
             summary: AuditSummary::default(),
@@ -263,6 +268,7 @@ impl From<AuditResult> for AuditBundle {
             audit_complete: Some(result.audit_complete),
             config: AuditConfig::default(),
             pages: page_audits,
+            site_criteria: result.site_criteria,
             findings,
             checkpoints: Vec::new(),
             summary: AuditSummary {

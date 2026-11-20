@@ -1,7 +1,7 @@
 # Outillage de calibration
 
 Mesure l'accord d'un modèle avec un étiquetage humain sur une **famille de preuve**
-(`CONTEXT.md`). Le protocole, les seuils et le budget sont dans
+(`GLOSSARY.md`). Le protocole, les seuils et le budget sont dans
 [`docs/specs/calibration-protocol.md`](../../docs/specs/calibration-protocol.md) ; ces
 scripts l'appliquent.
 

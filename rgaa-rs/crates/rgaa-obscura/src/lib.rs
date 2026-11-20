@@ -2464,6 +2464,118 @@ impl ObscuraBridge {
         outcome
     }
 
+    /// Load `url` with `hook_js` installed **before any page script runs**
+    /// (`Page.addScriptToEvaluateOnNewDocument`), evaluate `read_js` (which must return a
+    /// JSON string) once the page has loaded, wait `observe` without any user interaction,
+    /// and evaluate it again. Returns `{"at_load": ..., "after": ...}`.
+    ///
+    /// Two snapshots because a script navigation discards the hooked document: the state
+    /// read at load time is the only trace of the call that later navigates away, and the
+    /// comparison of the two tells whether the page moved on its own.
+    ///
+    /// Spec `criteria-coverage-expansion` §7.2: hook-based probes (13.1 redirects, 13.2
+    /// popups, 13.8 motion, 12.10-13.12 listeners) need to see calls made during load, which
+    /// a post-load `scrape --eval` cannot. Capability verified on Obscura 0.2.4: the hook
+    /// runs before the page's own scripts and may replace `window.open`.
+    pub async fn observe_with_hook(
+        &self,
+        url: &str,
+        hook_js: &str,
+        read_js: &str,
+        observe: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+        let target = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": "about:blank"}),
+        )
+        .await?;
+        let target_id = target
+            .get("targetId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "No targetId in hook-probe response".to_string())?
+            .to_string();
+        let attached = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await;
+        let session_id = match attached
+            .as_ref()
+            .ok()
+            .and_then(|a| a.get("sessionId"))
+            .and_then(serde_json::Value::as_str)
+        {
+            Some(id) => id.to_string(),
+            None => {
+                let _ = Self::cdp_send(
+                    &mut ws,
+                    "Target.closeTarget",
+                    serde_json::json!({"targetId": target_id}),
+                )
+                .await;
+                return Err(attached
+                    .err()
+                    .unwrap_or_else(|| "No sessionId in hook-probe response".to_string()));
+            }
+        };
+        let outcome = async {
+            for method in ["Page.enable", "Runtime.enable"] {
+                Self::cdp_send_session(&mut ws, &session_id, method, serde_json::json!({})).await?;
+            }
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.addScriptToEvaluateOnNewDocument",
+                serde_json::json!({"source": hook_js}),
+            )
+            .await?;
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.navigate",
+                serde_json::json!({"url": url}),
+            )
+            .await?;
+            Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+            let at_load = Self::read_hook_snapshot(&mut ws, &session_id, read_js).await?;
+            tokio::time::sleep(observe).await;
+            let after = Self::read_hook_snapshot(&mut ws, &session_id, read_js).await?;
+            Ok(serde_json::json!({"at_load": at_load, "after": after}))
+        }
+        .await;
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (outcome, cleanup) {
+            (Ok(value), _) => Ok(value),
+            (Err(error), _) => Err(error),
+        }
+    }
+
+    async fn read_hook_snapshot(
+        ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+        session_id: &str,
+        read_js: &str,
+    ) -> Result<serde_json::Value, String> {
+        let evaluated = Self::cdp_send_session(
+            ws,
+            session_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": read_js, "returnByValue": true}),
+        )
+        .await?;
+        let text = evaluated
+            .pointer("/result/value")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "hook probe read script returned no string".to_string())?;
+        serde_json::from_str::<serde_json::Value>(text)
+            .map_err(|e| format!("hook probe returned invalid JSON: {e}"))
+    }
+
     async fn run_igt_keyboard(
         &self,
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,

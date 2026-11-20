@@ -1525,6 +1525,31 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // 13.1 redirects by script (#265): a hook installed before the page's scripts, then ~6 s
+    // of observation without interaction. Only runs when the plan routes it.
+    let redirect_is_routed = criterion_has_routed_mechanism("13.1", "probe-13-1-script-redirect");
+    let script_hook_results = if redirect_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::REDIRECT_HOOK,
+                rgaa_rules::script_hooks::REDIRECT_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::redirect_results(
+                rgaa_rules::script_hooks::parse_redirect_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura redirect probe failed; 13.1 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1555,6 +1580,7 @@ async fn audit_one(
         .values()
         .chain(gap_results.values())
         .chain(keyboard_results.values())
+        .chain(script_hook_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1594,6 +1620,7 @@ async fn audit_one(
         .into_iter()
         .chain(gap_results)
         .chain(keyboard_results)
+        .chain(script_hook_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

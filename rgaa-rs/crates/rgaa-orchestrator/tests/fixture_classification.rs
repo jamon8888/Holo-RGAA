@@ -31,36 +31,41 @@ fn serve(dir: PathBuf) -> std::io::Result<u16> {
     let port = listener.local_addr()?.port();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
-            let mut stream = stream;
-            let mut buf = [0u8; 2048];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            let request = String::from_utf8_lossy(&buf[..n]);
-            let name = request
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("/")
-                .trim_start_matches('/')
-                .to_string();
-            let body = if name.contains("..") || name.contains('/') {
-                None
-            } else {
-                std::fs::read(dir.join(&name)).ok()
-            };
-            let _ = match body {
-                Some(b) => {
-                    let head = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\
+            let dir = dir.clone();
+            // One thread per connection: a hook probe keeps its CDP page open, and a serial
+            // server would stall every later fixture behind it.
+            std::thread::spawn(move || {
+                let mut stream = stream;
+                let mut buf = [0u8; 2048];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]);
+                let name = request
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .trim_start_matches('/')
+                    .to_string();
+                let body = if name.contains("..") || name.contains('/') {
+                    None
+                } else {
+                    std::fs::read(dir.join(&name)).ok()
+                };
+                let _ = match body {
+                    Some(b) => {
+                        let head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\
                          Content-Length: {}\r\nConnection: close\r\n\r\n",
-                        b.len()
-                    );
-                    stream
-                        .write_all(head.as_bytes())
-                        .and_then(|()| stream.write_all(&b))
-                }
-                None => stream.write_all(
-                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                ),
-            };
+                            b.len()
+                        );
+                        stream
+                            .write_all(head.as_bytes())
+                            .and_then(|()| stream.write_all(&b))
+                    }
+                    None => stream.write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    ),
+                };
+            });
         }
     });
     Ok(port)
@@ -191,6 +196,30 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 "gap-fix: {:?} {:?}",
                 result.status, result.justification
             ));
+        }
+        if case.mechanism == "probe-13-1-script-redirect" {
+            // Hook probe: installed before the page's scripts, ~6 s without interaction.
+            match bridge
+                .observe_with_hook(
+                    &url,
+                    rgaa_rules::script_hooks::REDIRECT_HOOK,
+                    rgaa_rules::script_hooks::REDIRECT_READ,
+                    std::time::Duration::from_millis(
+                        rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS,
+                    ),
+                )
+                .await
+            {
+                Ok(observation) => {
+                    let finding =
+                        rgaa_rules::script_hooks::parse_redirect_observation(&observation);
+                    evidence.push(format!("script-hook: {finding:?}"));
+                    if let Some(finding) = finding {
+                        statuses.push(finding.status);
+                    }
+                }
+                Err(error) => evidence.push(format!("script-hook error: {error}")),
+            }
         }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
         if failed != case.expect_fail {

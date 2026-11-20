@@ -799,6 +799,54 @@ fixtures  = ["13.2-popup-pass", "13.2-popup-load-fail", "13.2-popup-timer-fail"]
 legacy    = false
 
 [[mechanism]]
+id        = "probe-12-10-listener-inventory"
+criterion = "12.10"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1"]
+outcomes  = ["review"]
+fixtures  = ["12.10-listener-inventory-pass", "12.10-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-10-listener-inventory"
+criterion = "13.10"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1", "2"]
+outcomes  = ["review"]
+fixtures  = ["13.10-listener-inventory-pass", "13.10-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-11-listener-inventory"
+criterion = "13.11"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1"]
+outcomes  = ["review"]
+fixtures  = ["13.11-listener-inventory-pass", "13.11-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-12-listener-inventory"
+criterion = "13.12"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1", "2", "3"]
+outcomes  = ["review"]
+fixtures  = ["13.12-listener-inventory-pass", "13.12-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
 id        = "probe-13-1"
 criterion = "13.1"
 kind      = "js-static"

@@ -1749,7 +1749,9 @@
   {
     "criterion_id": "12.10",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-12-10-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -1874,42 +1876,54 @@
   {
     "criterion_id": "13.10",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-10-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.10",
     "test_key": "2",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-10-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.11",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-11-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.12",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-12-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.12",
     "test_key": "2",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-12-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.12",
     "test_key": "3",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-12-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   }

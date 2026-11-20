@@ -1574,6 +1574,38 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // Listener inventory (#272): one hooked load covers 12.10, 13.10, 13.11 and 13.12.
+    let listeners_are_routed = ["12.10", "13.10", "13.11", "13.12"]
+        .iter()
+        .any(|criterion_id| {
+            criterion_has_routed_mechanism(
+                criterion_id,
+                &format!(
+                    "probe-{}-listener-inventory",
+                    criterion_id.replace('.', "-")
+                ),
+            )
+        });
+    let listener_results = if listeners_are_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::LISTENER_HOOK,
+                rgaa_rules::script_hooks::LISTENER_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::LISTENER_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::listener_results(&observation),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura listener inventory failed; criteria keep their fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1606,6 +1638,7 @@ async fn audit_one(
         .chain(keyboard_results.values())
         .chain(script_hook_results.values())
         .chain(popup_results.values())
+        .chain(listener_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1647,6 +1680,7 @@ async fn audit_one(
         .chain(keyboard_results)
         .chain(script_hook_results)
         .chain(popup_results)
+        .chain(listener_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

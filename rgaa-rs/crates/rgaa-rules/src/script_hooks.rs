@@ -287,6 +287,174 @@ pub fn popup_results(finding: Option<&RedirectFinding>) -> HashMap<String, Crite
     map
 }
 
+/// How long listener registration is observed (listeners are installed at load or on
+/// `DOMContentLoaded`; no interaction is simulated).
+pub const LISTENER_OBSERVATION_MS: u64 = 1_500;
+
+/// Listener inventory (issue #272): wraps `addEventListener` before any page script. Obscura
+/// 0.2.4 gives `window`, `document` and each prototype their own implementation, so all of
+/// them are wrapped, with a re-entrancy guard so a call delegated from one layer to the next
+/// is logged once. Sensor constructors are recorded too.
+pub const LISTENER_HOOK: &str = r#"
+(() => {
+  const log = [];
+  window.__rgaa = { log };
+  let busy = false;
+  const describe = t => t === window ? 'window' : t === document ? 'document'
+    : (t && t.tagName ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') : String(t));
+  const wrap = obj => {
+    try {
+      if (!obj || typeof obj.addEventListener !== 'function') return;
+      const o = obj.addEventListener;
+      obj.addEventListener = function (type, fn, opts) {
+        if (busy) return o.call(this, type, fn, opts);
+        busy = true;
+        try { log.push({ type: String(type), target: describe(this) }); return o.call(this, type, fn, opts); }
+        finally { busy = false; }
+      };
+    } catch (e) {}
+  };
+  wrap(window); wrap(document);
+  for (const n of ['EventTarget', 'Node', 'Element', 'HTMLElement']) {
+    try { wrap(window[n] && window[n].prototype); } catch (e) {}
+  }
+  for (const name of ['Accelerometer', 'Gyroscope', 'LinearAccelerationSensor', 'AbsoluteOrientationSensor']) {
+    try {
+      const C = window[name];
+      if (typeof C === 'function') {
+        window[name] = function (...a) { log.push({ type: 'sensor:' + name, target: 'window' }); return Reflect.construct(C, a, new.target || window[name]); };
+        window[name].prototype = C.prototype;
+      }
+    } catch (e) {}
+  }
+})();
+"#;
+
+/// Read once, after the short observation window.
+pub const LISTENER_READ: &str = r#"
+JSON.stringify({
+  log: (window.__rgaa && window.__rgaa.log) || [],
+  accesskeys: Array.from(document.querySelectorAll('[accesskey]')).map(e =>
+    e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + '[' + e.getAttribute('accesskey') + ']')
+})
+"#;
+
+fn listener_hints(observation: &serde_json::Value) -> Vec<(&'static str, String)> {
+    let after = observation.get("after").unwrap_or(observation);
+    let entries: Vec<(String, String)> = after
+        .get("log")
+        .and_then(serde_json::Value::as_array)
+        .map(|log| {
+            log.iter()
+                .filter_map(|e| {
+                    Some((
+                        e.get("type")?.as_str()?.to_string(),
+                        e.get("target")?.as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let accesskeys: Vec<String> = after
+        .get("accesskeys")
+        .and_then(serde_json::Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let list = |types: &[&str], global_only: bool| -> Vec<String> {
+        let mut seen = std::collections::BTreeSet::new();
+        entries
+            .iter()
+            .filter(|(t, target)| {
+                types.iter().any(|x| t == x)
+                    && (!global_only || target == "window" || target == "document")
+            })
+            .filter_map(|(t, target)| {
+                let item = format!("{t} sur {target}");
+                seen.insert(item.clone()).then_some(item)
+            })
+            .collect()
+    };
+    let mut hints = Vec::new();
+    let mut keyboard = list(&["keydown", "keypress", "keyup"], true);
+    keyboard.extend(accesskeys.iter().map(|a| format!("accesskey {a}")));
+    if !keyboard.is_empty() {
+        hints.push((
+            "12.10",
+            format!("raccourcis clavier possibles: {}", keyboard.join(", ")),
+        ));
+    }
+    let gestures = list(
+        &[
+            "touchstart",
+            "touchmove",
+            "pointermove",
+            "gesturestart",
+            "gesturechange",
+        ],
+        false,
+    );
+    if !gestures.is_empty() {
+        hints.push((
+            "13.10",
+            format!("gestes complexes possibles: {}", gestures.join(", ")),
+        ));
+    }
+    let pointer = list(&["mousedown", "pointerdown", "touchstart"], false);
+    if !pointer.is_empty() {
+        hints.push((
+            "13.11",
+            format!(
+                "action à l'appui (annulation à vérifier): {}",
+                pointer.join(", ")
+            ),
+        ));
+    }
+    let motion = list(
+        &[
+            "devicemotion",
+            "deviceorientation",
+            "deviceorientationabsolute",
+            "sensor:Accelerometer",
+            "sensor:Gyroscope",
+            "sensor:LinearAccelerationSensor",
+            "sensor:AbsoluteOrientationSensor",
+        ],
+        false,
+    );
+    if !motion.is_empty() {
+        hints.push((
+            "13.12",
+            format!("usage de capteurs de mouvement: {}", motion.join(", ")),
+        ));
+    }
+    hints
+}
+
+/// Listener-inventory hints as criterion results: only `review`, never `fail` or `pass`;
+/// a page with no matching listener yields no entry for that criterion.
+#[must_use]
+pub fn listener_results(observation: &serde_json::Value) -> HashMap<String, CriterionResult> {
+    listener_hints(observation)
+        .into_iter()
+        .map(|(criterion, details)| {
+            let finding = RedirectFinding {
+                status: CriterionStatus::NeedsReview,
+                details,
+            };
+            let mut map = redirect_results(Some(&finding));
+            let mut result = map.remove("13.1").expect("redirect result");
+            result.criterion_id = criterion.to_string();
+            result.source = "script-hook".to_string();
+            (criterion.to_string(), result)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,5 +549,33 @@ mod tests {
         let map = popup_results(Some(&finding));
         assert!(map.contains_key("13.2") && !map.contains_key("13.1"));
         assert_ne!(map["13.2"].status, CriterionStatus::Pass);
+    }
+
+    #[test]
+    fn listener_inventory_emits_review_hints_per_criterion_and_nothing_otherwise() {
+        let observation = json!({"after": {
+            "log": [
+                {"type": "keydown", "target": "document"},
+                {"type": "keydown", "target": "input#q"},
+                {"type": "devicemotion", "target": "window"},
+                {"type": "mousedown", "target": "button#b"},
+                {"type": "touchmove", "target": "div#map"}
+            ],
+            "accesskeys": ["button#b[s]"]
+        }});
+        let results = listener_results(&observation);
+        let ids: std::collections::BTreeSet<&str> = results.keys().map(String::as_str).collect();
+        assert_eq!(
+            ids,
+            ["12.10", "13.10", "13.11", "13.12"].into_iter().collect()
+        );
+        for result in results.values() {
+            assert_eq!(result.status, CriterionStatus::NeedsReview);
+        }
+        // a keydown on a field is not a global shortcut; the document one and accesskey are.
+        let kb = results["12.10"].justification.clone().unwrap();
+        assert!(kb.contains("keydown sur document") && kb.contains("accesskey"));
+        assert!(!kb.contains("input#q"));
+        assert!(listener_results(&json!({"after": {"log": [], "accesskeys": []}})).is_empty());
     }
 }

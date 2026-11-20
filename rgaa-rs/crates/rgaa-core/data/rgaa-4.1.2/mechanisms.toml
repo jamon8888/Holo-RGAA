@@ -500,6 +500,20 @@ axe_rules = ["css-orientation-lock"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: css-orientation-lock catches a CSS orientation lock, not every portrait/landscape failure." }
 
 [[mechanism]]
+id        = "axe-12-8"
+criterion = "12.8"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["12.8-tab-order-pass", "12.8-tab-order-fail"]
+legacy    = false
+axe_rules = ["tabindex", "focus-order-semantics"]
+outcome_cap = "review"
+provenance = { source = "axe-core 4.9.1 rule-descriptions.md + issue #263 (lot B1-L0) + issue #279 (plafond de verdict)", validated_by = "rule ids cross-checked against axe_rules_injected.json (axe 4.9.1)", validated_at = "2026-11-20", notes = "tabindex > 0 est un indice « suspect » sur 12.8, jamais un échec ferme : outcome_cap = review interdit le Fail. focus-order-semantics est rattachée mais inerte (expérimentale, désactivée par défaut sous axe 4.9.1). Le critère reste partial : aucune règle ne décide tous les tests de 12.8, donc jamais de Pass par le silence d'axe." }
+
+[[mechanism]]
 id        = "gapfix-1-1"
 criterion = "1.1"
 kind      = "js-static"

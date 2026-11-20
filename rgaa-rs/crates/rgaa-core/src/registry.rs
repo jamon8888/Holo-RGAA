@@ -66,6 +66,11 @@ pub struct Mechanism {
     #[serde(default)]
     pub tests: Vec<String>,
     pub outcomes: Vec<Outcome>,
+    /// Ceiling on the verdict this mechanism may emit. `Some(Outcome::Review)` means
+    /// the mechanism may raise `review` but never `fail`; `Some(Outcome::Pass)` means
+    /// it may never raise `fail` or `review`. `None` = no cap (default).
+    #[serde(default)]
+    pub outcome_cap: Option<Outcome>,
     /// Fixture names (file stems in `rgaa-test-corpus/criteria/`).
     #[serde(default)]
     pub fixtures: Vec<String>,
@@ -177,6 +182,31 @@ impl MechanismRegistry {
             for rule in &m.axe_rules {
                 if !known_axe_rules.contains(rule) {
                     problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
+                }
+            }
+            // outcome_cap is a ceiling: the mechanism may not emit anything above it.
+            if let Some(cap) = m.outcome_cap {
+                match cap {
+                    Outcome::Review => {
+                        if m.outcomes.contains(&Outcome::Fail) {
+                            problems.push(format!(
+                                "{}: outcome_cap is \"review\" but outcomes contain \"fail\" — \
+                                 a capped mechanism cannot produce Fail",
+                                m.id
+                            ));
+                        }
+                    }
+                    Outcome::Pass => {
+                        if m.outcomes.contains(&Outcome::Fail) || m.outcomes.contains(&Outcome::Review)
+                        {
+                            problems.push(format!(
+                                "{}: outcome_cap is \"pass\" but outcomes contain \"fail\" or \"review\" — \
+                                 a capped mechanism cannot produce anything above Pass",
+                                m.id
+                            ));
+                        }
+                    }
+                    Outcome::Fail => {}
                 }
             }
             problems.extend(Self::check_declared_tests(m));

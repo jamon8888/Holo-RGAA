@@ -4,6 +4,7 @@ use rgaa_core::{
     Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
     RgaaCatalog, RgaaError, Violation,
 };
+use rgaa_core::registry::Outcome;
 use std::sync::OnceLock;
 
 pub struct AxeMapper;
@@ -71,25 +72,40 @@ impl AxeMapper {
 
         // Map violations to criteria. A partial-coverage criterion enters the results
         // here and only here, which is why a violation may have to create its entry.
+        //
+        // A mechanism capped at `review` (outcome_cap) turns a violation into
+        // `NeedsReview` instead of `Fail`: the evidence is real, but the verdict
+        // ceiling forbids a hard failure.
         for violation in &violations {
             for (rgaa_id, mechanism) in mapping {
                 if !mechanism.rules.iter().any(|rule| rule == &violation.id) {
                     continue;
                 }
+                let capped = mechanism.outcome_cap == Some(Outcome::Review);
                 let result = results
                     .entry(rgaa_id.clone())
                     .or_insert_with(|| CriterionResult {
                         criterion_id: rgaa_id.clone(),
                         title: String::new(),
                         classification: Classification::Deterministe,
-                        status: CriterionStatus::Fail,
+                        status: if capped {
+                            CriterionStatus::NeedsReview
+                        } else {
+                            CriterionStatus::Fail
+                        },
                         violations: vec![],
                         confidence: None,
                         raw_confidence: None,
                         justification: Some(
-                            "Partial axe coverage: a violation was found, but axe does not \
-                             decide every test of this criterion"
-                                .to_string(),
+                            if capped {
+                                "axe-core violation sur une entrée plafonnée à review : \
+                                 l'indice est réel mais le verdict est plafonné à needs_review"
+                                    .to_string()
+                            } else {
+                                "Partial axe coverage: a violation was found, but axe does not \
+                                 decide every test of this criterion"
+                                    .to_string()
+                            },
                         ),
                         source: "axe-core".to_string(),
                         citations: vec![],
@@ -99,12 +115,29 @@ impl AxeMapper {
                         verdict_basis: Vec::new(),
                         evidence: Vec::new(),
                         confidence_calibration_version: None,
-                        review_required: false,
-                        review_reason: None,
+                        review_required: capped,
+                        review_reason: if capped {
+                            Some(format!(
+                                "verdict plafonné à review par le mécanisme axe {} — violation {:?} n'est pas un Fail ferme",
+                                violation.id, violation.id
+                            ))
+                        } else {
+                            None
+                        },
                         verified_status: None,
                         review_events: Vec::new(),
                     });
-                result.status = CriterionStatus::Fail;
+                // Un Fail prouvé ne se dégrade jamais en revue : si une autre règle du
+                // même critère a déjà produit un Fail, on le garde. Mais on ajoute
+                // toujours la violation comme preuve.
+                if result.status != CriterionStatus::Fail {
+                    result.status = if capped {
+                        CriterionStatus::NeedsReview
+                    } else {
+                        CriterionStatus::Fail
+                    };
+                    result.review_required = capped;
+                }
                 result.violations.push(Violation {
                     rule_id: violation.id.clone(),
                     impact: violation.impact.clone(),
@@ -232,6 +265,7 @@ impl AxeMapper {
                     CriterionMechanism {
                         rules: mechanism.axe_rules.clone(),
                         coverage: mechanism.coverage,
+                        outcome_cap: mechanism.outcome_cap,
                     },
                 );
             }
@@ -240,11 +274,13 @@ impl AxeMapper {
     }
 }
 
-/// What axe-core can say about one criterion: the rules mapped to it, and whether
-/// they decide it completely enough for silence to count as a `Pass`.
+/// What axe-core can say about one criterion: the rules mapped to it, whether
+/// they decide it completely enough for silence to count as a `Pass`, and the
+/// verdict ceiling (`outcome_cap`) that caps how severe a violation may be.
 struct CriterionMechanism {
     rules: Vec<String>,
     coverage: AxeCoverage,
+    outcome_cap: Option<Outcome>,
 }
 
 #[derive(serde::Deserialize)]
@@ -489,7 +525,7 @@ mod tests {
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
         "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "5.7", "6.1", "7.1", "7.3", "8.2", "8.4",
         "8.8", "9.1", "9.3", "10.4", "10.6", "10.8", "10.11", "11.2", "11.9", "11.13", "12.1",
-        "12.4", "12.6", "12.7", "13.1", "13.8", "13.9",
+        "12.4", "12.6", "12.7", "12.8", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -706,6 +742,65 @@ mod tests {
         }
     }
 
+    /// Issue #279 : une violation d'une règle d'une entrée plafonnée à `review`
+    /// produit `NeedsReview`, jamais `Fail`. Le critère 12.8 est plafonné : `tabindex`
+    /// positif est un indice « suspect », pas un échec ferme.
+    #[test]
+    fn a_violation_on_a_review_capped_mechanism_yields_needs_review_not_fail() {
+        // tabindex > 0 sur 12.8 : le critère sort needs_review, pas Fail
+        let axe_json = r#"[
+            {"id":"tabindex","impact":"serious",
+             "description":"Ensure tabindex attribute values are not greater than 0",
+             "nodes":[{"html":"<button tabindex='3'>"}]}
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        let r = results
+            .get("12.8")
+            .expect("12.8 doit être présent avec axe-12-8");
+        assert_eq!(
+            r.status,
+            CriterionStatus::NeedsReview,
+            "une violation sur une entrée plafonnée à review donne needs_review, pas Fail"
+        );
+        assert!(r.review_required, "le critère doit exiger une revue");
+        assert!(
+            r.review_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("plafonné")),
+            "la raison de revue doit mentionner le plafond, obtenu {:?}",
+            r.review_reason
+        );
+        assert!(
+            r.violations.iter().any(|v| v.rule_id == "tabindex"),
+            "12.8 doit porter la violation tabindex comme preuve, got {:?}",
+            r.violations
+        );
+    }
+
+    /// Issue #279 : les entrées sans plafond gardent leur comportement exact — une
+    /// violation produit toujours `Fail`.
+    #[test]
+    fn an_uncapped_mechanism_still_fails_on_violation() {
+        let axe_json = r#"[
+            {"id":"color-contrast","impact":"serious",
+             "description":"Elements must have sufficient color contrast",
+             "nodes":[{"html":"<p>Low contrast</p>"}]}
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        // 3.2 et 3.3 partagent color-contrast, aucun n'est plafonné
+        for criterion_id in ["3.2", "3.3"] {
+            let r = results
+                .get(criterion_id)
+                .unwrap_or_else(|| panic!("{criterion_id} doit être présent"));
+            assert_eq!(
+                r.status,
+                CriterionStatus::Fail,
+                "{criterion_id} sans plafond doit Fail sur une violation prouvée"
+            );
+            assert!(!r.violations.is_empty(), "{criterion_id} doit porter la violation");
+        }
+    }
+
     /// The #201 guard: adding rules to a criterion must not create a criterion-level
     /// `Pass` the rules cannot justify. A partial-coverage criterion appears in the
     /// results only when one of its rules actually fired (#201 AC3).
@@ -767,16 +862,16 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            36,
+            37,
             "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
              decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
-             to 8.5 and button-name to 11.9"
+             to 8.5 and button-name to 11.9; axe-12-8 added in #279"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 87,
-            "expected 87 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-             the injected axe-core 4.9.1)"
+            rule_refs, 89,
+            "expected 89 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
+             the injected axe-core 4.9.1; axe-12-8 adds tabindex + focus-order-semantics)"
         );
     }
 }

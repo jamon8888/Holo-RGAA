@@ -69,3 +69,29 @@ _Avoid_ : description du tableau, synthèse des données, résumé des chiffres
 **Tableau de données complexe** :
 Tableau dont les en-têtes ne sont pas répartis uniquement sur la première ligne et/ou la première colonne, ou dont la portée d'un en-tête ne vaut pas pour toute sa ligne ou toute sa colonne. Seul un tel tableau appelle un résumé (critères 5.1 et 5.2) : des cellules fusionnées dans le corps du tableau ne suffisent pas à le rendre complexe.
 _Avoid_ : grand tableau, tableau à double entrée, tableau multi-niveaux
+
+### Offre et revue
+
+**Offre Souveraine** :
+L'offre dans laquelle aucune donnée du client (code, DOM, captures) ne sort de son infrastructure sans son accord explicite, et qui ne requiert aucun agent d'un éditeur tiers.
+_Avoid_ : offre locale, offre on-premise, version gratuite
+
+**Offre Confort** :
+L'offre dans laquelle l'audit et la remédiation sont guidés dans les agents du client, avec l'IA fournie et refacturée par nous ; des données partent vers l'éditeur de l'agent et vers le fournisseur du modèle.
+_Avoid_ : offre SaaS, offre cloud, offre premium
+
+**Crédit** :
+L'unité prépayée qu'un client achète et que chaque appel de modèle débite. Un solde épuisé arrête les appels.
+_Avoid_ : jeton, token, quota
+
+**Relecteur** :
+La personne authentifiée qui confirme une décision de revue sur un test RGAA. C'est un rôle : un auditeur comme un responsable conformité peut l'endosser.
+_Avoid_ : auditeur (persona, pas rôle), validateur, utilisateur
+
+**Décision de revue** :
+Le statut qu'un relecteur pose sur un test RGAA (`conforme`, `non conforme`, `non applicable`). Seul un humain en prend une.
+_Avoid_ : verdict (réservé à la machine), validation, avis
+
+**Verdict** :
+Ce que la machine (règle ou modèle) rend sur un test RGAA. Sur un test Assisté, il ne sert qu'à ordonner la file de revue.
+_Avoid_ : décision, jugement

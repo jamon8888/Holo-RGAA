@@ -13,7 +13,10 @@
 //!   mechanism "conforming" means "emits no `fail`" — silence never counts as `pass`);
 //! * a `-pass` fixture of a `complete` mechanism that declares `pass` must make **that
 //!   mechanism** (axe for `axe-native`, the gap-fix probe otherwise) emit `Pass` (spec
-//!   §4.1): its silence is the only one allowed to stand as conformance, so it is proven.
+//!   §4.1): its silence is the only one allowed to stand as conformance, so it is proven;
+//! * the same holds for a `partial` review mechanism only when its engine always emits a
+//!   verdict. An `axe-native` one is silent when no mapped rule fires, so a conforming
+//!   `-pass` fixture is proven by the absence of `Fail` instead (#395, `axe-12-8`).
 //!
 //! A mechanism that misclassifies its fixture blocks the PR. The presence of the
 //! fixture files is checked separately, without a browser, in
@@ -119,23 +122,15 @@ fn cases() -> Vec<Case> {
             let declares_fail = m.outcomes.contains(&Outcome::Fail);
             let declares_review = m.outcomes.contains(&Outcome::Review);
             let expect_failure = expect_fail && declares_fail;
-            let expected_statuses = if expect_fail && declares_fail {
-                vec![CriterionStatus::Fail]
-            } else if expect_fail && declares_review && shares_a_decisive_probe(m) {
-                // Gap-fix reports one verdict per criterion: a sibling probe that
-                // declares `fail` on the same criterion (12.9) may decide this fixture.
-                vec![CriterionStatus::NeedsReview, CriterionStatus::Fail]
-            } else if expect_fail && declares_review {
-                // Review-only ("orienté", spec §4.1): an adverse fixture is `review`,
-                // never `fail`.
-                vec![CriterionStatus::NeedsReview]
-            } else if expect_pass {
-                vec![CriterionStatus::Pass]
-            } else if declares_review {
-                vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
-            } else {
-                Vec::new()
-            };
+            let axe_native = m.kind == MechanismKind::AxeNative;
+            let expected_statuses = required_own_statuses(
+                expect_fail,
+                declares_fail,
+                declares_review,
+                shares_a_decisive_probe(m),
+                expect_pass,
+                axe_native,
+            );
             out.push(Case {
                 mechanism: m.id.clone(),
                 criterion: m.criterion.clone(),
@@ -144,12 +139,43 @@ fn cases() -> Vec<Case> {
                 expect_failure,
                 expected_statuses,
                 expect_pass,
-                axe_native: m.kind == MechanismKind::AxeNative,
+                axe_native,
                 axe_rules: m.axe_rules.clone(),
             });
         }
     }
     out
+}
+
+/// Verdicts the mechanism itself must report on its fixture. An `axe-native` mechanism
+/// emits nothing when no mapped axe rule fires: on a conforming (`-pass`) fixture of a
+/// `partial` mechanism the proof is the absence of `Fail` from every engine, not a
+/// positive verdict from axe (spec §4.1). Gap-fix probes always emit a per-criterion
+/// verdict, so they stay held to `Pass`/`NeedsReview` there.
+fn required_own_statuses(
+    expect_fail: bool,
+    declares_fail: bool,
+    declares_review: bool,
+    shares_decisive_probe: bool,
+    expect_pass: bool,
+    axe_native: bool,
+) -> Vec<CriterionStatus> {
+    if expect_fail && declares_fail {
+        vec![CriterionStatus::Fail]
+    } else if expect_fail && declares_review && shares_decisive_probe {
+        // Gap-fix reports one verdict per criterion: a sibling probe that declares
+        // `fail` on the same criterion (12.9) may decide this fixture.
+        vec![CriterionStatus::NeedsReview, CriterionStatus::Fail]
+    } else if expect_fail && declares_review {
+        // Review-only ("orienté", spec §4.1): an adverse fixture is `review`, never `fail`.
+        vec![CriterionStatus::NeedsReview]
+    } else if expect_pass {
+        vec![CriterionStatus::Pass]
+    } else if declares_review && !axe_native {
+        vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Another non-axe, non-site mechanism on the same criterion declares `fail`.
@@ -373,4 +399,33 @@ async fn registry_fixtures_are_classified_under_obscura() {
         "fixtures misclassified under Obscura:\n  {}",
         wrong.join("\n  ")
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_axe_native_review_mechanism_needs_no_verdict_on_a_pass_fixture() {
+        assert!(
+            required_own_statuses(false, false, true, false, false, true).is_empty(),
+            "axe cannot assert Pass; the no-Fail assertion proves conformance"
+        );
+    }
+
+    #[test]
+    fn gap_fix_review_probe_still_reports_a_verdict_on_a_pass_fixture() {
+        assert_eq!(
+            required_own_statuses(false, false, true, false, false, false),
+            vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
+        );
+    }
+
+    #[test]
+    fn adverse_fixture_still_requires_the_axe_mechanisms_own_review() {
+        assert_eq!(
+            required_own_statuses(true, false, true, false, false, true),
+            vec![CriterionStatus::NeedsReview]
+        );
+    }
 }

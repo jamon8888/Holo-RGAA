@@ -49,20 +49,8 @@ fn serve(dir: PathBuf) -> std::io::Result<u16> {
     Ok(port)
 }
 
-// Records every `location.replace` / `assign` call before any page script runs. Obscura
-// exposes no `Location` constructor: the methods are own, writable properties of the
-// `location` object (measured on 0.2.4), so the hook patches them there.
-const HOOK: &str = r#"
-window.__nav = [];
-for (const m of ['replace', 'assign']) {
-  try {
-    location[m] = function (u) { window.__nav.push(m + ':' + u); };
-  } catch (e) { window.__nav.push('unhookable:' + m); }
-}
-"#;
-
 #[tokio::test]
-async fn init_script_runs_before_page_scripts_and_observes_without_interaction() {
+async fn scripted_redirects_are_seen_and_carousels_are_not() {
     if !rgaa_test_corpus::e2e::enabled("observe_init_script") {
         return;
     }
@@ -76,35 +64,46 @@ async fn init_script_runs_before_page_scripts_and_observes_without_interaction()
         .start_server()
         .await
         .expect("démarrage du serveur CDP");
+    let window = Duration::from_millis(900);
 
-    let read = "JSON.stringify(window.__nav || null)";
     let redirect = server
-        .observe_with_init_script(
+        .observe_scripted_redirects(
             &format!("http://127.0.0.1:{port}/init-script-redirect.html"),
-            HOOK,
-            Duration::from_millis(900),
-            read,
+            window,
         )
         .await
         .expect("observation de la page redirigeante");
-    let seen = redirect["result"]["value"].as_str().unwrap_or("");
+    assert_eq!(redirect.calls.len(), 1, "reçu : {redirect:?}");
+    assert_eq!(redirect.calls[0].method, "replace");
+    assert!(redirect.calls[0].target.contains("redirected"));
     assert!(
-        seen.contains("replace:about:blank#redirected"),
-        "le hook doit voir la redirection par script ; reçu : {redirect}"
+        redirect.calls[0].at_ms >= 200,
+        "délai attendu ~300 ms : {redirect:?}"
+    );
+    eprintln!(
+        "points d'entrée non interceptables : {:?}",
+        redirect.unhooked
     );
 
     let carousel = server
-        .observe_with_init_script(
+        .observe_scripted_redirects(
             &format!("http://127.0.0.1:{port}/init-script-carousel.html"),
-            HOOK,
-            Duration::from_millis(900),
-            read,
+            window,
         )
         .await
         .expect("observation du carrousel");
-    assert_eq!(
-        carousel["result"]["value"].as_str(),
-        Some("[]"),
-        "un carrousel setInterval n'est pas une redirection ; reçu : {carousel}"
+    assert!(
+        carousel.calls.is_empty(),
+        "un carrousel setInterval n'est pas une redirection : {carousel:?}"
     );
+
+    let href = server
+        .observe_scripted_redirects(
+            &format!("http://127.0.0.1:{port}/init-script-href.html"),
+            window,
+        )
+        .await
+        .expect("observation de l'affectation de href");
+    assert_eq!(href.calls.len(), 1, "reçu : {href:?}");
+    assert_eq!(href.calls[0].method, "href");
 }

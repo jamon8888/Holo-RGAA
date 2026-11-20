@@ -16,6 +16,7 @@ pub mod cdp_pool;
 pub mod config;
 pub mod evidence;
 pub mod guided;
+pub mod redirect_probe;
 pub mod results;
 
 use crate::cdp_pool::CdpSessionPool;

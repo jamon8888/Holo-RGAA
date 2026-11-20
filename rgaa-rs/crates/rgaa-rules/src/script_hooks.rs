@@ -50,7 +50,9 @@ pub const REDIRECT_READ: &str = r#"
 JSON.stringify({
   href: location.href,
   interacted: !!(window.__rgaa && window.__rgaa.interacted),
-  log: (window.__rgaa && window.__rgaa.log) || []
+  log: (window.__rgaa && window.__rgaa.log) || [],
+  embedded: Array.from(document.querySelectorAll('object[data], embed[src], svg animate, svg script, canvas'))
+    .map(e => e.tagName.toLowerCase())
 })
 "#;
 
@@ -146,6 +148,34 @@ pub fn parse_redirect_observation(observation: &serde_json::Value) -> Option<Red
             details: format!(
                 "navigation sans action de l'utilisateur: {href_at_load} → {href_after} en moins de {} s ({trace})",
                 REDIRECT_OBSERVATION_MS / 1000
+            ),
+        });
+    }
+    // Test 1 also covers refreshes by embedded content (`object`, `embed`, `svg`, `canvas`):
+    // what happens inside it is not observable here, so its mere presence is a `review` hint.
+    let embedded: Vec<String> = at_load
+        .get("embedded")
+        .and_then(serde_json::Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if direct.is_empty() && suspect.is_empty() && !embedded.is_empty() {
+        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for tag in &embedded {
+            *counts.entry(tag.as_str()).or_default() += 1;
+        }
+        let list = counts
+            .iter()
+            .map(|(tag, n)| format!("{tag} ×{n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Some(RedirectFinding {
+            status: CriterionStatus::NeedsReview,
+            details: format!(
+                "contenu intégré pouvant se rafraîchir seul, non observable ici: {list}"
             ),
         });
     }
@@ -995,6 +1025,25 @@ mod tests {
         assert_eq!(
             parse_motion_observation(&motion(30, 30, "div#c", &[], &[])),
             None
+        );
+    }
+
+    #[test]
+    fn embedded_active_content_is_a_review_hint_but_a_navigation_still_fails() {
+        let embedded = json!({
+            "at_load": {"href": "http://x/p", "interacted": false, "log": [], "embedded": ["canvas", "canvas", "object"]},
+            "after": snapshot("http://x/p", json!([])),
+        });
+        let finding = parse_redirect_observation(&embedded).unwrap();
+        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        assert!(finding.details.contains("canvas ×2") && finding.details.contains("object ×1"));
+        let moved = json!({
+            "at_load": {"href": "http://x/p", "interacted": false, "log": [], "embedded": ["canvas"]},
+            "after": snapshot("http://x/q", json!([])),
+        });
+        assert_eq!(
+            parse_redirect_observation(&moved).unwrap().status,
+            CriterionStatus::Fail
         );
     }
 }

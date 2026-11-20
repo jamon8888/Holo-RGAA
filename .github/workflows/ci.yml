@@ -395,8 +395,10 @@ jobs:
       # payaient un coût qu'ils n'avaient pas. D'où ce job séparé et sans
       # condition : un échec de couverture doit se voir sur la PR.
       #
-      # Les trois tests E2E de `rgaa-orchestrator` restent dans `e2e` : eux
-      # traversent le pipeline complet et ont réellement besoin d'une clé LLM.
+      # Les deux tests E2E de `rgaa-orchestrator` qui traversent le pipeline
+      # complet (`full_audit`, `obscura_audit`) restent dans `e2e` : eux ont
+      # réellement besoin d'une clé LLM. Le troisième, `fixture_classification`,
+      # n'en a pas besoin et tourne ici (dernier step).
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
@@ -441,18 +443,42 @@ jobs:
         run: |
           filter='binary(/^criterion_.+_coverage$/) + binary(=alt_carriers)'
           cargo nextest run -p rgaa-obscura --no-tests=fail --test-threads 2 -E "$filter"
+      - name: Check injected axe-core rule list against its bundle
+        working-directory: ${{ github.workspace }}
+        # `axe_rules_injected.json` (#261) : la liste des règles que la version
+        # injectée d'axe-core peut lever. Le test hors ligne
+        # `registry_invariants` vérifie qu'elle déclare le bundle épinglé
+        # (version, URL, sha256) ; ce step recalcule ses règles depuis le bundle
+        # lui-même, que ce job télécharge de toute façon pour l'audit.
+        run: |
+          src=$(python3 -c 'import json;print(json.load(open("rgaa-rs/crates/rgaa-core/data/rgaa-4.1.2/axe_rules_injected.json"))["source"])')
+          mkdir -p "$RUNNER_TEMP/axe" && curl -fsSL -o "$RUNNER_TEMP/axe/axe.min.js" "$src"
+          python3 -I scripts/extract-axe-rule-ids.py --check "$RUNNER_TEMP/axe/axe.min.js"
       - name: Run registry fixture classification
         env:
           RUN_E2E: "1"
           RGAA_E2E_REQUIRED: "1"
           OBSCURA_WORKERS: "1"
           RUSTC_WRAPPER: sccache
-        # Spec criteria-coverage-expansion §4.6-7 (#261) : chaque mécanisme non
-        # hérité du registre doit classer ses fixtures `-pass`/`-fail` sous
-        # Obscura, et un mauvais classement bloque la PR. Ce test n'a besoin que
-        # d'Obscura et du CDN d'axe, pas d'une clé LLM : il vivait dans le job
-        # `e2e` (jamais activé), donc ne tournait nulle part.
-        run: cargo nextest run -p rgaa-orchestrator --no-tests=fail -E 'binary(=fixture_classification)'
+          # Ce step compile `rgaa-orchestrator`, donc `rgaa-agent` et sa feature
+          # par défaut `vector-store` (lancedb/arrow/datafusion) — bien plus
+          # lourd que le seul `rgaa-obscura` du step précédent. Mêmes gardes que
+          # `Build & Test` : plafonner les éditions de liens simultanées (sinon
+          # pression mémoire et SIGTERM, exit 143) …
+          CARGO_BUILD_JOBS: "2"
+        # Spec criteria-coverage-expansion §4.1 et §4.6-7 (#261) : chaque mécanisme
+        # non hérité et non `site` du registre doit classer ses fixtures
+        # `-pass`/`-fail` sous Obscura selon sa classe, et un mauvais classement
+        # bloque la PR. Ce test n'a besoin que d'Obscura et du CDN d'axe, pas
+        # d'une clé LLM : il vivait dans le job `e2e` (jamais activé), donc ne
+        # tournait nulle part.
+        run: |
+          # … et un battement : GitHub Actions coupe un step resté ~10 min sans
+          # sortie, durée qu'une compilation à froid de lancedb peut dépasser.
+          ( while true; do sleep 240; echo "::notice::still building…"; done ) &
+          heartbeat=$!
+          cargo nextest run -p rgaa-orchestrator --no-tests=fail -E 'binary(=fixture_classification)'
+          kill "$heartbeat" 2>/dev/null || true
 
   spider-e2e:
     name: E2E (spider, serveur local)

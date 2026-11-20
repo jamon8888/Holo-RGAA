@@ -20,9 +20,20 @@ use std::path::{Path, PathBuf};
 const AXE_RULES_INJECTED_JSON: &str =
     include_str!("../../rgaa-core/data/rgaa-4.1.2/axe_rules_injected.json");
 
+/// SHA-256 of the `axe.min.js` the rule list was extracted from, pinned here so that
+/// editing `axe_rules_injected.json` by hand — a rule added that the bundle lacks, a
+/// different bundle at the same version — cannot pass unnoticed: the file must say it
+/// came from this exact bundle. The rule list itself is recomputed from the bundle by
+/// `scripts/extract-axe-rule-ids.py --check <axe.min.js>` (network, run locally); this
+/// test, offline, checks the file still claims the bundle that check was run against.
+const INJECTED_AXE_SHA256: &str =
+    "182a40dc5d8207e626c09861ad65027d45e85e3a56d01045d068e2e88ee432ea";
+
 #[derive(serde::Deserialize)]
 struct InjectedAxeRules {
     axe_version: String,
+    source: String,
+    sha256: String,
     rules: Vec<String>,
 }
 
@@ -40,36 +51,78 @@ fn known_axe_rules() -> HashSet<String> {
     injected_axe_rules().rules.into_iter().collect()
 }
 
-/// The rule list is only meaningful for the version the browser layer injects. Every
-/// `axe-core/<version>/axe.min.js` URL in `rgaa-obscura` must name the version the list
+/// Every `.rs` file under `dir`, recursively, in a stable order.
+fn rust_sources(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+        for entry in entries {
+            let path = entry.expect("readable directory entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The rule list is only meaningful for the bundle the browser layer injects. Every
+/// axe-core CDN URL anywhere in `rgaa-obscura/src` must be the exact `source` the list
 /// was extracted from, so bumping the CDN without regenerating the list fails here.
 #[test]
 fn injected_axe_rule_list_matches_the_injected_version() {
     let list = injected_axe_rules();
+    assert_eq!(
+        list.source,
+        format!(
+            "https://cdnjs.cloudflare.com/ajax/libs/axe-core/{}/axe.min.js",
+            list.axe_version
+        ),
+        "axe_rules_injected.json: `source` does not match `axe_version`"
+    );
+    assert_eq!(
+        list.sha256, INJECTED_AXE_SHA256,
+        "axe_rules_injected.json claims another bundle than the pinned one: run \
+         scripts/extract-axe-rule-ids.py --check against the bundle, then update \
+         INJECTED_AXE_SHA256"
+    );
+    let mut sorted = list.rules.clone();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(
+        sorted, list.rules,
+        "axe_rules_injected.json: rules must be sorted and unique, as the script writes them"
+    );
+
     let obscura_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rgaa-obscura/src");
+    const PREFIX: &str = "/ajax/libs/axe-core/";
     let mut seen = Vec::new();
-    for file in ["lib.rs", "native.rs"] {
-        let source = std::fs::read_to_string(obscura_src.join(file))
-            .unwrap_or_else(|e| panic!("rgaa-obscura/src/{file}: {e}"));
-        const PREFIX: &str = "ajax/libs/axe-core/";
+    for file in rust_sources(&obscura_src) {
+        let source =
+            std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
         for (at, _) in source.match_indices(PREFIX) {
-            let version: String = source[at + PREFIX.len()..]
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            seen.push((file, version));
+            // The whole URL, from its scheme to the closing quote.
+            let begin = source[..at].rfind('"').map_or(at, |q| q + 1);
+            let end = source[at..].find('"').map_or(source.len(), |q| at + q);
+            seen.push((file.clone(), source[begin..end].to_string()));
         }
     }
     assert!(
         !seen.is_empty(),
         "no axe-core CDN URL found in rgaa-obscura: the injected version can no longer be checked"
     );
-    for (file, version) in &seen {
+    for (file, url) in &seen {
         assert_eq!(
-            version, &list.axe_version,
-            "rgaa-obscura/src/{file} injects axe-core {version}, but axe_rules_injected.json \
-             lists the rules of {}: rerun scripts/extract-axe-rule-ids.py",
-            list.axe_version
+            url,
+            &list.source,
+            "{} injects {url}, but axe_rules_injected.json lists the rules of {}: rerun \
+             scripts/extract-axe-rule-ids.py",
+            file.display(),
+            list.source
         );
     }
 }

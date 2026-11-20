@@ -22,8 +22,33 @@ avant que la variable et le secret existent.
 `fixture_classification` (`rgaa-orchestrator`) vivait aussi dans ce job, sans
 avoir besoin de clé : il ne lit qu'Obscura et le CDN d'axe-core. Il classe sous
 Obscura les fixtures `-pass`/`-fail` de chaque mécanisme non hérité du registre
-(`mechanisms.toml`, spec `criteria-coverage-expansion` §4, #261). Il tourne
-désormais dans `E2E (navigateur)`, sans condition, sur un port CDP éphémère.
+(`mechanisms.toml`, spec `criteria-coverage-expansion` §4, #261), selon la classe du
+mécanisme (§4 point 1) et sur **sa propre source** — axe et ses règles déclarées pour
+`axe-native`, la sonde gap-fix du critère sinon :
+
+- décisif (`fail` déclaré) : `-fail` ⇒ `Fail` ;
+- orienté (`review` seul) : `-fail` ⇒ `NeedsReview`, jamais `Fail` ; `-pass` ⇒ ni
+  l'un ni l'autre ;
+- toute fixture `-pass` : aucune source ne fait échouer le critère ;
+- `complete` avec `pass` déclaré : `-pass` ⇒ `Pass`. Seul `axe-8-5` est dans ce cas
+  aujourd'hui ; les huit sondes gap-fix `complete` sont toutes héritées, sans fixture.
+
+Chaque page doit revenir des deux lots (axe et gap-fix) : une page sans résultat fait
+échouer le test, au lieu d'être lue comme une sortie vide qui fabriquerait des `Pass`.
+
+Limites connues, écrites dans le test : le lot gap-fix rend un résultat par
+**critère**, pas par mécanisme — là où deux sondes partagent un critère (4.12 et 12.9
+aujourd'hui), le verdict ne s'attribue pas à l'une d'elles. Et les quatre mécanismes
+`site` (12.1, 12.2, 12.4, 12.5) sont **exclus** : leur verdict compare plusieurs pages,
+que ce harnais mono-page ne parcourt pas. Leur comparateur n'est testé que sur des
+observations construites en Rust (`rgaa-orchestrator/src/site_comparison.rs`), pas sur
+leurs huit fixtures HTML sous Obscura : un parcours multipage est suivi par #389.
+
+Il tourne désormais dans `E2E (navigateur)`, sans condition, sur un port CDP éphémère,
+avec `CARGO_BUILD_JOBS=2` et un battement anti-coupure comme `Build & Test` (il compile
+`rgaa-orchestrator`, donc lancedb). Le step qui le précède recalcule depuis le bundle
+téléchargé la liste `axe_rules_injected.json` des règles que l'axe-core injecté peut
+lever (`scripts/extract-axe-rule-ids.py --check`, exécutable aussi en local).
 C'est un choix assumé — on ne peut pas provisionner une clé API dans un commit —
 et non un oubli.
 

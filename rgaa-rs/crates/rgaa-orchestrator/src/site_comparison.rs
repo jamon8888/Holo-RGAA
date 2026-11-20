@@ -19,6 +19,9 @@ pub(crate) struct PageObservation {
     #[serde(default)]
     pub search_access: Vec<String>,
     /// The page holds an `input[type=password]` (authentication page).
+    /// Page URL, filled in by [`select_comparable_pages`] so evidence can name pages.
+    #[serde(default, skip)]
+    pub url: String,
     #[serde(default)]
     pub has_password_input: bool,
     /// Absolute http(s) links of the page (capped by the extraction script).
@@ -62,7 +65,9 @@ pub(crate) fn select_comparable_pages(
                 reason: EXCLUDED_PASSWORD,
             });
         } else {
-            comparable.push(observation.clone());
+            let mut observation = observation.clone();
+            observation.url = url.clone();
+            comparable.push(observation);
         }
     }
     (comparable, exclusions)
@@ -141,6 +146,13 @@ pub(crate) fn compare_site(
         sample_complete,
     });
 
+    let urls: Vec<String> = pages.iter().map(|page| page.url.clone()).collect();
+    let sample = SampleCounts {
+        observed_pages: pages.len(),
+        sampled_pages,
+        failed_pages,
+        sample_complete,
+    };
     let nav_signatures = pages
         .iter()
         // DOM order does not identify the primary menu. Compare the observed
@@ -151,10 +163,8 @@ pub(crate) fn compare_site(
         "12.2",
         &nav_signatures,
         "a navigation region is shared across pages; primary-menu identity and visual placement still need confirmation",
-        pages.len(),
-        sampled_pages,
-        failed_pages,
-        sample_complete,
+        &urls,
+        sample,
     ));
 
     let sitemap_signatures = pages
@@ -165,10 +175,8 @@ pub(crate) fn compare_site(
         "12.4",
         &sitemap_signatures,
         "sitemap access signatures are consistent; target relevance and actual reachability need confirmation",
-        pages.len(),
-        sampled_pages,
-        failed_pages,
-        sample_complete,
+        &urls,
+        sample,
     ));
 
     let search_signatures = pages
@@ -179,10 +187,8 @@ pub(crate) fn compare_site(
         "12.5",
         &search_signatures,
         "search access signatures are consistent; keyboard reachability and result quality need confirmation",
-        pages.len(),
-        sampled_pages,
-        failed_pages,
-        sample_complete,
+        &urls,
+        sample,
     ));
 
     // Incomplete crawls cannot establish the whole-set criteria. A directly
@@ -220,15 +226,70 @@ fn all_same_nonempty(values: &[BTreeSet<String>]) -> bool {
         .is_some_and(|first| !first.is_empty() && values.iter().all(|value| value == first))
 }
 
-fn site_result(
-    criterion_id: &'static str,
+/// Names the compared pages and, when signatures differ, the pages that deviate from the
+/// most common signature (#270). For 12.5, a sample with no search engine at all carries
+/// an applicability hint: the mechanism never emits `not_applicable` itself.
+fn evidence_suffix(
+    criterion_id: &str,
     signatures: &[BTreeSet<String>],
-    evidence: &str,
+    urls: &[String],
+    consistent: bool,
+) -> String {
+    let mut suffix = String::new();
+    if !urls.is_empty() {
+        suffix.push_str(&format!("; pages comparées: {}", urls.join(", ")));
+    }
+    if criterion_id == "12.5" && !signatures.is_empty() && signatures.iter().all(BTreeSet::is_empty)
+    {
+        suffix.push_str(
+            "; indice d'applicabilité: aucun moteur de recherche détecté sur tout l'échantillon (à confirmer, review)",
+        );
+    }
+    if !consistent && urls.len() == signatures.len() && signatures.iter().all(|s| !s.is_empty()) {
+        let mut counts: Vec<(&BTreeSet<String>, usize)> = Vec::new();
+        for signature in signatures {
+            match counts.iter_mut().find(|(known, _)| *known == signature) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((signature, 1)),
+            }
+        }
+        if let Some((majority, _)) = counts.iter().max_by_key(|(_, count)| *count) {
+            let deviating: Vec<&str> = urls
+                .iter()
+                .zip(signatures)
+                .filter(|(_, signature)| signature != majority)
+                .map(|(url, _)| url.as_str())
+                .collect();
+            if !deviating.is_empty() {
+                suffix.push_str(&format!("; écart relevé sur: {}", deviating.join(", ")));
+            }
+        }
+    }
+    suffix
+}
+
+/// How much of the crawl sample the comparison actually saw.
+#[derive(Clone, Copy)]
+struct SampleCounts {
     observed_pages: usize,
     sampled_pages: usize,
     failed_pages: usize,
     sample_complete: bool,
+}
+
+fn site_result(
+    criterion_id: &'static str,
+    signatures: &[BTreeSet<String>],
+    evidence: &str,
+    urls: &[String],
+    sample: SampleCounts,
 ) -> SiteCriterionObservation {
+    let SampleCounts {
+        observed_pages,
+        sampled_pages,
+        failed_pages,
+        sample_complete,
+    } = sample;
     let consistent = if criterion_id == "12.2" {
         signatures.first().is_some_and(|first| {
             first
@@ -247,14 +308,15 @@ fn site_result(
             CriterionStatus::Fail
         },
         details: format!(
-            "{}; observations available for {observed_pages} of {sampled_pages} sampled pages",
+            "{}; observations available for {observed_pages} of {sampled_pages} sampled pages{}",
             if missing_signal {
                 "no matching system was inferred on at least one page; applicability and alternate markup require review"
             } else if consistent {
                 evidence
             } else {
                 "access or primary-position signatures differ across pages; repeated-system identity and exceptions require confirmation"
-            }
+            },
+            evidence_suffix(criterion_id, signatures, urls, consistent)
         ),
         sampled_pages,
         failed_pages,
@@ -324,6 +386,7 @@ mod tests {
             search_access: search.iter().map(|s| (*s).into()).collect(),
             has_password_input: false,
             page_links: Vec::new(),
+            url: String::new(),
         }
     }
 
@@ -449,5 +512,36 @@ mod tests {
             assert!(r.details.starts_with(TOO_FEW_PAGES), "{id}: {}", r.details);
             assert!(r.details.contains("page d'accueil"), "{id}");
         }
+    }
+
+    #[test]
+    fn evidence_names_compared_and_deviating_pages() {
+        let mut a = page(&["nav"], &["header"], &[], &[]);
+        let mut b = page(&["nav"], &["header"], &[], &[]);
+        let mut c = page(&["nav"], &["footer"], &[], &[]);
+        a.url = "https://x.test/a".into();
+        b.url = "https://x.test/b".into();
+        c.url = "https://x.test/c".into();
+        let results = compare_site(&[a, b, c], 3, 0, true);
+        let nav = results.iter().find(|r| r.criterion_id == "12.2").unwrap();
+        assert_eq!(nav.status, CriterionStatus::Fail);
+        assert!(nav.details.contains("pages comparées: https://x.test/a"));
+        assert!(nav.details.contains("écart relevé sur: https://x.test/c"));
+    }
+
+    #[test]
+    fn a_site_without_search_gets_an_applicability_hint_not_a_verdict() {
+        let results = compare_site(
+            &[
+                page(&["nav"], &["header"], &[], &[]),
+                page(&["nav"], &["header"], &[], &[]),
+            ],
+            2,
+            0,
+            true,
+        );
+        let search = results.iter().find(|r| r.criterion_id == "12.5").unwrap();
+        assert_eq!(search.status, CriterionStatus::NeedsReview);
+        assert!(search.details.contains("indice d'applicabilité"));
     }
 }

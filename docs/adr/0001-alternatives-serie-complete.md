@@ -163,7 +163,7 @@ Ce critère unique explique les trois axes :
 La clause « elle ne reprend pas le contenu rédactionnel du texte voisin » est
 **fausse**, et c'était l'inverse : la reprise de la légende est *due*. Les trois
 cartes qui la portent sont jugées pertinentes en 2e passe (0/3 conformes à
-l'ancienne règle). `CONTEXT.md` remplace donc « Reprise du contexte », qui
+l'ancienne règle). `GLOSSARY.md` remplace donc « Reprise du contexte », qui
 désignait un défaut, par **Cohérence avec le contexte**, qui est une exigence,
 et introduit **Description seule** pour nommer le défaut réel.
 
@@ -222,7 +222,7 @@ docilité.
 5 faux « pertinent » sur 26 alternatives rejetées par l'humain : **19 % des
 mauvaises alternatives seraient validées**. Le `pass` automatique est exclu, et
 la production d'un `pass` même sous revue reste imprudente. Le niveau atteint
-est **Assisté** au sens de `CONTEXT.md` : le modèle peut remonter des `review`
+est **Assisté** au sens de `GLOSSARY.md` : le modèle peut remonter des `review`
 et motiver son signalement (sa détection de l'incomplétude chiffrée est à 94 %),
 jamais conclure seul à la conformité.
 

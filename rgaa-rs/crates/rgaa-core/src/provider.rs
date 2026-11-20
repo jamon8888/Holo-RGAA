@@ -12,7 +12,7 @@
 //! workspace default may provide a model; an unconfigured environment still
 //! fails closed with a message naming the missing credential variable.
 
-use crate::completion::{CompletionParams, LlmProvenance, ResponseFormat};
+use crate::completion::{CompletionParams, LlmProvenance, ReasoningEffort, ResponseFormat};
 use crate::error::RgaaError;
 
 /// One OpenAI-compatible provider preset.
@@ -95,7 +95,7 @@ pub const PROVIDERS: &[Provider] = &[
         name: "mistral",
         base_url: "https://api.mistral.ai/v1",
         key_var: "MISTRAL_API_KEY",
-        default_model: None,
+        default_model: Some("mistral-large-4"),
         requires_key: true,
         local: false,
     },
@@ -467,6 +467,17 @@ impl LlmSettings {
             None => ResponseFormat::None,
         };
 
+        let effort_var = key("REASONING_EFFORT");
+        let reasoning_effort = match get(&effort_var) {
+            Some(raw) => Some(ReasoningEffort::parse(&raw).ok_or_else(|| {
+                config_error(format!(
+                    "{effort_var} is `{raw}` (expected low, medium or high; \
+                     `none` is refused by Mistral Large 4)"
+                ))
+            })?),
+            None => None,
+        };
+
         Ok(Self {
             provider,
             // A trailing slash would produce `/v1//chat/completions`.
@@ -481,6 +492,7 @@ impl LlmSettings {
                 max_tokens,
                 enable_thinking,
                 response_format,
+                reasoning_effort,
             },
         })
     }
@@ -551,6 +563,70 @@ mod tests {
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect();
         move |k| map.get(k).cloned()
+    }
+
+    #[test]
+    fn mistral_defaults_to_the_pinned_large_4_model() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+        ]))
+        .unwrap();
+        // A versioned identifier, not `mistral-large-latest`: verdicts must
+        // stay reproducible when Mistral moves the floating alias.
+        assert_eq!(s.model, "mistral-large-4");
+        assert_eq!(s.model_tactical, "mistral-large-4");
+        assert_eq!(s.model_reasoning, "mistral-large-4");
+        assert_eq!(
+            s.chat_completions_url(),
+            "https://api.mistral.ai/v1/chat/completions"
+        );
+    }
+
+    /// Mistral Large 4 always reasons and defaults to `high`; the effort is
+    /// the cost lever, so it must reach the wire on both LLM paths.
+    #[test]
+    fn reasoning_effort_reaches_the_request_body_on_both_paths() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+            ("RGAA_LLM_REASONING_EFFORT", "Low"),
+        ]))
+        .unwrap();
+        assert_eq!(s.params.extra_body()["reasoning_effort"], "low");
+        assert_eq!(
+            s.params.extra_body_without_response_format()["reasoning_effort"],
+            "low"
+        );
+        assert!(s.provenance("m").summary().contains("reasoning_effort=low"));
+    }
+
+    #[test]
+    fn reasoning_effort_unset_sends_nothing() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+        ]))
+        .unwrap();
+        assert!(!s.params.extra_body().contains_key("reasoning_effort"));
+    }
+
+    /// `none` is refused by Mistral Large 4 (HTTP 400) and by NVIDIA's
+    /// endpoint; fail at configuration time instead of on every call.
+    #[test]
+    fn reasoning_effort_none_or_unknown_is_rejected() {
+        for bad in ["none", "max", "hgh"] {
+            let err = LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "mistral"),
+                ("MISTRAL_API_KEY", "k"),
+                ("RGAA_LLM_REASONING_EFFORT", bad),
+            ]))
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("RGAA_LLM_REASONING_EFFORT"),
+                "{bad}: {err}"
+            );
+        }
     }
 
     #[test]

@@ -1015,11 +1015,19 @@ async fn audit_discovered_urls(
             HashMap::new()
         }
     };
-    let page_observations: Vec<site_comparison::PageObservation> = urls
+    // Only the extracted signals are kept per page, never the rendered DOM, so memory
+    // stays bounded by the sample size. The compared set excludes the home page and
+    // authentication pages, each exclusion named in the evidence (#269).
+    let sampled: Vec<(String, Option<site_comparison::PageObservation>)> = urls
         .iter()
-        .filter_map(|page_url| site_contexts.get(page_url))
-        .filter_map(|value| serde_json::from_value(value.clone()).ok())
+        .map(|page_url| {
+            let observation = site_contexts
+                .get(page_url)
+                .and_then(|value| serde_json::from_value(value.clone()).ok());
+            (page_url.clone(), observation)
+        })
         .collect();
+    let (page_observations, exclusions) = site_comparison::select_comparable_pages(&sampled, url);
     let failed_pages = urls
         .iter()
         .filter(|page_url| {
@@ -1028,13 +1036,14 @@ async fn audit_discovered_urls(
         .count();
     let sample_complete = discovered_count < config.max_pages
         && failed_pages == 0
-        && page_observations.len() == urls.len();
-    let site_results = site_comparison::compare_site(
+        && sampled.iter().all(|(_, observation)| observation.is_some());
+    let mut site_results = site_comparison::compare_site(
         &page_observations,
-        urls.len(),
+        page_observations.len(),
         failed_pages,
         sample_complete,
     );
+    site_comparison::apply_comparable_set(&mut site_results, page_observations.len(), &exclusions);
     for site_result in site_results {
         let Some(criterion) = RgaaCriteria::all()
             .iter()

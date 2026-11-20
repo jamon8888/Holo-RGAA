@@ -2100,7 +2100,7 @@ impl ObscuraBridge {
           placeholder: el.placeholder || null
         }))
       }));
-    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access });
+    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access, has_password_input: document.querySelector('input[type=password]') !== null });
   })()
   "#
     }

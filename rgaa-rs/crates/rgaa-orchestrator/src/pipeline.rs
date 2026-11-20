@@ -317,6 +317,16 @@ pub fn assemble_page_audit(
 ///
 /// The template for a site result is the first page's own result for that criterion,
 /// which keeps title, classification and catalog metadata without duplicating them here.
+/// A site-comparison mechanism produced (or confirmed) this result, as opposed to a
+/// page-level verdict that merely happens to concern a site-level criterion.
+fn decided_by_site_comparison(criterion: &CriterionResult) -> bool {
+    criterion.source == "site-comparison"
+        || criterion
+            .considered_sources
+            .iter()
+            .any(|source| source == "site-comparison")
+}
+
 fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
     let mut site: Vec<CriterionResult> = Vec::new();
     for page in pages.iter_mut() {
@@ -332,8 +342,8 @@ fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
                 // A real comparison verdict (`site-comparison`) outranks a page's own
                 // placeholder: each page carries the same copy of it.
                 Some(existing)
-                    if existing.source != "site-comparison"
-                        && criterion.source == "site-comparison" =>
+                    if !decided_by_site_comparison(existing)
+                        && decided_by_site_comparison(&criterion) =>
                 {
                     *existing = criterion;
                 }
@@ -343,7 +353,7 @@ fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
         }
     }
     for criterion in &mut site {
-        if criterion.source == "site-comparison" {
+        if decided_by_site_comparison(criterion) {
             continue;
         }
         // No comparison mechanism decided this criterion: it is not evaluated at site
@@ -1044,6 +1054,9 @@ async fn audit_discovered_urls(
         sample_complete,
     );
     site_comparison::apply_comparable_set(&mut site_results, page_observations.len(), &exclusions);
+    // 12.3: check the links of the site-map page with capped HEAD requests (#271).
+    let sitemap_check = check_sitemap_links(&sampled, url, &site_context_binary()).await;
+    site_results.push(crate::sitemap_links::verdict(sitemap_check.as_ref()));
     for site_result in site_results {
         let Some(criterion) = RgaaCriteria::all()
             .iter()
@@ -1100,6 +1113,52 @@ async fn audit_discovered_urls(
         all_pages,
         start.elapsed().as_millis() as u64,
     ))
+}
+
+/// Binary used for the site-level Obscura scrapes.
+fn site_context_binary() -> String {
+    ObscuraBridge::from_env().binary_path().to_string()
+}
+
+/// Locate the site-map page from the sampled pages' `sitemap_access` signals, scrape its
+/// links, and HEAD-check them under the cap. `None` when no map page can be located or
+/// read: that stays `review`, never `fail`.
+async fn check_sitemap_links(
+    sampled: &[(String, Option<site_comparison::PageObservation>)],
+    home_url: &str,
+    binary: &str,
+) -> Option<crate::sitemap_links::LinkCheck> {
+    let base = reqwest::Url::parse(home_url).ok()?;
+    // Signals are "path:region:text"; the path is everything before the first ':'.
+    let sitemap_url = sampled
+        .iter()
+        .filter_map(|(_, observation)| observation.as_ref())
+        .flat_map(|observation| observation.sitemap_access.iter())
+        .filter_map(|signal| signal.split(':').next())
+        .filter(|path| path.starts_with('/'))
+        .find_map(|path| base.join(path).ok())?
+        .to_string();
+    let contexts =
+        ObscuraBridge::extract_page_context_batch(binary.to_string(), vec![sitemap_url.clone()], 1)
+            .await
+            .ok()?;
+    let page: site_comparison::PageObservation =
+        serde_json::from_value(contexts.get(&sitemap_url)?.clone()).ok()?;
+    let client = crate::sitemap_links::link_client().ok()?;
+    let robots = match client.get(base.join("/robots.txt").ok()?).send().await {
+        Ok(response) if response.status().is_success() => response.text().await.ok(),
+        _ => None,
+    };
+    Some(
+        crate::sitemap_links::check_links(
+            &client,
+            &sitemap_url,
+            &page.page_links,
+            crate::sitemap_links::link_cap_from_env(),
+            robots.as_deref(),
+        )
+        .await,
+    )
 }
 
 fn failed_page_result(url: &str, error: &str) -> PageResult {

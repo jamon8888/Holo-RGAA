@@ -21,6 +21,9 @@ pub(crate) struct PageObservation {
     /// The page holds an `input[type=password]` (authentication page).
     #[serde(default)]
     pub has_password_input: bool,
+    /// Absolute http(s) links of the page (capped by the extraction script).
+    #[serde(default)]
+    pub page_links: Vec<String>,
 }
 
 /// A page left out of the compared set, with the reason that goes into the evidence.
@@ -320,6 +323,7 @@ mod tests {
             sitemap_access: sitemap.iter().map(|s| (*s).into()).collect(),
             search_access: search.iter().map(|s| (*s).into()).collect(),
             has_password_input: false,
+            page_links: Vec::new(),
         }
     }
 

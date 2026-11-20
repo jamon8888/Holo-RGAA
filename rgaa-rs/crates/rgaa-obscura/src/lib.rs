@@ -15,7 +15,13 @@ use tracing::{info, warn};
 pub mod cdp_pool;
 pub mod config;
 pub mod evidence;
+pub mod flash_probe;
 pub mod guided;
+pub mod listener_probe;
+pub mod motion_probe;
+pub mod orientation_probe;
+pub mod popup_probe;
+pub mod redirect_probe;
 pub mod results;
 
 use crate::cdp_pool::CdpSessionPool;
@@ -1307,6 +1313,87 @@ impl ObscuraBridge {
         let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
 
         Ok(result)
+    }
+
+    /// Load `url` with `init_script` installed *before* any page script, let the page
+    /// run undisturbed for `observe`, then return the value of `read_expression`
+    /// (evaluated by value) — the primitive behind probes that must watch what a page
+    /// does on its own, such as scripted redirects (RGAA 13.1, spec
+    /// `criteria-coverage-expansion` §7.1).
+    ///
+    /// Uses `Page.addScriptToEvaluateOnNewDocument`, verified on Obscura 0.2.4: the
+    /// script runs before the page's own scripts. No interaction is sent, so whatever
+    /// the page does within the window happened without user action.
+    ///
+    /// # Errors
+    /// Returns an error when the CDP session cannot be set up, the page does not load
+    /// within 15 s, or `read_expression` cannot be evaluated.
+    pub async fn observe_with_init_script(
+        &self,
+        url: &str,
+        init_script: &str,
+        observe: Duration,
+        read_expression: &str,
+    ) -> Result<serde_json::Value, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+
+        let target_resp = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": "about:blank"}),
+        )
+        .await?;
+        let target_id = target_resp
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No targetId in createTarget response".to_string())?
+            .to_string();
+        let session_resp = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await?;
+        let session_id = session_resp
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "No sessionId in attachToTarget response".to_string())?
+            .to_string();
+
+        let outcome = async {
+            Self::cdp_send_session(&mut ws, &session_id, "Page.enable", serde_json::json!({}))
+                .await?;
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.addScriptToEvaluateOnNewDocument",
+                serde_json::json!({"source": init_script}),
+            )
+            .await?;
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.navigate",
+                serde_json::json!({"url": url}),
+            )
+            .await?;
+            Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+            tokio::time::sleep(observe).await;
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Runtime.evaluate",
+                serde_json::json!({"expression": read_expression, "returnByValue": true}),
+            )
+            .await
+        }
+        .await;
+
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        outcome
     }
 
     /// Navigate to a URL using CDP Page.navigate

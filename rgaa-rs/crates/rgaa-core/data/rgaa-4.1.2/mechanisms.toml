@@ -847,6 +847,19 @@ fixtures  = ["13.12-listener-inventory-pass", "13.12-listener-inventory-fail"]
 legacy    = false
 
 [[mechanism]]
+id        = "probe-13-9-orientation-render"
+criterion = "13.9"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Page rendered at 390x844 and 844x390 (Emulation.setDeviceMetricsOverride): lock call, rotate
+# message or half the visible text lost is the fail; a smaller difference is review (#268).
+tests     = ["1"]
+outcomes  = ["fail", "review"]
+fixtures  = ["13.9-orientation-pass", "13.9-orientation-hidden-fail", "13.9-orientation-lock-fail", "13.9-orientation-message-fail"]
+legacy    = false
+
+[[mechanism]]
 id        = "probe-13-1"
 criterion = "13.1"
 kind      = "js-static"

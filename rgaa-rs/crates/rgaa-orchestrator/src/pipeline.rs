@@ -1606,6 +1606,31 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // 13.9 portrait/landscape (#268): render at two viewports and compare the visible content.
+    let orientation_is_routed =
+        criterion_has_routed_mechanism("13.9", "probe-13-9-orientation-render");
+    let orientation_results = if orientation_is_routed {
+        match bridge
+            .observe_viewports(
+                &url,
+                rgaa_rules::script_hooks::ORIENTATION_HOOK,
+                rgaa_rules::script_hooks::ORIENTATION_READ,
+                &rgaa_rules::script_hooks::ORIENTATION_VIEWPORTS,
+            )
+            .await
+        {
+            Ok(snapshots) => rgaa_rules::script_hooks::orientation_results(
+                rgaa_rules::script_hooks::parse_orientation_observation(&snapshots).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura orientation probe failed; 13.9 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1639,6 +1664,7 @@ async fn audit_one(
         .chain(script_hook_results.values())
         .chain(popup_results.values())
         .chain(listener_results.values())
+        .chain(orientation_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1681,6 +1707,7 @@ async fn audit_one(
         .chain(script_hook_results)
         .chain(popup_results)
         .chain(listener_results)
+        .chain(orientation_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

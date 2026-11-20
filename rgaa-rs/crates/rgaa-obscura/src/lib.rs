@@ -2556,6 +2556,100 @@ impl ObscuraBridge {
         }
     }
 
+    /// Load `url` with `hook_js` installed before any page script, then for each
+    /// `(width, height)` apply `Emulation.setDeviceMetricsOverride` (mobile), let the layout
+    /// settle and evaluate `read_js` (a JSON string). Returns one snapshot per viewport, in
+    /// order. Spec §7.2 (13.9): `matchMedia` and layout follow the override on Obscura 0.2.4.
+    pub async fn observe_viewports(
+        &self,
+        url: &str,
+        hook_js: &str,
+        read_js: &str,
+        viewports: &[(u32, u32)],
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let ws_url = self.get_browser_ws_url().await?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("WebSocket connect failed: {e}"))?;
+        let target = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": "about:blank"}),
+        )
+        .await?;
+        let target_id = target
+            .get("targetId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "No targetId in viewport-probe response".to_string())?
+            .to_string();
+        let attached = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await;
+        let session_id = match attached
+            .as_ref()
+            .ok()
+            .and_then(|a| a.get("sessionId"))
+            .and_then(serde_json::Value::as_str)
+        {
+            Some(id) => id.to_string(),
+            None => {
+                let _ = Self::cdp_send(
+                    &mut ws,
+                    "Target.closeTarget",
+                    serde_json::json!({"targetId": target_id}),
+                )
+                .await;
+                return Err(attached
+                    .err()
+                    .unwrap_or_else(|| "No sessionId in viewport-probe response".to_string()));
+            }
+        };
+        let outcome = async {
+            for method in ["Page.enable", "Runtime.enable"] {
+                Self::cdp_send_session(&mut ws, &session_id, method, serde_json::json!({})).await?;
+            }
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.addScriptToEvaluateOnNewDocument",
+                serde_json::json!({"source": hook_js}),
+            )
+            .await?;
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.navigate",
+                serde_json::json!({"url": url}),
+            )
+            .await?;
+            Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15)).await?;
+            let mut snapshots = Vec::with_capacity(viewports.len());
+            for (width, height) in viewports {
+                Self::cdp_send_session(
+                    &mut ws,
+                    &session_id,
+                    "Emulation.setDeviceMetricsOverride",
+                    serde_json::json!({
+                        "width": width,
+                        "height": height,
+                        "deviceScaleFactor": 1,
+                        "mobile": true,
+                    }),
+                )
+                .await?;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                snapshots.push(Self::read_hook_snapshot(&mut ws, &session_id, read_js).await?);
+            }
+            Ok(snapshots)
+        }
+        .await;
+        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        outcome
+    }
+
     async fn read_hook_snapshot(
         ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
         session_id: &str,

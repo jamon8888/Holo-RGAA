@@ -231,6 +231,27 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 Err(error) => evidence.push(format!("script-hook error: {error}")),
             }
         }
+        if case.mechanism == "probe-13-9-orientation-render" {
+            match bridge
+                .observe_viewports(
+                    &url,
+                    rgaa_rules::script_hooks::ORIENTATION_HOOK,
+                    rgaa_rules::script_hooks::ORIENTATION_READ,
+                    &rgaa_rules::script_hooks::ORIENTATION_VIEWPORTS,
+                )
+                .await
+            {
+                Ok(snapshots) => {
+                    let finding =
+                        rgaa_rules::script_hooks::parse_orientation_observation(&snapshots);
+                    evidence.push(format!("orientation: {finding:?}"));
+                    if let Some(finding) = finding {
+                        statuses.push(finding.status);
+                    }
+                }
+                Err(error) => evidence.push(format!("orientation error: {error}")),
+            }
+        }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
         if failed != case.expect_fail {
             wrong.push(format!(

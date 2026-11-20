@@ -1869,7 +1869,9 @@
   {
     "criterion_id": "13.9",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-9-orientation-render"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },

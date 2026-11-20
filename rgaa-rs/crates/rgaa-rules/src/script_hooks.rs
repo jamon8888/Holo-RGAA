@@ -455,6 +455,177 @@ pub fn listener_results(observation: &serde_json::Value) -> HashMap<String, Crit
         .collect()
 }
 
+/// Viewports rendered for 13.9 (issue #268): portrait then landscape.
+pub const ORIENTATION_VIEWPORTS: [(u32, u32); 2] = [(390, 844), (844, 390)];
+
+/// Records `screen.orientation.lock(...)` calls. Obscura may expose no `screen.orientation`
+/// at all, in which case a page's call would throw instead of being seen: a minimal shim is
+/// installed so the call is observable either way.
+pub const ORIENTATION_HOOK: &str = r#"
+(() => {
+  const lock = [];
+  window.__rgaa = { lock };
+  const record = type => { lock.push(String(type)); return Promise.resolve(); };
+  try {
+    const o = screen.orientation;
+    if (o && typeof o.lock === 'function') {
+      o.lock = function (type) { lock.push(String(type)); return Promise.resolve(); };
+    } else {
+      Object.defineProperty(screen, 'orientation', { configurable: true, value: { lock: record, unlock() {}, type: 'portrait-primary', angle: 0 } });
+    }
+  } catch (e) {
+    try { Object.defineProperty(screen, 'orientation', { configurable: true, value: { lock: record, unlock() {} } }); } catch (e2) {}
+  }
+})();
+"#;
+
+/// Visible text and landmarks for one viewport.
+pub const ORIENTATION_READ: &str = r#"
+(() => {
+  const visible = e => {
+    const r = e.getBoundingClientRect();
+    const c = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && c.visibility !== 'hidden' && c.display !== 'none';
+  };
+  const texts = new Set();
+  for (const e of document.body.querySelectorAll('*')) {
+    if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(e.tagName)) continue;
+    const own = Array.from(e.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(' ')
+      .replace(/\s+/g, ' ').trim().toLowerCase();
+    if (own && visible(e)) texts.add(own);
+  }
+  const landmarks = Array.from(document.querySelectorAll('main, nav, header, footer, aside, [role=main], [role=navigation]'))
+    .filter(visible).map(e => e.tagName.toLowerCase());
+  return JSON.stringify({
+    w: innerWidth, h: innerHeight,
+    landscape: matchMedia('(orientation: landscape)').matches,
+    texts: Array.from(texts), landmarks,
+    lock: (window.__rgaa && window.__rgaa.lock) || []
+  });
+})()
+"#;
+
+fn rotate_message(texts: &[String]) -> Option<String> {
+    texts
+        .iter()
+        .find(|t| {
+            let rotate = ["tournez", "pivotez", "rotate", "retournez"]
+                .iter()
+                .any(|k| t.contains(k));
+            let device = [
+                "appareil",
+                "téléphone",
+                "écran",
+                "device",
+                "phone",
+                "screen",
+                "paysage",
+                "portrait",
+                "landscape",
+            ]
+            .iter()
+            .any(|k| t.contains(k));
+            rotate && device
+        })
+        .cloned()
+}
+
+fn string_set(snapshot: &serde_json::Value, key: &str) -> Vec<String> {
+    snapshot
+        .get(key)
+        .and_then(serde_json::Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Verdict for 13.9 from the snapshots taken at `ORIENTATION_VIEWPORTS` (portrait, landscape).
+/// `fail`: an orientation lock, a "rotate your device" message shown in only one orientation,
+/// or at least half of the visible text lost in one orientation. A smaller difference is
+/// `review` (it may be presentation). Never `pass`; `None` when the two renders carry the same
+/// content.
+#[must_use]
+pub fn parse_orientation_observation(snapshots: &[serde_json::Value]) -> Option<RedirectFinding> {
+    let [portrait, landscape] = snapshots else {
+        return None;
+    };
+    let locks: Vec<String> = string_set(landscape, "lock")
+        .into_iter()
+        .filter(|t| !matches!(t.as_str(), "any" | "natural"))
+        .collect();
+    if !locks.is_empty() {
+        return Some(RedirectFinding {
+            status: CriterionStatus::Fail,
+            details: format!(
+                "verrouillage de l'orientation: screen.orientation.lock({})",
+                locks.join(", ")
+            ),
+        });
+    }
+    let (p_texts, l_texts) = (
+        string_set(portrait, "texts"),
+        string_set(landscape, "texts"),
+    );
+    for (label, shown, other) in [
+        ("paysage", &l_texts, &p_texts),
+        ("portrait", &p_texts, &l_texts),
+    ] {
+        if let Some(message) = rotate_message(shown) {
+            if rotate_message(other).is_none() {
+                return Some(RedirectFinding {
+                    status: CriterionStatus::Fail,
+                    details: format!("message de rotation affiché en {label}: « {message} »"),
+                });
+            }
+        }
+    }
+    let mut review = Vec::new();
+    for (label, from, to) in [
+        ("paysage", &p_texts, &l_texts),
+        ("portrait", &l_texts, &p_texts),
+    ] {
+        let lost: Vec<&String> = from.iter().filter(|t| !to.contains(t)).collect();
+        if lost.is_empty() {
+            continue;
+        }
+        let sample: Vec<&str> = lost.iter().take(3).map(|t| t.as_str()).collect();
+        let detail = format!(
+            "{} texte(s) sur {} absent(s) en {label}: {}",
+            lost.len(),
+            from.len(),
+            sample.join(" | ")
+        );
+        if lost.len() * 2 >= from.len() {
+            return Some(RedirectFinding {
+                status: CriterionStatus::Fail,
+                details: format!("contenu masqué: {detail}"),
+            });
+        }
+        review.push(detail);
+    }
+    (!review.is_empty()).then(|| RedirectFinding {
+        status: CriterionStatus::NeedsReview,
+        details: format!(
+            "différence de contenu entre orientations (présentation ?): {}",
+            review.join("; ")
+        ),
+    })
+}
+
+/// The 13.9 result in the shape the pipeline merges.
+#[must_use]
+pub fn orientation_results(finding: Option<&RedirectFinding>) -> HashMap<String, CriterionResult> {
+    let mut map = redirect_results(finding);
+    if let Some(mut result) = map.remove("13.1") {
+        result.criterion_id = "13.9".to_string();
+        map.insert("13.9".to_string(), result);
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,5 +748,64 @@ mod tests {
         assert!(kb.contains("keydown sur document") && kb.contains("accesskey"));
         assert!(!kb.contains("input#q"));
         assert!(listener_results(&json!({"after": {"log": [], "accesskeys": []}})).is_empty());
+    }
+
+    fn view(landscape: bool, texts: &[&str], lock: &[&str]) -> serde_json::Value {
+        json!({"landscape": landscape, "texts": texts, "landmarks": [], "lock": lock})
+    }
+
+    #[test]
+    fn orientation_lock_message_and_hidden_content_fail_but_reflow_does_not() {
+        let all = ["titre", "contenu important"];
+        let locked = [view(false, &all, &[]), view(true, &all, &["portrait"])];
+        assert_eq!(
+            parse_orientation_observation(&locked).unwrap().status,
+            CriterionStatus::Fail
+        );
+        let any = [view(false, &all, &[]), view(true, &all, &["any"])];
+        assert_eq!(parse_orientation_observation(&any), None);
+        let hidden = [view(false, &all, &[]), view(true, &[], &[])];
+        let finding = parse_orientation_observation(&hidden).unwrap();
+        assert_eq!(finding.status, CriterionStatus::Fail);
+        assert!(finding.details.contains("paysage"), "{}", finding.details);
+        let message = [
+            view(false, &all, &[]),
+            view(true, &["veuillez tourner votre appareil", "titre"], &[]),
+        ];
+        // "tourner" is not in the keyword list; the hidden content still fails.
+        assert_eq!(
+            parse_orientation_observation(&message).unwrap().status,
+            CriterionStatus::Fail
+        );
+        let rotate = [
+            view(false, &all, &[]),
+            view(
+                true,
+                &[
+                    "tournez votre appareil en mode portrait",
+                    "titre",
+                    "contenu important",
+                ],
+                &[],
+            ),
+        ];
+        assert!(parse_orientation_observation(&rotate)
+            .unwrap()
+            .details
+            .contains("message de rotation"));
+        let same = [view(false, &all, &[]), view(true, &all, &[])];
+        assert_eq!(parse_orientation_observation(&same), None);
+    }
+
+    #[test]
+    fn a_small_content_difference_is_review_not_fail() {
+        let portrait = view(false, &["a", "b", "c", "d", "menu"], &[]);
+        let landscape = view(true, &["a", "b", "c", "d"], &[]);
+        let finding = parse_orientation_observation(&[portrait, landscape]).unwrap();
+        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        assert_ne!(
+            orientation_results(Some(&finding))["13.9"].status,
+            CriterionStatus::Pass
+        );
     }
 }

@@ -367,6 +367,7 @@ mod tests {
                 compliance_rate: 0.0,
                 crawl_depth: 0,
             }],
+            site_criteria: Vec::new(),
             total_criteria: statuses.len(),
             passed: 0,
             failed: 0,

@@ -279,6 +279,21 @@ pub struct Violation {
     pub nodes_affected: usize,
 }
 
+/// Criteria whose statement is about an "ensemble de pages" (RGAA 12.1-12.5): they
+/// cannot be decided on one page and are evaluated once at site level (#269).
+pub const SITE_LEVEL_CRITERIA: &[&str] = &["12.1", "12.2", "12.3", "12.4", "12.5"];
+
+/// Justification of a site criterion for which no comparison mechanism exists yet.
+pub const SITE_LEVEL_NOT_EVALUATED: &str = "non évalué au niveau site";
+
+/// Justification when fewer than two pages can be compared.
+pub const SITE_LEVEL_TOO_FEW_PAGES: &str = "moins de deux pages comparables";
+
+#[must_use]
+pub fn is_site_level_criterion(criterion_id: &str) -> bool {
+    SITE_LEVEL_CRITERIA.contains(&criterion_id)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PageResult {
     pub url: String,
@@ -293,6 +308,11 @@ pub struct AuditResult {
     pub audit_id: String,
     pub url: String,
     pub pages: Vec<PageResult>,
+    /// Criteria whose RGAA statement concerns a "set of pages" (see
+    /// [`SITE_LEVEL_CRITERIA`]): decided once for the whole site and removed from
+    /// every page's `criteria`, so they are counted once in totals and rates.
+    #[serde(default)]
+    pub site_criteria: Vec<CriterionResult>,
     pub total_criteria: usize,
     pub passed: usize,
     pub failed: usize,

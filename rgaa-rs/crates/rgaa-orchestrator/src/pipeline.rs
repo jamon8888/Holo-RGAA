@@ -298,6 +298,41 @@ pub fn assemble_page_audit(
     assemble_site_audit(url, vec![page], duration_ms)
 }
 
+/// Move the site-level criteria (RGAA 12.1-12.5, "ensemble de pages") out of every page
+/// and into one site-level result each, so they are counted once rather than once per
+/// page (#269). No comparison mechanism exists yet, so each is `needs_review` with an
+/// explicit reason; a later mechanism replaces that verdict, never the placement.
+///
+/// The template for a site result is the first page's own result for that criterion,
+/// which keeps title, classification and catalog metadata without duplicating them here.
+fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
+    let mut site: Vec<CriterionResult> = Vec::new();
+    for page in pages.iter_mut() {
+        let (site_level, page_level): (Vec<_>, Vec<_>) = std::mem::take(&mut page.criteria)
+            .into_iter()
+            .partition(|c| rgaa_core::is_site_level_criterion(&c.criterion_id));
+        page.criteria = page_level;
+        for mut criterion in site_level {
+            if site
+                .iter()
+                .any(|c| c.criterion_id == criterion.criterion_id)
+            {
+                continue;
+            }
+            criterion.status = CriterionStatus::NeedsReview;
+            criterion.violations.clear();
+            criterion.tests.clear();
+            criterion.justification = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
+            criterion.source = "site".to_string();
+            criterion.review_required = true;
+            criterion.review_reason = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
+            site.push(criterion);
+        }
+    }
+    site.sort_by(|a, b| a.criterion_id.cmp(&b.criterion_id));
+    site
+}
+
 /// Aggregate assembled page results into the persisted site audit shape.
 ///
 /// Shared by the single-page pipeline, the crawl pipeline, and offline
@@ -305,10 +340,18 @@ pub fn assemble_page_audit(
 /// boundary. Metric and completion values are always derived here.
 pub fn assemble_site_audit(
     url: String,
-    all_pages: Vec<PageResult>,
+    mut all_pages: Vec<PageResult>,
     duration_ms: u64,
 ) -> AuditResult {
-    let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    // The completion gate looks at every catalog criterion, so it runs before the
+    // site-level criteria leave the pages.
+    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
+    let site_criteria = split_site_criteria(&mut all_pages);
+    for page in &mut all_pages {
+        page.compliance_rate = calculate_compliance(&page.criteria);
+    }
+    let (taux_global, coverage_percent, etat_conformite) =
+        aggregate_compliance_with_site_criteria(&all_pages, &site_criteria);
     let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
     let all_criteria: Vec<CriterionResult> = all_pages
         .iter()
@@ -328,7 +371,6 @@ pub fn assemble_site_audit(
         .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
         .count();
     let compliance = calculate_compliance(&all_criteria);
-    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
 
     info!(
         pass = pass_count,
@@ -346,6 +388,7 @@ pub fn assemble_site_audit(
         audit_id: uuid::Uuid::new_v4().to_string(),
         url,
         pages: all_pages,
+        site_criteria,
         total_criteria: total,
         passed: pass_count,
         failed: fail_count,
@@ -1149,6 +1192,16 @@ async fn discover_rgaa_sample_pages(
 /// A criterion is NonConforme for the entire site if it fails on ANY page of the sample.
 /// Returns (taux_global, coverage_percent, etat_conformite).
 pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
+    aggregate_compliance_with_site_criteria(page_results, &[])
+}
+
+/// Like [`aggregate_site_compliance`], also consuming the site-level results (#269):
+/// a site `fail` makes that criterion non-conforming; a site `review` is "non testé"
+/// and stays out of the rate, exactly like a page-level `review`.
+pub fn aggregate_compliance_with_site_criteria(
+    page_results: &[PageResult],
+    site_criteria: &[CriterionResult],
+) -> (f64, f64, String) {
     use rgaa_report::verified_status_for;
     use std::collections::HashMap;
 
@@ -1172,6 +1225,18 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
             criterion_classifications
                 .insert(criterion.criterion_id.clone(), criterion.classification);
         }
+    }
+
+    for criterion in site_criteria {
+        criterion_statuses
+            .entry(criterion.criterion_id.clone())
+            .or_default()
+            .push(verified_status_for(criterion).unwrap_or(CriterionStatus::NeedsReview));
+        criterion_raw_statuses
+            .entry(criterion.criterion_id.clone())
+            .or_default()
+            .push(criterion.status.clone());
+        criterion_classifications.insert(criterion.criterion_id.clone(), criterion.classification);
     }
 
     // Apply RGAA rule: NC if ANY page has Fail/Error

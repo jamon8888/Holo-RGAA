@@ -22,7 +22,7 @@ rgaa-mcp-http = { path = "../rgaa-mcp-http" }
 
 clap = { workspace = true }
 tokio = { workspace = true }
-rusqlite = { version = "0.43", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 keyring = "3"
 ratatui = "0.28"
 thiserror = { workspace = true }

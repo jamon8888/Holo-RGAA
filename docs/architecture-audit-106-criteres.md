@@ -160,7 +160,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 5.8 | 1 | Chaque tableau de mise en forme ne doit pas utiliser d’éléments propre | Déterministe | sonde JS:partiel | oui | **Couvert** |  |
 | 6.1 | 5 | Chaque lien est-il explicite (hors cas particuliers) ? | Holo | axe:partiel, sonde JS:complet | oui | **Couvert** |  |
 | 6.2 | 1 | Dans chaque page web, chaque lien a-t-il un intitulé ? | axe-core | axe:complet | — | **Couvert** |  |
-| 7.1 | 3 | Chaque script est-il, si nécessaire, compatible avec les technologies  | Holo | axe:partiel | oui | **Couvert** |  |
+| 7.1 | 3 | Chaque script est-il, si nécessaire, compatible avec les technologies  | Holo | axe:partiel | oui | **Couvert** | `aria-tab-name` a été retirée du registre : elle n'existe pas dans axe-core 4.9.1 injecté et ne pouvait donc jamais décider un verdict. À réévaluer lors d'une montée de version d'axe (#261). |
 | 7.2 | 2 | Pour chaque script ayant une alternative, cette alternative est-elle p | Holo | — | oui | **Couvert** |  |
 | 7.3 | 2 | Chaque script est-il contrôlable par le clavier et par tout dispositif | Déterministe | axe:partiel | — | **Couvert** |  |
 | 7.4 | 1 | Pour chaque script qui initie un changement de contexte, l’utilisateur | Déterministe | sonde JS:partiel | oui | **Couvert** |  |

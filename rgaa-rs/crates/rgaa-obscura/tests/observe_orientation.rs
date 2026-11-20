@@ -77,3 +77,32 @@ async fn only_orientation_lock_calls_are_reported() {
         }
     }
 }
+
+#[tokio::test]
+async fn orientation_content_diff() {
+    if !rgaa_test_corpus::e2e::enabled("observe_orientation_diff") {
+        return;
+    }
+    rgaa_test_corpus::e2e::allow_private_network();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let port = serve(dir).expect("fixture server");
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
+    server
+        .start_server()
+        .await
+        .expect("démarrage du serveur CDP");
+
+    for (page, suspect) in [
+        ("orientation-hides-content.html", true),
+        ("orientation-rotate-message.html", true),
+        ("orientation-none.html", false),
+    ] {
+        let d = server
+            .compare_orientations(&format!("http://127.0.0.1:{port}/{page}"))
+            .await
+            .unwrap_or_else(|e| panic!("{page} : {e}"));
+        assert_eq!(d.is_suspect(), suspect, "{page} : {d:?}");
+    }
+}

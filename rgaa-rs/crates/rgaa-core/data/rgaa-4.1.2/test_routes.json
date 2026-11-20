@@ -1749,7 +1749,9 @@
   {
     "criterion_id": "12.10",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-12-10-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -1763,7 +1765,9 @@
   {
     "criterion_id": "13.1",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-1-script-redirect"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -1777,7 +1781,9 @@
   {
     "criterion_id": "13.1",
     "test_key": "3",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-1-script-redirect"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -1791,7 +1797,9 @@
   {
     "criterion_id": "13.2",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-2-popup-hook"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -1847,7 +1855,9 @@
   {
     "criterion_id": "13.8",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-8-script-motion"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
@@ -1861,49 +1871,63 @@
   {
     "criterion_id": "13.9",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-9-orientation-render"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.10",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-10-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.10",
     "test_key": "2",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-10-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.11",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-11-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.12",
     "test_key": "1",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-12-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.12",
     "test_key": "2",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-12-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   },
   {
     "criterion_id": "13.12",
     "test_key": "3",
-    "mechanisms": [],
+    "mechanisms": [
+      "probe-13-12-listener-inventory"
+    ],
     "coverage": "partial",
     "fallback": "holo_estimate"
   }

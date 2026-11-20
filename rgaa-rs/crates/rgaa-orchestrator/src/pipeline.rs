@@ -110,6 +110,15 @@ impl std::error::Error for CoverageError {}
 pub fn validate_automatic_verdict_coverage(
     results: &[CriterionResult],
 ) -> Result<(), CoverageError> {
+    validate_coverage(results, false)
+}
+
+/// Same gate for pages whose site-level criteria (12.1-12.5, #269) were already moved
+/// to the site result: those are validated where they live, not per page.
+fn validate_coverage(
+    results: &[CriterionResult],
+    skip_site_level: bool,
+) -> Result<(), CoverageError> {
     let mut by_id = HashMap::with_capacity(results.len());
     let mut duplicate_ids = std::collections::HashSet::new();
     for result in results {
@@ -121,6 +130,9 @@ pub fn validate_automatic_verdict_coverage(
     let mut missing = Vec::new();
     for criterion in RgaaCriteria::all() {
         let id = criterion.id;
+        if skip_site_level && rgaa_core::is_site_level_criterion(id) {
+            continue;
+        }
         let Some(result) = by_id.get(id).copied() else {
             missing.push(id.to_owned());
             continue;
@@ -298,6 +310,67 @@ pub fn assemble_page_audit(
     assemble_site_audit(url, vec![page], duration_ms)
 }
 
+/// Move the site-level criteria (RGAA 12.1-12.5, "ensemble de pages") out of every page
+/// and into one site-level result each, so they are counted once rather than once per
+/// page (#269). No comparison mechanism exists yet, so each is `needs_review` with an
+/// explicit reason; a later mechanism replaces that verdict, never the placement.
+///
+/// The template for a site result is the first page's own result for that criterion,
+/// which keeps title, classification and catalog metadata without duplicating them here.
+/// A site-comparison mechanism produced (or confirmed) this result, as opposed to a
+/// page-level verdict that merely happens to concern a site-level criterion.
+fn decided_by_site_comparison(criterion: &CriterionResult) -> bool {
+    criterion.source == "site-comparison"
+        || criterion
+            .considered_sources
+            .iter()
+            .any(|source| source == "site-comparison")
+}
+
+fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
+    let mut site: Vec<CriterionResult> = Vec::new();
+    for page in pages.iter_mut() {
+        let (site_level, page_level): (Vec<_>, Vec<_>) = std::mem::take(&mut page.criteria)
+            .into_iter()
+            .partition(|c| rgaa_core::is_site_level_criterion(&c.criterion_id));
+        page.criteria = page_level;
+        for criterion in site_level {
+            match site
+                .iter_mut()
+                .find(|c| c.criterion_id == criterion.criterion_id)
+            {
+                // A real comparison verdict (`site-comparison`) outranks a page's own
+                // placeholder: each page carries the same copy of it.
+                Some(existing)
+                    if !decided_by_site_comparison(existing)
+                        && decided_by_site_comparison(&criterion) =>
+                {
+                    *existing = criterion;
+                }
+                Some(_) => {}
+                None => site.push(criterion),
+            }
+        }
+    }
+    for criterion in &mut site {
+        if decided_by_site_comparison(criterion) {
+            continue;
+        }
+        // No comparison mechanism decided this criterion: it is not evaluated at site
+        // level, whatever a single page said.
+        criterion.status = CriterionStatus::NeedsReview;
+        // `tests` and `automated_verdict` stay as the evidence of the page the result was
+        // taken from; only the verdict and its explanation are the site's.
+        criterion.violations.clear();
+        criterion.justification = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
+        criterion.source = "site".to_string();
+        criterion.review_required = true;
+        criterion.review_reason = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
+    }
+    site.sort_by(|a, b| a.criterion_id.cmp(&b.criterion_id));
+    site
+}
+
 /// Aggregate assembled page results into the persisted site audit shape.
 ///
 /// Shared by the single-page pipeline, the crawl pipeline, and offline
@@ -305,11 +378,19 @@ pub fn assemble_page_audit(
 /// boundary. Metric and completion values are always derived here.
 pub fn assemble_site_audit(
     url: String,
-    all_pages: Vec<PageResult>,
+    mut all_pages: Vec<PageResult>,
     duration_ms: u64,
 ) -> AuditResult {
-    let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    // The completion gate and the coverage metrics look at every catalog criterion, so
+    // they run before the site-level criteria leave the pages.
+    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
     let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
+    let site_criteria = split_site_criteria(&mut all_pages);
+    for page in &mut all_pages {
+        page.compliance_rate = calculate_compliance(&page.criteria);
+    }
+    let (taux_global, coverage_percent, etat_conformite) =
+        aggregate_compliance_with_site_criteria(&all_pages, &site_criteria);
     let all_criteria: Vec<CriterionResult> = all_pages
         .iter()
         .flat_map(|page| page.criteria.clone())
@@ -328,7 +409,6 @@ pub fn assemble_site_audit(
         .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
         .count();
     let compliance = calculate_compliance(&all_criteria);
-    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
 
     info!(
         pass = pass_count,
@@ -346,6 +426,7 @@ pub fn assemble_site_audit(
         audit_id: uuid::Uuid::new_v4().to_string(),
         url,
         pages: all_pages,
+        site_criteria,
         total_criteria: total,
         passed: pass_count,
         failed: fail_count,
@@ -421,9 +502,15 @@ fn admit_routed_results(
 
 fn pages_have_complete_automatic_coverage(pages: &[PageResult]) -> bool {
     !pages.is_empty()
-        && pages
-            .iter()
-            .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok())
+        && pages.iter().all(|page| {
+            // Pages already split (no site-level criterion left) are checked on
+            // their page-level criteria only.
+            let split = !page
+                .criteria
+                .iter()
+                .any(|c| rgaa_core::is_site_level_criterion(&c.criterion_id));
+            validate_coverage(&page.criteria, split).is_ok()
+        })
 }
 
 fn record_site_comparison_evidence(
@@ -938,11 +1025,19 @@ async fn audit_discovered_urls(
             HashMap::new()
         }
     };
-    let page_observations: Vec<site_comparison::PageObservation> = urls
+    // Only the extracted signals are kept per page, never the rendered DOM, so memory
+    // stays bounded by the sample size. The compared set excludes the home page and
+    // authentication pages, each exclusion named in the evidence (#269).
+    let sampled: Vec<(String, Option<site_comparison::PageObservation>)> = urls
         .iter()
-        .filter_map(|page_url| site_contexts.get(page_url))
-        .filter_map(|value| serde_json::from_value(value.clone()).ok())
+        .map(|page_url| {
+            let observation = site_contexts
+                .get(page_url)
+                .and_then(|value| serde_json::from_value(value.clone()).ok());
+            (page_url.clone(), observation)
+        })
         .collect();
+    let (page_observations, exclusions) = site_comparison::select_comparable_pages(&sampled, url);
     let failed_pages = urls
         .iter()
         .filter(|page_url| {
@@ -951,13 +1046,17 @@ async fn audit_discovered_urls(
         .count();
     let sample_complete = discovered_count < config.max_pages
         && failed_pages == 0
-        && page_observations.len() == urls.len();
-    let site_results = site_comparison::compare_site(
+        && sampled.iter().all(|(_, observation)| observation.is_some());
+    let mut site_results = site_comparison::compare_site(
         &page_observations,
-        urls.len(),
+        page_observations.len(),
         failed_pages,
         sample_complete,
     );
+    site_comparison::apply_comparable_set(&mut site_results, page_observations.len(), &exclusions);
+    // 12.3: check the links of the site-map page with capped HEAD requests (#271).
+    let sitemap_check = check_sitemap_links(&sampled, url, &site_context_binary()).await;
+    site_results.push(crate::sitemap_links::verdict(sitemap_check.as_ref()));
     for site_result in site_results {
         let Some(criterion) = RgaaCriteria::all()
             .iter()
@@ -1014,6 +1113,52 @@ async fn audit_discovered_urls(
         all_pages,
         start.elapsed().as_millis() as u64,
     ))
+}
+
+/// Binary used for the site-level Obscura scrapes.
+fn site_context_binary() -> String {
+    ObscuraBridge::from_env().binary_path().to_string()
+}
+
+/// Locate the site-map page from the sampled pages' `sitemap_access` signals, scrape its
+/// links, and HEAD-check them under the cap. `None` when no map page can be located or
+/// read: that stays `review`, never `fail`.
+async fn check_sitemap_links(
+    sampled: &[(String, Option<site_comparison::PageObservation>)],
+    home_url: &str,
+    binary: &str,
+) -> Option<crate::sitemap_links::LinkCheck> {
+    let base = reqwest::Url::parse(home_url).ok()?;
+    // Signals are "path:region:text"; the path is everything before the first ':'.
+    let sitemap_url = sampled
+        .iter()
+        .filter_map(|(_, observation)| observation.as_ref())
+        .flat_map(|observation| observation.sitemap_access.iter())
+        .filter_map(|signal| signal.split(':').next())
+        .filter(|path| path.starts_with('/'))
+        .find_map(|path| base.join(path).ok())?
+        .to_string();
+    let contexts =
+        ObscuraBridge::extract_page_context_batch(binary.to_string(), vec![sitemap_url.clone()], 1)
+            .await
+            .ok()?;
+    let page: site_comparison::PageObservation =
+        serde_json::from_value(contexts.get(&sitemap_url)?.clone()).ok()?;
+    let client = crate::sitemap_links::link_client().ok()?;
+    let robots = match client.get(base.join("/robots.txt").ok()?).send().await {
+        Ok(response) if response.status().is_success() => response.text().await.ok(),
+        _ => None,
+    };
+    Some(
+        crate::sitemap_links::check_links(
+            &client,
+            &sitemap_url,
+            &page.page_links,
+            crate::sitemap_links::link_cap_from_env(),
+            robots.as_deref(),
+        )
+        .await,
+    )
 }
 
 fn failed_page_result(url: &str, error: &str) -> PageResult {
@@ -1149,6 +1294,16 @@ async fn discover_rgaa_sample_pages(
 /// A criterion is NonConforme for the entire site if it fails on ANY page of the sample.
 /// Returns (taux_global, coverage_percent, etat_conformite).
 pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, String) {
+    aggregate_compliance_with_site_criteria(page_results, &[])
+}
+
+/// Like [`aggregate_site_compliance`], also consuming the site-level results (#269):
+/// a site `fail` makes that criterion non-conforming; a site `review` is "non testé"
+/// and stays out of the rate, exactly like a page-level `review`.
+pub fn aggregate_compliance_with_site_criteria(
+    page_results: &[PageResult],
+    site_criteria: &[CriterionResult],
+) -> (f64, f64, String) {
     use rgaa_report::verified_status_for;
     use std::collections::HashMap;
 
@@ -1172,6 +1327,18 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
             criterion_classifications
                 .insert(criterion.criterion_id.clone(), criterion.classification);
         }
+    }
+
+    for criterion in site_criteria {
+        criterion_statuses
+            .entry(criterion.criterion_id.clone())
+            .or_default()
+            .push(verified_status_for(criterion).unwrap_or(CriterionStatus::NeedsReview));
+        criterion_raw_statuses
+            .entry(criterion.criterion_id.clone())
+            .or_default()
+            .push(criterion.status.clone());
+        criterion_classifications.insert(criterion.criterion_id.clone(), criterion.classification);
     }
 
     // Apply RGAA rule: NC if ANY page has Fail/Error
@@ -1358,6 +1525,137 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // 13.1 redirects by script (#265): a hook installed before the page's scripts, then ~6 s
+    // of observation without interaction. Only runs when the plan routes it.
+    let redirect_is_routed = criterion_has_routed_mechanism("13.1", "probe-13-1-script-redirect");
+    let script_hook_results = if redirect_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::REDIRECT_HOOK,
+                rgaa_rules::script_hooks::REDIRECT_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::redirect_results(
+                rgaa_rules::script_hooks::parse_redirect_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura redirect probe failed; 13.1 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 13.2 popups without user action (#266), same hook infrastructure as 13.1.
+    let popup_is_routed = criterion_has_routed_mechanism("13.2", "probe-13-2-popup-hook");
+    let popup_results = if popup_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::POPUP_HOOK,
+                rgaa_rules::script_hooks::REDIRECT_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::popup_results(
+                rgaa_rules::script_hooks::parse_popup_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura popup probe failed; 13.2 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // Listener inventory (#272): one hooked load covers 12.10, 13.10, 13.11 and 13.12.
+    let listeners_are_routed = ["12.10", "13.10", "13.11", "13.12"]
+        .iter()
+        .any(|criterion_id| {
+            criterion_has_routed_mechanism(
+                criterion_id,
+                &format!(
+                    "probe-{}-listener-inventory",
+                    criterion_id.replace('.', "-")
+                ),
+            )
+        });
+    let listener_results = if listeners_are_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::LISTENER_HOOK,
+                rgaa_rules::script_hooks::LISTENER_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::LISTENER_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::listener_results(&observation),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura listener inventory failed; criteria keep their fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 13.9 portrait/landscape (#268): render at two viewports and compare the visible content.
+    let orientation_is_routed =
+        criterion_has_routed_mechanism("13.9", "probe-13-9-orientation-render");
+    let orientation_results = if orientation_is_routed {
+        match bridge
+            .observe_viewports(
+                &url,
+                rgaa_rules::script_hooks::ORIENTATION_HOOK,
+                rgaa_rules::script_hooks::ORIENTATION_READ,
+                &rgaa_rules::script_hooks::ORIENTATION_VIEWPORTS,
+            )
+            .await
+        {
+            Ok(snapshots) => rgaa_rules::script_hooks::orientation_results(
+                rgaa_rules::script_hooks::parse_orientation_observation(&snapshots).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura orientation probe failed; 13.9 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 13.8 automatic movement by script (#267): DOM mutations without interaction. CSS
+    // animations are not detectable on Obscura 0.2.4 and are left to the existing mechanisms.
+    let motion_is_routed = criterion_has_routed_mechanism("13.8", "probe-13-8-script-motion");
+    let motion_results = if motion_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::MOTION_HOOK,
+                rgaa_rules::script_hooks::MOTION_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::motion_results(
+                rgaa_rules::script_hooks::parse_motion_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura motion probe failed; 13.8 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1388,6 +1686,11 @@ async fn audit_one(
         .values()
         .chain(gap_results.values())
         .chain(keyboard_results.values())
+        .chain(script_hook_results.values())
+        .chain(popup_results.values())
+        .chain(listener_results.values())
+        .chain(orientation_results.values())
+        .chain(motion_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1427,6 +1730,11 @@ async fn audit_one(
         .into_iter()
         .chain(gap_results)
         .chain(keyboard_results)
+        .chain(script_hook_results)
+        .chain(popup_results)
+        .chain(listener_results)
+        .chain(orientation_results)
+        .chain(motion_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

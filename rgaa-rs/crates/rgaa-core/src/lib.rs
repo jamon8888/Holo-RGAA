@@ -30,7 +30,9 @@ pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
 pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
 pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};
 pub use types::{
-    is_deterministic_source, reduce_test_outcomes, AuditResult, AutomatedVerdict, Classification,
-    ConformityStatus, CrawlConfig, CriterionResult, CriterionStatus, PageResult, ReviewEvent,
-    TestOutcome, VerdictBasis, Violation,
+    is_deterministic_source, is_site_level_criterion, pages_with_site_criteria,
+    reduce_test_outcomes, AuditResult, AutomatedVerdict, Classification, ConformityStatus,
+    CrawlConfig, CriterionResult, CriterionStatus, PageResult, ReviewEvent, TestOutcome,
+    VerdictBasis, Violation, SITE_LEVEL_CRITERIA, SITE_LEVEL_NOT_EVALUATED,
+    SITE_LEVEL_TOO_FEW_PAGES,
 };

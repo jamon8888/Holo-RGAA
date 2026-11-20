@@ -81,6 +81,7 @@ fn audit(page_urls: &[&str], criterion_ids: &[&str]) -> AuditResult {
             .unwrap_or("https://example.test")
             .to_owned(),
         pages,
+        site_criteria: Vec::new(),
         total_criteria: criterion_ids.len() * page_urls.len(),
         passed: 0,
         failed: 0,

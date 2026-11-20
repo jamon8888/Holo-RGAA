@@ -223,6 +223,7 @@ mod tests {
             audit_id: "pipeline-id".to_string(),
             url: url.to_string(),
             pages: Vec::new(),
+            site_criteria: Vec::new(),
             total_criteria: 0,
             passed: 0,
             failed: 0,

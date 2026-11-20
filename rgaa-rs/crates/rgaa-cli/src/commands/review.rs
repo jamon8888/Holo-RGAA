@@ -170,8 +170,10 @@ fn refresh_status_aggregates(audit: &mut AuditResult) {
     audit.taux_global = metrics.taux_global;
     audit.coverage_percent = metrics.coverage_percent;
     audit.etat_conformite = metrics.etat_conformite;
-    audit.verified_compliance_percent =
-        rgaa_report::compute_audit_metrics(&audit.pages).verified_compliance_percent;
+    audit.verified_compliance_percent = rgaa_report::compute_audit_metrics(
+        &rgaa_core::pages_with_site_criteria(&audit.pages, &audit.site_criteria),
+    )
+    .verified_compliance_percent;
 }
 
 fn locate_criterion(

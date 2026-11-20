@@ -7093,6 +7093,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "futures-util",
+ "gif",
  "libc",
  "obscura",
  "reqwest 0.12.28",

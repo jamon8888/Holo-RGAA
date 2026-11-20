@@ -15,6 +15,7 @@ use tracing::{info, warn};
 pub mod cdp_pool;
 pub mod config;
 pub mod evidence;
+pub mod flash_probe;
 pub mod guided;
 pub mod listener_probe;
 pub mod motion_probe;

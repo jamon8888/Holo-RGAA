@@ -191,6 +191,16 @@ pub(crate) fn compare_site(
         sample,
     ));
 
+    if let Some(deviants) = navigation_order_deviants(pages) {
+        if let Some(nav) = results.iter_mut().find(|r| r.criterion_id == "12.2") {
+            nav.status = CriterionStatus::Fail;
+            nav.details.push_str(&format!(
+                "; ordre des régions de navigation dans le source différent sur: {}",
+                deviants.join(", ")
+            ));
+        }
+    }
+
     // Incomplete crawls cannot establish the whole-set criteria. A directly
     // observed contradiction remains a failure; otherwise the result is review.
     if !enough_data || !sample_complete {
@@ -204,6 +214,67 @@ pub(crate) fn compare_site(
         }
     }
     results
+}
+
+/// Relative source order of the navigation regions shared by every page (#270, 12.2). The
+/// extraction lists regions in document order; a page that lists the shared regions in a
+/// different sequence moves the navigation relative to the rest of the page.
+/// Returns the pages whose order deviates from the most common one, `None` when all agree
+/// (or fewer than two regions are shared, so no order exists to compare).
+fn navigation_order_deviants(pages: &[PageObservation]) -> Option<Vec<String>> {
+    if pages.len() < 2 {
+        return None;
+    }
+    let normalized: Vec<Vec<String>> = pages
+        .iter()
+        .map(|p| {
+            p.navigation_positions
+                .iter()
+                .map(|v| {
+                    v.split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .to_lowercase()
+                })
+                .filter(|v| !v.is_empty())
+                .collect()
+        })
+        .collect();
+    let shared: BTreeSet<&String> = normalized
+        .iter()
+        .map(|seq| seq.iter().collect::<BTreeSet<_>>())
+        .reduce(|a, b| a.intersection(&b).copied().collect())?;
+    if shared.len() < 2 {
+        return None;
+    }
+    let sequences: Vec<Vec<&String>> = normalized
+        .iter()
+        .map(|seq| {
+            let mut seen = BTreeSet::new();
+            seq.iter()
+                .filter(|r| shared.contains(r) && seen.insert(*r))
+                .collect()
+        })
+        .collect();
+    let mut counts: Vec<(&Vec<&String>, usize)> = Vec::new();
+    for sequence in &sequences {
+        match counts.iter_mut().find(|(known, _)| *known == sequence) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((sequence, 1)),
+        }
+    }
+    if counts.len() < 2 {
+        return None;
+    }
+    let (majority, _) = counts.iter().max_by_key(|(_, n)| *n)?;
+    Some(
+        pages
+            .iter()
+            .zip(&sequences)
+            .filter(|(_, seq)| seq != majority)
+            .map(|(p, _)| p.url.clone())
+            .collect(),
+    )
 }
 
 fn normalized_set(values: &[String]) -> BTreeSet<String> {
@@ -543,5 +614,42 @@ mod tests {
         let search = results.iter().find(|r| r.criterion_id == "12.5").unwrap();
         assert_eq!(search.status, CriterionStatus::NeedsReview);
         assert!(search.details.contains("indice d'applicabilité"));
+    }
+
+    #[test]
+    fn a_page_listing_navigation_regions_in_another_source_order_fails_12_2() {
+        let mut a = page(&["nav"], &["header", "footer"], &[], &[]);
+        let mut b = page(&["nav"], &["header", "footer"], &[], &[]);
+        let mut c = page(&["nav"], &["footer", "header"], &[], &[]);
+        a.url = "https://x.test/a".into();
+        b.url = "https://x.test/b".into();
+        c.url = "https://x.test/c".into();
+        let results = compare_site(&[a, b, c], 3, 0, true);
+        let nav = results.iter().find(|r| r.criterion_id == "12.2").unwrap();
+        assert_eq!(nav.status, CriterionStatus::Fail);
+        assert!(nav.details.contains("ordre des régions"), "{}", nav.details);
+        assert!(nav.details.contains("https://x.test/c"));
+    }
+
+    #[test]
+    fn same_order_or_a_single_shared_region_never_fails_on_order() {
+        let a = page(&["nav"], &["header", "footer"], &[], &[]);
+        let b = page(&["nav"], &["header", "footer"], &[], &[]);
+        let nav = |r: &[SiteCriterionObservation]| {
+            r.iter()
+                .find(|x| x.criterion_id == "12.2")
+                .unwrap()
+                .status
+                .clone()
+        };
+        assert_ne!(
+            nav(&compare_site(&[a.clone(), b], 2, 0, true)),
+            CriterionStatus::Fail
+        );
+        let one = page(&["nav"], &["header"], &[], &[]);
+        assert_ne!(
+            nav(&compare_site(&[a, one], 2, 0, true)),
+            CriterionStatus::Fail
+        );
     }
 }

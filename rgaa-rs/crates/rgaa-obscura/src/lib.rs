@@ -17,6 +17,7 @@ pub mod config;
 pub mod evidence;
 pub mod guided;
 pub mod listener_probe;
+pub mod motion_probe;
 pub mod orientation_probe;
 pub mod popup_probe;
 pub mod redirect_probe;

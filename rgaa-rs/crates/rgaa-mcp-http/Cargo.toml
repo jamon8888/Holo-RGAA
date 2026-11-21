@@ -5,8 +5,33 @@ name = "rgaa-mcp-http"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Forwarded to the CLI so `cargo build -p rgaa-cli --no-default-features`
+# really links no plugin (acceptance criterion 1).
+default = []
+plugin-echo = ["rgaa-mcp/plugin-echo"]
+plugin-contrast = ["rgaa-mcp/plugin-contrast"]
+plugin-colorvision = ["rgaa-mcp/plugin-colorvision"]
+plugin-images = ["rgaa-mcp/plugin-images"]
+plugin-media = ["rgaa-mcp/plugin-media"]
+plugin-motion = ["rgaa-mcp/plugin-motion"]
+plugin-lang = ["rgaa-mcp/plugin-lang"]
+plugin-layout = ["rgaa-mcp/plugin-layout"]
+plugin-text = ["rgaa-mcp/plugin-text"]
+plugins-all = [
+    "plugin-echo",
+    "plugin-contrast",
+    "plugin-colorvision",
+    "plugin-images",
+    "plugin-media",
+    "plugin-motion",
+    "plugin-lang",
+    "plugin-layout",
+    "plugin-text",
+]
+
 [dependencies]
-rgaa-mcp = { path = "../rgaa-mcp" }
+rgaa-mcp = { path = "../rgaa-mcp", default-features = false }
 rgaa-obscura = { path = "../rgaa-obscura" }
 axum = { version = "0.7", features = ["json"] }
 clap = { workspace = true, features = ["env"] }

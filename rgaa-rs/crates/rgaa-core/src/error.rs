@@ -39,6 +39,8 @@ pub enum RgaaError {
     UnsupportedSchemaVersion(String),
     #[error("duplicate finding ID: {0}")]
     DuplicateFindingId(String),
+    #[error("non-conformity not found: {0}")]
+    NonConformityNotFound(String),
     #[error("invalid status: {0}")]
     InvalidStatus(String),
     #[error("incomplete evidence for {0}")]

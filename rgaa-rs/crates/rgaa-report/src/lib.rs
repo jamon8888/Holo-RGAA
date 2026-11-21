@@ -16,6 +16,7 @@ pub mod depot;
 pub mod format;
 pub mod gouvernance;
 pub mod guard;
+pub mod non_conformity;
 pub mod packs;
 pub mod pdf;
 #[cfg(feature = "pdf-native")]

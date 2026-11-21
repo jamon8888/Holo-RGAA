@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AuditResult, CheckpointResult, CrawlConfig, CriterionResult, CriterionStatus, Finding,
-    PageError, RgaaError, Violation,
+    NonConformity, PageError, RgaaError, UserImpact, Violation,
 };
 
 pub const CURRENT_SCHEMA_VERSION: &str = "1.0";
@@ -67,6 +67,10 @@ pub struct AuditBundle {
     pub config: AuditConfig,
     pub pages: Vec<PageAudit>,
     pub findings: Vec<Finding>,
+    /// Non-conformités, several per criterion and per page (Ara
+    /// `NotCompliantItem`). Empty on bundles that predate the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub non_conformities: Vec<NonConformity>,
     pub checkpoints: Vec<CheckpointResult>,
     pub summary: AuditSummary,
 }
@@ -81,9 +85,54 @@ impl AuditBundle {
             config,
             pages: Vec::new(),
             findings: Vec::new(),
+            non_conformities: Vec::new(),
             checkpoints: Vec::new(),
             summary: AuditSummary::default(),
         }
+    }
+
+    /// Looks up a non-conformity by its stable identifier.
+    #[must_use]
+    pub fn non_conformity(&self, id: &str) -> Option<&NonConformity> {
+        self.non_conformities.iter().find(|item| item.id == id)
+    }
+
+    /// Records a machine impact proposal on a non-conformity. The value stays
+    /// a proposition and never becomes an authoritative impact (R3).
+    ///
+    /// # Errors
+    /// Returns [`RgaaError::NonConformityNotFound`] when `id` is unknown.
+    pub fn propose_impact(&mut self, id: &str, impact: UserImpact) -> Result<(), RgaaError> {
+        let item = self
+            .non_conformities
+            .iter_mut()
+            .find(|item| item.id == id)
+            .ok_or_else(|| RgaaError::NonConformityNotFound(id.to_owned()))?;
+        item.set_proposed_impact(impact);
+        Ok(())
+    }
+
+    /// Records a human decision setting the impact and quick-win flag of one
+    /// non-conformity (R5). Only a caller holding a reviewer identity can do
+    /// this; no machine tool writes these fields.
+    ///
+    /// # Errors
+    /// Returns [`RgaaError::NonConformityNotFound`] when `id` is unknown, or
+    /// [`RgaaError::MissingField`] when the author or timestamp is empty.
+    pub fn record_impact_review(
+        &mut self,
+        id: &str,
+        impact: UserImpact,
+        quick_win: bool,
+        author: &str,
+        reviewed_at: &str,
+    ) -> Result<(), RgaaError> {
+        let item = self
+            .non_conformities
+            .iter_mut()
+            .find(|item| item.id == id)
+            .ok_or_else(|| RgaaError::NonConformityNotFound(id.to_owned()))?;
+        item.record_review(impact, quick_win, author, reviewed_at)
     }
 
     /// Validates identifiers, statuses, finding uniqueness, and evidence completeness.
@@ -264,6 +313,7 @@ impl From<AuditResult> for AuditBundle {
             config: AuditConfig::default(),
             pages: page_audits,
             findings,
+            non_conformities: Vec::new(),
             checkpoints: Vec::new(),
             summary: AuditSummary {
                 total_pages: page_count,

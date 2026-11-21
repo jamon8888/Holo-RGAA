@@ -9,6 +9,7 @@ pub mod error;
 pub mod evidence;
 pub mod findings;
 pub mod na_detection;
+pub mod non_conformity;
 pub mod provider;
 pub mod registry;
 pub mod test_plan;
@@ -27,6 +28,10 @@ pub use engine_plan::{EnginePlan, EnginePlanEntry, PlanEngine};
 pub use error::{Result, RgaaError};
 pub use evidence::*;
 pub use findings::*;
+pub use non_conformity::{
+    compare_non_conformities, impact_rank, propose_impact_for_criterion, sort_non_conformities,
+    ImpactReview, NonConformity, UserImpact,
+};
 pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
 pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
 pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};

@@ -561,8 +561,8 @@ mod tests {
         ("frame-title-unique", "2.1"),
         ("frame-focusable-content", "2.1"),
         ("autocomplete-valid", "11.13"),
-        ("button-name", "11.1"),
-        ("input-button-name", "11.1"),
+        ("button-name", "11.9"),
+        ("input-button-name", "11.9"),
         ("select-name", "11.1"),
         ("aria-input-field-name", "11.1"),
         ("aria-toggle-field-name", "11.1"),
@@ -774,9 +774,113 @@ mod tests {
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 87,
-            "expected 87 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-             the injected axe-core 4.9.1)"
+            rule_refs, 85,
+            "expected 85 criterion/rule pairs (button-name et input-button-name retirés de 11.1 \
+             car tagués RGAA-11.9.1 par axe-core ; aria-tab-name laissé 7.1 en #261: absent de \
+             l'axe-core injecté 4.9.1)"
         );
+    }
+
+    /// #436 : une seule correspondance par règle axe, issue des étiquettes RGAAv4
+    /// d'axe (`axe_rules.json`). Pour les règles régies par ce ticket
+    /// (`button-name`, `input-button-name`, taguées `RGAA-11.9.1`), le critère
+    /// doit être unique et identique dans `mechanisms.toml` (via `AxeMapper`),
+    /// `engine_plan.json` et les étiquettes `axe_rules.json`. Échoue à la moindre
+    /// divergence.
+    #[test]
+    fn button_name_et_input_button_name_mappent_sur_11_9_partout() {
+        use std::collections::BTreeMap;
+
+        // --- Source de vérité indépendante : étiquettes RGAAv4 de axe-core ---
+        #[derive(serde::Deserialize)]
+        struct Rule {
+            id: String,
+            #[serde(default)]
+            tags: Vec<String>,
+        }
+        let rules: Vec<Rule> =
+            serde_json::from_str(AXE_RULES_JSON).expect("axe_rules.json doit parser");
+        fn crit_de_tag(tag: &str) -> Option<String> {
+            let rest = tag.strip_prefix("RGAA-")?;
+            let majeur = rest.split('.').next()?;
+            let mineur = rest.split('.').nth(1)?;
+            Some(format!("{majeur}.{mineur}"))
+        }
+        let mut tag_criterion: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for r in &rules {
+            for t in &r.tags {
+                if let Some(c) = crit_de_tag(t) {
+                    tag_criterion.entry(r.id.clone()).or_default().push(c);
+                }
+            }
+        }
+
+        // --- mechanisms.toml via AxeMapper ---
+        let mapping = AxeMapper::rgaa_to_axe_map();
+        let mut mech_pairs: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (criterion, mechanism) in mapping {
+            for rule in &mechanism.rules {
+                mech_pairs
+                    .entry(rule.clone())
+                    .or_default()
+                    .push(criterion.clone());
+            }
+        }
+
+        // --- engine_plan.json ---
+        const ENGINE_PLAN_JSON: &str =
+            include_str!("../../rgaa-core/data/rgaa-4.1.2/engine_plan.json");
+        #[derive(serde::Deserialize)]
+        struct PlanEntry {
+            criterion_id: String,
+            axe_rules: Vec<String>,
+        }
+        let plan: Vec<PlanEntry> =
+            serde_json::from_str(ENGINE_PLAN_JSON).expect("engine_plan.json doit parser");
+        let mut plan_pairs: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for entry in &plan {
+            for rule in &entry.axe_rules {
+                plan_pairs
+                    .entry(rule.clone())
+                    .or_default()
+                    .push(entry.criterion_id.clone());
+            }
+        }
+
+        // Chaque règle régie par le ticket a une seule correspondance, à 11.9,
+        // identique dans les trois sources.
+        for rule in ["button-name", "input-button-name"] {
+            let mech_crits = mech_pairs.get(rule);
+            let plan_crits = plan_pairs.get(rule);
+            let tag_crit = tag_criterion.get(rule);
+
+            // Une seule correspondance par règle dans chaque source.
+            assert_eq!(
+                mech_crits.map(|v| v.len()),
+                Some(1),
+                "{rule} doit être mappé à un seul critère dans mechanisms.toml"
+            );
+            assert_eq!(
+                plan_crits.map(|v| v.len()),
+                Some(1),
+                "{rule} doit être routé vers un seul critère dans engine_plan.json"
+            );
+
+            // La correspondance vaut 11.9 partout, jamais 11.1.
+            assert_eq!(
+                mech_crits.map(|v| v[0].as_str()),
+                Some("11.9"),
+                "{rule} doit mapper sur 11.9 dans mechanisms.toml (étiquette RGAA-11.9.1)"
+            );
+            assert_eq!(
+                plan_crits.map(|v| v[0].as_str()),
+                Some("11.9"),
+                "{rule} doit être routé par engine_plan.json sur 11.9"
+            );
+            assert!(
+                tag_crit.is_some_and(|crits| crits.len() == 1 && crits[0] == "11.9"),
+                "{rule} doit être tagué RGAA-11.9.1 par axe-core (et seulement celui-ci), obtenu {tag_crit:?}"
+            );
+        }
     }
 }

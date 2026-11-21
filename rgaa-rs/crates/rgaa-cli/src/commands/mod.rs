@@ -1,4 +1,5 @@
 pub mod analyze;
+pub mod export;
 pub mod igt;
 pub mod policy;
 pub mod report;
@@ -6,6 +7,8 @@ pub mod review;
 pub mod verify;
 
 use clap::Subcommand;
+
+pub use export::ExportCommand;
 
 /// Common CLI arguments shared across all audit commands.
 #[derive(Debug, Clone, clap::Args)]
@@ -60,6 +63,11 @@ impl AuditCommand {
             AuditCommand::Policy(args) => &args.common,
         }
     }
+}
+
+/// Dispatches an export command to the appropriate handler.
+pub async fn dispatch_export(command: export::ExportCommand) -> Result<i32, crate::CliError> {
+    export::dispatch(command).await
 }
 
 /// Dispatches a command to the appropriate handler.

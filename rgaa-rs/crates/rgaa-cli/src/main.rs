@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rgaa_cli::commands::AuditCommand;
+use rgaa_cli::commands::{AuditCommand, ExportCommand};
 use rgaa_cli::CliError;
 
 #[derive(Debug, Parser)]
@@ -13,6 +13,8 @@ struct Cli {
 enum TopCommand {
     #[command(about = "Audit commands")]
     Audit(AuditArgs),
+    #[command(about = "Export commands")]
+    Export(ExportArgs),
     /// Serve the RGAA tools over MCP (HTTP + SSE, or stdio).
     ///
     /// The flags live in `rgaa_mcp_http::McpServerArgs` rather than here so
@@ -28,6 +30,18 @@ struct AuditArgs {
     command: AuditCommand,
 }
 
+#[derive(Debug, clap::Args)]
+struct ExportArgs {
+    #[command(subcommand)]
+    command: ExportCommand,
+}
+
+/// A dispatchable command, with the audit and export groups sharing setup.
+enum Action {
+    Audit(AuditCommand),
+    Export(ExportCommand),
+}
+
 #[tokio::main]
 async fn main() {
     // Loads `.env` from the working directory (or any parent) so a local
@@ -38,8 +52,14 @@ async fn main() {
     let _ = dotenvy::dotenv();
 
     let cli = Cli::parse();
-    let args = match cli.command {
-        TopCommand::Audit(args) => args,
+    let log_file = match &cli.command {
+        TopCommand::Audit(args) => args.command.common().log_file.clone(),
+        TopCommand::Export(args) => args.command.common().log_file.clone(),
+        TopCommand::McpServer(_) => None,
+    };
+    let action = match cli.command {
+        TopCommand::Audit(args) => Action::Audit(args.command),
+        TopCommand::Export(args) => Action::Export(args.command),
         // Served before the audit monitoring is initialised: the MCP server
         // logs to stderr for its supervisor, and opening the audit JSON-lines
         // file for a long-lived server would leave a log nothing ever writes.
@@ -55,17 +75,19 @@ async fn main() {
         }
     };
 
-    let (log_path, monitoring_guard) =
-        match rgaa_cli::monitoring::init(args.command.common().log_file.as_deref()) {
-            Ok(initialized) => initialized,
-            Err(error) => {
-                eprintln!("{error}");
-                std::process::exit(exit_code(&error));
-            }
-        };
+    let (log_path, monitoring_guard) = match rgaa_cli::monitoring::init(log_file.as_deref()) {
+        Ok(initialized) => initialized,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(exit_code(&error));
+        }
+    };
     eprintln!("Monitoring log: {}", log_path.display());
 
-    let result = rgaa_cli::commands::dispatch(args.command).await;
+    let result = match action {
+        Action::Audit(command) => rgaa_cli::commands::dispatch(command).await,
+        Action::Export(command) => rgaa_cli::commands::dispatch_export(command).await,
+    };
     let code = match &result {
         Ok(code) => *code,
         Err(error) => {
@@ -84,4 +106,25 @@ async fn main() {
 
 fn exit_code(error: &CliError) -> i32 {
     error.exit_code()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_grille_is_a_top_level_command() {
+        let cli =
+            Cli::try_parse_from(["rgaa", "export", "grille", "audit.json", "--format", "csv"])
+                .expect("rgaa export grille <audit> --format csv must parse");
+        match cli.command {
+            TopCommand::Export(args) => match args.command {
+                rgaa_cli::commands::ExportCommand::Grille(args) => {
+                    assert_eq!(args.audit, std::path::PathBuf::from("audit.json"));
+                    assert_eq!(args.common.format.as_deref(), Some("csv"));
+                }
+            },
+            other => panic!("expected export grille, got {other:?}"),
+        }
+    }
 }

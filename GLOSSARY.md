@@ -31,7 +31,7 @@ Ensemble des tests RGAA qui posent la même question de pertinence sur le même 
 _Avoid_ : groupe, thème, catégorie
 
 **Calibration** :
-Mesure de l'accord d'un modèle avec un étiquetage humain sur une famille de preuve, avec ancres, repère trivial et intervalle de confiance. Un test Assisté est **calibré** quand sa famille l'est, **non calibré** sinon. Le niveau Assisté ne dépend pas de la calibration ; ce qu'on peut affirmer de sa fiabilité en dépend.
+Mesure de l'accord d'un modèle avec un étiquetage humain sur une famille de preuve, avec ancres, repère trivial et intervalle de confiance. **Non retenue pour le pilote (décision du 2026-11-21).** Un test Assisté est **calibré** quand sa famille l'est, **non calibré** sinon. Le niveau Assisté ne dépend pas de la calibration ; ce qu'on peut affirmer de sa fiabilité en dépend.
 _Avoid_ : validation, évaluation, benchmark
 
 ### Alternatives textuelles
@@ -95,3 +95,17 @@ _Avoid_ : verdict (réservé à la machine), validation, avis
 **Verdict** :
 Ce que la machine (règle ou modèle) rend sur un test RGAA. Sur un test Assisté, il ne sert qu'à ordonner la file de revue.
 _Avoid_ : décision, jugement
+
+### Analyse
+
+**Plugin d'analyse** :
+Module qui mesure ou observe une page (contraste, texte dans une image, simulation de daltonisme, transcription, langue…) et en tire des preuves pour un ensemble de tests RGAA, sans jamais rendre de verdict. Il est **natif** quand il est écrit avec une bibliothèque Rust, et **sidecar** quand il pilote un programme externe.
+_Avoid_ : plugin (seul, ambigu avec le plugin agent), analyseur, moteur, module IA
+
+**Plugin agent** :
+Extension de Claude Code ou de Codex qui guide l'utilisateur (audit, remédiation, revue, rapport) en appelant nos outils. Il présente les preuves, il ne les produit pas.
+_Avoid_ : plugin (seul), extension, skill (une skill n'est qu'une partie d'un plugin agent)
+
+**Preuve** :
+Ce qu'un plugin d'analyse rend sur un sujet (élément, média, page) : des mesures et des artefacts, avec leur portée. Une preuve **mesurée** est un calcul exact sur une entrée fiable ; une preuve **estimée** vient d'un échantillonnage ou d'un modèle et mène toujours à une revue.
+_Avoid_ : résultat, finding, constat, verdict

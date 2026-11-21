@@ -8,6 +8,7 @@ pub mod engine_plan;
 pub mod error;
 pub mod evidence;
 pub mod findings;
+pub mod methodologies;
 pub mod na_detection;
 pub mod provider;
 pub mod registry;
@@ -27,6 +28,9 @@ pub use engine_plan::{EnginePlan, EnginePlanEntry, PlanEngine};
 pub use error::{Result, RgaaError};
 pub use evidence::*;
 pub use findings::*;
+pub use methodologies::{
+    Methodology, RgaaMethodologies, METHODOLOGIES_COMMIT, METHODOLOGIES_SHA256,
+};
 pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
 pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
 pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};

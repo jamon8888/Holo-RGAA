@@ -130,7 +130,7 @@ do not control.
 
 ## 3. MCP tools
 
-Nine tools are registered. These names are what the server answers to —
+Ten tools are registered. These names are what the server answers to —
 verify against `#[tool(name = ...)]` in
 `rgaa-rs/crates/rgaa-mcp/src/server.rs`, or just call `tools/list`.
 
@@ -139,6 +139,7 @@ verify against `#[tool(name = ...)]` in
 | `analyze` | `AnalyzeRequest` | Per-criterion findings for one page: `criterion_id`, `status`, `source`, evidence, justification |
 | `audit_url` | `AuditUrlInput` | **Summary only**: `taux_global`, `etat_conformite`, `sampled_page_urls` |
 | `get_audit_result` | `GetAuditInput` | A previously run audit, by `audit_id` |
+| `get_test_methodology` | `GetTestMethodologyRequest` | The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit |
 | `lint_static` | `LintStaticRequest` | Static lint of HTML/JSX/TSX/Vue **source**: `rule`, `severity`, line/column, fix hint. No browser, no build — a first pass over source, not a conformance verdict |
 | `list_criteria` | *(none)* | The 106 RGAA criteria: id, title, classification |
 | `remediate` | `RemediationRequest` | Approval-gated fix proposals |

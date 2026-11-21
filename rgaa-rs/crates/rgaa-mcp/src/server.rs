@@ -135,6 +135,22 @@ impl RemediationRequest {
     }
 }
 
+/// Arguments for `get_test_methodology`: one RGAA test key, e.g. `"1.2.3"`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetTestMethodologyRequest {
+    pub test: String,
+}
+
+/// `get_test_methodology` response: the official method for the test, taken
+/// from `RGAA/methodologies.json` (DISIC/accessibilite.numerique.gouv.fr) at
+/// the pinned commit. `methodology` is `None` when the key is not an RGAA test.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetTestMethodologyResponse {
+    pub test: String,
+    pub methodology: Option<String>,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GuidedTestRequest {
     pub test: GuidedTestInput,
@@ -647,7 +663,7 @@ pub struct ToolServer {
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 9] {
+    pub const fn tool_names() -> [&'static str; 10] {
         [
             "analyze",
             "remediate",
@@ -658,6 +674,7 @@ impl ToolServer {
             "lint_static",
             "source_map",
             "verify_fix",
+            "get_test_methodology",
         ]
     }
 
@@ -964,6 +981,28 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
             criteria,
         }))
+    }
+
+    #[tool(
+        name = "get_test_methodology",
+        description = "Return the official RGAA test method for one test key (e.g. \"1.2.3\"): the numbered verification steps from RGAA/methodologies.json (DISIC/accessibilite.numerique.gouv.fr, pinned commit). Skills cite this instead of describing a method from memory. Returns `methodology: null` when the key is not an RGAA 4.1.2 test."
+    )]
+    pub fn get_test_methodology(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<GetTestMethodologyRequest>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<GetTestMethodologyResponse>, ErrorData> {
+        let test = request.0.test;
+        let methodology = rgaa_core::RgaaMethodologies::get(&test);
+        Ok(rmcp::handler::server::wrapper::Json(
+            GetTestMethodologyResponse {
+                test,
+                methodology: methodology.map(|steps| steps.to_string()),
+                source: format!(
+                    "RGAA/methodologies.json @ DISIC/accessibilite.numerique.gouv.fr commit {}",
+                    rgaa_core::METHODOLOGIES_COMMIT
+                ),
+            },
+        ))
     }
 
     #[tool(

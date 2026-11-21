@@ -11,6 +11,8 @@ Execute bounded, reproducible guided accessibility tests for criteria that requi
 
 **Key principle: Guided tests are reproducible — same steps produce same results.**
 
+> **Méthode officielle par test** : pour la méthode de vérification officielle du RGAA d'un test (sa clé, ex. `7.3.1`), appeler l'outil MCP `get_test_methodology` avec la clé du test. Il retourne la méthode officielle tirée de `RGAA/methodologies.json` (DISIC/accessibilite.numerique.gouv.fr, commit épinglé). Cette skill décrit le protocole de test guidé de Holo-RGAA ; elle ne réécrit pas la méthode officielle de mémoire.
+
 ## When This Skill Activates
 
 - User asks "run keyboard navigation test", "check focus visibility", "verify contrast"

@@ -101,7 +101,7 @@ Skills activate automatically when relevant — no need to invoke them directly.
 
 ## MCP Server
 
-The plugin bundles `rgaa-mcp` (stdio transport) exposing **nine** tools. Every
+The plugin bundles `rgaa-mcp` (stdio transport) exposing **ten** tools. Every
 skill reaches for these first; the `rgaa` CLI is a fallback for when no MCP
 session is available, not the primary path.
 
@@ -110,6 +110,7 @@ session is available, not the primary path.
 | `analyze` | `AnalyzeRequest -> AnalyzeResponse` | Per-criterion findings for one page, with evidence and justification. |
 | `audit_url` | `AuditUrlInput -> AuditUrlResult` | Whole-site audit through the orchestrator. Returns a **summary only** (`taux_global`, `etat_conformite`, `sampled_page_urls`). |
 | `get_audit_result` | `GetAuditInput -> Option<AuditResultDto>` | Retrieve a previously run audit by `audit_id`. |
+| `get_test_methodology` | `GetTestMethodologyRequest -> GetTestMethodologyResponse` | The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit. Skills cite this instead of describing a method from memory. |
 | `lint_static` | `LintStaticRequest -> LintStaticResponse` | Lint HTML, JSX/TSX or Vue **source** for missing `alt`, unlabelled form controls and nameless buttons/links — no browser, no build. Sub-millisecond per file, so it suits an edit loop. A first pass over source, **not** a conformance verdict: use `analyze` on a rendered page for that. |
 | `list_criteria` | `() -> ListCriteriaResponse` | The 106 RGAA criteria with id, title, classification. |
 | `remediate` | `RemediationRequest -> RemediationResponse` | Approval-gated fix proposals for a batch of issues. |
@@ -133,7 +134,7 @@ Both `Manuel` and `PartiellementAutomatable` criteria surface as the single
 
 ### HTTP transport
 
-`rgaa-mcp-http` — equivalently `rgaa mcp-server` — serves the same nine tools
+`rgaa-mcp-http` — equivalently `rgaa mcp-server` — serves the same ten tools
 as JSON-RPC over `POST /mcp`, with audit progress on `GET /mcp/events` (SSE).
 
 Both are authorized **before** a tool runs. Cross-origin access is **denied

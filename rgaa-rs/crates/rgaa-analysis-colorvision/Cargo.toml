@@ -1,0 +1,26 @@
+[package]
+description = "P-02 analysis plugin: color vision deficiency simulation and colour-only information loss"
+license = "MIT"
+name = "rgaa-analysis-colorvision"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["plugin-colorvision"]
+# The feature name is shared with the consumers (CLI, MCP, orchestrator):
+# they forward it to this crate and to `rgaa-analysis`.
+plugin-colorvision = []
+
+[dependencies]
+async-trait = "0.1"
+image = "0.25.10"
+image_hasher = "3.1.1"
+indexmap = { workspace = true }
+palette = "0.7.7"
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

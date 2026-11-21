@@ -13,6 +13,7 @@ TypeScript types for the RGAA backend:
 | `src/protocol.d.ts` | Hand-written — the JSON-RPC envelope is defined by the transport |
 | `src/rest.d.ts` | Hand-written — the axum handlers have no schemars source |
 | `analysis-schemas.json` | **Generated** from `rgaa-analysis` — `Preuve` and each plugin's `mesures` (P-00 §5) |
+| `colorvision-matrices.json` | **Generated and committed** from `rgaa-analysis-colorvision` — CVD coefficients shared with the P-09 review page (P-02 §6) |
 
 `tools.d.ts` is generated on purpose. The tool arguments are declared once,
 in Rust; a hand-written copy is a second declaration that nothing keeps in

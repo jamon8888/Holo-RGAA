@@ -246,7 +246,7 @@ Priorités : **P0** pilote M1 · **P1** M2 (grille Team) · **P2** Enterprise. *
 | F-LLM-6 | `max_tokens` dimensionné pour le raisonnement | P0 | 0 verdict tronqué sur le corpus |
 | F-LLM-7 | Sortie structurée : `json_object` + validation locale ; `json_schema` (`name` + `schema` obligatoires, `strict` facultatif, effet non documenté [recherche #402]) après test réel | P1 | Décision après test |
 | F-LLM-8 | Image : PNG/JPEG/WEBP, taille bornée (sources Mistral contradictoires : 8 images / 10 Mo ou 20 Mo) | P1 | Limite mesurée sur l'API |
-| F-LLM-9 | **Calibration** de Large 4 par *Famille de preuve*, **avant tout pilote facturé** | P0 | **Bloquée** : aucune étiquette humaine dans le dépôt ([#415](https://github.com/jamon8888/Holo-RGAA/issues/415)) |
+| F-LLM-9 | ~~Calibration de Large 4~~ — **abandonnée** (porteur, 2026-11-21). Remplacée par les **plugins d'analyse** : une bibliothèque Rust (ou un sidecar) mesure, Large 4 ne juge que la pertinence sur la preuve, le relecteur décide | P0 | Specs [docs/specs/plugins-analyse](../specs/plugins-analyse/README.md), tickets [#416](https://github.com/jamon8888/Holo-RGAA/issues/416) |
 | F-LLM-10 | Mode dégradé : panne Mistral → audit déterministe complet + tests IA en `review` cause `llm_unavailable` | P0 | Test de panne simulée |
 | F-LLM-11 | Fournisseur secondaire ou modèle local via la route de repli | P1 | — |
 | F-LLM-12 | Découpage des lots et effort **par critère** réglables (levier de coût et de latence) | P1 | Après la mesure sur l'API Mistral |
@@ -361,7 +361,7 @@ Décisions : [Action GitHub du pilote](https://github.com/jamon8888/Holo-RGAA/is
 
 | Jalon | Contenu | Sortie |
 |---|---|---|
-| **M0 — Socle** | F-ACC-0, F-ACC-4, F-LLM-4 à 6, F-LLM-9 (calibration), F-LLM-10, F-BILL-1 (définitive), F-PRV-4 ; DPA, durées de conservation, clauses (NF-2, NF-11) ; port Obscura non partagé (NF-5) | Large 4 admis ou refusé ; coût et latence réels connus ; failles fermées |
+| **M0 — Socle** | F-ACC-0, F-ACC-4, F-LLM-4 à 6, P-00 à P-02 (plugins d'analyse sans modèle), F-LLM-10, F-BILL-1 (définitive), F-PRV-4 ; DPA, durées de conservation, clauses (NF-2, NF-11) ; port Obscura non partagé (NF-5) | Large 4 admis (2026-11-21) ; coût et latence réels connus ; failles fermées |
 | **M1 — Pilote payant** (D4) | F-INST-1 à 6, F-ACC-7, F-BILL-2 à 5 (passerelle, crédits), F-VIS-8, 9, 6, F-PLG-1 à 5, retrait du verdict du DTO MCP (R3), F-SEC-1, 3, 4, F-GH-1, 2, 3, 7 | Premier pilote facturé sur crédits ; décisions de revue opposables |
 | **M2 — Team publique** | Multi-tenant, achat de crédits en ligne, guide visuel navigateur (MCP public + OAuth), F-VIS-10, F-GH complet, signature, F-LLM-7, 8, 11, 12 | Carte M2/M3 (hors périmètre de la carte du pilote) |
 | **M3 — Enterprise** | Horodatage tiers, SSO/RBAC, Jira, multi-sites, packs DE/Benelux | Phase 3 du PDF |

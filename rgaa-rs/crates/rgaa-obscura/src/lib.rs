@@ -14,6 +14,7 @@ use tracing::{info, warn};
 
 pub mod cdp_pool;
 pub mod config;
+mod contrast;
 pub mod evidence;
 pub mod guided;
 pub mod results;
@@ -1649,7 +1650,11 @@ impl ObscuraBridge {
         )
         .await?;
 
-        Self::validate_axe_result(&result)
+        let axe_json = Self::validate_axe_result(&result)?;
+
+        // #439 : même complément déterministe que dans le chemin groupé (cdp_pool) —
+        // les deux chemins doivent produire exactement le même verdict.
+        crate::contrast::augment_result(ws, session_id, axe_json).await
     }
 
     /// Validate the resolved axe.run() result and return its violations array. Any

@@ -17,11 +17,18 @@
 //!    C'est un défaut d'infrastructure du navigateur piloté par `obscura` (#371), pas un
 //!    défaut de mapping ; ce test ne le corrige pas, il en constate l'effet.
 //!
-//! Témoin inclus pour mémoire de #371 : une page à violation flagrante (texte `#cccccc` sur
-//! fond `#ffffff`, ratio ≈ 1.6:1) rend ici aussi `axe -> None` plutôt que `Fail` — la preuve
-//! la plus directe que `color-contrast` ne se déclenche pas dans cet environnement. Tant
-//! que #371 n'est pas résolu, ce test ne peut prouver que l'absence de `Pass` fabriqué ; il
-//! ne peut pas prouver qu'axe détecte correctement une vraie violation de contraste.
+//! #439 — contournement de #371 par la collecte. Comme `color-contrast` ne se déclenche
+//! jamais dans Obscura (cause B : rastérisation de texte approchée → `isIconLigature()`
+//! toujours vrai → matcher inapplicable), le pont mesure désormais le contraste **lui-même**
+//! en Rust, depuis les styles calculés lus via CDP (`Runtime.evaluate` +
+//! `getComputedStyle`), et injecte une violation `color-contrast` dans le résultat axe.
+//! Le témoin `#cccccc` sur `#ffffff` (ratio ≈ 1.6:1) doit donc rendre `Fail`, et non plus
+//! `None` — c'est l'acceptation 1 de #439. Le navigateur réellement utilisé reste Obscura
+//! 0.2.4 épinglé (#430) : aucun changement de substrate, aucune décision produit.
+//!
+//! Le second scénario (mécanisme de contraste cassé) reste sur le chargement : axe ne clique
+//! jamais, la sonde non plus — ce test continue d'exiger seulement qu'aucun `Pass` ne soit
+//! fabriqué sur un état par défaut correct.
 //!
 //! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
 //! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
@@ -107,18 +114,16 @@ async fn criterion_3_2_never_passes_on_silence_alone() {
     let bridge = Arc::new(server);
 
     // Violation flagrante dès le chargement, sans qu'aucun mécanisme n'ait besoin d'être
-    // activé. Note #371 : ce témoin ne rend pas `Fail` aujourd'hui — `color-contrast` ne se
-    // déclenche pas du tout dans cet environnement. Ce qui compte ici, et ce que le fix de
-    // cette PR garantit, c'est qu'il ne rend pas non plus `Pass` : son absence de verdict
-    // retombe honnêtement sur le repli du pipeline, jamais sur une conformité inventée.
+    // activé. #439 : la mesure déterministe du contraste depuis les styles calculés doit
+    // rendre `Fail` — l'absence de verdict d'axe ne suffit plus.
     let control = format!("http://127.0.0.1:{port}/coverage-3-2-low-contrast-control.html");
     let control_status = audit_3_2(&bridge, &control).await;
     eprintln!("témoin (violation flagrante) : axe -> {control_status:?}");
-    assert_ne!(
+    assert_eq!(
         control_status,
-        Some(CriterionStatus::Pass),
-        "axe rend Pass pour 3.2 sur une page dont le contraste est manifestement insuffisant \
-         dès le chargement"
+        Some(CriterionStatus::Fail),
+        "3.2 doit rendre Fail sur une page dont le contraste est manifestement insuffisant \
+         dès le chargement (#ccc sur #fff, ratio ≈ 1.6:1) — obtenu : {control_status:?}"
     );
 
     // Mécanisme d'affichage de contraste qui, une fois activé, produit un contraste

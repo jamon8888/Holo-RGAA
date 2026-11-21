@@ -38,6 +38,18 @@ Convention de preuve : **[code]** constaté dans le repo · **[PDF]** affirmé p
 | [Faits Mistral Large 4](https://github.com/jamon8888/Holo-RGAA/issues/402) · [Conditions d'usage et topologie des agents navigateur](https://github.com/jamon8888/Holo-RGAA/issues/403) · [Obligations RGPD](https://github.com/jamon8888/Holo-RGAA/issues/404) | Recherches : intégrées en §6, §8.2, §10, §14. |
 | [Mesurer le coût réel de 3 audits sous Mistral Large 4](https://github.com/jamon8888/Holo-RGAA/issues/405) | Mesure partielle : **≈ 0,13 $ par page** en `low`, **83 % du coût = sortie**. Détail : §8.2. |
 
+### Décisions du socle auditeur (2026-11-21)
+
+Elles viennent de l'analyse contradictoire du socle « auditeur RGAA/EAA = Claude Desktop + computer use + Holo-RGAA » et de l'[analyse du code d'Ara](analyse-ara.md).
+
+| ID | Décision |
+|---|---|
+| **D5** | **Cible du premier pilote : des cabinets d'audit RGAA/EAA**, qui ont du volume et savent juger la qualité. Les équipes internes des clients viendront ensuite. |
+| **D6** | **En mode Claude Desktop, Mistral Large 4 juge la pertinence par défaut** : la preuve est versionnée et refacturée en crédits. Le jugement par Claude, sur l'abonnement de l'auditeur, est une option. Claude orchestre et montre, et computer use sert de **guidage visuel**. Il n'est jamais la source d'une preuve. |
+| **D7** | **Taux de réouverture** comme indicateur de rappel du pilote, à la place de la calibration ([#438](https://github.com/jamon8888/Holo-RGAA/issues/438)). |
+| **D8** | **Alimenter Ara, ne pas le refaire.** On exporte les décisions de revue vers Ara (DINUM) et on propose en amont une fonction d'import ([#433](https://github.com/jamon8888/Holo-RGAA/issues/433)). Holo-RGAA se positionne sur la **pré-analyse avec preuves**, qu'Ara ne fait pas. |
+| **D9** | **Aucune démonstration auprès d'un auditeur avant** la correction du contraste et des liens dans le navigateur d'audit ([#439](https://github.com/jamon8888/Holo-RGAA/issues/439), [#371](https://github.com/jamon8888/Holo-RGAA/issues/371)), les types d'audit rapide, complémentaire et complet ([#428](https://github.com/jamon8888/Holo-RGAA/issues/428)), les éléments transverses ([#429](https://github.com/jamon8888/Holo-RGAA/issues/429)) et les méthodologies officielles dans le guidage ([#432](https://github.com/jamon8888/Holo-RGAA/issues/432)). |
+
 **Écarts assumés au PDF** : le PDF vend une solution « jamais en SaaS obligatoire » et « sans dépendance à un éditeur
 américain cloud » [PDF §4.1, §2.3]. D1 garde cet argument pour l'offre Souveraine et le retire de l'offre Confort.
 

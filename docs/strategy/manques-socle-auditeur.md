@@ -1,7 +1,7 @@
 # Ce qui manque au socle auditeur RGAA/EAA
 
 > 2026-11-21 · Suite de l'analyse contradictoire du socle (Claude Desktop + computer use + Holo-RGAA) et de l'[analyse d'Ara](analyse-ara.md). Décisions de référence : PRD §0, D5 à D9.
-> Carte wayfinder : « Socle auditeur RGAA/EAA démontrable en cabinet ».
+> Carte wayfinder : [Socle auditeur RGAA/EAA démontrable en cabinet](https://github.com/jamon8888/Holo-RGAA/issues/441) — tickets de décision #442 à #449, chantiers d'exécution #450 à #452.
 
 ## 1. Méthode
 

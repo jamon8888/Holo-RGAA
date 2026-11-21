@@ -64,6 +64,12 @@ pub struct AuditBundle {
     /// `None` means the source bundle predates this field or did not report it.
     #[serde(default)]
     pub audit_complete: Option<bool>,
+    /// Browser that actually ran the audit (e.g. `Obscura`, `Chrome via Claude
+    /// for Chrome`). The declaration uses it to name the audit environment
+    /// without a human having to declare it. `None` on bundles that predate
+    /// this field.
+    #[serde(default)]
+    pub navigateur_audit: Option<String>,
     pub config: AuditConfig,
     pub pages: Vec<PageAudit>,
     pub findings: Vec<Finding>,
@@ -78,12 +84,21 @@ impl AuditBundle {
             audit_id: audit_id.into(),
             url: url.into(),
             audit_complete: None,
+            navigateur_audit: None,
             config,
             pages: Vec::new(),
             findings: Vec::new(),
             checkpoints: Vec::new(),
             summary: AuditSummary::default(),
         }
+    }
+
+    /// Records the browser that ran the audit, so the declaration can name
+    /// the audit environment automatically.
+    #[must_use]
+    pub fn avec_navigateur_audit(mut self, navigateur: impl Into<String>) -> Self {
+        self.navigateur_audit = Some(navigateur.into());
+        self
     }
 
     /// Validates identifiers, statuses, finding uniqueness, and evidence completeness.
@@ -261,6 +276,7 @@ impl From<AuditResult> for AuditBundle {
             audit_id: result.audit_id,
             url: result.url,
             audit_complete: Some(result.audit_complete),
+            navigateur_audit: None,
             config: AuditConfig::default(),
             pages: page_audits,
             findings,
@@ -320,6 +336,22 @@ mod tests {
             .remove("audit_complete");
         let legacy: AuditBundle = serde_json::from_value(legacy_json).unwrap();
         assert_eq!(legacy.audit_complete, None);
+    }
+
+    #[test]
+    fn bundle_enregistre_le_navigateur_utilise_et_reste_lisible_sans_lui() {
+        let bundle = AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        assert_eq!(bundle.navigateur_audit, None);
+
+        let bundle = bundle.avec_navigateur_audit("Obscura");
+        let json = serde_json::to_string(&bundle).unwrap();
+        let decoded: AuditBundle = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.navigateur_audit.as_deref(), Some("Obscura"));
+
+        let mut legacy: serde_json::Value = serde_json::from_str(&json).unwrap();
+        legacy.as_object_mut().unwrap().remove("navigateur_audit");
+        let legacy: AuditBundle = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.navigateur_audit, None);
     }
 
     #[test]

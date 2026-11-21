@@ -24,7 +24,9 @@ pub mod report;
 pub mod sources;
 pub mod ue;
 
-pub use declaration::{render_declaration_fr, DeclarationFrInput, NcEntry};
+pub use declaration::{
+    refuse_partial_declaration, render_declaration_fr, DeclarationFrInput, NcEntry,
+};
 pub use depot::url_canonique;
 pub use format::ReportFormat;
 pub use gouvernance::{autoriser_generation, OverrideGouvernance, PackVersion, PEREMPTION_JOURS};

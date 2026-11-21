@@ -146,6 +146,7 @@ fn build_audit_result(criteria: Vec<CriterionResult>) -> AuditResult {
         etat_conformite,
         duration_ms: 0,
         audit_complete: false,
+        audit_type: rgaa_core::AuditType::Complet,
     }
 }
 

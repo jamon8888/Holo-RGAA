@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AuditResult, CheckpointResult, CrawlConfig, CriterionResult, CriterionStatus, Finding,
-    PageError, RgaaError, Violation,
+    AuditResult, AuditType, CheckpointResult, CrawlConfig, CriterionResult, CriterionStatus,
+    Finding, PageError, RgaaError, Violation,
 };
 
 pub const CURRENT_SCHEMA_VERSION: &str = "1.0";
@@ -15,6 +15,9 @@ pub struct AuditConfig {
     pub max_depth: u32,
     pub respect_robots: bool,
     pub sample_mode: bool,
+    /// Scope carried into reports; absent on older bundles means full audit.
+    #[serde(default)]
+    pub audit_type: AuditType,
 }
 
 impl Default for AuditConfig {
@@ -24,6 +27,7 @@ impl Default for AuditConfig {
             max_depth: 5,
             respect_robots: true,
             sample_mode: false,
+            audit_type: AuditType::Complet,
         }
     }
 }
@@ -196,6 +200,7 @@ impl From<&CrawlConfig> for AuditConfig {
             max_depth: crawl.max_depth,
             respect_robots: crawl.respect_robots,
             sample_mode: crawl.sample_mode,
+            audit_type: crawl.audit_type,
         }
     }
 }
@@ -261,7 +266,10 @@ impl From<AuditResult> for AuditBundle {
             audit_id: result.audit_id,
             url: result.url,
             audit_complete: Some(result.audit_complete),
-            config: AuditConfig::default(),
+            config: AuditConfig {
+                audit_type: result.audit_type,
+                ..AuditConfig::default()
+            },
             pages: page_audits,
             findings,
             checkpoints: Vec::new(),
@@ -465,6 +473,7 @@ mod tests {
             etat_conformite: "partielle".into(),
             duration_ms: 1000,
             audit_complete: false,
+            audit_type: AuditType::Complet,
         }
     }
 
@@ -508,11 +517,13 @@ mod tests {
             max_depth: 3,
             respect_robots: false,
             sample_mode: true,
+            audit_type: AuditType::Rapide,
         };
         let config = AuditConfig::from(&crawl);
         assert_eq!(config.max_pages, 25);
         assert_eq!(config.max_depth, 3);
         assert!(!config.respect_robots);
         assert!(config.sample_mode);
+        assert_eq!(config.audit_type, AuditType::Rapide);
     }
 }

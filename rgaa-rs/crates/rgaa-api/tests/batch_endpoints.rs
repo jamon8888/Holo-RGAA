@@ -36,6 +36,7 @@ fn audit(url: &str, taux: f64) -> AuditResult {
         etat_conformite: "partielle".to_string(),
         duration_ms: 1,
         audit_complete: false,
+        audit_type: rgaa_core::AuditType::Complet,
     }
 }
 

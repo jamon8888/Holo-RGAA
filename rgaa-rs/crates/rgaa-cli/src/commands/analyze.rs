@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use rgaa_core::CrawlConfig;
+use rgaa_core::{AuditType, CrawlConfig};
 use rgaa_orchestrator::Orchestrator;
 
 use crate::commands::{write_output, CommonArgs};
@@ -26,6 +26,32 @@ pub struct AnalyzeArgs {
     pub profile: Option<String>,
     #[clap(long, help = "Enable verbose output with detailed progress")]
     pub verbose: bool,
+    #[clap(
+        long,
+        value_enum,
+        default_value = "complet",
+        help = "Audit scope: rapide (25 criteria), complementaire (50), complet (106)"
+    )]
+    pub audit_type: AuditTypeArg,
+}
+
+/// CLI spelling of the three audit scopes. Kept separate from the domain enum
+/// so `rgaa-core` does not have to depend on clap.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum AuditTypeArg {
+    Rapide,
+    Complementaire,
+    Complet,
+}
+
+impl From<AuditTypeArg> for AuditType {
+    fn from(value: AuditTypeArg) -> Self {
+        match value {
+            AuditTypeArg::Rapide => Self::Rapide,
+            AuditTypeArg::Complementaire => Self::Complementaire,
+            AuditTypeArg::Complet => Self::Complet,
+        }
+    }
 }
 
 pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
@@ -37,7 +63,7 @@ pub async fn run(args: AnalyzeArgs) -> Result<i32, CliError> {
         eprintln!("Starting audit for: {}", url);
     }
 
-    let crawl_config = crawl_config(&config)?;
+    let crawl_config = crawl_config(&config, args.audit_type.into())?;
     let orchestrator = Orchestrator::new();
 
     if args.verbose {
@@ -146,6 +172,12 @@ fn render_table(result: &rgaa_core::AuditResult) -> String {
     let _ = writeln!(&mut out);
     let _ = writeln!(&mut out, "Audit ID: {}", result.audit_id);
     let _ = writeln!(&mut out, "URL: {}", result.url);
+    let _ = writeln!(
+        &mut out,
+        "Audit Type: {} ({} criteria)",
+        result.audit_type.label(),
+        result.audit_type.count()
+    );
     let _ = writeln!(&mut out, "Conformity: {}", result.etat_conformite);
     let _ = writeln!(&mut out, "Global Rate: {:.1}%", result.taux_global);
     let _ = writeln!(&mut out, "Coverage: {:.1}%", result.coverage_percent);
@@ -220,8 +252,11 @@ fn with_scheme(url: String) -> String {
     }
 }
 
-fn crawl_config(_config: &Config) -> Result<CrawlConfig, CliError> {
-    let mut crawl_config = CrawlConfig::default();
+fn crawl_config(_config: &Config, audit_type: AuditType) -> Result<CrawlConfig, CliError> {
+    let mut crawl_config = CrawlConfig {
+        audit_type,
+        ..CrawlConfig::default()
+    };
     if let Some(max_pages) = std::env::var("RGAA_MAX_PAGES")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
@@ -251,6 +286,19 @@ fn crawl_config(_config: &Config) -> Result<CrawlConfig, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_type_argument_reaches_the_orchestrator_config() {
+        let config = Config::default();
+        for (arg, expected) in [
+            (AuditTypeArg::Rapide, AuditType::Rapide),
+            (AuditTypeArg::Complementaire, AuditType::Complementaire),
+            (AuditTypeArg::Complet, AuditType::Complet),
+        ] {
+            let crawl = crawl_config(&config, arg.into()).unwrap();
+            assert_eq!(crawl.audit_type, expected);
+        }
+    }
 
     #[test]
     fn explicit_page_list_preserves_order_and_deduplicates() {

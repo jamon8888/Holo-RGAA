@@ -23,6 +23,12 @@ fn render_markdown(bundle: &AuditBundle) -> String {
     let _ = writeln!(out, "# RGAA Audit Report: {}", bundle.audit_id);
     let _ = writeln!(out);
     let _ = writeln!(out, "- URL: {}", bundle.url);
+    let _ = writeln!(
+        out,
+        "- Audit type: {} ({} criteria)",
+        bundle.config.audit_type.label(),
+        bundle.config.audit_type.count()
+    );
     let _ = writeln!(out, "- Schema: {}", bundle.schema_version);
     let _ = writeln!(
         out,
@@ -429,6 +435,24 @@ mod tests {
         let output = render(&bundle, ReportFormat::Json).expect("json");
         let decoded: AuditBundle = serde_json::from_str(&output).expect("valid bundle");
         assert_eq!(decoded.audit_id, "audit-1");
+    }
+
+    /// #428: a partial audit's report states its scope instead of implying a
+    /// full 106-criterion conformance claim.
+    #[test]
+    fn reports_name_the_audit_type() {
+        use rgaa_core::AuditType;
+
+        let mut bundle = sample_bundle();
+        bundle.config.audit_type = AuditType::Rapide;
+        let markdown = render_markdown(&bundle);
+        assert!(
+            markdown.contains("Audit type: Audit rapide (25 criteria)"),
+            "{markdown}"
+        );
+
+        let html = html::generate_html_report(&bundle);
+        assert!(html.contains("Audit rapide (25 critères)"), "{html}");
     }
 
     #[test]

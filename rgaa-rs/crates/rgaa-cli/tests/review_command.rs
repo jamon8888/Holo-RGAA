@@ -94,6 +94,7 @@ fn audit(page_urls: &[&str], criterion_ids: &[&str]) -> AuditResult {
         etat_conformite: "incomplete".to_owned(),
         duration_ms: 1,
         audit_complete: true,
+        audit_type: rgaa_core::AuditType::Complet,
     }
 }
 

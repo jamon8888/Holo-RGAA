@@ -6,8 +6,8 @@ use rgaa_core::na_detection;
 use rgaa_core::test_plan::CoverageLevel;
 use rgaa_core::types::{is_deterministic_source, TestOutcome, VerdictBasis};
 use rgaa_core::{
-    AuditResult, Classification, CrawlConfig, Criterion, CriterionResult, CriterionStatus,
-    EnginePlan, PageResult, PlanEngine, RgaaCatalog, RgaaCriteria,
+    AuditResult, AuditType, Classification, CrawlConfig, Criterion, CriterionResult,
+    CriterionStatus, EnginePlan, PageResult, PlanEngine, RgaaCatalog, RgaaCriteria,
 };
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
@@ -109,6 +109,7 @@ impl std::error::Error for CoverageError {}
 /// deterministic evidence; model estimates may cover partial routes only.
 pub fn validate_automatic_verdict_coverage(
     results: &[CriterionResult],
+    audit_type: AuditType,
 ) -> Result<(), CoverageError> {
     let mut by_id = HashMap::with_capacity(results.len());
     let mut duplicate_ids = std::collections::HashSet::new();
@@ -120,6 +121,9 @@ pub fn validate_automatic_verdict_coverage(
 
     let mut missing = Vec::new();
     for criterion in RgaaCriteria::all() {
+        if !audit_type.contains(criterion.id) {
+            continue;
+        }
         let id = criterion.id;
         let Some(result) = by_id.get(id).copied() else {
             missing.push(id.to_owned());
@@ -198,12 +202,23 @@ pub fn assemble_page_audit(
     candidates: impl IntoIterator<Item = (String, CriterionResult)>,
     na_map: &HashMap<&'static str, bool>,
     duration_ms: u64,
+    audit_type: AuditType,
 ) -> AuditResult {
-    let mut all_results = merge::merge_results(candidates);
+    // Only the criteria in the requested scope are audited. An out-of-scope
+    // candidate is evidence produced for a criterion nobody asked about; it
+    // must never leak into a partial audit's rate or report.
+    let mut all_results = merge::merge_results(
+        candidates
+            .into_iter()
+            .filter(|(id, _)| audit_type.contains(id)),
+    );
 
-    // Preserve a row for every catalog criterion, while keeping silence
+    // Preserve a row for every in-scope criterion, while keeping silence
     // unresolved rather than turning it into an automatic pass.
     for criterion in RgaaCriteria::all() {
+        if !audit_type.contains(criterion.id) {
+            continue;
+        }
         if criterion.classification == Classification::Manuel {
             all_results
                 .entry(criterion.id.to_string())
@@ -281,7 +296,7 @@ pub fn assemble_page_audit(
         }
     }
 
-    let coverage_result = validate_automatic_verdict_coverage(&criteria);
+    let coverage_result = validate_automatic_verdict_coverage(&criteria, audit_type);
     if let Err(error) = &coverage_result {
         tracing::warn!(missing = ?error.missing_criterion_ids, "automatic verdict coverage is incomplete");
     }
@@ -295,7 +310,7 @@ pub fn assemble_page_audit(
         crawl_depth: 0,
     };
 
-    assemble_site_audit(url, vec![page], duration_ms)
+    assemble_site_audit(url, vec![page], duration_ms, audit_type)
 }
 
 /// Aggregate assembled page results into the persisted site audit shape.
@@ -307,14 +322,34 @@ pub fn assemble_site_audit(
     url: String,
     all_pages: Vec<PageResult>,
     duration_ms: u64,
+    audit_type: AuditType,
 ) -> AuditResult {
+    // The scope is enforced at the aggregation boundary too: a caller that
+    // hands us an unfiltered page must not be able to inflate the rate with
+    // criteria outside the requested audit type.
+    let all_pages: Vec<PageResult> = all_pages
+        .into_iter()
+        .map(|mut page| {
+            page.criteria
+                .retain(|criterion| audit_type.contains(&criterion.criterion_id));
+            page.compliance_rate = calculate_compliance(&page.criteria);
+            page
+        })
+        .collect();
     let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    // A rapid audit is a partial measurement, never a conformance statement —
+    // not even when every criterion in its 25-criterion scope passes.
+    let etat_conformite = if audit_type.allows_conformity_declaration() {
+        etat_conformite
+    } else {
+        "audit partiel".to_string()
+    };
     let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
     let all_criteria: Vec<CriterionResult> = all_pages
         .iter()
         .flat_map(|page| page.criteria.clone())
         .collect();
-    let total = RgaaCriteria::count();
+    let total = audit_type.count();
     let pass_count = all_criteria
         .iter()
         .filter(|criterion| criterion.status == CriterionStatus::Pass)
@@ -328,7 +363,7 @@ pub fn assemble_site_audit(
         .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
         .count();
     let compliance = calculate_compliance(&all_criteria);
-    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
+    let audit_complete = pages_have_complete_automatic_coverage(&all_pages, audit_type);
 
     info!(
         pass = pass_count,
@@ -359,6 +394,7 @@ pub fn assemble_site_audit(
         etat_conformite,
         duration_ms,
         audit_complete,
+        audit_type,
     }
 }
 
@@ -419,11 +455,11 @@ fn admit_routed_results(
         .collect()
 }
 
-fn pages_have_complete_automatic_coverage(pages: &[PageResult]) -> bool {
+fn pages_have_complete_automatic_coverage(pages: &[PageResult], audit_type: AuditType) -> bool {
     !pages.is_empty()
         && pages
             .iter()
-            .all(|page| validate_automatic_verdict_coverage(&page.criteria).is_ok())
+            .all(|page| validate_automatic_verdict_coverage(&page.criteria, audit_type).is_ok())
 }
 
 fn record_site_comparison_evidence(
@@ -879,6 +915,7 @@ async fn audit_discovered_urls(
     config: &CrawlConfig,
     start: std::time::Instant,
 ) -> Result<AuditResult, String> {
+    let audit_type = config.audit_type;
     let discovered_count = urls.len();
     // Cap at max_pages
     let urls: Vec<String> = urls.into_iter().take(config.max_pages).collect();
@@ -913,11 +950,12 @@ async fn audit_discovered_urls(
         if let Some(audit) = batch_results.remove(page_url) {
             all_pages.extend(audit.pages);
         } else if let Some(error) = failures.get(page_url) {
-            all_pages.push(failed_page_result(page_url, error));
+            all_pages.push(failed_page_result(page_url, error, audit_type));
         } else {
             all_pages.push(failed_page_result(
                 page_url,
                 "audit did not return a result or an error callback",
+                audit_type,
             ));
         }
     }
@@ -925,39 +963,52 @@ async fn audit_discovered_urls(
     // RGAA 12.1/12.2/12.4/12.5 are scoped to a set of pages. Capture their
     // normalized signals in one Obscura scrape for this exact crawl sample.
     // This is local browser instrumentation; it does not create Holo requests.
-    let site_context = ObscuraBridge::extract_page_context_batch(
-        ObscuraBridge::from_env().binary_path().to_string(),
-        urls.clone(),
-        1,
-    )
-    .await;
-    let site_contexts = match site_context {
-        Ok(contexts) => contexts,
-        Err(error) => {
-            tracing::warn!(error = %error, "site-level Obscura observation failed; criteria remain unresolved");
-            HashMap::new()
-        }
+    // A partial audit has none of these criteria in scope, so it must not run
+    // the site-level plugin at all (#428).
+    let site_results = if ["12.1", "12.2", "12.4", "12.5"]
+        .iter()
+        .any(|id| audit_type.contains(id))
+    {
+        let site_context = ObscuraBridge::extract_page_context_batch(
+            ObscuraBridge::from_env().binary_path().to_string(),
+            urls.clone(),
+            1,
+        )
+        .await;
+        let site_contexts = match site_context {
+            Ok(contexts) => contexts,
+            Err(error) => {
+                tracing::warn!(error = %error, "site-level Obscura observation failed; criteria remain unresolved");
+                HashMap::new()
+            }
+        };
+        let page_observations: Vec<site_comparison::PageObservation> = urls
+            .iter()
+            .filter_map(|page_url| site_contexts.get(page_url))
+            .filter_map(|value| serde_json::from_value(value.clone()).ok())
+            .collect();
+        let failed_pages = urls
+            .iter()
+            .filter(|page_url| {
+                failures.contains_key(*page_url) || !site_contexts.contains_key(*page_url)
+            })
+            .count();
+        let sample_complete = discovered_count < config.max_pages
+            && failed_pages == 0
+            && page_observations.len() == urls.len();
+        site_comparison::compare_site(
+            &page_observations,
+            urls.len(),
+            failed_pages,
+            sample_complete,
+        )
+    } else {
+        tracing::info!(
+            audit_type = audit_type.as_str(),
+            "site-level criteria out of scope; skipping site comparison"
+        );
+        Vec::new()
     };
-    let page_observations: Vec<site_comparison::PageObservation> = urls
-        .iter()
-        .filter_map(|page_url| site_contexts.get(page_url))
-        .filter_map(|value| serde_json::from_value(value.clone()).ok())
-        .collect();
-    let failed_pages = urls
-        .iter()
-        .filter(|page_url| {
-            failures.contains_key(*page_url) || !site_contexts.contains_key(*page_url)
-        })
-        .count();
-    let sample_complete = discovered_count < config.max_pages
-        && failed_pages == 0
-        && page_observations.len() == urls.len();
-    let site_results = site_comparison::compare_site(
-        &page_observations,
-        urls.len(),
-        failed_pages,
-        sample_complete,
-    );
     for site_result in site_results {
         let Some(criterion) = RgaaCriteria::all()
             .iter()
@@ -1013,12 +1064,14 @@ async fn audit_discovered_urls(
         url.to_string(),
         all_pages,
         start.elapsed().as_millis() as u64,
+        audit_type,
     ))
 }
 
-fn failed_page_result(url: &str, error: &str) -> PageResult {
+fn failed_page_result(url: &str, error: &str, audit_type: AuditType) -> PageResult {
     let criteria = RgaaCriteria::all()
         .iter()
+        .filter(|criterion| audit_type.contains(criterion.id))
         .map(|criterion| CriterionResult {
             criterion_id: criterion.id.to_string(),
             title: criterion.title.to_string(),
@@ -1270,11 +1323,12 @@ async fn audit_one(
     agent: Arc<RgaaAgent>,
     tool_ctx: ToolContext,
     url: String,
-    _config: CrawlConfig,
+    config: CrawlConfig,
     on_phase: Arc<dyn Fn(AuditPhase) + Send + Sync>,
 ) -> Result<AuditResult, String> {
+    let audit_type = config.audit_type;
     let start = std::time::Instant::now();
-    info!(url, "Starting audit");
+    info!(url, audit_type = audit_type.as_str(), "Starting audit");
 
     // Extract the bridge Arc and release the parking_lot lock before any .await.
     // parking_lot::MutexGuard is not Send, so holding it across .await would
@@ -1300,13 +1354,21 @@ async fn audit_one(
         .remove(url.as_str())
         .ok_or_else(|| format!("axe-core produced no result for {url}"))?;
     let axe_results = AxeMapper::map(&axe_violations).map_err(|e| e.to_string())?;
-    let mut axe_results = admit_routed_results(axe_results, "axe");
+    let mut axe_results: HashMap<_, _> = admit_routed_results(axe_results, "axe")
+        .into_iter()
+        .filter(|(id, _)| audit_type.contains(id))
+        .collect();
     attach_complete_mechanism_passes(axe_results.values_mut());
 
     // 2. Run gap-fix rules for 10 false negatives
     on_phase(AuditPhase::GapFix);
     info!("Running gap-fix rules");
-    let gap_snippets = routed_gap_fix_snippets();
+    // Only inject snippets for criteria in scope: an out-of-scope snippet is a
+    // plugin call for a criterion this audit is not allowed to evaluate.
+    let gap_snippets: HashMap<_, _> = routed_gap_fix_snippets()
+        .into_iter()
+        .filter(|(id, _)| audit_type.contains(id))
+        .collect();
     // clippy's `--all-targets` (dev-profile) check reports the `&` here as a
     // needless borrow, but the actual `[profile.test]` build (cargo test /
     // nextest, and thus CI) requires it — `gap_snippets` alone fails to
@@ -1324,15 +1386,19 @@ async fn audit_one(
     )
     .await?;
     let gap_js_results = gap_by_url.remove(url.as_str()).unwrap_or_default();
-    let mut gap_results =
-        admit_routed_results(GapFixRules::parse_results(&gap_js_results), "gapfix");
+    let mut gap_results: HashMap<_, _> =
+        admit_routed_results(GapFixRules::parse_results(&gap_js_results), "gapfix")
+            .into_iter()
+            .filter(|(id, _)| audit_type.contains(id))
+            .collect();
     attach_complete_mechanism_passes(gap_results.values_mut());
 
     // Obscura keyboard actions are limited to Tab key-down/up events. The
     // observation is shared by criteria 12.8 and 12.9; no activation key or
     // pointer click is sent.
     let keyboard_is_routed = ["12.8", "12.9"].iter().any(|criterion_id| {
-        criterion_has_routed_mechanism(criterion_id, &mechanism_id("keyboard", criterion_id))
+        audit_type.contains(criterion_id)
+            && criterion_has_routed_mechanism(criterion_id, &mechanism_id("keyboard", criterion_id))
     });
     let keyboard_results = if keyboard_is_routed {
         match bridge.observe_keyboard(&url).await {
@@ -1392,11 +1458,16 @@ async fn audit_one(
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
     for criterion in RgaaCriteria::all() {
+        // One LLM call per out-of-scope criterion is exactly the cost the
+        // rapid audit exists to avoid (#428).
+        if !audit_type.contains(criterion.id) {
+            continue;
+        }
         if let Some(engine) = EnginePlan::primary(criterion.id) {
             by_engine.entry(engine).or_default().push(criterion.clone());
         }
     }
-    let mut ordered_criteria = Vec::with_capacity(RgaaCriteria::count());
+    let mut ordered_criteria = Vec::with_capacity(audit_type.count());
     for engine in [
         PlanEngine::AxeCore,
         PlanEngine::Deterministic,
@@ -1434,6 +1505,7 @@ async fn audit_one(
         candidates,
         &na_map,
         start.elapsed().as_millis() as u64,
+        audit_type,
     ))
 }
 
@@ -1508,6 +1580,78 @@ mod routing_tests {
         results.into_values().collect()
     }
 
+    /// #428: a partial audit must not evaluate, count or report criteria
+    /// outside its official 25/50-criterion scope.
+    #[test]
+    fn rapide_audit_only_assembles_its_25_criteria() {
+        // Only the 25 in-scope criteria pass; every other criterion fails.
+        // The audit's rate must reflect the scope, not the 106 candidates.
+        let candidates = complete_prediction_set()
+            .into_iter()
+            .map(|mut result| {
+                let in_scope = rgaa_core::AuditType::Rapide.contains(&result.criterion_id);
+                result.status = if in_scope {
+                    CriterionStatus::Pass
+                } else {
+                    CriterionStatus::Fail
+                };
+                result.verified_status = Some(result.status.clone());
+                (result.criterion_id.clone(), result)
+            })
+            .collect::<Vec<_>>();
+        let audit = assemble_page_audit(
+            "https://example.test".to_owned(),
+            None,
+            candidates,
+            &HashMap::new(),
+            0,
+            rgaa_core::AuditType::Rapide,
+        );
+
+        assert_eq!(audit.audit_type, rgaa_core::AuditType::Rapide);
+        assert_eq!(audit.total_criteria, 25);
+        assert_eq!(audit.pages[0].criteria.len(), 25);
+        assert!(audit.pages[0]
+            .criteria
+            .iter()
+            .all(|c| rgaa_core::AuditType::Rapide.contains(&c.criterion_id)));
+        assert!(validate_automatic_verdict_coverage(
+            &audit.pages[0].criteria,
+            rgaa_core::AuditType::Rapide
+        )
+        .is_ok());
+        // A rapide audit is never a conformity declaration, even at 100 %.
+        assert_eq!(audit.etat_conformite, "audit partiel");
+        assert_eq!(audit.taux_global, 100.0);
+    }
+
+    #[test]
+    fn complementaire_audit_assembles_its_50_criteria_and_complet_all_106() {
+        let candidates = complete_prediction_set()
+            .into_iter()
+            .map(|result| (result.criterion_id.clone(), result))
+            .collect::<Vec<_>>();
+        for (scope, expected) in [
+            (rgaa_core::AuditType::Complementaire, 50),
+            (rgaa_core::AuditType::Complet, 106),
+        ] {
+            let audit = assemble_page_audit(
+                "https://example.test".to_owned(),
+                None,
+                candidates.clone(),
+                &HashMap::new(),
+                0,
+                scope,
+            );
+            assert_eq!(audit.total_criteria, expected);
+            assert_eq!(audit.pages[0].criteria.len(), expected);
+            assert!(
+                validate_automatic_verdict_coverage(&audit.pages[0].criteria, scope).is_ok(),
+                "{scope:?} scope must be complete on its own criteria"
+            );
+        }
+    }
+
     #[test]
     fn only_unique_holo_primary_routes_without_a_deterministic_verdict_are_dispatched() {
         let determined = [deterministic_result(
@@ -1529,7 +1673,11 @@ mod routing_tests {
 
     #[test]
     fn failed_page_is_retained_with_every_criterion_not_tested() {
-        let page = failed_page_result("https://example.test/forms", "navigation timed out");
+        let page = failed_page_result(
+            "https://example.test/forms",
+            "navigation timed out",
+            rgaa_core::AuditType::Complet,
+        );
 
         assert_eq!(page.url, "https://example.test/forms");
         assert_eq!(page.criteria.len(), 106);
@@ -1545,7 +1693,7 @@ mod routing_tests {
 
     #[test]
     fn automatic_verdict_coverage_requires_every_routed_test_outcome() {
-        let error = validate_automatic_verdict_coverage(&[])
+        let error = validate_automatic_verdict_coverage(&[], rgaa_core::AuditType::Complet)
             .expect_err("an empty page result cannot cover the catalog");
         assert_eq!(error.missing_criterion_ids.len(), RgaaCriteria::count());
         assert!(error.missing_criterion_ids.iter().any(|id| id == "4.2"));
@@ -1554,7 +1702,9 @@ mod routing_tests {
     #[test]
     fn complete_routes_require_deterministic_test_evidence() {
         let mut results = complete_prediction_set();
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+        assert!(
+            validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet).is_ok()
+        );
 
         // 4.3 et non 5.7 : 5.7 est sorti de la couverture complète (#371 : aucune règle
         // ne vérifie la cohérence scope/role, en plus du défaut d'infrastructure). 4.3
@@ -1565,7 +1715,7 @@ mod routing_tests {
             .expect("criterion 4.3 exists");
         result.tests[0].source = "agent-estimate".into();
 
-        let error = validate_automatic_verdict_coverage(&results)
+        let error = validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet)
             .expect_err("model estimates alone cannot close a complete route");
         assert_eq!(error.missing_criterion_ids, vec!["4.3"]);
     }
@@ -1580,7 +1730,7 @@ mod routing_tests {
             .expect("criterion 4.3 exists");
         result.status = CriterionStatus::Fail;
 
-        let error = validate_automatic_verdict_coverage(&results)
+        let error = validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet)
             .expect_err("aggregate failure does not identify a test key");
         assert!(error.missing_criterion_ids.iter().any(|id| id == "4.3"));
     }
@@ -1594,7 +1744,7 @@ mod routing_tests {
             .expect("criterion 4.2 exists")
             .automated_verdict = None;
 
-        let error = validate_automatic_verdict_coverage(&results)
+        let error = validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet)
             .expect_err("missing model output must stay incomplete");
         assert_eq!(error.missing_criterion_ids, vec!["4.2"]);
     }
@@ -1668,17 +1818,20 @@ mod routing_tests {
             .expect("criterion 4.2 exists")
             .automated_verdict = None;
 
+        let scope = rgaa_core::AuditType::Complet;
         assert!(pages_have_complete_automatic_coverage(
-            std::slice::from_ref(&complete)
+            std::slice::from_ref(&complete),
+            scope
         ));
-        assert!(pages_have_complete_automatic_coverage(&[
-            complete.clone(),
-            complete.clone()
-        ]));
-        assert!(!pages_have_complete_automatic_coverage(&[
-            complete, incomplete
-        ]));
-        assert!(!pages_have_complete_automatic_coverage(&[]));
+        assert!(pages_have_complete_automatic_coverage(
+            &[complete.clone(), complete.clone()],
+            scope
+        ));
+        assert!(!pages_have_complete_automatic_coverage(
+            &[complete, incomplete],
+            scope
+        ));
+        assert!(!pages_have_complete_automatic_coverage(&[], scope));
     }
 
     #[test]
@@ -1718,7 +1871,9 @@ mod routing_tests {
             rgaa_core::reduce_test_outcomes(&result.tests, &["1".to_string()]),
             Some(CriterionStatus::Fail)
         );
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+        assert!(
+            validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet).is_ok()
+        );
     }
 
     #[test]
@@ -1748,7 +1903,7 @@ mod routing_tests {
             .tests
             .iter()
             .any(|outcome| outcome.source == "site-comparison"));
-        let error = validate_automatic_verdict_coverage(&results)
+        let error = validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet)
             .expect_err("an unkeyed site failure cannot be closed by model rows");
         assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
     }
@@ -1782,7 +1937,9 @@ mod routing_tests {
             .justification
             .as_deref()
             .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+        assert!(
+            validate_automatic_verdict_coverage(&results, rgaa_core::AuditType::Complet).is_ok()
+        );
     }
 
     #[test]

@@ -285,6 +285,31 @@ fn every_rule_resolves_to_a_real_rgaa_criterion_and_cites_it() {
     }
 }
 
+/// Each rule decides against the criterion axe-core itself tags for the
+/// equivalent rule (`RGAAv4` tags, recorded in `engine_plan.json`): an unnamed
+/// link is 6.2 ("chaque lien a-t-il un intitulé ?"), not 6.1 (link purpose), and
+/// an unnamed button is 11.9 (`button-name` → RGAA-11.9.1), not 11.1 (field
+/// labels). Expected ids are written out from the RGAA text, then cross-checked
+/// against the engine plan so the two sources cannot drift apart silently.
+#[test]
+fn each_rule_cites_the_criterion_axe_core_tags_for_the_same_defect() {
+    let expected = [
+        (RuleId::ImgAlt, "image-alt", "1.1"),
+        (RuleId::FormLabel, "label", "11.1"),
+        (RuleId::ButtonName, "button-name", "11.9"),
+        (RuleId::LinkName, "link-name", "6.2"),
+    ];
+    for (rule, axe_rule, criterion) in expected {
+        assert_eq!(rule.rgaa_criterion(), criterion, "{}", rule.as_str());
+        let plan = rgaa_core::EnginePlan::get(criterion)
+            .unwrap_or_else(|| panic!("{criterion} missing from the engine plan"));
+        assert!(
+            plan.axe_rules.iter().any(|r| r == axe_rule),
+            "engine plan does not route axe `{axe_rule}` to {criterion}"
+        );
+    }
+}
+
 /// `source_files` is the whole point of source mapping: findings must point at
 /// the real path on disk, not at a label the caller invented.
 #[test]

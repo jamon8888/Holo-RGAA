@@ -19,8 +19,8 @@ that.
 |------|-----------|------------|
 | `img-alt` | `<img>` has no `alt` attribute at all (`alt=""` is correct for a decorative image) | 1.1 |
 | `form-label` | an `input`/`select`/`textarea` has no `<label for>`, no enclosing `<label>`, and no `aria-label`, `aria-labelledby` or `title` | 11.1 |
-| `button-name` | a `<button>` has no text content and no naming attribute | 11.1 |
-| `link-name` | an `<a href>` has no text content, no image with alt text, and no naming attribute | 6.1 |
+| `button-name` | a `<button>` has no text content and no naming attribute | 11.9 |
+| `link-name` | an `<a href>` has no text content, no image with alt text, and no naming attribute | 6.2 |
 
 Criterion numbers come from the `rgaa-core` catalog and follow the same
 `axe → RGAA` mapping the browser-based audit uses, so findings from the two

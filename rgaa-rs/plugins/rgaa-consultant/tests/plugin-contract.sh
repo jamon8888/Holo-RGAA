@@ -368,6 +368,25 @@ else
   echo "⚠️  SKIP MARKETPLACE CHECK: marketplace.json or jq missing"
 fi
 
+# RGAA references. The criteria skill once shipped a catalog written from memory
+# (wrong topics, wrong titles) and guided-test mapped keyboard tests to 12.1 —
+# the navigation-systems criterion. The skill is now generated from the official
+# data and every cited criterion is checked against it.
+if command -v python3 >/dev/null 2>&1; then
+  if python3 -I "$PLUGIN_ROOT/scripts/gen-criteria-skill.py" --check; then
+    echo "✅ RGAA: skills/criteria/SKILL.md matches the official RGAA 4.1.2 data"
+  else
+    FAILURES=$((FAILURES + 1))
+  fi
+  if python3 -I "$PLUGIN_ROOT/scripts/check-criteria-refs.py"; then
+    echo "✅ RGAA: every criterion cited by skills, commands and agents exists and guided tests cite the right ones"
+  else
+    FAILURES=$((FAILURES + 1))
+  fi
+else
+  echo "⚠️  SKIP RGAA REFERENCE CHECKS: python3 missing"
+fi
+
 echo
 if [[ $FAILURES -eq 0 ]]; then
   echo "✅ ALL CONTRACT CHECKS PASSED"

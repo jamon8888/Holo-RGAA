@@ -41,7 +41,7 @@ rgaa-rs/crates/
   rgaa-analysis-text/       # P-08   feature: plugin-text
 ```
 
-Les features sont déclarées dans `rgaa-cli`, `rgaa-mcp` et `rgaa-orchestrator`. `default` contient les plugins **sans modèle à télécharger** (contrast, colorvision, lang, layout). Une feature `plugins-all` les active tous.
+Les features sont déclarées dans `rgaa-plugins`, puis relayées par `rgaa-cli`, `rgaa-mcp` et `rgaa-orchestrator`. `default` contient les plugins **sans modèle à télécharger** (contrast, colorvision, lang, layout). Une feature `plugins-all` les active tous.
 
 ## 4. Interface Rust (`rgaa-analysis`)
 
@@ -72,7 +72,11 @@ pub trait AnalysisPlugin: Send + Sync {
 
 - Le trait utilise des `async fn` natives (Rust ≥ 1.75). Le workspace demande `rust-version = "1.80"`, donc c'est possible. Le registre manipule les plugins à travers `Box<dyn AnalysisPlugin>` grâce à `async-trait` **ou** à un retour `Pin<Box<dyn Future>>`. Le choix se fait à l'implémentation ; il ne change pas le contrat.
 - `RgaaError` gagne une variante `Analysis { plugin: String, message: String }`. Pas de `unwrap()` ni d'`expect()` hors tests (CLAUDE.md).
-- Registre : `pub fn registry() -> &'static [&'static dyn AnalysisPlugin]`, construit dans un `OnceLock`. Chaque entrée est compilée sous `#[cfg(feature = "plugin-…")]`.
+- **Registre explicite**, et non à features dans `rgaa-analysis` : un crate de plugin dépend de `rgaa-analysis` pour son contrat, et Cargo refuse la dépendance inverse, même optionnelle. Décision du 2026-11-21, livrée dans la PR #467.
+  - `rgaa-analysis` expose `Registry::builder().with(Box<dyn AnalysisPlugin>)…build()`. Le registre est trié par id et refuse les id en double.
+  - Un crate **agrégateur `rgaa-plugins`** dépend, en optionnel et par feature, de chaque crate de plugin. Il expose `default_registry()` : d'abord les plugins natifs activés, puis les sidecars découverts.
+  - `rgaa-cli` et `rgaa-mcp` passent par `rgaa-plugins`, qui leur relaie les features `default` et `plugins-all`.
+- **Calculs de couleur partagés** : la luminance relative WCAG, le ratio de contraste et ΔE2000 vivent dans `rgaa_analysis::color`, en une seule implémentation pour tous les plugins.
 
 ## 5. Modèle de *Preuve*
 

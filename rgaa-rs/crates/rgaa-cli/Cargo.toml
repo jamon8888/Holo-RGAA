@@ -7,15 +7,15 @@ edition = "2021"
 
 [features]
 default = ["plugin-echo", "plugin-contrast", "plugin-colorvision", "plugin-lang", "plugin-layout"]
-plugin-echo = ["rgaa-analysis/plugin-echo", "rgaa-mcp-http/plugin-echo"]
-plugin-contrast = ["rgaa-analysis/plugin-contrast", "rgaa-mcp-http/plugin-contrast"]
-plugin-colorvision = ["rgaa-analysis/plugin-colorvision", "rgaa-mcp-http/plugin-colorvision"]
-plugin-images = ["rgaa-analysis/plugin-images", "rgaa-mcp-http/plugin-images"]
-plugin-media = ["rgaa-analysis/plugin-media", "rgaa-mcp-http/plugin-media"]
-plugin-motion = ["rgaa-analysis/plugin-motion", "rgaa-mcp-http/plugin-motion"]
-plugin-lang = ["rgaa-analysis/plugin-lang", "rgaa-mcp-http/plugin-lang"]
-plugin-layout = ["rgaa-analysis/plugin-layout", "rgaa-mcp-http/plugin-layout"]
-plugin-text = ["rgaa-analysis/plugin-text", "rgaa-mcp-http/plugin-text"]
+plugin-echo = ["rgaa-analysis/plugin-echo", "rgaa-mcp-http/plugin-echo", "rgaa-plugins/plugin-echo"]
+plugin-contrast = ["rgaa-analysis/plugin-contrast", "rgaa-mcp-http/plugin-contrast", "rgaa-plugins/plugin-contrast"]
+plugin-colorvision = ["rgaa-analysis/plugin-colorvision", "rgaa-mcp-http/plugin-colorvision", "rgaa-plugins/plugin-colorvision"]
+plugin-images = ["rgaa-analysis/plugin-images", "rgaa-mcp-http/plugin-images", "rgaa-plugins/plugin-images"]
+plugin-media = ["rgaa-analysis/plugin-media", "rgaa-mcp-http/plugin-media", "rgaa-plugins/plugin-media"]
+plugin-motion = ["rgaa-analysis/plugin-motion", "rgaa-mcp-http/plugin-motion", "rgaa-plugins/plugin-motion"]
+plugin-lang = ["rgaa-analysis/plugin-lang", "rgaa-mcp-http/plugin-lang", "rgaa-plugins/plugin-lang"]
+plugin-layout = ["rgaa-analysis/plugin-layout", "rgaa-mcp-http/plugin-layout", "rgaa-plugins/plugin-layout"]
+plugin-text = ["rgaa-analysis/plugin-text", "rgaa-mcp-http/plugin-text", "rgaa-plugins/plugin-text"]
 plugins-all = [
     "plugin-echo",
     "plugin-contrast",
@@ -32,6 +32,7 @@ plugins-all = [
 dotenvy = { workspace = true }
 indexmap = { workspace = true }
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rgaa-plugins = { path = "../rgaa-plugins", default-features = false }
 rgaa-core = { path = "../rgaa-core" }
 rgaa-mcp-http = { path = "../rgaa-mcp-http", default-features = false }
 rgaa-obscura = { path = "../rgaa-obscura" }

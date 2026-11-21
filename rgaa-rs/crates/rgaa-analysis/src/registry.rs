@@ -1,76 +1,183 @@
-//! Static registry of native plugins, merged with discovered sidecars (P-00 §4).
+//! Explicit registry of analysis plugins (P-00 §4).
+//!
+//! The registry is *built*, not discovered from Cargo features: the contract
+//! crate cannot depend on the plugin crates that depend on it. Callers assemble
+//! the plugins they linked (see the `rgaa-plugins` aggregator) and pass them to
+//! [`Registry::builder`]. The build sorts by stable identifier and refuses
+//! duplicate identifiers.
 
-use crate::sidecar;
+use crate::error::{analysis_error, Result};
 use crate::types::PluginInfo;
 use crate::AnalysisPlugin;
 use indexmap::IndexMap;
-use std::sync::OnceLock;
+use std::collections::HashSet;
 
-static REGISTRY: OnceLock<Vec<&'static dyn AnalysisPlugin>> = OnceLock::new();
-
-/// Native plugins compiled into this binary. Each entry is feature-gated;
-/// P-01..P-08 add their crate here when they land.
-fn native_plugins() -> Vec<&'static dyn AnalysisPlugin> {
-    // Adding a native plugin is one line here; the array is empty in a
-    // `--no-default-features` build (acceptance criterion 1).
-    const PLUGINS: &[&dyn AnalysisPlugin] = &[
-        #[cfg(feature = "plugin-echo")]
-        &crate::plugin::EchoPlugin,
-    ];
-    PLUGINS.to_vec()
+/// An immutable, ordered catalog of the plugins linked into this binary.
+pub struct Registry {
+    plugins: Vec<Box<dyn AnalysisPlugin>>,
 }
 
-/// All available plugins, in stable identifier order. Sidecars are
-/// indistinguishable from native plugins to callers.
-pub fn registry() -> &'static [&'static dyn AnalysisPlugin] {
-    REGISTRY.get_or_init(|| {
-        let mut plugins = native_plugins();
-        for sidecar in sidecar::discover_default() {
-            plugins.push(Box::leak(Box::new(sidecar)));
-        }
-        plugins.sort_by_key(|plugin| plugin.id());
-        plugins
-    })
+impl std::fmt::Debug for Registry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Registry")
+            .field(
+                "ids",
+                &self.iter().map(AnalysisPlugin::id).collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
-pub fn plugin_by_id(id: &str) -> Option<&'static dyn AnalysisPlugin> {
-    registry().iter().copied().find(|plugin| plugin.id() == id)
+/// Accumulates plugins before validation. Use [`Registry::builder`].
+pub struct RegistryBuilder {
+    plugins: Vec<Box<dyn AnalysisPlugin>>,
 }
 
-/// RGAA tests served by more than one plugin — `rgaa plugins list` flags them
-/// (acceptance criterion 2). Insertion order follows the registry.
-pub fn duplicate_tests(plugins: &[&dyn AnalysisPlugin]) -> IndexMap<String, Vec<String>> {
-    let mut providers: IndexMap<String, Vec<String>> = IndexMap::new();
-    for plugin in plugins {
-        for test in plugin.tests() {
-            providers
-                .entry((*test).to_owned())
-                .or_default()
-                .push(plugin.id().to_owned());
+impl Registry {
+    /// Starts an empty registry.
+    #[must_use]
+    pub fn builder() -> RegistryBuilder {
+        RegistryBuilder {
+            plugins: Vec::new(),
         }
     }
-    providers.retain(|_, ids| ids.len() > 1);
-    providers
+
+    /// Plugins in stable identifier order.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &dyn AnalysisPlugin> {
+        self.plugins.iter().map(AsRef::as_ref)
+    }
+
+    /// Looks up one plugin by its stable identifier.
+    #[must_use]
+    pub fn get(&self, id: &str) -> Option<&dyn AnalysisPlugin> {
+        self.iter().find(|plugin| plugin.id() == id)
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.plugins.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.plugins.is_empty()
+    }
+
+    /// Displayable descriptions, in registry order.
+    #[must_use]
+    pub fn list(&self) -> Vec<PluginInfo> {
+        self.iter().map(|plugin| plugin.info()).collect()
+    }
+
+    /// RGAA tests served by more than one plugin, in registry order.
+    #[must_use]
+    pub fn duplicate_tests(&self) -> IndexMap<String, Vec<String>> {
+        let mut providers: IndexMap<String, Vec<String>> = IndexMap::new();
+        for plugin in self.iter() {
+            for test in plugin.tests() {
+                providers
+                    .entry((*test).to_owned())
+                    .or_default()
+                    .push(plugin.id().to_owned());
+            }
+        }
+        providers.retain(|_, ids| ids.len() > 1);
+        providers
+    }
 }
 
-/// Duplicate tests across the whole registry.
-pub fn registry_duplicate_tests() -> IndexMap<String, Vec<String>> {
-    duplicate_tests(registry())
-}
+impl RegistryBuilder {
+    /// Adds one plugin. Duplicate identifiers are rejected by [`Self::build`].
+    #[must_use]
+    pub fn with(mut self, plugin: Box<dyn AnalysisPlugin>) -> Self {
+        self.plugins.push(plugin);
+        self
+    }
 
-pub fn list() -> Vec<PluginInfo> {
-    registry().iter().map(|plugin| plugin.info()).collect()
+    /// Adds a plugin only when the feature that links it is enabled.
+    #[must_use]
+    pub fn maybe_with(self, plugin: Option<Box<dyn AnalysisPlugin>>) -> Self {
+        match plugin {
+            Some(plugin) => self.with(plugin),
+            None => self,
+        }
+    }
+
+    /// Validates and sorts the plugins.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::RgaaError::Analysis`] when two plugins declare the same
+    /// identifier: a duplicate would make `run_analysis_plugin` ambiguous.
+    pub fn build(mut self) -> Result<Registry> {
+        let mut seen = HashSet::with_capacity(self.plugins.len());
+        for plugin in &self.plugins {
+            if !seen.insert(plugin.id()) {
+                return Err(analysis_error(
+                    "registry",
+                    format!("identifiant de plugin en double : {}", plugin.id()),
+                ));
+            }
+        }
+        self.plugins
+            .sort_by(|left, right| left.id().cmp(right.id()));
+        Ok(Registry {
+            plugins: self.plugins,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::capture::PageCapture;
-    use crate::error::Result;
     use crate::types::{PluginOptions, Preuve};
     use async_trait::async_trait;
 
+    struct PluginA;
+    struct PluginB;
     struct SecondEcho;
+
+    #[async_trait]
+    impl AnalysisPlugin for PluginA {
+        fn id(&self) -> &'static str {
+            "zebra"
+        }
+        fn version(&self) -> &'static str {
+            "0.1.0"
+        }
+        fn tests(&self) -> &'static [&'static str] {
+            &["1.1.1"]
+        }
+        async fn analyze(
+            &self,
+            _page: &PageCapture<'_>,
+            _options: &PluginOptions,
+        ) -> Result<Vec<Preuve>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl AnalysisPlugin for PluginB {
+        fn id(&self) -> &'static str {
+            "alpha"
+        }
+        fn version(&self) -> &'static str {
+            "0.1.0"
+        }
+        fn tests(&self) -> &'static [&'static str] {
+            &["1.1.1", "2.2.2"]
+        }
+        async fn analyze(
+            &self,
+            _page: &PageCapture<'_>,
+            _options: &PluginOptions,
+        ) -> Result<Vec<Preuve>> {
+            Ok(Vec::new())
+        }
+    }
 
     #[async_trait]
     impl AnalysisPlugin for SecondEcho {
@@ -93,10 +200,46 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "plugin-echo")]
+    fn registry_is_built_in_stable_identifier_order() {
+        let registry = Registry::builder()
+            .with(Box::new(PluginA))
+            .with(Box::new(PluginB))
+            .build()
+            .expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert_eq!(ids, vec!["alpha", "zebra"]);
+        assert_eq!(registry.get("zebra").map(AnalysisPlugin::id), Some("zebra"));
+        assert!(registry.get("absent").is_none());
+    }
+
+    #[test]
+    fn duplicate_identifiers_are_refused() {
+        let error = Registry::builder()
+            .with(Box::new(PluginA))
+            .with(Box::new(PluginA))
+            .build()
+            .expect_err("duplicates must be refused");
+        assert!(error.to_string().contains("zebra"), "{error}");
+    }
+
+    #[test]
     fn a_test_served_by_two_plugins_is_flagged() {
-        let plugins: Vec<&dyn AnalysisPlugin> = vec![&crate::plugin::EchoPlugin, &SecondEcho];
-        let duplicates = duplicate_tests(&plugins);
-        assert_eq!(duplicates["1.1.1"], vec!["echo", "second-echo"]);
+        let registry = Registry::builder()
+            .with(Box::new(PluginA))
+            .with(Box::new(SecondEcho))
+            .build()
+            .expect("registry");
+        let duplicates = registry.duplicate_tests();
+        assert_eq!(duplicates["1.1.1"], vec!["second-echo", "zebra"]);
+        assert!(!duplicates.contains_key("2.2.2"));
+    }
+
+    #[cfg(feature = "plugin-echo")]
+    #[test]
+    fn an_empty_registry_has_no_plugins() {
+        let registry = Registry::builder().build().expect("empty registry");
+        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 0);
+        assert!(registry.list().is_empty());
     }
 }

@@ -88,6 +88,13 @@ pub fn echo_proof(url: &str, options: &PluginOptions) -> Preuve {
     }
 }
 
+/// Builds the P-00 dummy plugin for an explicit [`crate::Registry`].
+#[cfg(feature = "plugin-echo")]
+#[must_use]
+pub fn echo_plugin() -> Box<dyn AnalysisPlugin> {
+    Box::new(EchoPlugin)
+}
+
 /// P-00 dummy native plugin, compiled under `feature = "plugin-echo"`.
 #[cfg(feature = "plugin-echo")]
 pub struct EchoPlugin;

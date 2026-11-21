@@ -2,8 +2,8 @@
 //!
 //! An analysis plugin produces [`Preuve`]s: measurements and artefacts, never
 //! a status. The orchestrator decides the status from those proofs (R-P1).
-//! Native plugins and sidecars share the same [`AnalysisPlugin`] interface and
-//! the same [`registry`].
+//! Native plugins and sidecars share the same [`AnalysisPlugin`] interface;
+//! callers assemble the ones they linked into a [`Registry`].
 
 pub mod capture;
 pub mod error;
@@ -19,9 +19,9 @@ pub use capture::{
 };
 pub use error::{analysis_error, missing_proof, Result, RgaaError};
 #[cfg(feature = "plugin-echo")]
-pub use plugin::EchoPlugin;
+pub use plugin::{echo_plugin, EchoPlugin};
 pub use plugin::{AnalysisPlugin, ECHO_TEST, ECHO_VERSION};
-pub use registry::registry;
+pub use registry::{Registry, RegistryBuilder};
 pub use types::{
     Artefact, Indice, ModelInfo, ModelSpec, PluginInfo, PluginKind, PluginOptions, Portee, Preuve,
     Rect, Subject,

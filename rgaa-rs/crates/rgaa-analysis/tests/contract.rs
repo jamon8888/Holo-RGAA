@@ -6,7 +6,7 @@
 
 use rgaa_analysis::models;
 use rgaa_analysis::sidecar;
-use rgaa_analysis::{registry, run_plugin, Portee, Preuve, Subject};
+use rgaa_analysis::{echo_plugin, run_plugin, Portee, Preuve, Registry, Subject};
 use std::path::PathBuf;
 
 fn examples_dir() -> PathBuf {
@@ -49,8 +49,12 @@ impl rgaa_analysis::AnalysisPlugin for SecondEcho {
 
 #[test]
 fn registry_is_in_kebab_case_order_and_reports_shared_tests() {
-    let plugins = registry();
-    let ids: Vec<&str> = plugins.iter().map(|plugin| plugin.id()).collect();
+    let registry = Registry::builder()
+        .with(echo_plugin())
+        .with(Box::new(SecondEcho))
+        .build()
+        .expect("registry");
+    let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
     let mut sorted = ids.clone();
     sorted.sort_unstable();
     assert_eq!(ids, sorted, "the registry must be deterministic");
@@ -59,12 +63,7 @@ fn registry_is_in_kebab_case_order_and_reports_shared_tests() {
         "the P-00 dummy plugin must be registered"
     );
 
-    let echo = plugins
-        .iter()
-        .find(|plugin| plugin.id() == "echo")
-        .copied()
-        .expect("echo plugin");
-    let duplicates = registry::duplicate_tests(&[echo, &SecondEcho]);
+    let duplicates = registry.duplicate_tests();
     assert_eq!(
         duplicates.get("1.1.1"),
         Some(&vec!["echo".to_owned(), "second-echo".to_owned()]),
@@ -74,12 +73,9 @@ fn registry_is_in_kebab_case_order_and_reports_shared_tests() {
 
 #[tokio::test]
 async fn native_echo_produces_the_canonical_proof() {
-    let echo = registry()
-        .iter()
-        .find(|plugin| plugin.id() == "echo")
-        .expect("echo plugin");
+    let echo = echo_plugin();
     let options = serde_json::json!({ "message": "bonjour" });
-    let proofs = run_plugin(*echo, "https://example.test", &options)
+    let proofs = run_plugin(echo.as_ref(), "https://example.test", &options)
         .await
         .expect("echo proof");
     assert_eq!(proofs.len(), 1);
@@ -138,11 +134,8 @@ async fn sidecar_echo_matches_the_native_echo() {
     let from_sidecar = run_plugin(&plugins[0], "https://example.test", &options)
         .await
         .expect("sidecar proof");
-    let echo = registry()
-        .iter()
-        .find(|plugin| plugin.id() == "echo")
-        .expect("echo plugin");
-    let from_native = run_plugin(*echo, "https://example.test", &options)
+    let echo = echo_plugin();
+    let from_native = run_plugin(echo.as_ref(), "https://example.test", &options)
         .await
         .expect("native proof");
     assert_eq!(from_sidecar, from_native);

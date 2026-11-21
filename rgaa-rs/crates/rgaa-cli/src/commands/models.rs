@@ -29,9 +29,14 @@ pub async fn run(args: ModelsArgs) -> Result<i32, CliError> {
     }
 }
 
+/// Registry of the plugins linked into this CLI, built once per command.
+fn registry() -> Result<rgaa_analysis::Registry, CliError> {
+    rgaa_plugins::default_registry().map_err(|error| CliError::execution(error.to_string()))
+}
+
 fn list() -> Result<i32, CliError> {
     println!("cache: {}", rgaa_analysis::models::models_dir().display());
-    for plugin in rgaa_analysis::registry() {
+    for plugin in registry()?.iter() {
         for model in plugin.models() {
             println!(
                 "{} {} {} {} {}",
@@ -51,8 +56,10 @@ fn list() -> Result<i32, CliError> {
 }
 
 async fn pull(id: &str) -> Result<i32, CliError> {
-    let plugin = rgaa_analysis::registry::plugin_by_id(id)
-        .ok_or_else(|| CliError::invalid_input(format!("plugin de analyse inconnu : {id}")))?;
+    let registry = registry()?;
+    let plugin = registry
+        .get(id)
+        .ok_or_else(|| CliError::invalid_input(format!("plugin d'analyse inconnu : {id}")))?;
     for model in plugin.models() {
         let response = reqwest::get(model.url)
             .await
@@ -74,7 +81,7 @@ async fn pull(id: &str) -> Result<i32, CliError> {
 
 fn verify() -> Result<i32, CliError> {
     let mut failed = false;
-    for plugin in rgaa_analysis::registry() {
+    for plugin in registry()?.iter() {
         for model in plugin.models() {
             match rgaa_analysis::models::ensure_present(plugin.id(), model) {
                 Ok(()) => println!("{} {}: ok", plugin.id(), model.nom),

@@ -27,7 +27,10 @@ pub use engine_plan::{EnginePlan, EnginePlanEntry, PlanEngine};
 pub use error::{Result, RgaaError};
 pub use evidence::*;
 pub use findings::*;
-pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
+pub use provider::{
+    endpoint_host, is_agent_publisher_endpoint, provider, LlmMode, LlmSettings, ModeStatus,
+    Provider, FORBIDDEN_AGENT_HOSTS, PROVIDERS,
+};
 pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
 pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};
 pub use types::{

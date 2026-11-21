@@ -3,6 +3,7 @@ pub mod igt;
 pub mod policy;
 pub mod report;
 pub mod review;
+pub mod status;
 pub mod verify;
 
 use clap::Subcommand;

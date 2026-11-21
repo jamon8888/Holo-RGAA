@@ -11,6 +11,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum TopCommand {
+    /// Print the active offer (Souverain / Confort) and LLM route.
+    #[command(about = "Show the active offer and LLM route")]
+    Status,
     #[command(about = "Audit commands")]
     Audit(AuditArgs),
     /// Serve the RGAA tools over MCP (HTTP + SSE, or stdio).
@@ -39,6 +42,13 @@ async fn main() {
 
     let cli = Cli::parse();
     let args = match cli.command {
+        TopCommand::Status => match rgaa_cli::commands::status::run() {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(error.exit_code());
+            }
+        },
         TopCommand::Audit(args) => args,
         // Served before the audit monitoring is initialised: the MCP server
         // logs to stderr for its supervisor, and opening the audit JSON-lines
@@ -54,6 +64,10 @@ async fn main() {
             return;
         }
     };
+
+    // Ticket #440: the active offer is visible before any audit work starts.
+    // Both the mode and the LLM route come from the existing configuration.
+    rgaa_cli::commands::status::print_audit_header();
 
     let (log_path, monitoring_guard) =
         match rgaa_cli::monitoring::init(args.command.common().log_file.as_deref()) {

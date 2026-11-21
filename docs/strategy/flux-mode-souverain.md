@@ -12,7 +12,7 @@
 
 ## Garantie d'absence de flux vers un éditeur d'agent
 
-Le mode Souverain n'invoque aucun agent tiers : Claude Desktop, Claude in Chrome, Codex et computer use ne sont pas sur le chemin d'audit (D1, D6). Un test doit vérifier qu'aucune requête ne part vers un éditeur d'agent dans ce mode. **La définition opérationnelle de ce mode n'existe pas encore dans la configuration du fournisseur LLM** (`rgaa-core/src/provider.rs` : pas de `off`/`byok`/`managed`, pas d'indicateur d'agent tiers, pas de commande `rgaa status`) : le déclenchement du test attend une décision produit (voir ticket #440).
+Le mode Souverain n'invoque aucun agent tiers : Claude Desktop, Claude in Chrome, Codex et computer use ne sont pas sur le chemin d'audit (D1, D6). Le mode est lu dans la configuration du fournisseur LLM (`RGAA_LLM_MODE` = `off` ou `byok`, défaut `off` sans fournisseur configuré) et affiché par `rgaa status` / en tête de `rgaa audit`. En mode Souverain, la résolution de configuration refuse tout endpoint d'éditeur d'agent ou de routeur pouvant y mener (`api.anthropic.com`, `api.openai.com`, `openrouter.ai`, `generativelanguage.googleapis.com` et sous-domaines ; liste versionnée dans `rgaa-core/src/provider.rs`, à faire valider par le porteur). En `off`, aucun appel modèle n'est émis. L'agent reste l'appelant du MCP : on ne le contrôle pas depuis ici.
 
 ## Points restant à trancher (recherches #403 / #404)
 

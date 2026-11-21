@@ -1,4 +1,4 @@
-//! Mesure déterministe du contraste et de la distinction des liens (#439).
+//! Mesure déterministe du contraste et de la distinction des liens (#439, relecture).
 //!
 //! `obscura` n'est pas Chromium (#371) : `color-contrast` y sort `inapplicable` avec
 //! zéro nœud (cause B — `measureText`/`fillText` approchés → `isIconLigature()` vrai pour
@@ -6,16 +6,22 @@
 //! `getComputedStyle().backgroundImage` vaut `""` au lieu de `none`, si bien qu'axe croit
 //! que chaque élément a une image de fond et ne résout aucune couleur).
 //!
-//! Plutôt que de réparer le moteur maison (hors de ce dépôt) ou de changer de navigateur
-//! (décision produit), ce module mesure ce que les deux règles devraient mesurer :
-//! il lit les **styles calculés** via CDP (`getComputedStyle`) puis calcule le ratio WCAG 2.1
-//! en Rust, et injecte une violation axe synthétique dans le résultat. Le navigateur
-//! réellement utilisé reste le binaire Obscura épinglé (#430).
+//! Ce module lit les **styles calculés** via CDP puis calcule le ratio WCAG 2.1 en Rust.
+//! Un point non négociable de la relecture : la mesure ne doit **jamais fabriquer de fail**.
+//! Elle ne conclut que si le fond est connu de façon fiable (spec §3 étape A) :
 //!
-//! Les seuils et la formule viennent de la spec
-//! `docs/specs/plugins-analyse/01-contraste.md` et du RGAA 4.1.2 : 4,5:1 pour le texte
-//! courant, 3:1 pour le grand texte (≥ 24 px, ou ≥ 18,66 px avec une graisse ≥ 700) et
-//! pour la distinction d'un lien dans un bloc de texte.
+//! - un ancêtre opaque est atteint, les couches `rgba` étant composées les unes sur les
+//!   autres au lieu d'être traitées comme opaques ;
+//! - aucun `background-image` sur le chemin. Obscura renvoie `""` **aussi bien** pour
+//!   « pas d'image » que pour une image déclarée en feuille de style : `""` est donc
+//!   INCONNU, jamais `none`. On n'accepte l'absence d'image que sur preuve positive
+//!   (déclarations inline + CSSOM), et on n'invente jamais un fond blanc par défaut ;
+//! - ni `opacity < 1`, ni `filter`, ni `mix-blend-mode`, ni positionnement `absolute`/`fixed`
+//!   sur le chemin (le texte peut recouvrir un autre contenu).
+//!
+//! Dans tous les autres cas, le nœud est ajouté aux `incomplete` d'axe — donc `review` —
+//! avec la raison, exactement comme le ferait axe sur un fond image. Le navigateur
+//! réellement utilisé reste le binaire Obscura épinglé (#430).
 
 use serde_json::{json, Value};
 use tokio::net::TcpStream;
@@ -25,29 +31,105 @@ use crate::results::ObscuraError;
 
 /// JS exécuté dans la page après `axe.run()`, sur la session CDP déjà ouverte.
 ///
-/// Il retourne une **chaîne JSON** (plus robuste qu'un objet remote pour le `returnByValue`
-/// d'obscura). Les couleurs sont lues telles que le moteur les calcule (`rgb(r, g, b)` /
-/// `rgba(r, g, b, a)`) ; aucune conversion n'est faite côté JS, tout le jugement est en
-/// Rust. Le fond est le premier ancestor opaque, exactement comme axe le ferait.
+/// Il retourne une chaîne JSON. Le jugement est entièrement côté Rust : le JS se contente
+/// de collecter les couleurs calculées, les couches de fond jusqu'au premier fond opaque,
+/// et les raisons qui rendent la mesure peu fiable.
 pub(crate) const COLLECT_STYLES_JS: &str = r#"
 (function () {
-  function effectiveBackground(el) {
-    var node = el;
-    while (node) {
-      var colour = getComputedStyle(node).backgroundColor;
-      if (colour && colour !== 'transparent' && colour !== 'rgba(0, 0, 0, 0)'
-          && colour !== 'rgba(0,0,0,0)') {
-        return colour;
+  // Obscura renvoie "" pour background-image, y compris quand une image est déclarée
+  // dans une feuille de style. "" n'est donc PAS la valeur spec "none" : on croise les
+  // déclarations auteur pour établir positivement l'absence d'image / de filtre, etc.
+  var tainted = [], cssomAvailable = true;
+  try {
+    var sheets = document.styleSheets;
+    for (var si = 0; si < sheets.length; si++) {
+      var rules;
+      try { rules = sheets[si].cssRules || sheets[si].rules || []; }
+      catch (e) { cssomAvailable = false; continue; }
+      for (var ri = 0; ri < rules.length; ri++) {
+        var rule = rules[ri], style = rule.style;
+        if (!rule.selectorText || !style) { continue; }
+        var img = style.backgroundImage || '';
+        var filter = style.filter || '';
+        var blend = style.mixBlendMode || (style.getPropertyValue ?
+          style.getPropertyValue('mix-blend-mode') : '') || '';
+        var opacity = style.opacity || '';
+        var position = style.position || '';
+        if ((img && img !== 'none') || filter || blend || (opacity && opacity !== '1')
+            || position === 'absolute' || position === 'fixed') {
+          tainted.push(rule.selectorText);
+        }
+      }
+    }
+  } catch (e) { cssomAvailable = false; }
+
+  function inlineRisk(el) {
+    var s = el.style;
+    if (!s) { return null; }
+    if (s.backgroundImage && s.backgroundImage !== 'none') { return 'background-image'; }
+    if (s.filter) { return 'filter'; }
+    var blend = s.mixBlendMode || (s.getPropertyValue ?
+      s.getPropertyValue('mix-blend-mode') : '') || '';
+    if (blend && blend !== 'normal') { return 'mix-blend-mode'; }
+    if (s.opacity && s.opacity !== '1') { return 'opacity'; }
+    if (s.position === 'absolute' || s.position === 'fixed') {
+      return 'position ' + s.position;
+    }
+    return null;
+  }
+
+  function declaredRisk(el) {
+    var inline = inlineRisk(el);
+    if (inline) { return inline; }
+    for (var i = 0; i < tainted.length; i++) {
+      try {
+        if (el.matches && el.matches(tainted[i])) { return 'déclaration CSS à risque'; }
+      } catch (e) { /* sélecteur non compris : on reste conservateur */ }
+    }
+    return null;
+  }
+
+  function isOpaque(colour) {
+    var match = /^rgba?\(([^)]*)\)$/.exec(colour || '');
+    if (!match) { return false; }
+    var parts = match[1].split(',');
+    return parts.length === 3 || (parts.length === 4 && parseFloat(parts[3]) >= 1);
+  }
+
+  // Remonte du nœud jusqu'au premier fond opaque : on collecte les couches (du plus
+  // proche du texte vers le fond) et les raisons interdisant une mesure fiable.
+  function pathInfo(el) {
+    var layers = [], issues = [], node = el;
+    while (node && node.nodeType === 1) {
+      var style = getComputedStyle(node);
+      if (style.opacity && style.opacity !== '1') { issues.push('opacity < 1'); }
+      if (style.filter) { issues.push('filter'); }
+      if (style.mixBlendMode && style.mixBlendMode !== 'normal') {
+        issues.push('mix-blend-mode');
+      }
+      if (style.position === 'absolute' || style.position === 'fixed') {
+        issues.push('position ' + style.position);
+      }
+      var image = style.backgroundImage;
+      if (image && image !== 'none') {
+        issues.push('background-image');
+      } else if (image === '') {
+        if (!cssomAvailable) {
+          issues.push('background-image indéterminé');
+        } else {
+          var risk = declaredRisk(node);
+          if (risk) { issues.push(risk); }
+        }
+      }
+      var background = style.backgroundColor;
+      if (background && background !== 'transparent'
+          && background !== 'rgba(0, 0, 0, 0)' && background !== 'rgba(0,0,0,0)') {
+        layers.push(background);
+        if (isOpaque(background)) { break; }
       }
       node = node.parentElement;
     }
-    return 'rgb(255, 255, 255)';
-  }
-
-  function visible(el) {
-    var style = getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden'
-      && el.getAttribute('aria-hidden') !== 'true';
+    return { layers: layers, issues: issues };
   }
 
   function selector(el) {
@@ -78,15 +160,17 @@ pub(crate) const COLLECT_STYLES_JS: &str = r#"
 
   var texts = [], all = document.querySelectorAll('body *');
   for (var i = 0; i < all.length; i++) {
-    var el = all[i];
-    if (!visible(el) || !directText(el)) { continue; }
-    var style = getComputedStyle(el);
+    var el = all[i], style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden'
+        || el.getAttribute('aria-hidden') === 'true' || !directText(el)) { continue; }
+    var info = pathInfo(el);
     texts.push({
       tag: el.tagName,
       html: (el.outerHTML || '').slice(0, 200),
       target: selector(el),
       color: style.color,
-      bg: effectiveBackground(el),
+      layers: info.layers,
+      issues: info.issues,
       fontSize: style.fontSize,
       fontWeight: style.fontWeight,
       disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true'
@@ -95,8 +179,9 @@ pub(crate) const COLLECT_STYLES_JS: &str = r#"
 
   var links = [], anchors = document.querySelectorAll('a[href]');
   for (var k = 0; k < anchors.length; k++) {
-    var anchor = anchors[k];
-    if (!visible(anchor)) { continue; }
+    var anchor = anchors[k], anchorStyle = getComputedStyle(anchor);
+    if (anchorStyle.display === 'none' || anchorStyle.visibility === 'hidden'
+        || anchor.getAttribute('aria-hidden') === 'true') { continue; }
     var parent = anchor.parentElement, around = '';
     if (parent) {
       var siblings = parent.childNodes;
@@ -105,16 +190,17 @@ pub(crate) const COLLECT_STYLES_JS: &str = r#"
       }
     }
     if (!(around || '').trim()) { continue; }
-    var linkStyle = getComputedStyle(anchor), parentStyle = getComputedStyle(parent);
+    var parentStyle = getComputedStyle(parent), linkInfo = pathInfo(anchor);
     links.push({
       tag: 'A',
       html: (anchor.outerHTML || '').slice(0, 200),
       target: selector(anchor),
-      color: linkStyle.color,
+      color: anchorStyle.color,
       surroundingColor: parentStyle.color,
-      decoration: linkStyle.textDecorationLine || linkStyle.textDecoration || '',
-      fontWeight: linkStyle.fontWeight,
-      parentFontWeight: parentStyle.fontWeight
+      decoration: anchorStyle.textDecorationLine || anchorStyle.textDecoration || '',
+      fontWeight: anchorStyle.fontWeight,
+      parentFontWeight: parentStyle.fontWeight,
+      issues: linkInfo.issues
     });
   }
 
@@ -170,44 +256,222 @@ pub(crate) async fn augment_result(
 ) -> Result<String, String> {
     let styles = collect_styles(ws, session_id)
         .await
-        .map_err(|e| e.to_string())?;
-    augment_axe_json(&axe_json, &styles).map_err(|e| e.to_string())
+        .map_err(|error| error.to_string())?;
+    augment_axe_json(&axe_json, &styles).map_err(|error| error.to_string())
 }
 
-/// Appends a `color-contrast` and/or a `link-in-text-block` violation to the axe run
-/// object when the deterministic measurement finds one. A rule axe already reported is
-/// never duplicated (matters when a real Chromium is used as the substrate instead).
+/// Adds deterministic violations **only** where the background is reliably known, and
+/// sends every doubtful node to axe's `incomplete` (→ `review`) with its reason. Never
+/// turns a measurement gap into a fabricated `Fail`.
 pub(crate) fn augment_axe_json(axe_json: &str, styles: &Value) -> Result<String, ObscuraError> {
     let mut run: Value =
         serde_json::from_str(axe_json).map_err(|error| ObscuraError::Json(error.to_string()))?;
-    let violations = run
+    let Some(object) = run.as_object_mut() else {
+        return Err(ObscuraError::Json("résultat axe attendu en objet".into()));
+    };
+    let mut violations = object
         .get_mut("violations")
         .and_then(Value::as_array_mut)
+        .map(std::mem::take)
         .ok_or_else(|| ObscuraError::Json("résultat axe sans tableau 'violations'".into()))?;
+    let mut incomplete = object
+        .get_mut("incomplete")
+        .and_then(Value::as_array_mut)
+        .map(std::mem::take)
+        .unwrap_or_default();
 
     let texts = styles.get("texts").and_then(Value::as_array);
     let links = styles.get("links").and_then(Value::as_array);
 
-    if !has_rule(violations, "color-contrast") {
-        if let Some(nodes) = texts.and_then(|texts| low_contrast_text_nodes(texts)) {
-            violations.push(synthetic_violation(
-                "color-contrast",
-                "Éléments textuels dont le contraste est insuffisant (mesure #439)",
-                nodes,
-            ));
+    let mut text_failures = Vec::new();
+    let mut text_reviews = Vec::new();
+    for text in texts.into_iter().flatten() {
+        if text
+            .get("disabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            continue;
         }
-    }
-    if !has_rule(violations, "link-in-text-block") {
-        if let Some(nodes) = links.and_then(|links| undistinguished_link_nodes(links)) {
-            violations.push(synthetic_violation(
-                "link-in-text-block",
-                "Liens en bloc de texte non distinguables sans la couleur (mesure #439)",
-                nodes,
-            ));
+        match text_verdict(text) {
+            Verdict::Fail(reason) => text_failures.push(node_for(text, &reason)),
+            Verdict::Review(reason) => text_reviews.push(node_for(text, &reason)),
+            Verdict::Clean => {}
         }
     }
 
+    let mut link_failures = Vec::new();
+    let mut link_reviews = Vec::new();
+    for link in links.into_iter().flatten() {
+        match link_verdict(link) {
+            Verdict::Fail(reason) => link_failures.push(node_for(link, &reason)),
+            Verdict::Review(reason) => link_reviews.push(node_for(link, &reason)),
+            Verdict::Clean => {}
+        }
+    }
+
+    if !has_rule(&violations, "color-contrast") && !text_failures.is_empty() {
+        violations.push(synthetic_violation(
+            "color-contrast",
+            "Éléments textuels dont le contraste est insuffisant (mesure #439)",
+            text_failures,
+        ));
+    }
+    if !has_rule(&violations, "link-in-text-block") && !link_failures.is_empty() {
+        violations.push(synthetic_violation(
+            "link-in-text-block",
+            "Liens en bloc de texte non distinguables sans la couleur (mesure #439)",
+            link_failures,
+        ));
+    }
+    if !text_reviews.is_empty() {
+        incomplete.push(synthetic_incomplete(
+            "color-contrast",
+            "Contraste non mesurable de façon fiable (fond image, fond inconnu, opacité, \
+             filtre, mix-blend-mode ou positionnement)",
+            text_reviews,
+        ));
+    }
+    if !link_reviews.is_empty() {
+        incomplete.push(synthetic_incomplete(
+            "link-in-text-block",
+            "Distinction du lien non mesurable de façon fiable (opacité, filtre, \
+             mix-blend-mode ou positionnement)",
+            link_reviews,
+        ));
+    }
+
+    object.insert("violations".into(), Value::Array(violations));
+    object.insert("incomplete".into(), Value::Array(incomplete));
     serde_json::to_string(&run).map_err(|error| ObscuraError::Json(error.to_string()))
+}
+
+enum Verdict {
+    Fail(String),
+    Review(String),
+    Clean,
+}
+
+/// Reasons collected in the JS disqualify a reliable measurement. An empty list is not
+/// enough: the background chain itself must end on a known opaque colour.
+fn issues_of(entry: &Value) -> Vec<String> {
+    entry
+        .get("issues")
+        .and_then(Value::as_array)
+        .map(|issues| {
+            issues
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn text_verdict(text: &Value) -> Verdict {
+    let issues = issues_of(text);
+    if !issues.is_empty() {
+        return Verdict::Review(format!("mesure non fiable : {}", issues.join(" ; ")));
+    }
+    let layers = text.get("layers").and_then(Value::as_array);
+    let Some(background) = layers.and_then(|layers| compose_background(layers)) else {
+        return Verdict::Review("aucun fond opaque connu sur le chemin".into());
+    };
+    let Some(foreground) = text
+        .get("color")
+        .and_then(Value::as_str)
+        .and_then(parse_color)
+    else {
+        return Verdict::Review("couleur du texte illisible".into());
+    };
+    let size_px = text
+        .get("fontSize")
+        .and_then(Value::as_str)
+        .and_then(parse_px)
+        .unwrap_or(16.0);
+    let weight = text
+        .get("fontWeight")
+        .and_then(Value::as_str)
+        .map_or(400, parse_weight);
+    let large = size_px >= 24.0 || (size_px >= 18.66 && weight >= 700);
+    let threshold = if large { 3.0 } else { 4.5 };
+    let ratio = contrast_ratio(foreground, background);
+    if ratio < threshold {
+        Verdict::Fail(format!(
+            "ratio {ratio:.2}:1 < {threshold:.1}:1 (texte {size_px}px, graisse {weight})"
+        ))
+    } else {
+        Verdict::Clean
+    }
+}
+
+fn link_verdict(link: &Value) -> Verdict {
+    let issues = issues_of(link);
+    if !issues.is_empty() {
+        return Verdict::Review(format!("mesure non fiable : {}", issues.join(" ; ")));
+    }
+    let (Some(link_colour), Some(around_colour)) = (
+        link.get("color")
+            .and_then(Value::as_str)
+            .and_then(parse_color),
+        link.get("surroundingColor")
+            .and_then(Value::as_str)
+            .and_then(parse_color),
+    ) else {
+        return Verdict::Review("couleur du lien ou du texte environnant illisible".into());
+    };
+    let decoration = link
+        .get("decoration")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let weight = link
+        .get("fontWeight")
+        .and_then(Value::as_str)
+        .map_or(400, parse_weight);
+    let parent_weight = link
+        .get("parentFontWeight")
+        .and_then(Value::as_str)
+        .map_or(400, parse_weight);
+    if decoration.contains("underline")
+        || decoration.contains("overline")
+        || decoration.contains("line-through")
+        || weight != parent_weight
+    {
+        return Verdict::Clean;
+    }
+    let ratio = contrast_ratio(link_colour, around_colour);
+    if ratio < 3.0 {
+        Verdict::Fail(format!(
+            "lien à {ratio:.2}:1 du texte environnant (< 3:1) et sans soulignement \
+             ni différence de graisse"
+        ))
+    } else {
+        Verdict::Clean
+    }
+}
+
+/// Composites the background layers (element → ancestor order, stopping at the first
+/// opaque one) into the single colour actually seen behind the text. `None` means the
+/// background is unknown — the caller turns that into `review`, never into a white guess.
+fn compose_background(layers: &[Value]) -> Option<(u8, u8, u8, u8)> {
+    let parsed: Vec<(u8, u8, u8, u8)> = layers
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(parse_color)
+        .collect();
+    let opaque_index = parsed.iter().rposition(|colour| colour.3 == 255)?;
+    let mut base = parsed[opaque_index];
+    for top in parsed[..opaque_index].iter().rev() {
+        let alpha = f64::from(top.3) / 255.0;
+        base = (
+            blend(top.0, base.0, alpha),
+            blend(top.1, base.1, alpha),
+            blend(top.2, base.2, alpha),
+            255,
+        );
+    }
+    Some(base)
 }
 
 fn has_rule(violations: &[Value], id: &str) -> bool {
@@ -225,111 +489,24 @@ fn synthetic_violation(id: &str, description: &str, nodes: Vec<Value>) -> Value 
     })
 }
 
-/// 3.2 — tout texte visible dont le ratio est sous 4,5:1 (3:1 pour le grand texte).
-fn low_contrast_text_nodes(texts: &[Value]) -> Option<Vec<Value>> {
-    let mut nodes = Vec::new();
-    for text in texts {
-        if text
-            .get("disabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        let (Some(foreground), Some(background)) = (
-            text.get("color").and_then(Value::as_str),
-            text.get("bg").and_then(Value::as_str),
-        ) else {
-            continue;
-        };
-        let (Some(foreground), Some(background)) =
-            (parse_color(foreground), parse_color(background))
-        else {
-            continue;
-        };
-        let size_px = text
-            .get("fontSize")
-            .and_then(Value::as_str)
-            .and_then(parse_px)
-            .unwrap_or(16.0);
-        let weight = text
-            .get("fontWeight")
-            .and_then(Value::as_str)
-            .map_or(400, parse_weight);
-        let large = size_px >= 24.0 || (size_px >= 18.66 && weight >= 700);
-        let threshold = if large { 3.0 } else { 4.5 };
-        let ratio = contrast_ratio(foreground, background);
-        if ratio >= threshold {
-            continue;
-        }
-        let target = text.get("target").and_then(Value::as_str).unwrap_or("");
-        let html = text.get("html").and_then(Value::as_str).unwrap_or("");
-        nodes.push(json!({
-            "target": [target],
-            "html": html,
-            "failureSummary": format!(
-                "ratio {ratio:.2}:1 < {threshold:.1}:1 (texte {size_px}px, graisse {weight})"
-            ),
-        }));
-    }
-    (!nodes.is_empty()).then_some(nodes)
+fn synthetic_incomplete(id: &str, description: &str, nodes: Vec<Value>) -> Value {
+    json!({
+        "id": id,
+        "impact": "incomplete",
+        "description": description,
+        "nodes": nodes,
+    })
 }
 
-/// 10.6 — lien dont la couleur est à moins de 3:1 du texte environnant et qui n'a aucune
-/// autre distinction visuelle (soulignement, autre graisse).
-fn undistinguished_link_nodes(links: &[Value]) -> Option<Vec<Value>> {
-    let mut nodes = Vec::new();
-    for link in links {
-        let (Some(link_colour), Some(around_colour)) = (
-            link.get("color").and_then(Value::as_str),
-            link.get("surroundingColor").and_then(Value::as_str),
-        ) else {
-            continue;
-        };
-        let (Some(link_colour), Some(around_colour)) =
-            (parse_color(link_colour), parse_color(around_colour))
-        else {
-            continue;
-        };
-        let decoration = link
-            .get("decoration")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let weight = link
-            .get("fontWeight")
-            .and_then(Value::as_str)
-            .map_or(400, parse_weight);
-        let parent_weight = link
-            .get("parentFontWeight")
-            .and_then(Value::as_str)
-            .map_or(400, parse_weight);
-        let visually_distinct = decoration.contains("underline")
-            || decoration.contains("overline")
-            || decoration.contains("line-through")
-            || weight != parent_weight;
-        if visually_distinct {
-            continue;
-        }
-        let ratio = contrast_ratio(link_colour, around_colour);
-        if ratio >= 3.0 {
-            continue;
-        }
-        let target = link.get("target").and_then(Value::as_str).unwrap_or("");
-        let html = link.get("html").and_then(Value::as_str).unwrap_or("");
-        nodes.push(json!({
-            "target": [target],
-            "html": html,
-            "failureSummary": format!(
-                "lien à {ratio:.2}:1 du texte environnant (< 3:1) et sans soulignement \
-                 ni différence de graisse"
-            ),
-        }));
-    }
-    (!nodes.is_empty()).then_some(nodes)
+fn node_for(entry: &Value, reason: &str) -> Value {
+    json!({
+        "target": [entry.get("target").and_then(Value::as_str).unwrap_or("")],
+        "html": entry.get("html").and_then(Value::as_str).unwrap_or(""),
+        "failureSummary": reason,
+    })
 }
 
-/// `rgb(r, g, b)` / `rgba(r, g, b, a)` → `(r, g, b, alpha)` avec alpha sur 0..=255.
+/// `rgb(r, g, b)` / `rgba(r, g, b, a)` → `(r, g, b, alpha)` with alpha on 0..=255.
 fn parse_color(raw: &str) -> Option<(u8, u8, u8, u8)> {
     let raw = raw.trim();
     let inner = raw
@@ -372,7 +549,7 @@ fn parse_weight(raw: &str) -> u16 {
     }
 }
 
-/// Luminance relative WCAG 2.1, avec le seuil de linéarisation sRGB à 0,04045.
+/// Relative luminance WCAG 2.1, with the sRGB linearisation threshold at 0.04045.
 fn relative_luminance(colour: (u8, u8, u8, u8)) -> f64 {
     fn linear(channel: u8) -> f64 {
         let value = f64::from(channel) / 255.0;
@@ -385,7 +562,8 @@ fn relative_luminance(colour: (u8, u8, u8, u8)) -> f64 {
     0.2126 * linear(colour.0) + 0.7152 * linear(colour.1) + 0.0722 * linear(colour.2)
 }
 
-/// Ratio `(L1 + 0,05) / (L2 + 0,05)`, l'alpha du texte étant composé sur le fond.
+/// Ratio `(L1 + 0,05) / (L2 + 0,05)`, the foreground alpha being composited on the
+/// already-composited background.
 fn contrast_ratio(foreground: (u8, u8, u8, u8), background: (u8, u8, u8, u8)) -> f64 {
     let alpha = f64::from(foreground.3) / 255.0;
     let composite = (
@@ -407,14 +585,30 @@ fn blend(foreground: u8, background: u8, alpha: f64) -> u8 {
 mod tests {
     use super::*;
 
-    /// Oracles externes : valeurs publiées dans la fixture et la spec 01-contraste.md,
-    /// jamais recalculées par le code sous test.
+    fn text_with(layers: &str, issues: &str, colour: &str) -> Value {
+        serde_json::from_str(&format!(
+            r#"{{
+                "tag": "P", "html": "<p>x</p>", "target": "body > p:nth-of-type(1)",
+                "color": "{colour}", "layers": {layers}, "issues": {issues},
+                "fontSize": "18px", "fontWeight": "400", "disabled": false
+            }}"#
+        ))
+        .expect("text fixture")
+    }
+
+    fn run(styles: &str) -> Value {
+        let styles: Value = serde_json::from_str(styles).expect("styles fixture");
+        let result =
+            augment_axe_json(r#"{"violations":[],"incomplete":[]}"#, &styles).expect("augment");
+        serde_json::from_str(&result).expect("json")
+    }
+
+    /// External oracles: ratios published by WebAIM / recorded in the fixtures, never
+    /// recomputed from the implementation under test.
     #[test]
     fn wcag_ratios_match_independent_reference_values() {
         let white = parse_color("rgb(255, 255, 255)").expect("white");
         let light_grey = parse_color("rgb(204, 204, 204)").expect("#ccc");
-
-        // WebAIM : #cccccc sur #ffffff → 1.61:1 ; #777777 sur #ffffff → 4.48:1.
         let ratio = contrast_ratio(light_grey, white);
         assert!((ratio - 1.61).abs() < 0.01, "ratio #ccc/#fff = {ratio}");
 
@@ -427,70 +621,123 @@ mod tests {
     fn link_ratio_matches_independent_reference_value() {
         let link = parse_color("rgb(128, 128, 128)").expect("#808080");
         let around = parse_color("rgb(102, 102, 102)").expect("#666666");
-        // Ratio calculé par axe/WebAIM et consigné dans la fixture 10.6.
         let ratio = contrast_ratio(link, around);
         assert!((ratio - 1.46).abs() < 0.01, "ratio lien/texte = {ratio}");
     }
 
     #[test]
-    fn large_text_uses_the_three_to_one_threshold() {
+    fn rgba_layer_is_composited_over_the_opaque_ancestor() {
+        let layers: Vec<Value> =
+            serde_json::from_str(r#"["rgba(0, 0, 0, 0.5019608)", "rgb(255, 255, 255)"]"#)
+                .expect("layers");
+        let composed = compose_background(&layers).expect("opaque ancestor");
+        // 0,5019608 = 128/255 : noir à ce taux sur blanc donne exactement 255 - 128 = 127.
+        assert_eq!(composed, (127, 127, 127, 255));
+
+        // WebAIM : #ffffff sur #7f7f7f → 4,00:1 (sous le seuil 4,5 du texte courant).
         let white = parse_color("rgb(255, 255, 255)").expect("white");
-        let grey = parse_color("rgb(204, 204, 204)").expect("#ccc");
-        let ratio = contrast_ratio(grey, white);
-        assert!(ratio < 3.0, "témoin sous le seuil grand texte");
-        assert!(ratio < 4.5, "témoin sous le seuil texte courant");
+        let ratio = contrast_ratio(white, composed);
+        assert!((ratio - 4.00).abs() < 0.02, "ratio blanc/composé = {ratio}");
     }
 
     #[test]
-    fn augment_adds_both_rules_for_the_fixtures() {
-        let styles: Value = serde_json::from_str(
-            r#"{
+    fn white_text_on_background_image_is_incomplete_never_a_violation() {
+        // Obscura renvoie "" pour background-image ; le JS collecte la raison "background-image".
+        let result = run(r#"{"texts":[{
+                "tag":"P","html":"<p>x</p>","target":"p",
+                "color":"rgb(255, 255, 255)","layers":[],"issues":["background-image"],
+                "fontSize":"18px","fontWeight":"400","disabled":false
+            }],"links":[]}"#);
+        assert!(result["violations"].as_array().expect("array").is_empty());
+        let incomplete = result["incomplete"].as_array().expect("array");
+        assert_eq!(incomplete.len(), 1);
+        assert_eq!(incomplete[0]["id"], "color-contrast");
+        assert_eq!(incomplete[0]["nodes"][0]["target"][0], "p");
+    }
+
+    #[test]
+    fn no_opaque_ancestor_is_incomplete_never_a_white_guess() {
+        let result = run(r#"{"texts":[{
+                "tag":"P","html":"<p>x</p>","target":"p",
+                "color":"rgb(204, 204, 204)","layers":[],"issues":[],
+                "fontSize":"18px","fontWeight":"400","disabled":false
+            }],"links":[]}"#);
+        assert!(result["violations"].as_array().expect("array").is_empty());
+        assert_eq!(result["incomplete"].as_array().expect("array").len(), 1);
+    }
+
+    #[test]
+    fn opacity_filter_blend_and_position_are_incomplete() {
+        for reason in [
+            "opacity < 1",
+            "filter",
+            "mix-blend-mode",
+            "position absolute",
+        ] {
+            let result = run(&format!(
+                r#"{{"texts":[{{
+                    "tag":"P","html":"<p>x</p>","target":"p",
+                    "color":"rgb(255, 255, 255)","layers":["rgb(0, 0, 0)"],
+                    "issues":["{reason}"],
+                    "fontSize":"18px","fontWeight":"400","disabled":false
+                }}],"links":[]}}"#
+            ));
+            assert!(
+                result["violations"].as_array().expect("array").is_empty(),
+                "{reason} a fabriqué un fail"
+            );
+            assert_eq!(result["incomplete"].as_array().expect("array").len(), 1);
+        }
+    }
+
+    #[test]
+    fn reliable_low_contrast_text_still_fails() {
+        let result = run(&format!(
+            r#"{{"texts":[{}],"links":[]}}"#,
+            serde_json::to_string(&text_with(
+                r#"["rgb(255, 255, 255)"]"#,
+                "[]",
+                "rgb(204, 204, 204)"
+            ))
+            .expect("serialize")
+        ));
+        let violations = result["violations"].as_array().expect("array");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0]["id"], "color-contrast");
+    }
+
+    #[test]
+    fn augment_adds_both_rules_for_reliable_fixture_data() {
+        let result = run(r#"{
                 "texts": [{
-                    "tag": "P",
-                    "html": "<p>x</p>",
-                    "target": "body > p:nth-of-type(1)",
-                    "color": "rgb(204, 204, 204)",
-                    "bg": "rgb(255, 255, 255)",
-                    "fontSize": "18px",
-                    "fontWeight": "400",
-                    "disabled": false
+                    "tag":"P","html":"<p>x</p>","target":"body > p:nth-of-type(1)",
+                    "color":"rgb(204, 204, 204)","layers":["rgb(255, 255, 255)"],"issues":[],
+                    "fontSize":"18px","fontWeight":"400","disabled":false
                 }],
                 "links": [{
-                    "tag": "A",
-                    "html": "<a href=\"/cible\">lien</a>",
-                    "target": "body > p > a:nth-of-type(1)",
-                    "color": "rgb(128, 128, 128)",
-                    "surroundingColor": "rgb(102, 102, 102)",
-                    "decoration": "",
-                    "fontWeight": "400",
-                    "parentFontWeight": "400"
+                    "tag":"A","html":"<a href=\"/cible\">lien</a>","target":"body > p > a:nth-of-type(1)",
+                    "color":"rgb(128, 128, 128)","surroundingColor":"rgb(102, 102, 102)",
+                    "decoration":"","fontWeight":"400","parentFontWeight":"400","issues":[]
                 }]
-            }"#,
-        )
-        .expect("styles fixture");
-        let augmented =
-            augment_axe_json(r#"{"violations":[],"incomplete":[]}"#, &styles).expect("augment");
-        let parsed: Value = serde_json::from_str(&augmented).expect("json");
-        let ids: Vec<&str> = parsed["violations"]
+            }"#);
+        let ids: Vec<&str> = result["violations"]
             .as_array()
             .expect("array")
             .iter()
-            .map(|v| v["id"].as_str().expect("id"))
+            .map(|entry| entry["id"].as_str().expect("id"))
             .collect();
         assert_eq!(ids, vec!["color-contrast", "link-in-text-block"]);
+        assert!(result["incomplete"].as_array().expect("array").is_empty());
     }
 
     #[test]
     fn augment_does_not_duplicate_a_rule_axe_already_reported() {
         let styles: Value = serde_json::from_str(
-            r#"{
-                "texts": [{
-                    "tag": "P", "html": "<p>x</p>", "target": "p",
-                    "color": "rgb(204, 204, 204)", "bg": "rgb(255, 255, 255)",
-                    "fontSize": "18px", "fontWeight": "400", "disabled": false
-                }],
-                "links": []
-            }"#,
+            r#"{"texts":[{
+                "tag":"P","html":"<p>x</p>","target":"p",
+                "color":"rgb(204, 204, 204)","layers":["rgb(255, 255, 255)"],"issues":[],
+                "fontSize":"18px","fontWeight":"400","disabled":false
+            }],"links":[]}"#,
         )
         .expect("styles fixture");
         let axe = r#"{
@@ -501,8 +748,8 @@ mod tests {
             }],
             "incomplete": []
         }"#;
-        let augmented = augment_axe_json(axe, &styles).expect("augment");
-        let parsed: Value = serde_json::from_str(&augmented).expect("json");
-        assert_eq!(parsed["violations"].as_array().expect("array").len(), 1);
+        let result: Value =
+            serde_json::from_str(&augment_axe_json(axe, &styles).expect("augment")).expect("json");
+        assert_eq!(result["violations"].as_array().expect("array").len(), 1);
     }
 }

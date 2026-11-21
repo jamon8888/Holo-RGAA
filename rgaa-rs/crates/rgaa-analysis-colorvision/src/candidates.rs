@@ -13,7 +13,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::color::{contrast_ratio, parse_color, Rgb8};
+use crate::Rgb8;
+use rgaa_analysis::color::{contrast_ratio, parse_color, Color};
 
 /// The four kinds of colour-only information listed in P-02 §4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -98,6 +99,7 @@ fn colour(value: &Value, names: &[&str]) -> Option<Rgb8> {
     field(value, names)
         .and_then(Value::as_str)
         .and_then(parse_color)
+        .map(Color::channels)
 }
 
 fn rect(value: &Value) -> Rect {
@@ -147,7 +149,10 @@ fn link_candidate(element: &Value) -> Option<DomCandidate> {
     if !in_text {
         return None;
     }
-    let ratio = contrast_ratio(foreground, neighbor);
+    let ratio = contrast_ratio(
+        Color::rgb(foreground[0], foreground[1], foreground[2]),
+        Color::rgb(neighbor[0], neighbor[1], neighbor[2]),
+    );
     if ratio >= 3.0 {
         return None;
     }

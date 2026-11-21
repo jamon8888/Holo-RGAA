@@ -20,11 +20,12 @@ candidat, jamais une erreur ni une panique. Seul un JSON invalide est une
 
 ## Formule WCAG unique
 
-`color::contrast_ratio` est la seule formule de contraste WCAG 2.1 du dépôt.
-La mesure équivalente de `rgaa-obscura/src/contrast.rs` (PR #456, branche
-`116zoo/wf-contrast-371`) est restée privée et sa branche n'a pas le crate du
-plugin : la basculer ici casserait une PR ouverte et indépendante. La migration
-est donc signalée dans la PR P-02, à faire quand #456 sera fusionnée.
+`rgaa_analysis::color::contrast_ratio` est la seule formule de contraste WCAG
+2.1 du dépôt (PR #468, module canonique partagé avec P-01). Ce crate n'a plus
+aucune copie locale des formules de couleur : seules les opérations propres au
+daltonisme restent ici. La migration de `rgaa-obscura/src/contrast.rs` (PR #456,
+branche `116zoo/wf-contrast-371`) est signalée dans la PR P-02, à faire quand
+#456 sera fusionnée.
 
 ## Enregistrement
 

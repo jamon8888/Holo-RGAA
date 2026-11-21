@@ -10,13 +10,12 @@
 //! * Contrast ratios: WebAIM contrast checker reference pairs.
 //! * ΔE2000: Sharma, Wu & Dalal (2005), CIEDE2000 test data set, pair 1.
 
-use rgaa_analysis_colorvision::color::{
-    contrast_ratio, delta_e_ciede2000_lab, parse_color, relative_luminance,
-};
+use rgaa_analysis::color::{contrast_ratio, delta_e_2000_lab, parse_color, relative_luminance};
 use rgaa_analysis_colorvision::matrices::{brettel_tritan, machado, CvdKind};
 use rgaa_analysis_colorvision::simulate::simulate_rgb;
+use rgaa_analysis_colorvision::Rgb8;
 
-type Rgb = [u8; 3];
+type Rgb = Rgb8;
 
 const SIXTEEN_COLOURS: [(&str, Rgb); 16] = [
     ("white", [255, 255, 255]),
@@ -217,12 +216,30 @@ fn link_in_text_ratio_is_below_the_f73_threshold() {
 fn ciede2000_matches_sharma_reference_pair_one() {
     // Sharma et al. 2005, test data set, pair 1: ΔE00 = 2.0425.
     // Sharma's data set is for the classic CIEDE2000; P-02 uses the improved
-    // variant, cross-checked separately against palette's two implementations.
-    let delta = delta_e_ciede2000_lab([50.0, 2.6772, -79.7751], [50.0, 0.0, -82.7485]);
+    // variant exposed by the same canonical module in `rgaa-analysis`.
+    let delta = delta_e_2000_lab([50.0, 2.6772, -79.7751], [50.0, 0.0, -82.7485]);
     assert!(
         (delta - 2.0425).abs() < 0.001,
         "expected 2.0425 ±0.001, got {delta}"
     );
+}
+
+#[test]
+fn the_plugin_parses_the_css_colours_computed_styles_use() {
+    // Contract check on the shared parser, from the plugin's point of view.
+    use rgaa_analysis::color::Color;
+    assert_eq!(parse_color("#fff"), Some(Color::rgb(255, 255, 255)));
+    assert_eq!(parse_color("#0000ee"), Some(Color::rgb(0, 0, 238)));
+    assert_eq!(parse_color("rgb(0, 0, 238)"), Some(Color::rgb(0, 0, 238)));
+    assert_eq!(parse_color("rgb(0 0 238)"), Some(Color::rgb(0, 0, 238)));
+    assert_eq!(parse_color("nope"), None);
+}
+
+#[test]
+fn black_and_white_have_the_extreme_wcag_ratio() {
+    let black = parse_color("#000000").expect("black");
+    let white = parse_color("#ffffff").expect("white");
+    assert_eq!(contrast_ratio(black, white), 21.0);
 }
 
 #[test]

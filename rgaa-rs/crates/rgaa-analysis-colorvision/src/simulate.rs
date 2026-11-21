@@ -3,8 +3,9 @@
 use image::{GrayImage, RgbaImage};
 use image_hasher::{HashAlg, HasherConfig};
 
-use crate::color::{encode_channel, linearize_channel, Rgb8};
 use crate::matrices::{simulate_linear, CvdKind};
+use crate::Rgb8;
+use rgaa_analysis::color::{encode_channel, linearize_channel};
 
 /// Simulates one 8-bit colour. Thin wrapper kept next to the image code so
 /// callers only need one module for pixel work.

@@ -15,7 +15,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::color::{encode_channel, linearize_channel, Rgb8};
+use crate::Rgb8;
+use rgaa_analysis::color::{encode_channel, linearize_channel};
 
 /// The simulated deficiency. `Achromatopsia` is the Rec. 709 greyscale
 /// reference used by RGAA 3.1 ("does the information survive in greyscale?").

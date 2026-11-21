@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use image::{ImageEncoder, RgbaImage};
 use rgaa_analysis::capture::{PageCapture, RgbaImage as CaptureImage};
+use rgaa_analysis::color::{delta_e_improved_2000, Color};
 use rgaa_analysis::error::{analysis_error, Result};
 use rgaa_analysis::types::{Artefact, Indice, PluginOptions, Portee, Preuve, Rect, Subject};
 use rgaa_analysis::{sha256_hex, AnalysisPlugin};
@@ -10,7 +11,6 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::candidates::{detect_candidates, CandidateKind, DomCandidate};
-use crate::color::delta_e_2000;
 use crate::matrices::{simulate_rgb, CvdKind, ALL_KINDS};
 use crate::simulate::simulate_image;
 
@@ -190,7 +190,10 @@ impl ColorVisionPlugin {
         for kind in ALL_KINDS {
             let simulated_foreground = simulate_rgb(candidate.foreground, kind, options.severite);
             let simulated_neighbor = simulate_rgb(candidate.neighbor, kind, options.severite);
-            let delta_e = delta_e_2000(simulated_foreground, simulated_neighbor);
+            let delta_e = delta_e_improved_2000(
+                as_colour(simulated_foreground),
+                as_colour(simulated_neighbor),
+            );
             let indiscernable = delta_e < options.seuil_delta_e;
             if indiscernable {
                 collapsed.push(kind);
@@ -246,11 +249,12 @@ fn confounded_series(candidate: &DomCandidate, threshold: f64) -> Option<Vec<Str
     let mut found = Vec::new();
     for (index, series) in candidate.series.iter().enumerate().skip(1) {
         for (previous_index, previous) in candidate.series[..index].iter().enumerate() {
-            if delta_e_2000(series.color, previous.color) < threshold {
+            if delta_e_improved_2000(as_colour(series.color), as_colour(previous.color)) < threshold
+            {
                 found.push(format!(
                     "{previous_index}<->{index}: {} / {}",
-                    encode_colour(previous.color),
-                    encode_colour(series.color)
+                    as_colour(previous.color).to_hex(),
+                    as_colour(series.color).to_hex()
                 ));
             }
         }
@@ -258,8 +262,9 @@ fn confounded_series(candidate: &DomCandidate, threshold: f64) -> Option<Vec<Str
     Some(found)
 }
 
-fn encode_colour(colour: [u8; 3]) -> String {
-    format!("#{:02x}{:02x}{:02x}", colour[0], colour[1], colour[2])
+/// Bridges the plugin's `[u8; 3]` colours to the canonical `Color` type.
+fn as_colour(rgb: crate::Rgb8) -> Color {
+    Color::rgb(rgb[0], rgb[1], rgb[2])
 }
 
 /// Crops the original vignette and at most two simulated ones (P-02 §4:

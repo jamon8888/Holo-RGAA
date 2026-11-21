@@ -5,20 +5,20 @@
 //! [`rgaa_analysis::Preuve`]s with measurements and vignettes. It never emits a
 //! status: the orchestrator turns proofs into `review` (R-P1, R-P2).
 //!
-//! The WCAG contrast formula lives here as [`color::contrast_ratio`], so P-01
-//! and Obscura can share a single implementation.
+//! Colour maths (WCAG contrast, sRGB linearisation, CIEDE2000, CSS colour
+//! parsing) comes from the single canonical module [`rgaa_analysis::color`].
+//! This crate only owns what is specific to colour vision: the Machado and
+//! Brettel matrices, the full-image simulations and the dHash comparison.
 
 pub mod candidates;
-pub mod color;
 pub mod matrices;
 pub mod plugin;
 pub mod simulate;
 
+/// An 8-bit sRGB colour without alpha, in `R, G, B` order.
+pub type Rgb8 = [u8; 3];
+
 pub use candidates::{detect_candidates, CandidateKind, DomCandidate, Series};
-pub use color::{
-    contrast_ratio, delta_e_2000, delta_e_2000_lab, delta_e_ciede2000_lab, parse_color,
-    relative_luminance, Rgb8,
-};
 pub use matrices::{
     brettel_tritan, machado, matrices_document, simulate_rgb, CvdKind, Matrix3, ALL_KINDS,
     MATRICES_JSON,

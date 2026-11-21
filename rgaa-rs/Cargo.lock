@@ -7116,6 +7116,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "indexmap 2.14.2",
  "reqwest 0.12.28",
  "rgaa-agent",
  "rgaa-browser-tools",

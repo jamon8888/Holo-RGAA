@@ -3,7 +3,8 @@ use std::fmt::Write;
 
 use rgaa_core::{
     AuditBundle, AuditSummary, AuditType, AutomatedVerdict, CriterionResult, CriterionStatus,
-    Finding, PageResult, RgaaCriteria, VerdictBasis,
+    Finding, PageResult, RgaaCriteria, VerdictBasis, TRANSVERSE_PAGE_URL,
+    TRANSVERSE_REFERENCE_SOURCE,
 };
 
 pub fn generate_html_report(bundle: &AuditBundle) -> String {
@@ -261,6 +262,20 @@ fn write_html_findings(html: &mut String, bundle: &AuditBundle) {
     );
 }
 
+/// Contenu de la colonne « Éléments transverses » (ticket #429).
+///
+/// La page virtuelle porte l'unique finding ; les pages de l'échantillon
+/// renvoient à cette page plutôt que de répéter la preuve et la décision.
+fn transverse_cell(page: &rgaa_core::PageAudit, criterion: &CriterionResult) -> &'static str {
+    if page.url == TRANSVERSE_PAGE_URL {
+        "Page transverses"
+    } else if criterion.source == TRANSVERSE_REFERENCE_SOURCE {
+        "Voir page transverses"
+    } else {
+        "—"
+    }
+}
+
 /// Lists every one of the 106 RGAA criteria for every audited page — pass,
 /// fail, needs human review, not applicable, not tested, error — so the
 /// report is a complete record, not just aggregate scores.
@@ -280,6 +295,7 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <th>Statut vérifié</th>
                     <th>Détail</th>
                     <th>Évaluation et preuves</th>
+                    <th>Éléments transverses</th>
                 </tr>
             </thead>
             <tbody>"#,
@@ -312,6 +328,7 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <td>{}</td>
                     <td>{}</td>
                     <td>{}</td>
+                    <td>{}</td>
                 </tr>"#,
                 escape_html(&criterion.criterion_id),
                 escape_html(title),
@@ -324,7 +341,8 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     .map(status_text)
                     .unwrap_or("Non vérifié"),
                 escape_html(&criterion_detail(criterion)),
-                assessment_cell(criterion)
+                assessment_cell(criterion),
+                transverse_cell(page, criterion)
             );
         }
 

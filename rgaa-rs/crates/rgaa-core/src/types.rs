@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::AuditType;
 
+/// URL réservée à la page virtuelle des éléments transverses (ticket #429).
+/// Ce n'est pas une URL navigable : c'est la clé de la page dans le rapport.
+pub const TRANSVERSE_PAGE_URL: &str = "transverses";
+
+/// Source d'un résultat de page qui renvoie à la page transverses : la preuve
+/// et la décision vivent sur cette dernière, une seule fois pour l'échantillon.
+pub const TRANSVERSE_REFERENCE_SOURCE: &str = "transverse-reference";
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Classification {
     Deterministe,

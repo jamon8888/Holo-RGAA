@@ -121,6 +121,26 @@ impl AnalyzeRequest {
     }
 }
 
+/// Input of `run_analysis_plugin`. There is deliberately no status field.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RunAnalysisPluginInput {
+    pub url: String,
+    pub plugin: String,
+    #[serde(default)]
+    pub options: serde_json::Value,
+}
+
+/// Proofs only: a verdict would violate R-P1.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RunAnalysisPluginResponse {
+    pub preuves: Vec<rgaa_analysis::Preuve>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListAnalysisPluginsResponse {
+    pub plugins: Vec<rgaa_analysis::PluginInfo>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RemediationRequest {
     pub issues: Vec<RemediationIssueInput>,
@@ -208,7 +228,8 @@ impl McpFailure {
             | RgaaError::AxeCore(_)
             | RgaaError::Holo3(_)
             | RgaaError::Media(_)
-            | RgaaError::Storage(_) => Self::execution(err.to_string()),
+            | RgaaError::Storage(_)
+            | RgaaError::Analysis { .. } => Self::execution(err.to_string()),
         }
     }
     pub fn into_error_data(self) -> ErrorData {
@@ -425,6 +446,58 @@ pub trait AuditStorageService: Send + Sync {
                 + '_,
         >,
     >;
+}
+
+/// Analysis plugins are exposed through this narrow seam so the tool schema
+/// can be tested without a browser (P-00 §7).
+pub trait AnalysisService: Send + Sync {
+    fn list(&self) -> Vec<rgaa_analysis::PluginInfo>;
+    fn run(
+        &self,
+        url: &str,
+        plugin: &str,
+        options: &serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<rgaa_analysis::Preuve>, McpFailure>>
+                + Send
+                + '_,
+        >,
+    >;
+}
+
+/// Default service: the process-local plugin registry.
+pub struct RegistryAnalysisService;
+
+impl AnalysisService for RegistryAnalysisService {
+    fn list(&self) -> Vec<rgaa_analysis::PluginInfo> {
+        rgaa_analysis::registry::list()
+    }
+
+    fn run(
+        &self,
+        url: &str,
+        plugin: &str,
+        options: &serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<rgaa_analysis::Preuve>, McpFailure>>
+                + Send
+                + '_,
+        >,
+    > {
+        let url = url.to_owned();
+        let plugin_id = plugin.to_owned();
+        let options = options.clone();
+        Box::pin(async move {
+            let plugin = rgaa_analysis::registry::plugin_by_id(&plugin_id).ok_or_else(|| {
+                McpFailure::invalid(format!("plugin d'analyse inconnu : {plugin_id}"))
+            })?;
+            rgaa_analysis::run_plugin(plugin, &url, &options)
+                .await
+                .map_err(|error| McpFailure::execution(error.to_string()))
+        })
+    }
 }
 
 pub struct LazyObscuraBridge {
@@ -644,10 +717,11 @@ pub struct ToolServer {
     guided_service: Arc<dyn GuidedService>,
     audit_service: Arc<dyn AuditOrchestrationService>,
     storage_service: Arc<dyn AuditStorageService>,
+    analysis_service: Arc<dyn AnalysisService>,
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 9] {
+    pub const fn tool_names() -> [&'static str; 11] {
         [
             "analyze",
             "remediate",
@@ -658,6 +732,8 @@ impl ToolServer {
             "lint_static",
             "source_map",
             "verify_fix",
+            "list_analysis_plugins",
+            "run_analysis_plugin",
         ]
     }
 
@@ -668,12 +744,31 @@ impl ToolServer {
         audit: Arc<dyn AuditOrchestrationService>,
         storage: Arc<dyn AuditStorageService>,
     ) -> Self {
+        Self::new_with_analysis(
+            analyze,
+            remediation,
+            guided,
+            audit,
+            storage,
+            Arc::new(RegistryAnalysisService),
+        )
+    }
+
+    pub fn new_with_analysis(
+        analyze: Arc<dyn AnalyzeService>,
+        remediation: Arc<dyn RemediationService>,
+        guided: Arc<dyn GuidedService>,
+        audit: Arc<dyn AuditOrchestrationService>,
+        storage: Arc<dyn AuditStorageService>,
+        analysis: Arc<dyn AnalysisService>,
+    ) -> Self {
         Self {
             analyze_service: analyze,
             remediation_service: remediation,
             guided_service: guided,
             audit_service: audit,
             storage_service: storage,
+            analysis_service: analysis,
         }
     }
 }
@@ -964,6 +1059,39 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
             criteria,
         }))
+    }
+
+    #[tool(
+        name = "list_analysis_plugins",
+        description = "List compiled analysis plugins with their versions, RGAA tests, required models and presence. Sidecars show their exact command and executable digest. Plugins produce proofs, never statuses."
+    )]
+    pub fn list_analysis_plugins(
+        &self,
+    ) -> Result<rmcp::handler::server::wrapper::Json<ListAnalysisPluginsResponse>, ErrorData> {
+        Ok(rmcp::handler::server::wrapper::Json(
+            ListAnalysisPluginsResponse {
+                plugins: self.analysis_service.list(),
+            },
+        ))
+    }
+
+    #[tool(
+        name = "run_analysis_plugin",
+        description = "Run one analysis plugin on a URL and return its Preuve values (measurements, artefacts, hashes). No status or verdict is returned: the orchestrator and a human reviewer decide (R-P1)."
+    )]
+    pub async fn run_analysis_plugin(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<RunAnalysisPluginInput>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<RunAnalysisPluginResponse>, ErrorData> {
+        let input = request.0;
+        let preuves = self
+            .analysis_service
+            .run(&input.url, &input.plugin, &input.options)
+            .await
+            .map_err(McpFailure::into_error_data)?;
+        Ok(rmcp::handler::server::wrapper::Json(
+            RunAnalysisPluginResponse { preuves },
+        ))
     }
 
     #[tool(

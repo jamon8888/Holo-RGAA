@@ -95,9 +95,10 @@ fn lien_sur(url: &str, texte: &str) -> String {
 
 /// Refuse to render a conformity declaration from a partial audit.
 ///
-/// A *rapide* audit checks 25 of 106 criteria: any "conforme" statement drawn
-/// from it would be a claim the measurement cannot support (#428). The caller
-/// still gets the audit report, which says "audit partiel".
+/// A *rapide* audit checks 25 of 106 criteria and a *complémentaire* 50: any
+/// "conforme" statement drawn from either would be a claim the measurement
+/// cannot support (#428). The caller still gets the audit report, which says
+/// "audit partiel, ne vaut pas déclaration de conformité".
 ///
 /// # Errors
 ///
@@ -438,7 +439,7 @@ mod tests {
     /// beside it. Sourcery flagged on #209 that the new helpers were never wired in.
     /// #428: a 25-criteria audit is a partial measurement, never a claim.
     #[test]
-    fn a_rapide_audit_cannot_produce_a_conformity_declaration() {
+    fn partial_audits_cannot_produce_a_conformity_declaration() {
         let metrics = metrics_80();
         let contact = Contact {
             canal: "email".into(),
@@ -447,14 +448,14 @@ mod tests {
             formulaire: None,
             delai_reponse: None,
         };
-        let mut input = input(&metrics, &[], &contact);
-        input.audit_type = AuditType::Rapide;
-
-        let error = render_declaration_fr(&input)
-            .expect_err("a rapid audit must never yield a conformity declaration");
-        assert!(error.to_string().contains("audit partiel"), "{error}");
-        assert!(refuse_partial_declaration(AuditType::Rapide).is_err());
-        assert!(refuse_partial_declaration(AuditType::Complementaire).is_ok());
+        for partial in [AuditType::Rapide, AuditType::Complementaire] {
+            let mut declaration = input(&metrics, &[], &contact);
+            declaration.audit_type = partial;
+            let error = render_declaration_fr(&declaration)
+                .expect_err("partial audits must never yield a conformity declaration");
+            assert!(error.to_string().contains("audit partiel"), "{error}");
+            assert!(refuse_partial_declaration(partial).is_err());
+        }
         assert!(refuse_partial_declaration(AuditType::Complet).is_ok());
     }
 

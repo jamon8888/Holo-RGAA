@@ -73,13 +73,16 @@ fn write_html_header(html: &mut String, audit_id: &str, url: &str, audit_type: A
         <header>
             <h1>RGAA Audit Report</h1>
             <p class="meta">ID: {} | URL: {}</p>
-            <p class="meta">Type d'audit : {} ({} critères)</p>
+            <p class="meta">Type d'audit : {} ({} critères){}</p>
         </header>"#,
         audit_id,
         audit_id,
         url,
         audit_type.label(),
-        audit_type.count()
+        audit_type.count(),
+        audit_type
+            .partial_notice()
+            .map_or_else(String::new, |notice| format!(" — {notice}"))
     );
 }
 

@@ -179,6 +179,9 @@ fn render_table(result: &rgaa_core::AuditResult) -> String {
         result.audit_type.count()
     );
     let _ = writeln!(&mut out, "Conformity: {}", result.etat_conformite);
+    if let Some(notice) = result.audit_type.partial_notice() {
+        let _ = writeln!(&mut out, "Notice: {notice}");
+    }
     let _ = writeln!(&mut out, "Global Rate: {:.1}%", result.taux_global);
     let _ = writeln!(&mut out, "Coverage: {:.1}%", result.coverage_percent);
     let _ = writeln!(&mut out);

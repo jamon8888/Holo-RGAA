@@ -32,6 +32,8 @@ pub struct AuditResponse {
     pub etat_conformite: String,
     /// Scope actually evaluated, echoed from the audit result.
     pub audit_type: AuditType,
+    /// Mandatory disclaimer for a partial audit; `null` for a full audit.
+    pub audit_notice: Option<String>,
     pub passed: usize,
     pub failed: usize,
     pub na: usize,
@@ -49,6 +51,7 @@ impl From<AuditResult> for AuditResponse {
             verified_compliance_percent: result.verified_compliance_percent,
             etat_conformite: result.etat_conformite,
             audit_type: result.audit_type,
+            audit_notice: result.audit_type.partial_notice().map(str::to_owned),
             passed: result.passed,
             failed: result.failed,
             na: result.na,
@@ -153,6 +156,38 @@ mod tests {
         assert_eq!(response.failed, result.failed);
         assert_eq!(response.na, result.na);
         assert_eq!(response.audit_type, AuditType::Complet);
+        assert_eq!(response.audit_notice, None);
+    }
+
+    #[test]
+    fn partial_audit_exposes_the_mandatory_notice() {
+        let mut result = AuditResult {
+            audit_id: "test-id".to_string(),
+            url: "https://example.com".to_string(),
+            pages: vec![],
+            total_criteria: 25,
+            passed: 25,
+            failed: 0,
+            na: 0,
+            overall_compliance: 100.0,
+            taux_global: 100.0,
+            coverage_percent: 100.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
+            etat_conformite: "audit partiel".to_string(),
+            duration_ms: 1000,
+            audit_complete: true,
+            audit_type: rgaa_core::AuditType::Rapide,
+        };
+        let response = AuditResponse::from(result.clone());
+        assert_eq!(
+            response.audit_notice.as_deref(),
+            Some("audit partiel, ne vaut pas déclaration de conformité")
+        );
+
+        result.audit_type = rgaa_core::AuditType::Complementaire;
+        assert!(AuditResponse::from(result).audit_notice.is_some());
     }
 
     #[test]

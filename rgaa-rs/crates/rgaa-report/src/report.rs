@@ -29,6 +29,9 @@ fn render_markdown(bundle: &AuditBundle) -> String {
         bundle.config.audit_type.label(),
         bundle.config.audit_type.count()
     );
+    if let Some(notice) = bundle.config.audit_type.partial_notice() {
+        let _ = writeln!(out, "- Mention : {notice}");
+    }
     let _ = writeln!(out, "- Schema: {}", bundle.schema_version);
     let _ = writeln!(
         out,
@@ -443,16 +446,33 @@ mod tests {
     fn reports_name_the_audit_type() {
         use rgaa_core::AuditType;
 
-        let mut bundle = sample_bundle();
-        bundle.config.audit_type = AuditType::Rapide;
-        let markdown = render_markdown(&bundle);
-        assert!(
-            markdown.contains("Audit type: Audit rapide (25 criteria)"),
-            "{markdown}"
-        );
+        for (scope, label, count) in [
+            (AuditType::Rapide, "Audit rapide", 25),
+            (AuditType::Complementaire, "Audit complémentaire", 50),
+        ] {
+            let mut bundle = sample_bundle();
+            bundle.config.audit_type = scope;
+            let markdown = render_markdown(&bundle);
+            assert!(
+                markdown.contains(&format!("- Audit type: {label} ({count} criteria)")),
+                "{markdown}"
+            );
+            assert!(
+                markdown
+                    .contains("- Mention : audit partiel, ne vaut pas déclaration de conformité"),
+                "{markdown}"
+            );
 
-        let html = html::generate_html_report(&bundle);
-        assert!(html.contains("Audit rapide (25 critères)"), "{html}");
+            let html = html::generate_html_report(&bundle);
+            assert!(
+                html.contains(&format!("{label} ({count} critères)")),
+                "{html}"
+            );
+            assert!(
+                html.contains("audit partiel, ne vaut pas déclaration de conformité"),
+                "{html}"
+            );
+        }
     }
 
     #[test]

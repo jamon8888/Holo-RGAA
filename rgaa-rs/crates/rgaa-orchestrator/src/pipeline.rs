@@ -1649,6 +1649,14 @@ mod routing_tests {
                 validate_automatic_verdict_coverage(&audit.pages[0].criteria, scope).is_ok(),
                 "{scope:?} scope must be complete on its own criteria"
             );
+            if scope.allows_conformity_declaration() {
+                assert_ne!(audit.etat_conformite, "audit partiel");
+            } else {
+                assert_eq!(
+                    audit.etat_conformite, "audit partiel",
+                    "{scope:?} must not claim conformance"
+                );
+            }
         }
     }
 

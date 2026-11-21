@@ -106,8 +106,14 @@ fn audit_type_serde_names_are_stable_and_default_to_complet() {
 }
 
 #[test]
-fn a_rapide_audit_never_allows_a_conformity_declaration() {
-    assert!(!AuditType::Rapide.allows_conformity_declaration());
-    assert!(AuditType::Complementaire.allows_conformity_declaration());
+fn only_a_complet_audit_allows_a_conformity_declaration() {
+    for partial in [AuditType::Rapide, AuditType::Complementaire] {
+        assert!(!partial.allows_conformity_declaration());
+        assert_eq!(
+            partial.partial_notice(),
+            Some("audit partiel, ne vaut pas déclaration de conformité")
+        );
+    }
     assert!(AuditType::Complet.allows_conformity_declaration());
+    assert_eq!(AuditType::Complet.partial_notice(), None);
 }

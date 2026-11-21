@@ -55,11 +55,24 @@ impl AuditType {
 
     /// Only a full 106-criterion audit may carry a conformity declaration.
     ///
-    /// A rapid audit is explicitly a partial measurement of RGAA uptake, not a
-    /// statement about the site's conformance (DesignGouv, *audit rapide*).
+    /// An accessibility declaration states conformance against the whole RGAA;
+    /// neither the 25-criterion rapid audit nor the 50-criterion complementary
+    /// audit can support that claim.
     #[must_use]
     pub const fn allows_conformity_declaration(self) -> bool {
-        !matches!(self, Self::Rapide)
+        matches!(self, Self::Complet)
+    }
+
+    /// Mandatory wording on a partial audit's report: it is a measurement,
+    /// not a conformity declaration.
+    #[must_use]
+    pub const fn partial_notice(self) -> Option<&'static str> {
+        match self {
+            Self::Rapide | Self::Complementaire => {
+                Some("audit partiel, ne vaut pas déclaration de conformité")
+            }
+            Self::Complet => None,
+        }
     }
 
     /// Whether `criterion_id` belongs to this audit's scope.

@@ -6,6 +6,9 @@
 //! the same [`registry`].
 
 pub mod capture;
+/// Single source of colour maths for every analysis plugin (WCAG 2.1,
+/// CIEDE2000, alpha composition).
+pub mod color;
 pub mod error;
 pub mod models;
 pub mod plugin;

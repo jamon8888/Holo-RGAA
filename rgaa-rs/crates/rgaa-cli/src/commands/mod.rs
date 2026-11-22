@@ -2,6 +2,8 @@ pub mod analyze;
 pub mod export;
 pub mod igt;
 pub mod metrics;
+pub mod models;
+pub mod plugins;
 pub mod policy;
 pub mod report;
 pub mod review;

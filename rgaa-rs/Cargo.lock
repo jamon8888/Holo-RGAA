@@ -6995,6 +6995,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-analysis"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.2",
+ "rgaa-core",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "rgaa-api"
 version = "0.1.0"
 dependencies = [
@@ -7049,8 +7067,10 @@ dependencies = [
  "clap",
  "dotenvy",
  "futures",
+ "indexmap 2.14.2",
  "reqwest 0.12.28",
  "rgaa-agent",
+ "rgaa-analysis",
  "rgaa-core",
  "rgaa-holo",
  "rgaa-mcp-http",
@@ -7127,6 +7147,7 @@ name = "rgaa-mcp"
 version = "0.1.0"
 dependencies = [
  "dotenvy",
+ "rgaa-analysis",
  "rgaa-core",
  "rgaa-linter",
  "rgaa-obscura",

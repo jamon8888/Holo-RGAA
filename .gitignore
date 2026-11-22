@@ -22,6 +22,8 @@ AGENTS.local.md
 # open PR's copy. See the `ts-types` job in ci.yml.
 types/schemas.json
 types/src/tools.d.ts
+# P-00 proof / mesures schemas, dumped by `dump-analysis-schemas` in CI.
+types/analysis-schemas.json
 
 # Hook output: `scripts/check-runtime.sh` writes RGAA_FRAMEWORK to .rgaa/env on
 # SessionStart and drops a stale marker per edited file under .rgaa/state/.

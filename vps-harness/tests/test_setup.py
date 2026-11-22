@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from pathlib import Path
 
 from agent_harness.setup import setup_exit_code, setup_repo
 from tests.fakes import FakeRunner, healthy_programs
@@ -33,7 +35,7 @@ class SetupTests(unittest.TestCase):
 
         self.runner.programs["basemind"] = (
             lambda argv, **_: status(argv)
-            if argv[1:] == ["--root", self.root, "status", "--json"]
+            if argv[1:] == ["--root", str(Path(self.root).resolve()), "status", "--json"]
             else healthy_programs()["basemind"](argv)
         )
         report = setup_repo(self.root, self.runner)
@@ -61,6 +63,21 @@ class SetupTests(unittest.TestCase):
         report = setup_repo(self.root, self.runner)
         self.assertEqual(report["status"], "fail")
         self.assertEqual(self.by_name(report, "git_worktree")["status"], "fail")
+
+    def test_invalid_file_count_types_fail_closed(self):
+        for payload in ({"file_count": True}, {"file_count": "42"}):
+            with self.subTest(payload=payload):
+                def basemind(argv, **_):
+                    if argv[1:] == ["--version"]:
+                        return 0, "basemind 0.33.0\n", ""
+                    if argv[1:] == ["--help"]:
+                        return 0, "Commands: admin agents code git graph memory shell web workspace", ""
+                    return 0, json.dumps(payload), ""
+
+                self.runner.programs["basemind"] = basemind
+                report = setup_repo(self.root, self.runner)
+                self.assertEqual(report["status"], "fail")
+                self.assertEqual(self.by_name(report, "basemind_index")["status"], "fail")
 
     def test_setup_does_not_write_configs(self):
         before = list(self.runner.calls)

@@ -34,19 +34,35 @@ class InstallTests(TempEnvTestCase):
         report = self.run_install()
         self.assertEqual(report["status"], "installed")
         self.assertEqual(report["version"], __version__)
-        version_dir = self.data_home / "agent-harness" / "versions" / __version__
+        version_dir = self.data_home / "versions" / __version__
         self.assertTrue((version_dir / "agent_harness" / "__init__.py").is_file())
         self.assertTrue((version_dir / "MANIFEST.json").is_file())
         manifest = json.loads((version_dir / "MANIFEST.json").read_text())
         self.assertIn("agent_harness/__init__.py", manifest)
         self.assertIn("bin/agent-harness", manifest)
-        current = self.data_home / "agent-harness" / "current"
+        current = self.data_home / "current"
         self.assertTrue(current.is_symlink())
         self.assertEqual(os.readlink(current), f"versions/{__version__}")
         launcher = self.bin_home / "agent-harness"
         self.assertTrue(launcher.is_symlink())
         self.assertEqual(Path(os.readlink(launcher)).name, "agent-harness")
+        self.assertTrue(Path(os.readlink(launcher)).is_absolute())
         self.assertTrue(os.access(launcher, os.X_OK))
+
+    def test_default_data_home_is_not_appended_twice(self):
+        report = install(self.source)
+        self.assertEqual(report["data_dir"], str(self.root / "data"))
+        self.assertTrue((self.root / "data" / "versions" / __version__).is_dir())
+        self.assertFalse((self.root / "data" / "agent-harness").exists())
+
+    def test_missing_launcher_preserves_working_version(self):
+        self.run_install()
+        version_dir = self.data_home / "versions" / __version__
+        before = (version_dir / "agent_harness" / "__init__.py").read_text()
+        (self.source / "bin" / "agent-harness").unlink()
+        with self.assertRaises(RuntimeError):
+            self.run_install()
+        self.assertEqual((version_dir / "agent_harness" / "__init__.py").read_text(), before)
 
     def test_second_install_is_noop(self):
         self.run_install()
@@ -60,7 +76,7 @@ class InstallTests(TempEnvTestCase):
         (self.source / "agent_harness" / "__init__.py").write_text("VALUE = 2\n", encoding="utf-8")
         report = self.run_install()
         self.assertEqual(report["status"], "installed")
-        self.assertIn("VALUE = 2", (self.data_home / "agent-harness" / "current" / "agent_harness" / "__init__.py").read_text())
+        self.assertIn("VALUE = 2", (self.data_home / "current" / "agent_harness" / "__init__.py").read_text())
 
     def test_non_symlink_launcher_is_backed_up(self):
         self.bin_home.mkdir(parents=True, exist_ok=True)

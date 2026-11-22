@@ -53,6 +53,8 @@ def _version_check(
     binary = command[0]
     if code in (127, 124, 125):
         return {"status": "missing", "version": None, "detail": combined or f"{binary} unavailable"}
+    if code != 0:
+        return {"status": "error", "version": None, "detail": combined or f"{binary} exited {code}"}
     version = parse_version(combined)
     if version is None:
         return {"status": "error", "version": None, "detail": f"could not parse {binary} version: {combined[:200]}"}
@@ -90,7 +92,7 @@ def _integration(spec, basemind_available: bool) -> dict:
             data = loads_json_config(text, jsonc=(spec.config_kind == "jsonc"))
             container = data.get(spec.config_key)
             current = container.get("basemind") if isinstance(container, dict) else None
-    except (OSError, ConfigError) as exc:
+    except (OSError, UnicodeError, ConfigError) as exc:
         return {**base, "status": "config_error", "detail": str(exc)}
 
     if entry_satisfied(current, spec.desired_entry):

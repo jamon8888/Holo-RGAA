@@ -39,7 +39,11 @@ Les six CLI d'agent sont **optionnels** pour le `doctor` : `claude`,
 `doctor`. Vérifier aussi que `~/.local/bin` est dans le `PATH` :
 
 ```sh
-echo "$PATH" | grep -q "$HOME/.local/bin" || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH"
+     echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc ;;
+esac
 ```
 
 ## 3. Installation

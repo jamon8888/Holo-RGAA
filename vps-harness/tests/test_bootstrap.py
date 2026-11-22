@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest import mock
 
+import agent_harness.bootstrap as bootstrap_mod
 from agent_harness.agents import get_agent
 from agent_harness.bootstrap import bootstrap, bootstrap_exit_code, verify_agent
 from tests.fakes import FakeRunner, TempEnvTestCase
@@ -87,6 +89,32 @@ class BootstrapTests(TempEnvTestCase):
         before = self.claude_cfg.read_bytes()
         report = bootstrap("apply", self.runner)
         self.assertEqual(self._by_id(report, "claude")["status"], "config_error")
+        self.assertEqual(self.claude_cfg.read_bytes(), before)
+
+    def test_config_error_counts_as_error(self):
+        self.claude_cfg.write_text("{broken", encoding="utf-8")
+        report = bootstrap("check", self.runner)
+        self.assertEqual(report["status"], "error")
+        self.assertGreaterEqual(report["summary"]["errors"], 1)
+
+    def test_invalid_utf8_config_is_config_error(self):
+        self.claude_cfg.write_bytes(b"\xff\xfe{")
+        report = bootstrap("check", self.runner)
+        self.assertEqual(self._by_id(report, "claude")["status"], "config_error")
+
+    def test_conflict_skips_write(self):
+        real_plan = bootstrap_mod.plan_agent
+
+        def stale_plan(spec, runner):
+            plan = real_plan(spec, runner)
+            if spec.id in ("claude", "claude-teams") and plan.get("_new_text"):
+                plan["_source_hash"] = "stale-hash"
+            return plan
+
+        before = self.claude_cfg.read_bytes()
+        with mock.patch.object(bootstrap_mod, "plan_agent", side_effect=stale_plan):
+            report = bootstrap("apply", self.runner)
+        self.assertEqual(self._by_id(report, "claude")["status"], "conflict")
         self.assertEqual(self.claude_cfg.read_bytes(), before)
 
 

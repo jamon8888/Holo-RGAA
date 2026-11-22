@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .agents import AGENTS, FALLBACK_MODE, detect_cli, resolve_config_path
-from .merge import ConfigError, backup_and_write, merge_json_config, merge_toml_config
+from .merge import ConfigError, backup_and_write, merge_json_config, merge_toml_config, sha256_file
 from .version import __version__
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -81,7 +81,7 @@ def plan_agent(spec, runner: "Runner") -> dict:
     try:
         text = path.read_text(encoding="utf-8")
         new_text = _desired_text(spec, text)
-    except (OSError, ConfigError) as exc:
+    except (OSError, UnicodeError, ConfigError) as exc:
         result.update({"status": "config_error", "change": False, "detail": str(exc)})
         return result
 
@@ -94,6 +94,7 @@ def plan_agent(spec, runner: "Runner") -> dict:
             {"status": "needs_change", "change": True, "detail": "basemind MCP entry will be added/updated"}
         )
         result["_new_text"] = new_text
+        result["_source_hash"] = sha256_file(path)
     return result
 
 
@@ -114,7 +115,7 @@ def verify_agent(spec) -> bool:
             data = loads_json_config(text, jsonc=(spec.config_kind == "jsonc"))
             container = data.get(spec.config_key)
             current = container.get("basemind") if isinstance(container, dict) else None
-    except (OSError, ConfigError):
+    except (OSError, UnicodeError, ConfigError):
         return False
     return entry_satisfied(current, spec.desired_entry)
 
@@ -130,10 +131,27 @@ def bootstrap(mode: str, runner: "Runner") -> dict:
     for spec in AGENTS:
         plan = plan_agent(spec, runner)
         new_text = plan.pop("_new_text", None)
+        source_hash = plan.pop("_source_hash", None)
+
+        if plan["status"] == "config_error":
+            counts["errors"] += 1
+            agents.append(plan)
+            continue
 
         if mode == "apply" and new_text is not None:
+            config_path = Path(plan["config_path"])
+            if (
+                source_hash is not None
+                and config_path.exists()
+                and sha256_file(config_path) != source_hash
+            ):
+                plan["status"] = "conflict"
+                plan["detail"] = "config changed after planning; rerun --apply to replan"
+                counts["errors"] += 1
+                agents.append(plan)
+                continue
             try:
-                backup = backup_and_write(Path(plan["config_path"]), new_text)
+                backup = backup_and_write(config_path, new_text)
                 plan["backup"] = backup
                 plan["verified"] = verify_agent(spec)
                 plan["status"] = "applied" if plan["verified"] else "write_failed"

@@ -151,9 +151,16 @@ def merge_json_config(
     if not isinstance(container, dict):
         container = {}
         data[key] = container
-    if entry_satisfied(container.get(name), desired):
+    existing = container.get(name)
+    if entry_satisfied(existing, desired):
         return None
-    container[name] = desired
+    if isinstance(existing, dict):
+        # Repair only the managed fields; keep user-added keys such as `env`.
+        for key, value in desired.items():
+            if key not in _IGNORED_MATCH_KEYS:
+                existing[key] = value
+    else:
+        container[name] = dict(desired)
     return dumps_json_config(data)
 
 
@@ -203,14 +210,17 @@ def remove_toml_table(text: str, section: str) -> str:
     prefix = section + "."
     leaf = section.rsplit(".", 1)[-1]
     inline_pattern = re.compile(rf"^{re.escape(leaf)}\s*=")
+    # A TOML table header may be followed by whitespace and a trailing comment.
+    header_pattern = re.compile(r"^\[([^\]]+)\]\s*(?:#.*)?$")
     kept: list[str] = []
     current_table = ""
     skipping = False
     for line in text.splitlines():
         stripped = line.strip()
-        is_header = stripped.startswith("[") and stripped.endswith("]") and not stripped.startswith("[[")
+        header_match = header_pattern.match(stripped)
+        is_header = header_match is not None and not stripped.startswith("[[")
         if is_header:
-            current_table = stripped[1:-1].strip()
+            current_table = header_match.group(1).strip()  # type: ignore[union-attr]
             if current_table == section or current_table.startswith(prefix):
                 skipping = True
                 continue
@@ -264,9 +274,20 @@ def backup_and_write(path: Path, text: str) -> str | None:
     backup: str | None = None
     if path.exists():
         stamp = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
-        backup_path = path.with_name(f"{path.name}.agent-harness.bak.{stamp}")
-        shutil.copy2(path, backup_path)
-        backup = str(backup_path)
+        stem = f"{path.name}.agent-harness.bak.{stamp}"
+        for sequence in range(1000):
+            candidate = path.with_name(stem if sequence == 0 else f"{stem}.{sequence:03d}")
+            try:
+                # Reserve the name exclusively before copying into it.
+                fd = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.close(fd)
+            except FileExistsError:
+                continue
+            shutil.copy2(path, candidate)
+            backup = str(candidate)
+            break
+        else:  # pragma: no cover - exhausted only under pathological collisions
+            raise RuntimeError(f"could not allocate a backup path for {path}")
     atomic_write(path, text)
     return backup
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_harness.merge import (
     ConfigError,
@@ -62,6 +64,16 @@ class JsonHelpersTests(unittest.TestCase):
         assert merged is not None
         self.assertEqual(json.loads(merged)["mcpServers"]["basemind"], CLAUDE_ENTRY)
 
+    def test_merge_json_preserves_custom_fields_when_repairing(self):
+        current = {"type": "stdio", "command": "old", "args": ["x"], "env": {"KEY": "v"}, "note": "keep"}
+        merged = merge_json_config(json.dumps({"mcpServers": {"basemind": current}}), "mcpServers", CLAUDE_ENTRY)
+        assert merged is not None
+        entry = json.loads(merged)["mcpServers"]["basemind"]
+        self.assertEqual(entry["command"], "basemind")
+        self.assertEqual(entry["args"], ["serve"])
+        self.assertEqual(entry["env"], {"KEY": "v"})
+        self.assertEqual(entry["note"], "keep")
+
     def test_merge_json_bad_config_raises(self):
         with self.assertRaises(ConfigError):
             merge_json_config("{not json", "mcpServers", CLAUDE_ENTRY)
@@ -111,6 +123,17 @@ command = "npx"
         self.assertNotIn("basemind", cleaned)
         self.assertIn("exa", cleaned)
 
+    def test_merge_toml_keeps_table_with_trailing_comment_header(self):
+        text = (
+            "[mcp_servers.basemind]\ncommand = \"old\"\n"
+            "[mcp_servers.exa] # keep this table\ncommand = \"npx\"\n"
+        )
+        merged = merge_toml_config(text, "mcp_servers.basemind", CODEX_ENTRY)
+        assert merged is not None
+        parsed = parse_toml(merged)
+        self.assertEqual(parsed["mcp_servers"]["basemind"], CODEX_ENTRY)
+        self.assertEqual(parsed["mcp_servers"]["exa"]["command"], "npx")
+
     def test_merge_toml_bad_config_raises(self):
         with self.assertRaises(ConfigError):
             merge_toml_config("not = = toml", "mcp_servers.basemind", CODEX_ENTRY)
@@ -125,6 +148,19 @@ class SafeWriteTests(TempEnvTestCase):
         self.assertEqual(path.read_text(), "updated\n")
         self.assertEqual(Path(backup).read_text(), "original\n")
         self.assertFalse(Path(backup).read_text().endswith("updated"))
+
+    def test_backup_paths_are_unique_within_same_second(self):
+        path = self.root / "config.json"
+        path.write_text("v0\n", encoding="utf-8")
+        with mock.patch("agent_harness.merge._dt.datetime") as dt:
+            dt.now.return_value = datetime.datetime(2026, 1, 1, 12, 0, 0)
+            first = backup_and_write(path, "v1\n")
+            second = backup_and_write(path, "v2\n")
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first, second)
+        self.assertEqual(Path(first).read_text(), "v0\n")
+        self.assertEqual(Path(second).read_text(), "v1\n")
 
 
 if __name__ == "__main__":

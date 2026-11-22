@@ -83,9 +83,12 @@ def setup_repo(root: str, runner: "Runner") -> dict:
             index_detail = f"file_count={file_count}"
         except (json.JSONDecodeError, AttributeError) as exc:
             index_detail = f"could not parse basemind status: {exc}"
-    checks.append(
-        _check("basemind_index", bool(file_count and file_count > 0), index_detail)
+    index_ok = (
+        isinstance(file_count, int)
+        and not isinstance(file_count, bool)
+        and file_count > 0
     )
+    checks.append(_check("basemind_index", index_ok, index_detail))
 
     failed = [check for check in checks if check["status"] == "fail"]
     return {

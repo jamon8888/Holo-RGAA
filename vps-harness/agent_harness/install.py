@@ -40,9 +40,10 @@ def source_manifest(source_root: Path) -> dict[str, str]:
     for path in _iter_package_files(source_root / "agent_harness"):
         manifest[path.relative_to(source_root).as_posix()] = sha256_file(path)
     launcher = source_root / "bin" / "agent-harness"
-    if launcher.is_file():
-        manifest["bin/agent-harness"] = sha256_file(launcher)
-    if not manifest:
+    if not launcher.is_file():
+        raise RuntimeError(f"missing launcher in source: {launcher}")
+    manifest["bin/agent-harness"] = sha256_file(launcher)
+    if not (source_root / "agent_harness").is_dir():
         raise RuntimeError(f"no installable package found under {source_root}")
     return manifest
 
@@ -81,32 +82,50 @@ def install(
 ) -> dict:
     """Install ``source_root`` into the user data dir; return a JSON-ready report."""
     source_root = Path(source_root).resolve()
-    data = (Path(data_home) if data_home is not None else paths.data_home()) / "agent-harness"
-    bin_dir = Path(bin_home) if bin_home is not None else paths.bin_home()
-    version_dir = data / "versions" / __version__
+    # The data dir is the application directory itself; an override replaces it.
+    data = (Path(data_home) if data_home is not None else paths.data_home()).resolve()
+    bin_dir = (Path(bin_home) if bin_home is not None else paths.bin_home()).resolve()
+    versions_dir = data / "versions"
+    version_dir = versions_dir / __version__
     desired = source_manifest(source_root)
     actions: list[str] = []
 
     if _installed_manifest(version_dir) == desired:
         actions.append(f"version {__version__} already installed with identical content")
     else:
-        if version_dir.exists():
-            shutil.rmtree(version_dir)
-        version_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            source_root / "agent_harness",
-            version_dir / "agent_harness",
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-        )
-        (version_dir / "bin").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_root / "bin" / "agent-harness", version_dir / "bin" / "agent-harness")
-        os.chmod(version_dir / "bin" / "agent-harness", 0o755)
-        (version_dir / "MANIFEST.json").write_text(
-            json.dumps(desired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        if _installed_manifest(version_dir) != desired:
-            raise RuntimeError("post-copy manifest verification failed")
-        actions.append(f"installed version {__version__}")
+        staging = versions_dir / f".staging-{__version__}-{os.getpid()}"
+        backup_dir: Path | None = None
+        if staging.exists():
+            shutil.rmtree(staging)
+        try:
+            shutil.copytree(
+                source_root / "agent_harness",
+                staging / "agent_harness",
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+            (staging / "bin").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_root / "bin" / "agent-harness", staging / "bin" / "agent-harness")
+            os.chmod(staging / "bin" / "agent-harness", 0o755)
+            (staging / "MANIFEST.json").write_text(
+                json.dumps(desired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            if _installed_manifest(staging) != desired:
+                raise RuntimeError("staged manifest verification failed")
+            # Only now replace the working version; a failure above leaves it intact.
+            if version_dir.exists():
+                stamp = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
+                backup_dir = versions_dir / f".backup-{__version__}-{stamp}"
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+                shutil.move(str(version_dir), str(backup_dir))
+            shutil.move(str(staging), str(version_dir))
+            if backup_dir is not None:
+                shutil.rmtree(backup_dir)
+                backup_dir = None
+            actions.append(f"installed version {__version__}")
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
 
     current = data / "current"
     if _ensure_symlink(current, f"versions/{__version__}"):

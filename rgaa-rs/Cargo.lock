@@ -8240,6 +8240,7 @@ dependencies = [
  "libc",
  "obscura",
  "reqwest 0.12.28",
+ "rgaa-analysis",
  "rgaa-core",
  "rgaa-rules",
  "rgaa-test-corpus",

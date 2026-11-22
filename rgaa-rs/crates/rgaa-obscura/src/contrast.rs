@@ -23,6 +23,7 @@
 //! avec la raison, exactement comme le ferait axe sur un fond image. Le navigateur
 //! réellement utilisé reste le binaire Obscura épinglé (#430).
 
+use rgaa_analysis::color::{self, Color};
 use serde_json::{json, Value};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -549,32 +550,29 @@ fn parse_weight(raw: &str) -> u16 {
     }
 }
 
-/// Relative luminance WCAG 2.1, with the sRGB linearisation threshold at 0.04045.
-fn relative_luminance(colour: (u8, u8, u8, u8)) -> f64 {
-    fn linear(channel: u8) -> f64 {
-        let value = f64::from(channel) / 255.0;
-        if value <= 0.04045 {
-            value / 12.92
-        } else {
-            ((value + 0.055) / 1.055).powf(2.4)
-        }
+/// Converts the local `(r, g, b, a)` tuple to the shared [`Color`] type.
+///
+/// The tuple API is kept so the CDP collection code and the #456 E2E tests do
+/// not change; only the arithmetic is shared with `rgaa-analysis`.
+fn as_color(colour: (u8, u8, u8, u8)) -> Color {
+    Color {
+        r: colour.0,
+        g: colour.1,
+        b: colour.2,
+        a: colour.3,
     }
-    0.2126 * linear(colour.0) + 0.7152 * linear(colour.1) + 0.0722 * linear(colour.2)
+}
+
+/// Relative luminance WCAG 2.1 — the canonical calculation now lives in
+/// `rgaa_analysis::color` (P-00 §3), shared with the P-01/P-02 plugins.
+fn relative_luminance(colour: (u8, u8, u8, u8)) -> f64 {
+    color::relative_luminance(as_color(colour))
 }
 
 /// Ratio `(L1 + 0,05) / (L2 + 0,05)`, the foreground alpha being composited on the
-/// already-composited background.
+/// already-composited background, via the shared `rgaa_analysis::color` module.
 fn contrast_ratio(foreground: (u8, u8, u8, u8), background: (u8, u8, u8, u8)) -> f64 {
-    let alpha = f64::from(foreground.3) / 255.0;
-    let composite = (
-        blend(foreground.0, background.0, alpha),
-        blend(foreground.1, background.1, alpha),
-        blend(foreground.2, background.2, alpha),
-        255,
-    );
-    let lighter = relative_luminance(composite).max(relative_luminance(background));
-    let darker = relative_luminance(composite).min(relative_luminance(background));
-    (lighter + 0.05) / (darker + 0.05)
+    color::contrast_ratio(as_color(foreground), as_color(background))
 }
 
 fn blend(foreground: u8, background: u8, alpha: f64) -> u8 {
@@ -615,6 +613,32 @@ mod tests {
         let mid_grey = parse_color("rgb(119, 119, 119)").expect("#777");
         let ratio = contrast_ratio(mid_grey, white);
         assert!((ratio - 4.48).abs() < 0.01, "ratio #777/#fff = {ratio}");
+    }
+
+    /// The tuple wrappers must be bit-identical to a direct call into the
+    /// shared module: this is what guarantees the #456 E2E results are unchanged.
+    #[test]
+    fn tuple_wrappers_match_the_shared_color_calculations() {
+        let samples = [
+            (0, 0, 0, 255),
+            (255, 255, 255, 255),
+            (204, 204, 204, 255),
+            (119, 119, 119, 255),
+            (128, 128, 128, 128),
+            (17, 34, 51, 64),
+        ];
+        for &foreground in &samples {
+            for &background in &samples {
+                assert_eq!(
+                    relative_luminance(foreground),
+                    color::relative_luminance(as_color(foreground))
+                );
+                assert_eq!(
+                    contrast_ratio(foreground, background),
+                    color::contrast_ratio(as_color(foreground), as_color(background))
+                );
+            }
+        }
     }
 
     #[test]

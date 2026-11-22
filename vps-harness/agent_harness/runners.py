@@ -28,9 +28,22 @@ class SubprocessRunner:
         return shutil.which(name)
 
     def run(self, argv: list[str], *, timeout: int = 15) -> tuple[int, str, str]:
+        if (
+            not isinstance(argv, (list, tuple))
+            or not argv
+            or not all(isinstance(item, str) for item in argv)
+        ):
+            raise ValueError("argv must be a non-empty sequence of strings")
+        # SAFETY: argv comes from literal tool names assembled by this package
+        # (basemind, orca, git, or an explicitly configured prover).  It is
+        # passed as an argument vector with shell=False, so no shell is involved
+        # and no argument can be interpreted as a command.  The security scanner
+        # cannot prove that statically, hence the targeted suppression below.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         try:
             proc = subprocess.run(
-                argv,
+                [str(item) for item in argv],
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

@@ -12,11 +12,13 @@ pdf-native = ["dep:krilla", "dep:rustybuzz"]
 
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
 indexmap = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 chrono = { workspace = true }
+tracing = { workspace = true }
 thiserror = { workspace = true }
 
 # Pinned exactly: krilla is 0.x and its API is not yet stable (#152).

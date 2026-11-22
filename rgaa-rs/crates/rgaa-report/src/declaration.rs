@@ -6,7 +6,10 @@
 
 use std::fmt::Write;
 
+use indexmap::IndexMap;
+use rgaa_analysis::Preuve;
 use rgaa_core::{AuditType, Finding};
+use serde_json::Value;
 
 use crate::guard::{Contact, ContenuNonSoumis, Derogation, PageEchantillon};
 use crate::packs::{etat_fr, RECOURS_FR};
@@ -61,6 +64,112 @@ pub fn environnements_utilises(
     }
     reels.extend(environnements.iter().filter(|e| !e.est_vide()).cloned());
     reels
+}
+
+/// Identité d'un environnement : technology d'assistance et navigateur
+/// réduits au premier mot, en minuscules. « NVDA » et « NVDA 2026.3.1 »
+/// désignent le même environnement et ne doivent donc pas être déclarés deux
+/// fois. L'ordre d'apparition est conservé par [`IndexMap`].
+fn cle_environnement(environnement: &TestEnvironment) -> String {
+    fn premier_mot(valeur: Option<&str>) -> String {
+        valeur
+            .unwrap_or_default()
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_lowercase()
+    }
+    format!(
+        "{}|{}",
+        premier_mot(environnement.technologie_assistance.as_deref()),
+        premier_mot(environnement.navigateur.as_deref())
+    )
+}
+
+/// Déduit un environnement de test de la chaîne
+/// `"<technologie> <version> + <navigateur> <version>"` portée par
+/// `mesures.environnement` (recherche P-10 §4.2). Le système est déduit de la
+/// technologie d'assistance quand elle est connue ; rien d'autre n'est inventé.
+fn environnement_depuis_texte(texte: &str) -> Option<TestEnvironment> {
+    let (assistance, navigateur) = texte.split_once(" + ")?;
+    let (nom_assistance, version_assistance) = assistance.trim().split_once(' ')?;
+    let (nom_navigateur, version_navigateur) = navigateur.trim().split_once(' ')?;
+    if [
+        nom_assistance,
+        version_assistance,
+        nom_navigateur,
+        version_navigateur,
+    ]
+    .iter()
+    .any(|morceau| morceau.trim().is_empty())
+    {
+        return None;
+    }
+    let systeme = match nom_assistance.to_ascii_lowercase().as_str() {
+        "nvda" => "Windows",
+        "voiceover" => "macOS",
+        "orca" => "Linux",
+        _ => return None,
+    };
+    Some(TestEnvironment {
+        plateforme: Some("ordinateur".into()),
+        systeme: Some(systeme.into()),
+        technologie_assistance: Some(format!("{} {}", nom_assistance, version_assistance)),
+        navigateur: Some(format!("{} {}", nom_navigateur, version_navigateur)),
+    })
+}
+
+/// Environnements déclarés par les preuves `screenreader-*` d'un audit.
+/// Une preuve sans environnement, ou mal formée, est ignorée avec un
+/// avertissement : jamais de panique, jamais d'environnement inventé (R-P1).
+#[must_use]
+pub fn environnements_depuis_preuves(preuves: &[Preuve]) -> Vec<TestEnvironment> {
+    let mut trouvailles: IndexMap<String, TestEnvironment> = IndexMap::new();
+    for preuve in preuves {
+        if !preuve.plugin.starts_with("screenreader-") {
+            continue;
+        }
+        let Some(texte) = preuve.mesures.get("environnement").and_then(Value::as_str) else {
+            tracing::warn!(plugin = %preuve.plugin, "preuve screenreader sans environnement : ignorée");
+            continue;
+        };
+        match environnement_depuis_texte(texte) {
+            Some(environnement) => {
+                trouvailles
+                    .entry(cle_environnement(&environnement))
+                    .or_insert(environnement);
+            }
+            None => tracing::warn!(
+                plugin = %preuve.plugin,
+                environnement = %texte,
+                "environnement screenreader mal formé : ignoré"
+            ),
+        }
+    }
+    trouvailles.into_values().collect()
+}
+
+/// Fusion de #430 et des preuves P-00 : navigateur d'audit, environnements
+/// déclarés à la main puis environnements révélés par les preuves
+/// `screenreader-*`. La fusion est dédoublonnée et suit l'ordre d'apparition.
+#[must_use]
+pub fn environnements_utilises_avec_preuves(
+    navigateur_audit: Option<&str>,
+    environnements: &[TestEnvironment],
+    preuves: &[Preuve],
+) -> Vec<TestEnvironment> {
+    let mut fusion: IndexMap<String, TestEnvironment> = IndexMap::new();
+    for environnement in environnements_utilises(navigateur_audit, environnements) {
+        fusion
+            .entry(cle_environnement(&environnement))
+            .or_insert(environnement);
+    }
+    for environnement in environnements_depuis_preuves(preuves) {
+        fusion
+            .entry(cle_environnement(&environnement))
+            .or_insert(environnement);
+    }
+    fusion.into_values().collect()
 }
 
 fn format_environnement(environnement: &TestEnvironment) -> Option<String> {
@@ -744,5 +853,119 @@ mod tests {
             "{html}"
         );
         assert!(!html.contains("Firefox + NVDA"), "{html}");
+    }
+
+    // ---- P-10.a : environnement déclaré par une preuve screenreader ----
+
+    fn preuve_screenreader(environnement: Option<&str>) -> rgaa_analysis::Preuve {
+        let mesures = match environnement {
+            Some(valeur) => serde_json::json!({"environnement": valeur}),
+            None => serde_json::json!({}),
+        };
+        serde_json::from_value(serde_json::json!({
+            "plugin": "screenreader-nvda",
+            "version_plugin": "0.1.0",
+            "version_modele": null,
+            "tests": ["7.1.1"],
+            "sujet": "Page",
+            "portee": "Mesuree",
+            "mesures": mesures,
+            "indice": null,
+            "artefacts": [],
+            "empreinte_entree": "sha256:abc"
+        }))
+        .expect("preuve P-00 valide")
+    }
+
+    #[test]
+    fn une_preuve_screenreader_ajoute_l_environnement_a_la_declaration() {
+        let preuve = preuve_screenreader(Some("NVDA 2026.3.1 + Firefox 141.0"));
+        let envs = super::environnements_utilises_avec_preuves(Some("Obscura"), &[], &[preuve]);
+        assert_eq!(
+            envs.len(),
+            2,
+            "navigateur d'audit + environnement screenreader"
+        );
+        assert_eq!(
+            envs[1].technologie_assistance.as_deref(),
+            Some("NVDA 2026.3.1")
+        );
+        assert_eq!(envs[1].navigateur.as_deref(), Some("Firefox 141.0"));
+
+        // `environnements_utilises` est déjà appliqué par le rendu : on lui
+        // passe la liste fusionnée sans navigateur d'audit pour éviter un
+        // doublon, exactement comme le fera le pipeline qui alimente #430.
+        let html = render_declaration_fr(&input_avec_environnements(
+            &metrics_80(),
+            &[],
+            &contact_test(),
+            None,
+            &envs,
+        ))
+        .expect("rendu");
+        assert!(
+            html.contains("Technologie d'assistance : NVDA 2026.3.1"),
+            "{html}"
+        );
+        assert!(html.contains("Navigateur : Firefox 141.0"), "{html}");
+        assert!(
+            !html.contains("aucune technologie d'assistance utilisée"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn un_environnement_deja_declare_n_est_pas_duplique() {
+        let manual = environnement_test(Some("Firefox"), Some("NVDA"));
+        let preuve = preuve_screenreader(Some("NVDA 2026.3.1 + Firefox 141.0"));
+        let envs = super::environnements_utilises_avec_preuves(None, &[manual], &[preuve]);
+        assert_eq!(
+            envs.len(),
+            1,
+            "la déclaration manuelle gagne versions incluses"
+        );
+        assert_eq!(envs[0].technologie_assistance.as_deref(), Some("NVDA"));
+    }
+
+    #[test]
+    fn un_environnement_absent_ou_malforme_est_ignore_sans_panique() {
+        let preuves = [
+            preuve_screenreader(None),
+            preuve_screenreader(Some("NVDA sans navigateur")),
+            preuve_screenreader(Some("NVDA 2026.3.1 + Firefox 141.0")),
+        ];
+        let envs = super::environnements_utilises_avec_preuves(None, &[], &preuves);
+        assert_eq!(envs.len(), 1, "seul l'environnement bien formé est déclaré");
+        assert_eq!(envs[0].navigateur.as_deref(), Some("Firefox 141.0"));
+    }
+
+    #[test]
+    fn l_ordre_des_environnements_est_celui_des_preuves_sans_doublon() {
+        let preuves = [
+            preuve_screenreader(Some("NVDA 2026.3.1 + Firefox 141.0")),
+            preuve_screenreader(Some("NVDA 2026.3.1 + Firefox 141.0")),
+            preuve_screenreader(Some("VoiceOver 26.2 + Safari 26.2")),
+        ];
+        let envs = super::environnements_utilises_avec_preuves(None, &[], &preuves);
+        assert_eq!(envs.len(), 2);
+        assert_eq!(
+            envs[0].technologie_assistance.as_deref(),
+            Some("NVDA 2026.3.1")
+        );
+        assert_eq!(
+            envs[1].technologie_assistance.as_deref(),
+            Some("VoiceOver 26.2")
+        );
+    }
+
+    #[test]
+    fn une_preuve_hors_screenreader_ne_declare_rien() {
+        let mut preuve = preuve_screenreader(Some("NVDA 2026.3.1 + Firefox 141.0"));
+        preuve.plugin = "contrast".into();
+        let envs = super::environnements_utilises_avec_preuves(None, &[], &[preuve]);
+        assert!(
+            envs.is_empty(),
+            "seules les preuves screenreader-* comptent"
+        );
     }
 }

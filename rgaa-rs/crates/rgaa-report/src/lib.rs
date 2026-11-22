@@ -350,17 +350,16 @@ pub fn compliance_rate(criteria: &[CriterionResult]) -> f64 {
 /// Worst status of one criterion across every page (site rule: a single
 /// Fail or Error makes the whole site non-conforming on that criterion).
 fn reduire_statuts(statuts: &[CriterionStatus]) -> ConformityStatus {
-    if statuts
-        .iter()
-        .any(|s| matches!(s, CriterionStatus::Fail | CriterionStatus::Error))
-    {
+    if statuts.iter().any(|s| matches!(s, CriterionStatus::Fail)) {
         ConformityStatus::NonConforme
     } else if statuts.iter().all(|s| *s == CriterionStatus::NotApplicable) {
         ConformityStatus::NonApplicable
-    } else if statuts
-        .iter()
-        .any(|s| matches!(s, CriterionStatus::NeedsReview | CriterionStatus::NotTested))
-    {
+    } else if statuts.iter().any(|s| {
+        matches!(
+            s,
+            CriterionStatus::NeedsReview | CriterionStatus::NotTested | CriterionStatus::Error
+        )
+    }) {
         ConformityStatus::NonTeste
     } else {
         ConformityStatus::Conforme
@@ -694,6 +693,33 @@ mod tests {
         let m = compute_metrics(&criteria, &RGAA_41);
         assert!(!m.audit_incomplet);
         assert_eq!(m.etat_conformite, "totale");
+    }
+
+    /// #435 : une page en `Error` réduit le critère en `NonTeste`, jamais en
+    /// `NonConforme`. Le taux n'est dès lors pas opposable.
+    #[test]
+    fn erreur_reduit_en_non_teste_jamais_non_conforme() {
+        use CriterionStatus::{Error, Fail, Pass};
+
+        // Une erreur d'évaluation n'est pas une non-conformité.
+        assert_eq!(reduire_statuts(&[Pass, Error]), ConformityStatus::NonTeste);
+        assert_eq!(reduire_statuts(&[Error]), ConformityStatus::NonTeste);
+        // Un Fail prouvé l'emporte toujours sur une erreur.
+        assert_eq!(
+            reduire_statuts(&[Pass, Fail, Error]),
+            ConformityStatus::NonConforme
+        );
+
+        // Au niveau du rapport : Error + Pass => NonTeste, taux non opposable.
+        let criteria = vec![
+            result("1.1", CriterionStatus::Pass),
+            result("1.2", CriterionStatus::Error),
+        ];
+        let m = compute_metrics(&criteria, &RGAA_41);
+        assert_eq!(m.conformes, 1);
+        assert_eq!(m.non_conformes, 0);
+        assert_eq!(m.non_testes, 1);
+        assert!(!m.rate_is_a_conformance_claim());
     }
 
     #[test]

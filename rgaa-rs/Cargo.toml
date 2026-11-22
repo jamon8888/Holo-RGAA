@@ -4,6 +4,7 @@ members = [
     "crates/rgaa-core",
     "crates/rgaa-analysis",
     "crates/rgaa-analysis-lang",
+    "crates/rgaa-analysis-text",
     "crates/rgaa-plugins",
     "crates/rgaa-rules",
     "crates/rgaa-holo",

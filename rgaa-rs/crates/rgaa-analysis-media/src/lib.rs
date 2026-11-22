@@ -5,16 +5,28 @@
 //! synchronisation offsets, and EBU R128 loudness for 4.10. It never renders a
 //! status and never sends media or transcriptions to the LLM (R-P3).
 //!
-//! PR 1 needs no model: the "what was said" side is a hand-written timed
-//! transcription supplied through `PluginOptions::transcription_reference_url`.
-//! PR 2 replaces it with sherpa-onnx VAD + Whisper and declares its models via
-//! `AnalysisPlugin::models`, downloaded only by `rgaa models pull`.
+//! Two paths are available. Without `PluginOptions::use_models`, the "what was
+//! said" side is a hand-written timed transcription supplied through
+//! `transcription_reference_url` (no model, no network). With `use_models`,
+//! Silero VAD runs on the workspace's single `ort` 2.0.0-rc.9 and Whisper
+//! `small` (ggml, via whisper-rs) supplies the timed reference. Both models are
+//! declared through `AnalysisPlugin::models` and downloaded only by
+//! `rgaa models pull media` (R-P3).
+//!
+//! sherpa-onnx is deliberately **not linked**: it would bring a second ONNX
+//! Runtime into the binary. It remains a documented sidecar option only.
 
 pub mod align;
+pub mod asr;
 pub mod audio;
 pub mod inventory;
 pub mod mesures;
+pub mod models;
 pub mod subtitles;
+pub mod vad;
+
+#[cfg(test)]
+mod testing;
 
 use async_trait::async_trait;
 use inventory::{MediaItem, ThirdParty, TrackItem};
@@ -70,8 +82,12 @@ impl AnalysisPlugin for MediaPlugin {
         TESTS
     }
 
-    // PR 1 declares no model: nothing is downloaded during an audit (R-P3).
-    // PR 2 declares Silero VAD and Whisper here via ModelSpec.
+    /// Declares Silero VAD (ONNX, via the shared `ort`) and Whisper small
+    /// (ggml, via whisper-rs). `rgaa models pull media` is the only writer of
+    /// the cache; an audit never downloads (R-P3).
+    fn models(&self) -> &'static [rgaa_analysis::ModelSpec] {
+        models::MODELES
+    }
 
     fn kind(&self) -> PluginKind {
         PluginKind::Natif
@@ -171,10 +187,17 @@ async fn analyse_media(
 
     let mono = audio::to_mono_16k(&decoded)?;
     let (cues, piste) = read_subtitles(media, page).await?;
-    let reference = match options.transcription_reference_url.as_deref() {
-        Some(url) => read_text_segments(url, page).await?,
-        None => Vec::new(),
-    };
+    let (reference, part_parole, langue_detectee, moteur_transcription) =
+        if options.use_models.unwrap_or(false) {
+            speech_from_models(&mono)?
+        } else {
+            let segments = match options.transcription_reference_url.as_deref() {
+                Some(url) => read_text_segments(url, page).await?,
+                None => Vec::new(),
+            };
+            let ratio = align::speech_ratio(&segments, duree);
+            (segments, ratio, None, None)
+        };
     let fournie = match media.transcript_url.as_deref() {
         Some(url) => read_transcription(url, duree, page).await?,
         None => Vec::new(),
@@ -192,14 +215,13 @@ async fn analyse_media(
         .iter()
         .flat_map(|cue| align::normalize(&cue.text))
         .collect();
-    let part_parole = align::speech_ratio(&reference, duree);
     let (median_ms, p95_ms) = align::sync_offsets(&cues, &reference).unwrap_or((0.0, 0.0));
 
     let mut mesures = Mesures {
         source: url.to_owned(),
         duree_s: duree,
         part_parole,
-        langue_detectee: None,
+        langue_detectee,
         decodage,
         transcription_fournie: Some(TranscriptionMesure {
             url: media.transcript_url.clone().unwrap_or_default(),
@@ -215,7 +237,7 @@ async fn analyse_media(
         }),
         audiodescription: mesures_audiodescription(media),
         son_auto: None,
-        moteur_transcription: None,
+        moteur_transcription,
         note: None,
     };
     let indice = if part_parole < SEUIL_PAROLE {
@@ -366,6 +388,32 @@ fn extension_from_url(url: &str) -> Option<&str> {
     path.rsplit_once('.').map(|(_, extension)| extension)
 }
 
+/// Runs Silero VAD, then Whisper, and keeps only the transcription segments
+/// that overlap a speech window. Both models are read from the local cache;
+/// absent models produce an explicit error, never a download (R-P3).
+type SpeechFromModels = (Vec<align::TimedText>, f64, Option<String>, Option<String>);
+
+fn speech_from_models(mono: &[f32]) -> Result<SpeechFromModels> {
+    let detection = vad::detect_speech(mono, audio::CIBLE_HZ)?;
+    let transcription = asr::transcribe(mono)?;
+    let segments = transcription
+        .segments
+        .into_iter()
+        .filter(|segment| {
+            detection
+                .segments
+                .iter()
+                .any(|speech| segment.start_s < speech.end_s && segment.end_s > speech.start_s)
+        })
+        .collect();
+    Ok((
+        segments,
+        detection.part_parole,
+        transcription.langue_detectee,
+        Some(format!("whisper-rs@{}", models::ASR_MODEL.nom)),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,6 +524,7 @@ mod tests {
             message: None,
             duree_max_s: None,
             transcription_reference_url: Some(REF_URL.to_owned()),
+            use_models: None,
         }
     }
 
@@ -612,6 +661,32 @@ mod tests {
         assert!(!son_auto.muted);
         assert!(son_auto.duree_au_dessus_seuil_s > 3.0, "{son_auto:?}");
         assert!(matches!(proof.indice, Some(Indice::Suspect { .. })));
+    }
+
+    #[tokio::test]
+    async fn model_backed_analysis_uses_vad_and_whisper_when_both_models_are_present() {
+        if !testing::model_test_enabled("model_backed_analysis (VAD)", &models::VAD_MODEL)
+            || !testing::model_test_enabled("model_backed_analysis (ASR)", &models::ASR_MODEL)
+        {
+            return;
+        }
+        let mut opts = options();
+        opts.use_models = Some(true);
+        opts.transcription_reference_url = None;
+        let mut files = HashMap::new();
+        files.insert(
+            MEDIA_URL.to_owned(),
+            include_bytes!("../tests/data/jfk.wav").to_vec(),
+        );
+        let proofs = run(&dom("", false, false), files, &opts)
+            .await
+            .expect("model-backed analysis");
+        let mesures = mesures_of(&proofs, "part_parole");
+        assert!(mesures.part_parole > 0.1, "{mesures:?}");
+        assert!(mesures
+            .moteur_transcription
+            .as_deref()
+            .is_some_and(|engine| engine.contains("whisper-rs")));
     }
 
     #[tokio::test]

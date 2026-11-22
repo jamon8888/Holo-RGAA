@@ -7044,15 +7044,19 @@ dependencies = [
  "async-trait",
  "ebur128",
  "indexmap 2.14.2",
+ "ndarray",
+ "ort",
  "rgaa-analysis",
  "rubato",
  "schemars 1.2.2",
  "serde",
  "serde_json",
  "symphonia",
+ "tempfile",
  "tokio",
  "tracing",
  "webvtt-parser",
+ "whisper-rs",
 ]
 
 [[package]]
@@ -10322,6 +10326,28 @@ dependencies = [
  "home",
  "rustix 0.38.44",
  "winsafe",
+]
+
+[[package]]
+name = "whisper-rs"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2088172d00f936c348d6a72f488dc2660ab3f507263a195df308a3c2383229f6"
+dependencies = [
+ "whisper-rs-sys",
+]
+
+[[package]]
+name = "whisper-rs-sys"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6986c0fe081241d391f09b9a071fbcbb59720c3563628c3c829057cf69f2a56f"
+dependencies = [
+ "bindgen 0.72.1",
+ "cfg-if",
+ "cmake",
+ "fs_extra",
+ "semver",
 ]
 
 [[package]]

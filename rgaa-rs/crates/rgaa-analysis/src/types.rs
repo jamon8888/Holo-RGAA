@@ -105,6 +105,10 @@ pub struct PluginOptions {
     /// ASR output until the model-backed plugin (PR 2) is enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription_reference_url: Option<String>,
+    /// P-04: run Silero VAD + Whisper from local models. `false` (default)
+    /// keeps the model-free path driven by `transcription_reference_url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_models: Option<bool>,
 }
 
 /// Native or sidecar plugin (the orchestrator makes no distinction).

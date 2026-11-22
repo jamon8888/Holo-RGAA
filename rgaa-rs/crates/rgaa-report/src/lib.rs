@@ -15,6 +15,7 @@ pub mod declaration;
 pub mod depot;
 pub mod format;
 pub mod gouvernance;
+pub mod grille;
 pub mod guard;
 pub mod non_conformity;
 pub mod packs;
@@ -33,6 +34,7 @@ pub use declaration::{
 pub use depot::url_canonique;
 pub use format::ReportFormat;
 pub use gouvernance::{autoriser_generation, OverrideGouvernance, PackVersion, PEREMPTION_JOURS};
+pub use grille::render_grille_csv;
 pub use guard::{
     schema_export_pack, validate_export, Contact, ContenuNonSoumis, Derogation, ExportPack,
     PageEchantillon, ECHANTILLON_MIN,

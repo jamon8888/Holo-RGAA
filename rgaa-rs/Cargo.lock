@@ -7647,6 +7647,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-analysis-text"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.2",
+ "rgaa-analysis",
+ "rgaa-core",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "strsim",
+ "tokio",
+]
+
+[[package]]
 name = "rgaa-api"
 version = "0.1.0"
 dependencies = [
@@ -7875,6 +7891,7 @@ version = "0.1.0"
 dependencies = [
  "rgaa-analysis",
  "rgaa-analysis-lang",
+ "rgaa-analysis-text",
 ]
 
 [[package]]

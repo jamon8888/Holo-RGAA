@@ -563,12 +563,6 @@ fn as_color(colour: (u8, u8, u8, u8)) -> Color {
     }
 }
 
-/// Relative luminance WCAG 2.1 — the canonical calculation now lives in
-/// `rgaa_analysis::color` (P-00 §3), shared with the P-01/P-02 plugins.
-fn relative_luminance(colour: (u8, u8, u8, u8)) -> f64 {
-    color::relative_luminance(as_color(colour))
-}
-
 /// Ratio `(L1 + 0,05) / (L2 + 0,05)`, the foreground alpha being composited on the
 /// already-composited background, via the shared `rgaa_analysis::color` module.
 fn contrast_ratio(foreground: (u8, u8, u8, u8), background: (u8, u8, u8, u8)) -> f64 {
@@ -615,10 +609,13 @@ mod tests {
         assert!((ratio - 4.48).abs() < 0.01, "ratio #777/#fff = {ratio}");
     }
 
-    /// The tuple wrappers must be bit-identical to a direct call into the
-    /// shared module: this is what guarantees the #456 E2E results are unchanged.
+    /// The local tuple wrapper must be bit-identical to a direct call into the
+    /// shared module (which also owns the WCAG relative luminance): this is what
+    /// guarantees the #456 E2E results are unchanged.
     #[test]
-    fn tuple_wrappers_match_the_shared_color_calculations() {
+    fn tuple_wrapper_matches_the_shared_color_calculation() {
+        assert_eq!(color::relative_luminance(Color::rgb(255, 255, 255)), 1.0);
+        assert_eq!(color::relative_luminance(Color::rgb(0, 0, 0)), 0.0);
         let samples = [
             (0, 0, 0, 255),
             (255, 255, 255, 255),
@@ -629,10 +626,6 @@ mod tests {
         ];
         for &foreground in &samples {
             for &background in &samples {
-                assert_eq!(
-                    relative_luminance(foreground),
-                    color::relative_luminance(as_color(foreground))
-                );
                 assert_eq!(
                     contrast_ratio(foreground, background),
                     color::contrast_ratio(as_color(foreground), as_color(background))

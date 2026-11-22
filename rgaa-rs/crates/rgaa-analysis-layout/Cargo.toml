@@ -1,0 +1,25 @@
+[package]
+description = "P-07 — native layout analysis plugin (visual structure vs exposed accessibility)"
+license = "MIT"
+name = "rgaa-analysis-layout"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["plugin-layout"]
+# Shared P-00 feature name, declared in rgaa-cli / rgaa-mcp / rgaa-orchestrator.
+plugin-layout = []
+plugins-all = ["plugin-layout"]
+
+[dependencies]
+async-trait = "0.1"
+indexmap = { workspace = true }
+regex-lite = "0.1"
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

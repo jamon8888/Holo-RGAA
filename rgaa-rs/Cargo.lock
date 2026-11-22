@@ -7206,7 +7206,7 @@ dependencies = [
  "image_hasher",
  "indexmap 2.14.2",
  "rgaa-analysis",
- "schemars 1.2.2",
+ "schemars 1.2.3",
  "serde",
  "serde_json",
  "tokio",
@@ -7220,6 +7220,21 @@ dependencies = [
  "image",
  "imageproc",
  "indexmap 2.14.2",
+ "rgaa-analysis",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "rgaa-analysis-layout"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.2",
+ "regex-lite",
  "rgaa-analysis",
  "schemars 1.2.3",
  "serde",

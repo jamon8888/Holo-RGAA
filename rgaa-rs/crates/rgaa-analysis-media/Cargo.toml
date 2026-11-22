@@ -9,11 +9,11 @@ edition = "2021"
 async-trait = "0.1"
 ebur128 = "0.1"
 indexmap = { workspace = true }
-ndarray = "0.16"
+ndarray = "0.17"
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
-# Exact same version and features as fastembed in rgaa-agent — one ONNX
-# Runtime in the workspace binary, never a second one (ticket #421 decision).
-ort = { version = "=2.0.0-rc.9", default-features = false, features = ["ndarray", "download-binaries"] }
+# Exact same version as fastembed 7.7 in rgaa-agent — one ONNX Runtime in the
+# workspace binary, never a second one (ticket #421 decision).
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["ndarray", "std", "api-24", "download-binaries", "tls-native"] }
 rubato = "5.1"
 schemars = { workspace = true }
 serde = { workspace = true }

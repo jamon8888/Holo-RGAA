@@ -42,8 +42,12 @@ pub fn detect_speech(mono: &[f32], sample_rate: u32) -> Result<VadOutput> {
         ));
     }
     let path = models::require(&models::VAD_MODEL)?;
-    let session = Session::builder()
-        .and_then(|builder| builder.commit_from_file(&path))
+    // ort rc.15 requires an explicit environment before any session builder.
+    let environment = ort::init()
+        .build()
+        .map_err(|error| analysis_error("media", format!("environnement ort : {error}")))?;
+    let mut session = Session::builder(&environment)
+        .and_then(|mut builder| builder.commit_from_file(&path))
         .map_err(|error| analysis_error("media", format!("session Silero VAD : {error}")))?;
 
     let window_count = mono.len() / FENETRE;
@@ -68,14 +72,13 @@ pub fn detect_speech(mono: &[f32], sample_rate: u32) -> Result<VadOutput> {
             "input" => input_value,
             "state" => state_value,
             "sr" => sr_value,
-        ]
-        .map_err(|error| analysis_error("media", format!("entrées VAD : {error}")))?;
+        ];
         let output = session
             .run(inputs)
             .map_err(|error| analysis_error("media", format!("inférence Silero VAD : {error}")))?;
 
         let probability = output["output"]
-            .try_extract_tensor::<f32>()
+            .try_extract_array::<f32>()
             .map_err(|error| analysis_error("media", format!("sortie VAD : {error}")))?
             .to_owned();
         probabilities.push(probability.iter().next().copied().unwrap_or(0.0));
@@ -84,16 +87,16 @@ pub fn detect_speech(mono: &[f32], sample_rate: u32) -> Result<VadOutput> {
         // `stateN`; older exports split it into `hn` and `cn`. Support both.
         let next_state: ArrayD<f32> = if let Some(state_next) = output.get("stateN") {
             state_next
-                .try_extract_tensor::<f32>()
+                .try_extract_array::<f32>()
                 .map_err(|error| analysis_error("media", format!("état stateN : {error}")))?
                 .to_owned()
         } else {
             let hn: ArrayD<f32> = output["hn"]
-                .try_extract_tensor::<f32>()
+                .try_extract_array::<f32>()
                 .map_err(|error| analysis_error("media", format!("état hn : {error}")))?
                 .to_owned();
             let cn: ArrayD<f32> = output["cn"]
-                .try_extract_tensor::<f32>()
+                .try_extract_array::<f32>()
                 .map_err(|error| analysis_error("media", format!("état cn : {error}")))?
                 .to_owned();
             concatenate(Axis(0), &[hn.view(), cn.view()])

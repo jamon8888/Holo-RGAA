@@ -7120,7 +7120,7 @@ dependencies = [
  "async-trait",
  "ebur128",
  "indexmap 2.14.2",
- "ndarray",
+ "ndarray 0.17.2",
  "ort",
  "rgaa-analysis",
  "rubato",

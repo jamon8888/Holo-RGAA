@@ -8,7 +8,7 @@
 //! Two paths are available. Without `PluginOptions::use_models`, the "what was
 //! said" side is a hand-written timed transcription supplied through
 //! `transcription_reference_url` (no model, no network). With `use_models`,
-//! Silero VAD runs on the workspace's single `ort` 2.0.0-rc.9 and Whisper
+//! Silero VAD runs on the workspace's single `ort` 2.0.0-rc.15 and Whisper
 //! `small` (ggml, via whisper-rs) supplies the timed reference. Both models are
 //! declared through `AnalysisPlugin::models` and downloaded only by
 //! `rgaa models pull media` (R-P3).

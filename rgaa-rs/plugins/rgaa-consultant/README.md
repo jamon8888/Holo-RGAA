@@ -98,10 +98,25 @@ Skills activate automatically when relevant — no need to invoke them directly.
 | `report` | Compliance documentation or export needed |
 | `guided-test` | Manual accessibility testing (keyboard, focus, contrast) |
 | `criteria` | A specific RGAA criterion needs looking up or explaining |
+| `contraste` | `/rgaa:contraste` — contrast proofs from plugin `contrast` (ratio, threshold, vignette, states) |
+| `daltonisme` | `/rgaa:daltonisme` — colour-vision proofs from `colorvision` (original vs simulation) |
+| `images` | `/rgaa:images` — image proofs from `images` (pHash groups, alt, OCR, similarity) |
+| `medias` | `/rgaa:medias` — media proofs from `media` (missing passages, Whisper transcript) |
+| `mouvement` | `/rgaa:mouvement` — motion proofs from `motion` (L(t) curve, static thumbnails) |
+| `langue` | `/rgaa:langue` — language proofs from `lang` |
+| `structure` | `/rgaa:structure` — visual-structure proofs from `layout` |
+| `pertinence` | `/rgaa:pertinence` — text-relevance proofs from `text` |
+
+All eight analysis-proof skills share the same template: check
+`list_analysis_plugins` first, call `run_analysis_plugin`, present the `Preuve`
+values, print `rgaa models pull <plugin>` when a model is missing, and **never
+write a status** (R7) — the reviewer takes the decision (D2). The `mouvement`
+skill warns about photosensitive content before any replay. See `SPEC.md` and
+`tests/README-eval.md`.
 
 ## MCP Server
 
-The plugin bundles `rgaa-mcp` (stdio transport) exposing **nine** tools. Every
+The plugin bundles `rgaa-mcp` (stdio transport) exposing **eleven** tools. Every
 skill reaches for these first; the `rgaa` CLI is a fallback for when no MCP
 session is available, not the primary path.
 
@@ -111,7 +126,9 @@ session is available, not the primary path.
 | `audit_url` | `AuditUrlInput -> AuditUrlResult` | Whole-site audit through the orchestrator. Returns a **summary only** (`taux_global`, `etat_conformite`, `sampled_page_urls`). |
 | `get_audit_result` | `GetAuditInput -> Option<AuditResultDto>` | Retrieve a previously run audit by `audit_id`. |
 | `lint_static` | `LintStaticRequest -> LintStaticResponse` | Lint HTML, JSX/TSX or Vue **source** for missing `alt`, unlabelled form controls and nameless buttons/links — no browser, no build. Sub-millisecond per file, so it suits an edit loop. A first pass over source, **not** a conformance verdict: use `analyze` on a rendered page for that. |
+| `list_analysis_plugins` | `() -> ListAnalysisPluginsResponse` | Compiled analysis plugins, their RGAA tests, required models and whether each model is cached. Call this **before** `run_analysis_plugin`; a missing model is reported as `present: false`. |
 | `list_criteria` | `() -> ListCriteriaResponse` | The 106 RGAA criteria with id, title, classification. |
+| `run_analysis_plugin` | `RunAnalysisPluginInput -> RunAnalysisPluginResponse` | Run one analysis plugin on a URL and return its `Preuve` values (measurements and artefacts). Returns **no status and no verdict**: a human reviewer decides (R7). |
 | `remediate` | `RemediationRequest -> RemediationResponse` | Approval-gated fix proposals for a batch of issues. |
 | `source_map` | `SourceMapRequest -> SourceMapResponse` | Relocate browser findings to the template that produced them: `source_location` (file, line, column, snippet) per finding. Best-effort literal match over React JSX, Vue SFC, Angular and vanilla HTML — the browser reports rendered DOM, the repository holds templates, so there is no exact inverse. Ambiguous findings come back in `unmappable` with a reason rather than a guessed location; check `confidence` and `matched_on` before editing. |
 | `verify_fix` | `VerifyFixRequest -> VerifyFixResponse` | Re-verify corrected files against a reference audit: `fixed` / `remaining` / `new`, plus `unverified` for pages that could not be re-analysed. |
@@ -133,7 +150,7 @@ Both `Manuel` and `PartiellementAutomatable` criteria surface as the single
 
 ### HTTP transport
 
-`rgaa-mcp-http` — equivalently `rgaa mcp-server` — serves the same nine tools
+`rgaa-mcp-http` — equivalently `rgaa mcp-server` — serves the same eleven tools
 as JSON-RPC over `POST /mcp`, with audit progress on `GET /mcp/events` (SSE).
 
 Both are authorized **before** a tool runs. Cross-origin access is **denied
@@ -246,6 +263,9 @@ rgaa-consultant/
 ├── scripts/check-runtime.sh
 ├── tests/
 │   ├── plugin-contract.sh
+│   ├── skills-eval.sh
+│   ├── README-eval.md
+│   ├── fixtures/preuves-analyse.json
 │   └── e2e-local.sh
 └── skills/
     ├── audit/
@@ -254,7 +274,15 @@ rgaa-consultant/
     ├── verify/
     ├── report/
     ├── guided-test/
-    └── criteria/
+    ├── criteria/
+    ├── contraste/        # analyse P-09
+    ├── daltonisme/
+    ├── images/
+    ├── medias/
+    ├── mouvement/
+    ├── langue/
+    ├── structure/
+    └── pertinence/
 ```
 
 ## Getting Help

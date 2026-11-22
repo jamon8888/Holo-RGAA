@@ -1,5 +1,17 @@
 name: AI Code Review
-on: [pull_request]
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Numéro de la PR à relire
+        required: true
+      base_ref:
+        description: Branche de base de la PR
+        required: true
+      head_sha:
+        description: SHA de tête de la PR
+        required: true
 
 permissions:
   contents: read
@@ -15,6 +27,9 @@ jobs:
           llm_auth_token: ${{ secrets.NVIDIA_API_KEY }}
           llm_model: nvidia/nemotron-3-ultra-550b-a55b
           llm_protocol: openai
+          pr_number: ${{ inputs.pr_number }}
+          base_ref: ${{ inputs.base_ref }}
+          head_sha: ${{ inputs.head_sha }}
           sticky_summary: 'true'
           incremental: 'true'
           checkpoint_range: 'true'

@@ -188,7 +188,7 @@ async fn step_b_gradient_keeps_the_least_favourable_zone() {
         if (45..55).contains(&x) && (8..14).contains(&y) {
             grey(119)
         } else {
-            grey((x as u32 * 255 / 99) as u8)
+            grey((x * 255 / 99) as u8)
         }
     });
     let proofs = analyze(

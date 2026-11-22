@@ -194,12 +194,7 @@ fn artefact(crop: &RgbaImage, mask: &[bool]) -> Option<Artefact> {
     for (x, y) in (0..crop.width()).flat_map(|x| (0..crop.height()).map(move |y| (x, y))) {
         if mask[y as usize * crop.width() as usize + x as usize] {
             let pixel = overlay.get_pixel_mut(x, y);
-            pixel.0 = [
-                (pixel.0[0] / 2 + 127).min(255),
-                pixel.0[1] / 2,
-                pixel.0[2] / 2,
-                255,
-            ];
+            pixel.0 = [pixel.0[0] / 2 + 127, pixel.0[1] / 2, pixel.0[2] / 2, 255];
         }
     }
     let mut bytes = Cursor::new(Vec::new());
@@ -301,7 +296,7 @@ pub fn measure_text(
     // Coherence check first (§3 B.2). When the sampled median agrees with the
     // computed CSS colour, the CSS colour is the exact text colour and is used
     // for the luminance; the pixels still decide the background percentiles.
-    let separation_ok = expected_color.map_or(true, |css| delta_e2000(css, text_color) < 10.0);
+    let separation_ok = expected_color.is_none_or(|css| delta_e2000(css, text_color) < 10.0);
     let text_color = if separation_ok {
         expected_color.unwrap_or(text_color)
     } else {

@@ -44,13 +44,14 @@ source de découverte du plugin.
 
 ## Outils MCP
 
-Le serveur enregistre actuellement ces onze outils :
+Le serveur enregistre actuellement ces douze outils :
 
 | Outil | Rôle |
 |---|---|
 | `analyze` | Analyse détaillée d’une URL, par critère, avec preuves et statuts. |
 | `audit_url` | Audit de site ; renvoie un résumé et les URLs échantillonnées. |
 | `get_audit_result` | Relit un audit sauvegardé à partir de son identifiant. |
+| `get_test_methodology` | Renvoie la méthode de test RGAA officielle d'une clé de test (ex. `1.2.3`). |
 | `lint_static` | Première vérification statique de HTML, JSX/TSX et Vue, sans verdict de conformité. |
 | `list_analysis_plugins` | Liste les plugins d'analyse compilés, leurs tests, modèles et présence en cache. |
 | `list_criteria` | Liste les 106 critères RGAA et leur classification. |

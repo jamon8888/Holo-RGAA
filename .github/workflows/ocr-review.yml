@@ -1,0 +1,20 @@
+name: AI Code Review
+on: [pull_request]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: alibaba/open-code-review@v1.14.1
+        with:
+          llm_url: https://integrate.api.nvidia.com/v1
+          llm_auth_token: ${{ secrets.NVIDIA_API_KEY }}
+          llm_model: nvidia/nemotron-3-ultra-550b-a55b
+          llm_protocol: openai
+          sticky_summary: 'true'
+          incremental: 'true'
+          checkpoint_range: 'true'

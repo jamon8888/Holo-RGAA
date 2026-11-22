@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>3.2 — opacité, filtre, blend et positionnement</title>
+<style>
+body { background: #ffffff; color: #000000; font-size: 18px; margin: 0; }
+p { color: #cccccc; }
+.opacity { opacity: 0.5; }
+.blend { mix-blend-mode: multiply; }
+.filter { filter: blur(1px); }
+.positioned { position: absolute; top: 0; left: 0; }
+</style>
+</head>
+<body>
+<p class="opacity">Texte dont l'opacité modifie la couleur réellement peinte.</p>
+<p class="blend">Texte dont le mode de fusion dépend de ce qu'il recouvre.</p>
+<p class="filter">Texte dont le filtre modifie la couleur réellement peinte.</p>
+<p class="positioned">Texte positionné qui peut recouvrir un autre contenu.</p>
+</body>
+</html>

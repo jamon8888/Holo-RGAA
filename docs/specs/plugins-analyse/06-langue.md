@@ -13,9 +13,9 @@
 ## 2. Algorithme
 
 1. **Segmentation.** On découpe le texte visible en blocs (DOM : `p`, `li`, `td`, `h*`, `blockquote`, `figcaption`, `button`, `a`, `alt` et `title`), chacun avec son `lang` hérité (attribut le plus proche, sinon `html[lang]`).
-2. **Détection.** Pour chaque bloc d'au moins 20 caractères, on calcule `detect_language_of` et la confiance. Les blocs plus courts sont groupés par parent.
+2. **Détection.** Pour chaque bloc d'au moins 20 caractères, on calcule `detect_language_of` et la confiance. Les blocs plus courts sont groupés par parent. **La confiance est la marge entre la meilleure langue et la deuxième** (valeurs de `compute_language_confidence_values`), et non la probabilité brute. Celle-ci se dilue avec le nombre de langues activées : sur « Stay hungry, stay foolish », avec 33 langues, la probabilité brute vaut 0,71 et la marge 0,95. Correction du 2026-11-22, PR #469.
 3. **8.4.** On détecte la langue de la page en pondérant chaque bloc par sa longueur, puis on la compare au `html[lang]` normalisé (BCP 47, sous-étiquette primaire). Une différence avec une confiance > 0,8 donne `Suspect`, avec la raison « page détectée en `en`, déclarée `fr` ».
-4. **8.8 et 8.7.** Un bloc dont la langue détectée diffère du `lang` hérité, avec une confiance > 0,9 et au moins 5 mots, est candidat à un changement de langue non signalé. Un bloc portant un `lang` explicite que la détection contredit relève d'un `lang` non pertinent (8.8).
+4. **8.8 et 8.7.** Un bloc dont la langue détectée diffère du `lang` hérité, avec une marge de confiance > 0,9 et au moins 4 mots (l'exemple de référence, « Stay hungry, stay foolish », en compte 4), est candidat à un changement de langue non signalé. Un bloc portant un `lang` explicite que la détection contredit relève d'un `lang` non pertinent (8.8).
 5. **Exclusions.** Sont ignorés :
    - les noms propres, marques, sigles et mots passés dans l'usage (« week-end ») ;
    - les blocs à forte part de majuscules ou de chiffres.

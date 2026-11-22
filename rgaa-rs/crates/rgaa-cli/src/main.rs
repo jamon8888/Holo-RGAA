@@ -83,6 +83,8 @@ async fn main() {
         // Internal pilot metrics do not open an audit monitoring log.
         TopCommand::Metrics(_) => None,
         TopCommand::McpServer(_) => None,
+        // Plugin/model inspection does not audit a page either.
+        TopCommand::Plugins(_) | TopCommand::Models(_) => None,
     };
     let action = match cli.command {
         TopCommand::Status => match rgaa_cli::commands::status::run() {
@@ -94,6 +96,12 @@ async fn main() {
         },
         TopCommand::Audit(args) => Action::Audit(args.command),
         TopCommand::Export(args) => Action::Export(args.command),
+        TopCommand::Plugins(args) => {
+            exit_with(rgaa_cli::commands::plugins::run(args).await);
+        }
+        TopCommand::Models(args) => {
+            exit_with(rgaa_cli::commands::models::run(args).await);
+        }
         TopCommand::Metrics(args) => {
             let result = match args.command {
                 MetricsCommand::Reouverture(reouverture) => {
@@ -160,6 +168,16 @@ async fn main() {
     // async writer ever gets scheduled, silently losing every log line.
     drop(monitoring_guard);
     std::process::exit(code);
+}
+
+fn exit_with(result: Result<i32, CliError>) -> ! {
+    match result {
+        Ok(code) => std::process::exit(code),
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(exit_code(&error));
+        }
+    }
 }
 
 fn exit_with(result: Result<i32, CliError>) -> ! {

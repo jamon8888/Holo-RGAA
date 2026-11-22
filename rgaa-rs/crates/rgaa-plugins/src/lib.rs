@@ -39,6 +39,11 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
         builder = builder.with(rgaa_analysis_images::images_plugin());
     }
 
+    #[cfg(feature = "plugin-media")]
+    {
+        builder = builder.with(rgaa_analysis_media::media_plugin());
+    }
+
     for sidecar in rgaa_analysis::sidecar::discover_default() {
         builder = builder.with(Box::new(sidecar));
     }
@@ -84,6 +89,18 @@ mod tests {
         let images = registry.get("images").expect("images plugin");
         assert!(images.tests().contains(&"1.3.1"));
         assert_eq!(images.models().len(), 12);
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-media")]
+    fn default_registry_contains_the_media_plugin_off_by_default() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"media"), "{ids:?}");
+        let media = registry.get("media").expect("media plugin");
+        assert!(media.tests().contains(&"4.2"));
+        assert!(media.tests().contains(&"4.10"));
+        assert!(media.models().is_empty(), "PR 1 needs no model");
     }
 
     #[test]

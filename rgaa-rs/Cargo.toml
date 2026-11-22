@@ -8,6 +8,7 @@ members = [
     "crates/rgaa-analysis-images",
     "crates/rgaa-analysis-lang",
     "crates/rgaa-analysis-layout",
+    "crates/rgaa-analysis-media",
     "crates/rgaa-analysis-text",
     "crates/rgaa-plugins",
     "crates/rgaa-rules",

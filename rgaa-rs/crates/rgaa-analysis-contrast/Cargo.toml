@@ -1,0 +1,26 @@
+[package]
+description = "P-01 — native contrast analysis plugin (WCAG 2.1, RGAA 3.2 and 3.3)"
+license = "MIT"
+name = "rgaa-analysis-contrast"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["plugin-contrast"]
+# The plugin is gated by the P-00 feature name shared by the CLI, MCP and API.
+plugin-contrast = []
+plugins-all = ["plugin-contrast"]
+
+[dependencies]
+async-trait = "0.1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+imageproc = "0.27"
+indexmap = { workspace = true }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

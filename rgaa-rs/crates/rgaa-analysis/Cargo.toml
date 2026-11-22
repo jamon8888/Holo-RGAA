@@ -35,6 +35,7 @@ plugins-all = [
 [dependencies]
 async-trait = "0.1"
 indexmap = { workspace = true }
+palette = "0.7.7"
 rgaa-core = { path = "../rgaa-core" }
 schemars = { workspace = true }
 serde = { workspace = true }

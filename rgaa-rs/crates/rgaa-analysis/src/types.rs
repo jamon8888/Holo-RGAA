@@ -98,6 +98,13 @@ pub struct ModelInfo {
 pub struct PluginOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// P-04: ignore media longer than this many seconds (`None` → 3600).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duree_max_s: Option<u64>,
+    /// P-04: URL of the hand-written reference transcription standing in for
+    /// ASR output until the model-backed plugin (PR 2) is enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription_reference_url: Option<String>,
 }
 
 /// Native or sidecar plugin (the orchestrator makes no distinction).

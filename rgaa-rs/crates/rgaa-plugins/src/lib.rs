@@ -25,6 +25,10 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(rgaa_analysis::echo_plugin());
     }
+    #[cfg(feature = "plugin-media")]
+    {
+        builder = builder.with(rgaa_analysis_media::media_plugin());
+    }
     // P-06 links `rgaa-analysis-lang` here under `feature = "plugin-lang"`.
 
     for sidecar in rgaa_analysis::sidecar::discover_default() {
@@ -47,6 +51,18 @@ mod tests {
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-media")]
+    fn default_registry_contains_the_media_plugin_off_by_default() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"media"), "{ids:?}");
+        let media = registry.get("media").expect("media plugin");
+        assert!(media.tests().contains(&"4.2"));
+        assert!(media.tests().contains(&"4.10"));
+        assert!(media.models().is_empty(), "PR 1 needs no model");
     }
 
     #[test]

@@ -1,0 +1,22 @@
+[package]
+description = "P-04 analysis plugin: temporal media (audio and video) evidence"
+license = "MIT"
+name = "rgaa-analysis-media"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+ebur128 = "0.1"
+indexmap = { workspace = true }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rubato = "5.1"
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+symphonia = { version = "0.6", features = ["aac", "mp3", "isomp4"] }
+tracing = { workspace = true }
+webvtt-parser = "1.4"
+
+[dev-dependencies]
+tokio = { workspace = true }

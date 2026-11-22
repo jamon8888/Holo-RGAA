@@ -14,7 +14,7 @@ plugin-lang = ["rgaa-analysis/plugin-lang"]
 plugin-contrast = ["rgaa-analysis/plugin-contrast"]
 plugin-colorvision = ["rgaa-analysis/plugin-colorvision"]
 plugin-images = ["rgaa-analysis/plugin-images"]
-plugin-media = ["rgaa-analysis/plugin-media"]
+plugin-media = ["rgaa-analysis/plugin-media", "dep:rgaa-analysis-media"]
 plugin-motion = ["rgaa-analysis/plugin-motion"]
 plugin-layout = ["rgaa-analysis/plugin-layout"]
 plugin-text = ["rgaa-analysis/plugin-text"]
@@ -32,3 +32,4 @@ plugins-all = [
 
 [dependencies]
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rgaa-analysis-media = { path = "../rgaa-analysis-media", optional = true }

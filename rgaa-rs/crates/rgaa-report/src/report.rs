@@ -42,6 +42,7 @@ fn render_markdown(bundle: &AuditBundle) -> String {
     let _ = writeln!(out);
 
     write_markdown_sources(&mut out, bundle);
+    crate::non_conformity::write_markdown_non_conformities(&mut out, bundle);
 
     let findings = all_findings(bundle);
     if findings.is_empty() {
@@ -237,7 +238,41 @@ fn escape_xml(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::AuditConfig;
+    use rgaa_core::{AuditConfig, NonConformity, UserImpact};
+
+    /// The rendered report, not just the helper, presents reviewed impact and
+    /// quick win in priority order (ticket #431).
+    #[test]
+    fn rendered_markdown_contains_prioritized_non_conformities() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        let mut mineur = NonConformity::new("nc-minor", "1.1", "https://example.test", "Mineur");
+        mineur
+            .record_review(
+                UserImpact::Mineur,
+                false,
+                "auditrice",
+                "2026-11-21T10:00:00Z",
+            )
+            .expect("valid review");
+        let mut bloquant =
+            NonConformity::new("nc-blocking", "12.9", "https://example.test", "Bloquant");
+        bloquant
+            .record_review(
+                UserImpact::Bloquant,
+                true,
+                "auditrice",
+                "2026-11-21T10:00:00Z",
+            )
+            .expect("valid review");
+        bundle.non_conformities = vec![mineur, bloquant];
+
+        let markdown = render_markdown(&bundle);
+        let blocking = markdown.find("nc-blocking").expect("blocking listed");
+        let minor = markdown.find("nc-minor").expect("minor listed");
+        assert!(blocking < minor);
+        assert!(markdown.contains("impact utilisateur : bloquant, quick win : oui"));
+    }
 
     fn sample_bundle() -> AuditBundle {
         let mut bundle =

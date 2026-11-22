@@ -12,6 +12,7 @@ pub fn generate_html_report(bundle: &AuditBundle) -> String {
     write_html_summary(&mut html, bundle);
     write_html_stats(&mut html, &bundle.summary);
     write_html_findings(&mut html, bundle);
+    crate::non_conformity::write_html_non_conformities(&mut html, bundle);
     write_html_all_criteria(&mut html, bundle);
     write_html_footer(&mut html);
     html
@@ -571,8 +572,30 @@ fn escape_html(s: &str) -> String {
 mod tests {
     use super::*;
     use rgaa_core::{
-        AuditConfig, Classification, EvidenceRef, PageAudit, ReviewEvent, TestOutcome, VerdictBasis,
+        AuditConfig, Classification, EvidenceRef, NonConformity, PageAudit, ReviewEvent,
+        TestOutcome, UserImpact, VerdictBasis,
     };
+
+    /// The HTML report exposes the reviewed impact and quick win (ticket #431).
+    #[test]
+    fn html_report_contains_non_conformity_impact_and_quick_win() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        let mut item = NonConformity::new("nc-1", "12.9", "https://example.test", "Piège clavier");
+        item.record_review(
+            UserImpact::Bloquant,
+            true,
+            "auditrice",
+            "2026-11-21T10:00:00Z",
+        )
+        .expect("valid review");
+        bundle.non_conformities = vec![item];
+
+        let html = generate_html_report(&bundle);
+        assert!(html.contains("<h2>Non-conformités</h2>"));
+        assert!(html.contains("bloquant"));
+        assert!(html.contains("Piège clavier"));
+    }
 
     fn criterion(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {

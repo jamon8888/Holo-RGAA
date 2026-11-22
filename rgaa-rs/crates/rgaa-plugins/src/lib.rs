@@ -29,6 +29,10 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(rgaa_analysis_media::media_plugin());
     }
+    #[cfg(feature = "plugin-motion")]
+    {
+        builder = builder.with(rgaa_analysis_motion::motion_plugin());
+    }
     // P-06 links `rgaa-analysis-lang` here under `feature = "plugin-lang"`.
 
     for sidecar in rgaa_analysis::sidecar::discover_default() {
@@ -63,6 +67,19 @@ mod tests {
         assert!(media.tests().contains(&"4.2"));
         assert!(media.tests().contains(&"4.10"));
         assert!(media.models().is_empty(), "PR 1 needs no model");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-motion")]
+    fn default_registry_contains_the_motion_plugin_off_by_default() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"motion"), "{ids:?}");
+        let motion = registry.get("motion").expect("motion plugin");
+        assert!(motion.tests().contains(&"13.7"));
+        assert!(motion.tests().contains(&"13.8"));
+        assert!(motion.tests().contains(&"13.1"));
+        assert!(motion.models().is_empty(), "P-05 needs no model");
     }
 
     #[test]

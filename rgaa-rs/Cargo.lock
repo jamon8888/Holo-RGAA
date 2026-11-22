@@ -3007,6 +3007,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffmpeg-sidecar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "187df1a888981457401efeb1b36596aa97f34d0bbb6ab24d70a2226803b3fd52"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7056,6 +7065,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-analysis-motion"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ffmpeg-sidecar",
+ "image",
+ "indexmap 2.14.2",
+ "rgaa-analysis",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "rgaa-api"
 version = "0.1.0"
 dependencies = [
@@ -7282,6 +7307,7 @@ version = "0.1.0"
 dependencies = [
  "rgaa-analysis",
  "rgaa-analysis-media",
+ "rgaa-analysis-motion",
 ]
 
 [[package]]

@@ -9,15 +9,15 @@ edition = "2021"
 # No plugin by default: the CLI must be able to build without any analysis
 # plugin (acceptance criterion 1). Downstream crates opt in explicitly.
 default = []
-plugin-echo = ["rgaa-analysis/plugin-echo"]
-plugin-contrast = ["rgaa-analysis/plugin-contrast"]
-plugin-colorvision = ["rgaa-analysis/plugin-colorvision"]
-plugin-images = ["rgaa-analysis/plugin-images"]
-plugin-media = ["rgaa-analysis/plugin-media"]
-plugin-motion = ["rgaa-analysis/plugin-motion"]
-plugin-lang = ["rgaa-analysis/plugin-lang"]
-plugin-layout = ["rgaa-analysis/plugin-layout"]
-plugin-text = ["rgaa-analysis/plugin-text"]
+plugin-echo = ["rgaa-analysis/plugin-echo", "rgaa-plugins/plugin-echo"]
+plugin-contrast = ["rgaa-analysis/plugin-contrast", "rgaa-plugins/plugin-contrast"]
+plugin-colorvision = ["rgaa-analysis/plugin-colorvision", "rgaa-plugins/plugin-colorvision"]
+plugin-images = ["rgaa-analysis/plugin-images", "rgaa-plugins/plugin-images"]
+plugin-media = ["rgaa-analysis/plugin-media", "rgaa-plugins/plugin-media"]
+plugin-motion = ["rgaa-analysis/plugin-motion", "rgaa-plugins/plugin-motion"]
+plugin-lang = ["rgaa-analysis/plugin-lang", "rgaa-plugins/plugin-lang"]
+plugin-layout = ["rgaa-analysis/plugin-layout", "rgaa-plugins/plugin-layout"]
+plugin-text = ["rgaa-analysis/plugin-text", "rgaa-plugins/plugin-text"]
 plugins-all = [
     "plugin-echo",
     "plugin-contrast",
@@ -33,6 +33,7 @@ plugins-all = [
 [dependencies]
 dotenvy = { workspace = true }
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rgaa-plugins = { path = "../rgaa-plugins", default-features = false }
 rgaa-core = { path = "../rgaa-core" }
 rgaa-linter = { path = "../rgaa-linter" }
 rgaa-obscura = { path = "../rgaa-obscura" }

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rgaa-core",
     "crates/rgaa-analysis",
+    "crates/rgaa-plugins",
     "crates/rgaa-rules",
     "crates/rgaa-holo",
     "crates/rgaa-obscura",

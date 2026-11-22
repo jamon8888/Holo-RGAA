@@ -24,8 +24,9 @@ pub async fn run(args: PluginsArgs) -> Result<i32, CliError> {
 
 /// Prints one line per plugin, then flags every RGAA test served twice.
 fn list() -> Result<i32, CliError> {
-    let plugins = rgaa_analysis::registry();
-    for plugin in plugins {
+    let registry =
+        rgaa_plugins::default_registry().map_err(|error| CliError::execution(error.to_string()))?;
+    for plugin in registry.iter() {
         let info = plugin.info();
         println!("{} {}", info.id, info.version);
         println!("  tests: {}", info.tests.join(", "));
@@ -49,7 +50,7 @@ fn list() -> Result<i32, CliError> {
         }
     }
 
-    let duplicates = rgaa_analysis::registry::duplicate_tests(plugins);
+    let duplicates = registry.duplicate_tests();
     if !duplicates.is_empty() {
         println!("tests servis par plusieurs plugins :");
         print_duplicates(&duplicates);

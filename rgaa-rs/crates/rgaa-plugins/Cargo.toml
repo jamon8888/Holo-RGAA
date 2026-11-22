@@ -1,0 +1,34 @@
+[package]
+description = "Aggregator building the analysis plugin registry from enabled features"
+license = "MIT"
+name = "rgaa-plugins"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# The plugins with no model to download are compiled by default (P-00 §3).
+default = ["plugin-echo"]
+plugin-echo = ["rgaa-analysis/plugin-echo"]
+# Marker until rgaa-analysis-lang lands in P-06; the P-06 PR links the crate.
+plugin-lang = ["rgaa-analysis/plugin-lang"]
+plugin-contrast = ["rgaa-analysis/plugin-contrast"]
+plugin-colorvision = ["rgaa-analysis/plugin-colorvision"]
+plugin-images = ["rgaa-analysis/plugin-images"]
+plugin-media = ["rgaa-analysis/plugin-media"]
+plugin-motion = ["rgaa-analysis/plugin-motion"]
+plugin-layout = ["rgaa-analysis/plugin-layout"]
+plugin-text = ["rgaa-analysis/plugin-text"]
+plugins-all = [
+    "plugin-echo",
+    "plugin-contrast",
+    "plugin-colorvision",
+    "plugin-images",
+    "plugin-media",
+    "plugin-motion",
+    "plugin-lang",
+    "plugin-layout",
+    "plugin-text",
+]
+
+[dependencies]
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }

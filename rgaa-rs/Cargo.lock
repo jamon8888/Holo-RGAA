@@ -7076,6 +7076,7 @@ dependencies = [
  "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
+ "rgaa-plugins",
  "rgaa-remediation",
  "rgaa-report",
  "serde",
@@ -7152,6 +7153,7 @@ dependencies = [
  "rgaa-linter",
  "rgaa-obscura",
  "rgaa-orchestrator",
+ "rgaa-plugins",
  "rgaa-remediation",
  "rmcp",
  "schemars 1.2.2",
@@ -7231,6 +7233,13 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "rgaa-plugins"
+version = "0.1.0"
+dependencies = [
+ "rgaa-analysis",
 ]
 
 [[package]]

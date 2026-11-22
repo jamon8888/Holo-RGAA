@@ -484,12 +484,36 @@ pub trait AnalysisService: Send + Sync {
     >;
 }
 
-/// Default service: the process-local plugin registry.
-pub struct RegistryAnalysisService;
+/// Default service: the registry built from the plugins linked into this binary.
+pub struct RegistryAnalysisService {
+    registry: Result<rgaa_analysis::Registry, String>,
+}
+
+impl RegistryAnalysisService {
+    /// Builds the registry once, at service construction.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            registry: rgaa_plugins::default_registry().map_err(|error| error.to_string()),
+        }
+    }
+}
+
+impl Default for RegistryAnalysisService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl AnalysisService for RegistryAnalysisService {
     fn list(&self) -> Vec<rgaa_analysis::PluginInfo> {
-        rgaa_analysis::registry::list()
+        match &self.registry {
+            Ok(registry) => registry.list(),
+            Err(error) => {
+                tracing::error!(error = %error, "registre des plugins d'analyse indisponible");
+                Vec::new()
+            }
+        }
     }
 
     fn run(
@@ -508,7 +532,10 @@ impl AnalysisService for RegistryAnalysisService {
         let plugin_id = plugin.to_owned();
         let options = options.clone();
         Box::pin(async move {
-            let plugin = rgaa_analysis::registry::plugin_by_id(&plugin_id).ok_or_else(|| {
+            let registry = self.registry.as_ref().map_err(|error| {
+                McpFailure::execution(format!("registre des plugins indisponible : {error}"))
+            })?;
+            let plugin = registry.get(&plugin_id).ok_or_else(|| {
                 McpFailure::invalid(format!("plugin d'analyse inconnu : {plugin_id}"))
             })?;
             rgaa_analysis::run_plugin(plugin, &url, &options)
@@ -771,7 +798,7 @@ impl ToolServer {
             guided,
             audit,
             storage,
-            Arc::new(RegistryAnalysisService),
+            Arc::new(RegistryAnalysisService::new()),
         )
     }
 

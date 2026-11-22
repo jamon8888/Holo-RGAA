@@ -61,10 +61,10 @@ fn run_analysis_plugin_schema_has_no_status_or_verdict() {
 
 #[tokio::test]
 async fn run_analysis_plugin_returns_only_proofs() {
-    struct EchoAnalysis;
+    struct EchoAnalysis(rgaa_analysis::Registry);
     impl rgaa_mcp::AnalysisService for EchoAnalysis {
         fn list(&self) -> Vec<rgaa_analysis::PluginInfo> {
-            rgaa_analysis::registry::list()
+            self.0.list()
         }
         fn run(
             &self,
@@ -82,7 +82,9 @@ async fn run_analysis_plugin_returns_only_proofs() {
             let plugin_id = plugin.to_owned();
             let options = options.clone();
             Box::pin(async move {
-                let plugin = rgaa_analysis::registry::plugin_by_id(&plugin_id)
+                let plugin = self
+                    .0
+                    .get(&plugin_id)
                     .ok_or_else(|| McpFailure::invalid("plugin inconnu"))?;
                 rgaa_analysis::run_plugin(plugin, &url, &options)
                     .await
@@ -97,7 +99,12 @@ async fn run_analysis_plugin_returns_only_proofs() {
         Arc::new(PanickingGuided),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
-        Arc::new(EchoAnalysis),
+        Arc::new(EchoAnalysis(
+            rgaa_analysis::Registry::builder()
+                .with(rgaa_analysis::echo_plugin())
+                .build()
+                .expect("registry"),
+        )),
     );
     let response = server
         .run_analysis_plugin(Parameters(rgaa_mcp::RunAnalysisPluginInput {

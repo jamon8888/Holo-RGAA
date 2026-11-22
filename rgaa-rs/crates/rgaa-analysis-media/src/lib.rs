@@ -522,6 +522,7 @@ mod tests {
     fn options() -> PluginOptions {
         PluginOptions {
             message: None,
+            exclusions: None,
             duree_max_s: None,
             transcription_reference_url: Some(REF_URL.to_owned()),
             use_models: None,

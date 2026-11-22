@@ -111,7 +111,7 @@ pub struct ModelSpec { pub nom: &'static str, pub url: &'static str, pub sha256:
 ```
 
 - Commande `rgaa models list|pull <plugin>|verify`. Le cache se trouve dans `$RGAA_MODELS_DIR`, par défaut `~/.cache/rgaa/models`.
-- Un plugin dont le modèle manque renvoie `RgaaError::Analysis { message: "modèle absent : lancez `rgaa models pull images`" }`. Il ne télécharge **jamais** pendant un audit (R-P3).
+- Un plugin dont le modèle manque renvoie `RgaaError::Analysis { message: "modèle absent : lancez `rgaa models pull images`" }`. Il ne télécharge **jamais** pendant un audit (R-P3). Un plugin qui peut encore rendre des preuves déterministes sans ses modèles (P-03 images) déclare `models_optional()` : le runner ne refuse pas l'appel et le plugin émet une preuve `Estimee` marquée « preuve manquante » pour les seules analyses touchées.
 - Une empreinte qui ne correspond pas entraîne un refus.
 - Les licences sont listées dans `rgaa models list` et dans le rapport.
 

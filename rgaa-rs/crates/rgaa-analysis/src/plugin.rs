@@ -26,6 +26,12 @@ pub trait AnalysisPlugin: Send + Sync {
     fn models(&self) -> &'static [crate::types::ModelSpec] {
         &[]
     }
+    /// When `true`, a missing model does not abort the plugin: it emits a
+    /// targeted « preuve manquante » proof and still runs its deterministic
+    /// rules (P-03 §7.1). Defaults to `false` for every existing plugin.
+    fn models_optional(&self) -> bool {
+        false
+    }
     fn kind(&self) -> PluginKind {
         PluginKind::Natif
     }

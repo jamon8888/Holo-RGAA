@@ -5,6 +5,7 @@
 //! Native plugins and sidecars share the same [`AnalysisPlugin`] interface;
 //! callers assemble the ones they linked into a [`Registry`].
 
+pub mod actions;
 pub mod capture;
 pub mod error;
 pub mod models;
@@ -14,6 +15,7 @@ pub mod schema;
 pub mod sidecar;
 pub mod types;
 
+pub use actions::{action_interdite, est_action_interdite, FORBIDDEN_ACTION_WORDS};
 pub use capture::{
     AxNode, AxTree, DomSnapshot, NoopResourceFetcher, PageCapture, ResourceFetcher, RgbaImage,
 };

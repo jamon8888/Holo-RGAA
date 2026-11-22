@@ -122,12 +122,13 @@ rgaa-cli policy --baseline baseline.json --current current.json
 
 ### MCP Server (Claude Code)
 
-The MCP server provides nine tools for Claude Code. These are the names the
+The MCP server provides ten tools for Claude Code. These are the names the
 server actually registers — call them exactly as written:
 
 - `analyze` - Per-criterion findings for one page, with evidence and justification
 - `audit_url` - Full site audit through the orchestrator; returns a summary (`taux_global`, `etat_conformite`) plus `sampled_page_urls`
 - `get_audit_result` - Retrieve a previously run audit by `audit_id`
+- `get_test_methodology` - The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit
 - `lint_static` - Static accessibility lint of HTML/JSX/TSX/Vue source: rule, severity, line/column and a fix hint, against a selectable profile (`rgaa-4.1`, `wcag-2.1-aa`, `section-508`). No browser and no build, so it suits an edit loop — a first pass over source, not a conformance verdict
 - `list_criteria` - The 106 RGAA criteria with id, title, and classification
 - `remediate` - Approval-gated remediation proposals
@@ -140,7 +141,7 @@ on the URLs it reports in `sampled_page_urls`.
 
 #### HTTP transport
 
-`rgaa-mcp-http` — equivalently `rgaa mcp-server` — exposes the same nine
+`rgaa-mcp-http` — equivalently `rgaa mcp-server` — exposes the same ten
 tools as JSON-RPC over `POST /mcp`, with progress events on `GET /mcp/events`
 (SSE). Both endpoints are authorized before a tool runs: a browser origin is
 refused unless `RGAA_CORS_ORIGINS` (or `--cors-origin`) names it, and when

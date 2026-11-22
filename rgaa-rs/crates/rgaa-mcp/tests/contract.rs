@@ -28,6 +28,7 @@ fn exposes_every_registered_agent_tool() {
             "lint_static",
             "source_map",
             "verify_fix",
+            "get_test_methodology",
         ]
     );
 }

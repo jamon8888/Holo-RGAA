@@ -11,6 +11,7 @@
 
 pub mod cache;
 pub mod clip;
+pub mod config;
 pub mod inventory;
 pub mod mesures;
 pub mod models;
@@ -24,6 +25,7 @@ use async_trait::async_trait;
 use image::DynamicImage;
 use inventory::{est_captcha, ImageNode, Snapshot};
 use mesures::{MesureCaptcha, MesureClip, MesureOcr, Mesures};
+use ocr::OcrEngine;
 use rgaa_analysis::{
     analysis_error, AnalysisPlugin, Indice, PageCapture, PluginOptions, Portee, Preuve, Result,
     Subject,
@@ -42,6 +44,7 @@ pub struct ImagesPlugin {
     ocr: Option<Arc<dyn ocr::OcrBackend>>,
     clip: Option<Arc<dyn clip::ClipBackend>>,
     models_dir: PathBuf,
+    ocr_engine: OcrEngine,
     cache: Arc<Mutex<cache::DecisionCache>>,
 }
 
@@ -60,6 +63,7 @@ impl ImagesPlugin {
             ocr: None,
             clip: None,
             models_dir: rgaa_analysis::models::models_dir(),
+            ocr_engine: config::moteur_ocr(None),
             cache: Arc::new(Mutex::new(cache::DecisionCache::new())),
         }
     }
@@ -75,6 +79,13 @@ impl ImagesPlugin {
             clip,
             ..Self::new()
         }
+    }
+
+    /// Chooses the OCR implementation, overriding `rgaa.toml`.
+    #[must_use]
+    pub fn with_ocr_engine(mut self, moteur: OcrEngine) -> Self {
+        self.ocr_engine = moteur;
+        self
     }
 
     /// Overrides the model cache directory (tests, air-gapped installs).
@@ -225,9 +236,27 @@ fn initialiser_ocr(plugin: &ImagesPlugin) -> BackendResult<dyn ocr::OcrBackend> 
     if let Some(backend) = &plugin.ocr {
         return Ok(backend.clone());
     }
-    ocr::OcrsBackend::from_models_dir(&plugin.models_dir)
-        .map(|backend| Arc::new(backend) as Arc<dyn ocr::OcrBackend>)
-        .map_err(|error| error.to_string())
+    let choisi = match plugin.ocr_engine {
+        OcrEngine::Ocrs => ocr::OcrsBackend::from_models_dir(&plugin.models_dir)
+            .map(|backend| Arc::new(backend) as Arc<dyn ocr::OcrBackend>),
+        OcrEngine::OarOcr => ocr::OarOcrBackend::from_models_dir(&plugin.models_dir)
+            .map(|backend| Arc::new(backend) as Arc<dyn ocr::OcrBackend>),
+    };
+    match choisi {
+        Ok(backend) => Ok(backend),
+        // Un modèle manquant pour le moteur choisi ne doit pas priver
+        // l'audit de l'autre moteur s'il est, lui, installé.
+        Err(erreur) => {
+            tracing::warn!(%erreur, moteur = ?plugin.ocr_engine, "moteur OCR indisponible");
+            let autre = match plugin.ocr_engine {
+                OcrEngine::Ocrs => ocr::OarOcrBackend::from_models_dir(&plugin.models_dir)
+                    .map(|backend| Arc::new(backend) as Arc<dyn ocr::OcrBackend>),
+                OcrEngine::OarOcr => ocr::OcrsBackend::from_models_dir(&plugin.models_dir)
+                    .map(|backend| Arc::new(backend) as Arc<dyn ocr::OcrBackend>),
+            };
+            autre.map_err(|_| erreur.to_string())
+        }
+    }
 }
 
 fn initialiser_clip(plugin: &ImagesPlugin) -> BackendResult<dyn clip::ClipBackend> {

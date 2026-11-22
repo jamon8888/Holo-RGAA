@@ -15,7 +15,8 @@ sont écrites à la main dans `ground_truth.json` : elles ne sont pas calculées
 
 ## Contenu
 
-- `01.png` … `30.png` : 768 × 96 pixels, texte noir sur fond blanc.
+- `01.png` … `30.png` : 1280 × 128 pixels, texte noir sur fond blanc,
+  Liberation Serif 40 px (police à empattement, empattements et accents lisibles).
 - `ground_truth.json` : `[{ "fichier": "01.png", "texte": "…" }, …]`.
 
 Les accents sont ceux de la spec : `é`, `è`, `à`, `ç`, `œ` (et leurs
@@ -40,8 +41,13 @@ Levenshtein) de `ocrs`. Sans modèle, le test affiche un message et revient :
 aucun téléchargement n'a lieu pendant un audit (R-P3). Les résultats comparatifs
 `oar-ocr` et sidecar `tesseract` restent à faire dans le ticket suivant.
 
-Relevé du 2026-11-22 avec les modèles `ocrs` installés : 30/30 images lues,
-**CER = 1,046**. L'alphabet anglais par défaut d'`ocrs` remplace les accents
-par `?` et la détection duplique certaines lignes. Ce chiffre est une mesure de
-référence, pas un seuil : il documente pourquoi le banc doit comparer les trois
-moteurs avant de choisir le défaut.
+Relevé du 2026-11-22 après correction du rendu (auparavant Liberation Sans
+32 px sur 768 × 96, CER `ocrs` = 1,046) :
+
+- `ocrs` (modèles ONNX officiels) : **CER = 0,086** ;
+- `oar-ocr` (PP-OCRv5 latin) : **CER = 0,001** ;
+- contrôle anglais (5 images) : 0,009 / 0,000.
+
+`oar-ocr` est donc le moteur par défaut, configurable dans `rgaa.toml`.
+`ocrs` reste disponible. Le sidecar `tesseract` n'est pas installé sur la
+machine de mesure : il n'a pas été comparé et reste un point d'extension.

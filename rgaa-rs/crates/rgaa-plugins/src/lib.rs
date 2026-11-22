@@ -62,7 +62,7 @@ mod tests {
         assert!(ids.contains(&"images"), "{ids:?}");
         let images = registry.get("images").expect("images plugin");
         assert!(images.tests().contains(&"1.3.1"));
-        assert_eq!(images.models().len(), 9);
+        assert_eq!(images.models().len(), 12);
     }
 
     #[test]

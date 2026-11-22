@@ -1,29 +1,20 @@
 //! Banc OCR français (P-03 §2) : 30 images générées, libres de droits,
-//! avec accents. Le moteur n'est exécuté que si ses modèles sont installés :
-//! un audit sans modèle ne télécharge rien et ne échoue pas ce test.
+//! avec accents. Les moteurs ne tournent que si leurs modèles sont déjà
+//! installés : aucun téléchargement pendant l'audit.
+
+mod support;
 
 use rgaa_analysis::models;
-use rgaa_analysis_images::{models as images_models, ocr::OcrBackend, ocr::OcrsBackend};
-use serde::Deserialize;
-use std::path::PathBuf;
-
-#[derive(Debug, Deserialize)]
-struct Entree {
-    fichier: String,
-    texte: String,
-}
-
-fn corpus() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-fr")
-}
+use rgaa_analysis_images::{
+    models as images_models,
+    ocr::{OarOcrBackend, OcrEngine, OcrsBackend, DEFAULT_OCR_ENGINE},
+};
+use support::{dossier, lire, mesurer};
 
 #[test]
 fn le_corpus_francais_contient_30_images_avec_accents() {
-    let dossier = corpus();
-    let contenu: Vec<Entree> = serde_json::from_str(
-        &std::fs::read_to_string(dossier.join("ground_truth.json")).expect("vérité terrain"),
-    )
-    .expect("ground_truth.json valide");
+    let dossier = dossier("tests/fixtures/ocr-fr");
+    let contenu = lire(&dossier);
     assert_eq!(contenu.len(), 30, "la spec demande 30 images");
     let accents = [
         'é', 'è', 'à', 'ç', 'œ', 'ù', 'û', 'ô', 'î', 'É', 'È', 'À', 'Ç', 'Œ', 'Ù',
@@ -40,58 +31,26 @@ fn le_corpus_francais_contient_30_images_avec_accents() {
     }
 }
 
-/// Distance d'édition de Levenshtein (référence classique, indépendante d'ocrs).
-fn levenshtein(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    let mut ligne: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.iter().enumerate() {
-        let mut precedent = ligne[0];
-        ligne[0] = i + 1;
-        for (j, cb) in b.iter().enumerate() {
-            let ancien = ligne[j + 1];
-            ligne[j + 1] = (ligne[j + 1] + 1)
-                .min(ligne[j] + 1)
-                .min(precedent + usize::from(ca != cb));
-            precedent = ancien;
-        }
-    }
-    ligne[b.len()]
-}
-
 #[test]
-fn banc_ocr_si_les_modeles_sont_presents() {
-    let dossier = corpus();
-    let contenu: Vec<Entree> = serde_json::from_str(
-        &std::fs::read_to_string(dossier.join("ground_truth.json")).expect("vérité terrain"),
-    )
-    .expect("ground_truth.json valide");
+fn banc_ocr_francais_si_les_modeles_sont_presents() {
     if !images_models::OCR_MODELS.iter().all(models::is_present) {
-        eprintln!("Banc OCR ignoré : lancez `rgaa models pull images` pour installer les modèles");
+        eprintln!("Banc OCR ignoré : lancez `rgaa models pull images`");
         return;
     }
     let repertoire = models::models_dir();
-    let moteur = OcrsBackend::from_models_dir(&repertoire).expect("moteur ocrs");
-    let mut erreurs = 0usize;
-    let mut caracteres = 0usize;
-    for entree in &contenu {
-        let image = image::open(dossier.join(&entree.fichier)).expect("image");
-        let mesure = moteur.analyze(&image).expect("OCR");
-        assert!(!mesure.texte.is_empty(), "{} : OCR vide", entree.fichier);
-        erreurs += levenshtein(&mesure.texte, &entree.texte);
-        caracteres += entree.texte.chars().count();
-    }
-    let cer = if caracteres == 0 {
-        0.0
+    let dossier = dossier("tests/fixtures/ocr-fr");
+    let ocrs = OcrsBackend::from_models_dir(&repertoire).expect("moteur ocrs");
+    let oar = OarOcrBackend::from_models_dir(&repertoire).expect("moteur oar-ocr");
+    let cer_ocrs = mesurer(&ocrs, &dossier, "ocrs (français)");
+    let cer_oar = mesurer(&oar, &dossier, "oar-ocr (français)");
+    let meilleur = if cer_oar < cer_ocrs {
+        OcrEngine::OarOcr
     } else {
-        erreurs as f64 / caracteres as f64
+        OcrEngine::Ocrs
     };
-    // Le CER est une mesure, pas un seuil de validation : ocrs est entraîné
-    // surtout sur l'anglais et son alphabet par défaut n'a pas d'accents.
-    // Le banc sert à comparer les moteurs dans le ticket suivant.
-    eprintln!(
-        "Banc OCR FR : {} images, CER ocrs = {cer:.3}",
-        contenu.len()
+    eprintln!("Moteur par défaut : {DEFAULT_OCR_ENGINE:?} (meilleur mesuré : {meilleur:?})");
+    assert_eq!(
+        DEFAULT_OCR_ENGINE, meilleur,
+        "le défaut doit suivre le meilleur CER FR"
     );
-    assert!(cer.is_finite());
 }

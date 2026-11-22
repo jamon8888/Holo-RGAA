@@ -13,18 +13,46 @@ use std::path::Path;
 /// Modèles `ocrs` (RTen) — licence CC-BY-SA-4.0 (carte Hugging Face).
 pub const OCR_MODELS: &[ModelSpec] = &[
     ModelSpec {
-        nom: "ocrs-text-detection-ssfbcj81.rten",
-        url: "https://huggingface.co/robertknight/ocrs/resolve/main/text-detection-ssfbcj81.rten?download=true",
-        sha256: "614aafabf27c94d386f7aa036c967c2e47e4b9938fa11531ca8f5698c1ca4c36",
-        taille_octets: 2_523_564,
+        nom: "ocrs-text-detection.onnx",
+        url: "https://ocrs-models.s3.amazonaws.com/text-detection.onnx",
+        sha256: "a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe",
+        taille_octets: 2_499_479,
         licence: "CC-BY-SA-4.0",
     },
     ModelSpec {
-        nom: "ocrs-text-recognition-s52qdbqt.rten",
-        url: "https://huggingface.co/robertknight/ocrs/resolve/main/text-rec-checkpoint-s52qdbqt.rten?download=true",
-        sha256: "606d9a0414c6b73c99df75b707c11c70d1c8b12e1d4f900922e185fc37bfca65",
-        taille_octets: 9_716_444,
+        nom: "ocrs-text-recognition.onnx",
+        url: "https://ocrs-models.s3.amazonaws.com/text-recognition.onnx",
+        sha256: "86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5",
+        taille_octets: 9_713_177,
         licence: "CC-BY-SA-4.0",
+    },
+];
+
+/// Modèles PP-OCRv5 latin (`oar-ocr`) — Apache-2.0 (PaddleOCR).
+///
+/// Fichiers officiels de la release v0.3.0 de `oar-ocr`, utilisés tels quels
+/// (aucun téléchargement automatique : la feature `auto-download` est désactivée).
+pub const OAR_MODELS: &[ModelSpec] = &[
+    ModelSpec {
+        nom: "pp-ocrv5_mobile_det.onnx",
+        url: "https://github.com/GreatV/oar-ocr/releases/download/v0.3.0/pp-ocrv5_mobile_det.onnx",
+        sha256: "1eb7b4f7ab657ebd1c66d5f79bca7497f29768a2e3c15e52daecbba1a8e4a039",
+        taille_octets: 4_826_518,
+        licence: "Apache-2.0",
+    },
+    ModelSpec {
+        nom: "latin_pp-ocrv5_mobile_rec.onnx",
+        url: "https://github.com/GreatV/oar-ocr/releases/download/v0.3.0/latin_pp-ocrv5_mobile_rec.onnx",
+        sha256: "e3a6bfeea1c8a01d6fccfd480a0bd363fd907f8c65931e228bb2736f5c3e142f",
+        taille_octets: 8_069_614,
+        licence: "Apache-2.0",
+    },
+    ModelSpec {
+        nom: "ppocrv5_latin_dict.txt",
+        url: "https://github.com/GreatV/oar-ocr/releases/download/v0.3.0/ppocrv5_latin_dict.txt",
+        sha256: "ccbcc45730b3fbbd9050c5bc74db6a99067141ef1035e3d14889a84a6b9b1aff",
+        taille_octets: 2_616,
+        licence: "Apache-2.0",
     },
 ];
 
@@ -86,16 +114,22 @@ pub const CLIP_MODELS: &[ModelSpec] = &[
 
 /// Tous les modèles requis par le plugin, dans l'ordre d'affichage.
 pub const MODELS: &[ModelSpec] = &{
-    let mut tout: [ModelSpec; 9] = [OCR_MODELS[0]; 9];
+    let mut tout: [ModelSpec; 12] = [OCR_MODELS[0]; 12];
     let mut i = 0;
     while i < OCR_MODELS.len() {
         tout[i] = OCR_MODELS[i];
         i += 1;
     }
     let mut j = 0;
-    while j < CLIP_MODELS.len() {
-        tout[i + j] = CLIP_MODELS[j];
+    while j < OAR_MODELS.len() {
+        tout[i + j] = OAR_MODELS[j];
         j += 1;
+    }
+    i += OAR_MODELS.len();
+    let mut k = 0;
+    while k < CLIP_MODELS.len() {
+        tout[i + k] = CLIP_MODELS[k];
+        k += 1;
     }
     tout
 };
@@ -119,7 +153,7 @@ mod tests {
 
     #[test]
     fn every_model_declares_a_licence_and_a_digest() {
-        assert_eq!(MODELS.len(), 9);
+        assert_eq!(MODELS.len(), 12);
         for modele in MODELS {
             assert!(!modele.licence.is_empty(), "{}", modele.nom);
             assert_eq!(modele.sha256.len(), 64, "{}", modele.nom);

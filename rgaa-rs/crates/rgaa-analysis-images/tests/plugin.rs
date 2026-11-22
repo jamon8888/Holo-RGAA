@@ -242,6 +242,8 @@ async fn ocr_texte_suspect_sur_une_image_texte() {
         .find(|p| p.mesures.get("ocr").is_some())
         .expect("preuve OCR");
     assert_eq!(appels.load(Ordering::SeqCst), 1);
+    // La preuve indique le moteur réellement utilisé (P-00 §5).
+    assert_eq!(ocr_preuve.version_modele.as_deref(), Some("ocrs"));
     assert!(ocr_preuve.tests.iter().any(|t| t == "1.8.1"));
     assert!(matches!(
         ocr_preuve.indice,

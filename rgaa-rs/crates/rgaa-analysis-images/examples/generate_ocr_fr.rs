@@ -1,17 +1,16 @@
-//! Génère le banc OCR français (30 PNG, texte accentué) avec resvg.
+//! Génère les bancs OCR (30 phrases FR accentuées, 5 phrases EN de contrôle).
 //!
-//! Usage : `cargo run -p rgaa-analysis-images --example generate_ocr_fr -- <dossier>`
+//! Usage : `cargo run -p rgaa-analysis-images --example generate_ocr_fr -- [--control] [--legacy] [dossier]`
 //!
-//! Les images sont générées par ce dépôt (CC0) ; la police est Liberation
-//! Sans (SIL OFL 1.1), présente sur la machine de génération. Aucune image
-//! tiers n'est redistribuée.
+//! Les images sont générées par ce dépôt (CC0). La police est une famille
+//! système courante, en noir sur blanc. Aucune image tiers n'est distribuée.
 
 use image::DynamicImage;
 use rgaa_analysis_images::svg::rasteriser;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const TEXTES: &[&str] = &[
+const TEXTES_FR: &[&str] = &[
     "SOLDES D'ÉTÉ -50% DANS TOUS LES RAYONS",
     "ÉTÉ 2026 : VACANCES À LA MER",
     "Le café est très chaud ce matin",
@@ -44,6 +43,42 @@ const TEXTES: &[&str] = &[
     "DÎNER DE GALA LE 12 DÉCEMBRE",
 ];
 
+/// Cinq phrases anglaises, sans aucun accent : contrôle du banc lui-même.
+const TEXTES_EN: &[&str] = &[
+    "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG",
+    "PLEASE SEND THE REPORT BEFORE FRIDAY AFTERNOON",
+    "THE MEETING ROOM IS ON THE SECOND FLOOR",
+    "WE SELL FRESH COFFEE AND HOT CROISSANTS DAILY",
+    "THIS PRODUCT COMES WITH A TWO YEAR WARRANTY",
+];
+
+/// Réglage de rendu unique pour les deux bancs (modifié ensemble).
+struct Rendu {
+    famille: &'static str,
+    taille: u32,
+    largeur: u32,
+    hauteur: u32,
+    ligne_de_base: u32,
+}
+
+const RENDU: Rendu = Rendu {
+    famille: "Liberation Serif, DejaVu Serif, serif",
+    taille: 40,
+    largeur: 1280,
+    hauteur: 128,
+    ligne_de_base: 88,
+};
+
+/// Réglage d'origine du banc (sans empattement, 32 px) : conservé pour
+/// reproduire la mesure de référence avant correction du rendu.
+const RENDU_BASELINE: Rendu = Rendu {
+    famille: "Liberation Sans, DejaVu Sans, sans-serif",
+    taille: 32,
+    largeur: 768,
+    hauteur: 96,
+    ligne_de_base: 60,
+};
+
 fn echapper(xml: &str) -> String {
     xml.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -51,22 +86,40 @@ fn echapper(xml: &str) -> String {
 }
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let dossier = std::env::args_os()
-        .nth(1)
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let controle = arguments.iter().any(|arg| arg == "--control");
+    let rendu = if arguments.iter().any(|arg| arg == "--legacy") {
+        &RENDU_BASELINE
+    } else {
+        &RENDU
+    };
+    let (textes, dossier_defaut) = if controle {
+        (TEXTES_EN, "tests/fixtures/ocr-control-en")
+    } else {
+        (TEXTES_FR, "tests/fixtures/ocr-fr")
+    };
+    let dossier = arguments
+        .iter()
+        .find(|arg| arg != &"--control" && arg != &"--legacy")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-fr"));
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(dossier_defaut));
     fs::create_dir_all(&dossier)?;
-    let mut verite: Vec<serde_json::Value> = Vec::with_capacity(TEXTES.len());
-    for (index, texte) in TEXTES.iter().enumerate() {
+    let mut verite: Vec<serde_json::Value> = Vec::with_capacity(textes.len());
+    for (index, texte) in textes.iter().enumerate() {
         let svg = format!(
-            r##"<svg xmlns="http://www.w3.org/2000/svg" width="768" height="96">
-                <rect width="768" height="96" fill="#ffffff"/>
-                <text x="14" y="60" font-family="Liberation Sans, DejaVu Sans, sans-serif"
-                      font-size="32" fill="#000000">{}</text>
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="{largeur}" height="{hauteur}">
+                <rect width="{largeur}" height="{hauteur}" fill="#ffffff"/>
+                <text x="16" y="{base}" font-family="{famille}"
+                      font-size="{taille}" fill="#000000">{texte}</text>
             </svg>"##,
-            echapper(texte)
+            largeur = rendu.largeur,
+            hauteur = rendu.hauteur,
+            base = rendu.ligne_de_base,
+            famille = rendu.famille,
+            taille = rendu.taille,
+            texte = echapper(texte),
         );
-        let image: DynamicImage = rasteriser(svg.as_bytes(), 768)?;
+        let image: DynamicImage = rasteriser(svg.as_bytes(), rendu.largeur)?;
         let fichier = format!("{:02}.png", index + 1);
         image.save(Path::new(&dossier).join(&fichier))?;
         verite.push(serde_json::json!({ "fichier": fichier, "texte": texte }));
@@ -77,7 +130,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     )?;
     println!(
         "{} images générées dans {}",
-        TEXTES.len(),
+        textes.len(),
         dossier.display()
     );
     Ok(())

@@ -17,13 +17,15 @@ fastembed = { version = "7.7", default-features = false, features = ["onnx", "im
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 image_hasher = "3.1"
 indexmap = { workspace = true }
+oar-ocr = "0.11"
 ocrs = "0.14"
 resvg = "0.50"
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
-rten = { version = "0.28", features = ["rten_format"] }
+rten = "0.28"
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 tracing = { workspace = true }
 usvg = "0.50"
 

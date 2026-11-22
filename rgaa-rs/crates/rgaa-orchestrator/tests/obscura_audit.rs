@@ -18,6 +18,7 @@ async fn test_run_batch_obscura() {
         max_depth: 0,
         respect_robots: false,
         sample_mode: false,
+        audit_type: rgaa_core::AuditType::Complet,
     };
 
     let urls = vec!["https://example.com".to_string()];

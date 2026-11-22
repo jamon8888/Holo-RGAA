@@ -23,7 +23,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use rgaa_core::{AuditResult, CrawlConfig};
+use rgaa_core::{AuditResult, AuditType, CrawlConfig};
 use rgaa_orchestrator::Orchestrator;
 
 /// How long a batch stays readable after creation. Batch records hold every
@@ -446,6 +446,9 @@ impl BatchService {
 #[derive(Deserialize)]
 pub struct CreateBatchRequest {
     pub urls: Vec<String>,
+    /// Scope for every URL in the batch; overrides `config.audit_type`.
+    #[serde(default)]
+    pub audit_type: Option<AuditType>,
     #[serde(default)]
     pub config: Option<CrawlConfig>,
 }
@@ -522,10 +525,14 @@ pub async fn create_batch(
         tracing::warn!(error = %e, "expired batch purge failed; expiry still enforced on read");
     }
 
+    let mut config = payload.config.unwrap_or_default();
+    if let Some(audit_type) = payload.audit_type {
+        config.audit_type = audit_type;
+    }
     let record = BatchRecord::new(
         uuid::Uuid::new_v4().to_string(),
         payload.urls.clone(),
-        payload.config.unwrap_or_default(),
+        config,
         now,
     );
 

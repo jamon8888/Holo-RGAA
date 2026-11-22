@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use rgaa_core::CrawlConfig;
+use rgaa_core::{AuditType, CrawlConfig};
 use rgaa_orchestrator::Orchestrator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -426,6 +426,7 @@ pub trait AuditOrchestrationService: Send + Sync {
         &self,
         url: &str,
         config: &CrawlConfig,
+        audit_type: AuditType,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
     >;
@@ -603,11 +604,13 @@ impl AuditOrchestrationService for OrchestrationService {
         &self,
         url: &str,
         config: &CrawlConfig,
+        audit_type: AuditType,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
     > {
         let url = url.to_string();
-        let config = config.clone();
+        let mut config = config.clone();
+        config.audit_type = audit_type;
         Box::pin(async move { self.orchestrator.run_crawl_and_audit(&url, &config).await })
     }
 }
@@ -805,7 +808,7 @@ impl ToolServer {
 
     #[tool(
         name = "audit_url",
-        description = "Run a full RGAA audit on a URL using the orchestrator pipeline. Returns a summary (taux_global, etat_conformite) and sampled_page_urls. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
+        description = "Run an RGAA audit on a URL using the orchestrator pipeline. `audit_type` selects the scope: rapide (25 criteria), complementaire (50) or complet (106, the default). Only in-scope criteria are evaluated — a rapide audit makes no LLM call for the other 81. Returns a summary (audit_type, taux_global, etat_conformite) and sampled_page_urls. A rapide audit never yields a conformity declaration. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
     )]
     pub async fn audit_url(
         &self,
@@ -815,7 +818,7 @@ impl ToolServer {
         let config = input.config.unwrap_or_default().into();
         let result = self
             .audit_service
-            .run_audit(&input.url, &config)
+            .run_audit(&input.url, &config, input.audit_type)
             .await
             .map_err(|e| McpFailure::execution(e).into_error_data())?;
         Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(

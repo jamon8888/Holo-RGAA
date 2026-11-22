@@ -1,4 +1,5 @@
 pub mod audit_bundle;
+pub mod audit_type;
 pub mod catalog;
 pub mod checkpoints;
 pub mod citations;
@@ -17,6 +18,7 @@ pub mod test_plan;
 pub mod types;
 
 pub use audit_bundle::*;
+pub use audit_type::AuditType;
 pub use catalog::RgaaCatalog;
 pub use checkpoints::*;
 pub use citations::Citation;

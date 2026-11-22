@@ -326,6 +326,7 @@ fn build_outline(headings: &[(u16, String, usize, f32)]) -> Outline {
 /// Fails, like [`crate::render_declaration_fr`], when no feedback destination
 /// exists.
 pub fn declaration_fr_blocks(input: &DeclarationFrInput) -> Result<Vec<Block>, ReportError> {
+    crate::refuse_partial_declaration(input.audit_type)?;
     let destination = crate::guard::destination_contact(input.contact).ok_or_else(|| {
         ReportError::invalid_input(
             "destination du contact de retour d'information manquante".to_string(),
@@ -334,6 +335,11 @@ pub fn declaration_fr_blocks(input: &DeclarationFrInput) -> Result<Vec<Block>, R
     let m = input.metrics;
     let mut out = vec![
         Block::Title("Déclaration d'accessibilité".into()),
+        Block::Paragraph(format!(
+            "Type d'audit : {} ({} critères).",
+            input.audit_type.label(),
+            input.audit_type.count()
+        )),
         Block::Heading(2, "1. Engagement".into()),
         Block::Paragraph(format!(
             "{} s'engage à rendre son service {} accessible conformément à l'article 47 de la loi n° 2005-102 du 11 février 2005.",
@@ -437,7 +443,7 @@ mod tests {
     use super::*;
     use crate::guard::{Contact, ContenuNonSoumis, Derogation, PageEchantillon};
     use crate::{compute_metrics, NcEntry, SiteMetrics, RGAA_41};
-    use rgaa_core::{Classification, CriterionResult, CriterionStatus};
+    use rgaa_core::{AuditType, Classification, CriterionResult, CriterionStatus};
 
     /// Any font that carries the French accents will do; the crate ships none.
     /// A missing font fails loudly: skipping would let these tests pass on a
@@ -512,6 +518,7 @@ mod tests {
         let technologies = vec!["HTML5".to_string()];
         let pages: Vec<PageEchantillon> = Vec::new();
         declaration_fr_blocks(&DeclarationFrInput {
+            audit_type: AuditType::Complet,
             service: "Service Client",
             organisme: "Ministère Exemple",
             metrics: &metrics,

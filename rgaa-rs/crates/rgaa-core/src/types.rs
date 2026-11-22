@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::AuditType;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Classification {
     Deterministe,
@@ -316,6 +318,10 @@ pub struct AuditResult {
     /// True only after every page and criterion passes the completion gate.
     #[serde(default)]
     pub audit_complete: bool,
+    /// Scope of the audit. Persisted results written before this field existed
+    /// are full 106-criterion audits.
+    #[serde(default)]
+    pub audit_type: AuditType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,6 +330,9 @@ pub struct CrawlConfig {
     pub max_depth: u32,
     pub respect_robots: bool,
     pub sample_mode: bool,
+    /// Which criteria the orchestrator is allowed to evaluate.
+    #[serde(default)]
+    pub audit_type: AuditType,
 }
 
 impl Default for CrawlConfig {
@@ -333,6 +342,7 @@ impl Default for CrawlConfig {
             max_depth: 5,
             respect_robots: true,
             sample_mode: true,
+            audit_type: AuditType::Complet,
         }
     }
 }

@@ -6,7 +6,7 @@
 
 use std::fmt::Write;
 
-use rgaa_core::Finding;
+use rgaa_core::{AuditType, Finding};
 
 use crate::guard::{Contact, ContenuNonSoumis, Derogation, PageEchantillon};
 use crate::packs::{etat_fr, RECOURS_FR};
@@ -149,6 +149,9 @@ impl NcEntry {
 
 /// Everything the French template needs, nothing it doesn't.
 pub struct DeclarationFrInput<'a> {
+    /// Scope the declaration would be based on. A rapide audit is partial and
+    /// can never produce a conformity declaration.
+    pub audit_type: AuditType,
     pub service: &'a str,
     pub organisme: &'a str,
     pub metrics: &'a SiteMetrics,
@@ -187,10 +190,33 @@ fn lien_sur(url: &str, texte: &str) -> String {
     }
 }
 
+/// Refuse to render a conformity declaration from a partial audit.
+///
+/// A *rapide* audit checks 25 of 106 criteria and a *complémentaire* 50: any
+/// "conforme" statement drawn from either would be a claim the measurement
+/// cannot support (#428). The caller still gets the audit report, which says
+/// "audit partiel, ne vaut pas déclaration de conformité".
+///
+/// # Errors
+///
+/// Returns [`ReportError::InvalidInput`] for a scope that cannot support a
+/// declaration.
+pub fn refuse_partial_declaration(audit_type: AuditType) -> Result<(), ReportError> {
+    if audit_type.allows_conformity_declaration() {
+        Ok(())
+    } else {
+        Err(ReportError::invalid_input(format!(
+            "audit {} : audit partiel, aucune déclaration de conformité ne peut être produite",
+            audit_type.as_str()
+        )))
+    }
+}
+
 /// Renders the French declaration, ready to publish on `/accessibilite`.
 /// Fails when no feedback destination exists: a declaration without
-/// feedback is invalid on its face.
+/// feedback is invalid on its face. Also fails for a partial audit scope.
 pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, ReportError> {
+    refuse_partial_declaration(input.audit_type)?;
     let destination = crate::guard::destination_contact(input.contact).ok_or_else(|| {
         ReportError::invalid_input(
             "destination du contact de retour d'information manquante".to_string(),
@@ -207,6 +233,12 @@ pub fn render_declaration_fr(input: &DeclarationFrInput) -> Result<String, Repor
     );
     let _ = writeln!(out, "<body><main>");
     let _ = writeln!(out, "<h1>Déclaration d'accessibilité</h1>");
+    let _ = writeln!(
+        out,
+        "<p>Type d'audit : {} ({} critères).</p>",
+        echappe(input.audit_type.label()),
+        input.audit_type.count()
+    );
 
     let _ = writeln!(out, "<h2>1. Engagement</h2>");
     let _ = writeln!(
@@ -367,6 +399,7 @@ mod tests {
         static TECHNOLOGIES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
         static PAGES: std::sync::OnceLock<Vec<PageEchantillon>> = std::sync::OnceLock::new();
         DeclarationFrInput {
+            audit_type: AuditType::Complet,
             service: "Service Client",
             organisme: "Ministère Exemple",
             metrics,
@@ -504,6 +537,28 @@ mod tests {
     /// #203 recommendation 4, at the surface that matters: the published declaration is
     /// the document a client is handed, and it used to state the rate with no coverage
     /// beside it. Sourcery flagged on #209 that the new helpers were never wired in.
+    /// #428: a 25-criteria audit is a partial measurement, never a claim.
+    #[test]
+    fn partial_audits_cannot_produce_a_conformity_declaration() {
+        let metrics = metrics_80();
+        let contact = Contact {
+            canal: "email".into(),
+            email: Some("accessibilite@example.test".into()),
+            telephone: None,
+            formulaire: None,
+            delai_reponse: None,
+        };
+        for partial in [AuditType::Rapide, AuditType::Complementaire] {
+            let mut declaration = input(&metrics, &[], &contact);
+            declaration.audit_type = partial;
+            let error = render_declaration_fr(&declaration)
+                .expect_err("partial audits must never yield a conformity declaration");
+            assert!(error.to_string().contains("audit partiel"), "{error}");
+            assert!(refuse_partial_declaration(partial).is_err());
+        }
+        assert!(refuse_partial_declaration(AuditType::Complet).is_ok());
+    }
+
     #[test]
     fn the_declaration_never_publishes_a_rate_without_its_coverage() {
         let html = render_for_test();

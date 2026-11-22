@@ -23,6 +23,15 @@ fn render_markdown(bundle: &AuditBundle) -> String {
     let _ = writeln!(out, "# RGAA Audit Report: {}", bundle.audit_id);
     let _ = writeln!(out);
     let _ = writeln!(out, "- URL: {}", bundle.url);
+    let _ = writeln!(
+        out,
+        "- Audit type: {} ({} criteria)",
+        bundle.config.audit_type.label(),
+        bundle.config.audit_type.count()
+    );
+    if let Some(notice) = bundle.config.audit_type.partial_notice() {
+        let _ = writeln!(out, "- Mention : {notice}");
+    }
     let _ = writeln!(out, "- Schema: {}", bundle.schema_version);
     let _ = writeln!(
         out,
@@ -464,6 +473,41 @@ mod tests {
         let output = render(&bundle, ReportFormat::Json).expect("json");
         let decoded: AuditBundle = serde_json::from_str(&output).expect("valid bundle");
         assert_eq!(decoded.audit_id, "audit-1");
+    }
+
+    /// #428: a partial audit's report states its scope instead of implying a
+    /// full 106-criterion conformance claim.
+    #[test]
+    fn reports_name_the_audit_type() {
+        use rgaa_core::AuditType;
+
+        for (scope, label, count) in [
+            (AuditType::Rapide, "Audit rapide", 25),
+            (AuditType::Complementaire, "Audit complémentaire", 50),
+        ] {
+            let mut bundle = sample_bundle();
+            bundle.config.audit_type = scope;
+            let markdown = render_markdown(&bundle);
+            assert!(
+                markdown.contains(&format!("- Audit type: {label} ({count} criteria)")),
+                "{markdown}"
+            );
+            assert!(
+                markdown
+                    .contains("- Mention : audit partiel, ne vaut pas déclaration de conformité"),
+                "{markdown}"
+            );
+
+            let html = html::generate_html_report(&bundle);
+            assert!(
+                html.contains(&format!("{label} ({count} critères)")),
+                "{html}"
+            );
+            assert!(
+                html.contains("audit partiel, ne vaut pas déclaration de conformité"),
+                "{html}"
+            );
+        }
     }
 
     #[test]

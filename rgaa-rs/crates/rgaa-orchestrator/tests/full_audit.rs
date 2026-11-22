@@ -14,6 +14,7 @@ async fn test_full_audit_example_com() {
         max_depth: 0,
         respect_robots: false,
         sample_mode: false,
+        audit_type: rgaa_core::AuditType::Complet,
     };
 
     let orchestrator = Orchestrator::new();

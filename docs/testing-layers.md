@@ -14,10 +14,22 @@ Les quatre premières sont inconditionnelles : aucune variable de dépôt, aucun
 secret à provisionner.
 
 La cinquième reste conditionnée à `vars.MYIA_E2E_ENABLED == 'true'` et au secret
-`MYIA_API_KEY`, ni l'un ni l'autre défini à ce jour. Ses trois tests
-(`full_audit`, `obscura_audit`, `fixture_classification`) traversent le pipeline
-complet et ont réellement besoin d'une clé LLM : **ils ne sont donc pas
-vérifiés**, et ne le seront pas avant que la variable et le secret existent.
+`MYIA_API_KEY`, ni l'un ni l'autre défini à ce jour. Ses deux tests
+(`full_audit`, `obscura_audit`) traversent le pipeline complet et ont réellement
+besoin d'une clé LLM : **ils ne sont donc pas vérifiés**, et ne le seront pas
+avant que la variable et le secret existent.
+
+`fixture_classification` (`rgaa-orchestrator`) vivait aussi dans ce job, sans
+avoir besoin de clé : il ne lit qu'Obscura et le CDN d'axe-core. Il classe sous
+Obscura les fixtures `-pass`/`-fail` de chaque mécanisme **à portée d'une page**
+non hérité du registre
+(`mechanisms.toml`, spec `criteria-coverage-expansion` §4, #261). Les mécanismes
+`site` (12.1, 12.2, 12.4, 12.5) n'y passent pas : ils comparent plusieurs pages
+d'un crawl, pas une page isolée. Leur logique de comparaison est couverte par les
+tests unitaires de `rgaa-orchestrator/src/site_comparison.rs`, sur des observations
+synthétiques ; **leurs fichiers de fixtures (`12.x-site-*-pass|fail.html`) ne sont
+classés par aucun test aujourd'hui**. Il tourne
+désormais dans `E2E (navigateur)`, sans condition, sur un port CDP éphémère.
 C'est un choix assumé — on ne peut pas provisionner une clé API dans un commit —
 et non un oubli.
 
@@ -44,7 +56,7 @@ couverture automatisée. Deux gardes empilées, et chacune suffisait :
 La garde `MYIA_E2E_ENABLED` / `MYIA_API_KEY` n'avait aucune raison de s'appliquer
 à eux : aucun test de `rgaa-obscura` n'appelle de LLM. Ils payaient un coût
 qu'ils n'avaient pas. Ils vivent désormais dans `E2E (navigateur)`, sans
-condition. Le job gardé par le secret subsiste pour les trois tests qui, eux, en
+condition. Le job gardé par le secret subsiste pour les tests qui, eux, en
 ont besoin — attendre une clé API n'était pas une raison de n'exécuter *rien*.
 
 Un test vert qui n'a rien vérifié est précisément le défaut que cette suite

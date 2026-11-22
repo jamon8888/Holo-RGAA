@@ -29,6 +29,10 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(Box::new(rgaa_analysis_lang::LangPlugin::new()));
     }
+    #[cfg(feature = "plugin-text")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_text::TextPlugin::new()));
+    }
 
     for sidecar in rgaa_analysis::sidecar::discover_default() {
         builder = builder.with(Box::new(sidecar));
@@ -67,9 +71,24 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "plugin-echo"))]
-    fn default_registry_can_be_empty() {
+    #[cfg(feature = "plugin-text")]
+    fn default_registry_contains_the_text_plugin() {
         let registry = default_registry().expect("registry");
-        assert!(registry.is_empty());
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"text"), "{ids:?}");
+        let text = registry.get("text").expect("text plugin");
+        for test in ["6.1.1", "8.6.1", "11.13.1", "12.3.1", "13.4.1"] {
+            assert!(text.tests().contains(&test), "test manquant : {test}");
+        }
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(not(feature = "plugin-echo"))]
+    fn default_registry_has_no_echo_without_the_feature() {
+        let registry = default_registry().expect("registry");
+        assert!(registry.get("echo").is_none());
     }
 }

@@ -7128,6 +7128,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-analysis-layout"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.2",
+ "regex-lite",
+ "rgaa-analysis",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "rgaa-api"
 version = "0.1.0"
 dependencies = [

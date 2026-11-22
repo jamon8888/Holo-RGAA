@@ -50,4 +50,8 @@
 1. **Un seul ONNX Runtime (décision du 2026-11-22).** `sherpa-onnx` embarque son propre ONNX Runtime en C++ : il n'est donc **pas lié** et reste une option sidecar. La VAD Silero tourne sur l'`ort` du workspace, et la transcription passe par `whisper-rs` (ggml, sans ONNX) ou par le sidecar `whisper.cpp`. **Une seule version d'`ort`.** `oar-ocr`, `fastembed` et `sherpa-onnx` (qui embarque son propre runtime ONNX en C) peuvent tirer des runtimes différents. Le ticket P-00 vérifie avec `cargo tree -d` qu'un seul `ort` est compilé. Il mesure aussi la taille du binaire avec `plugins-all`.
 2. **Montée de `fastembed` de 4.0 à 7.7** dans le workspace : elle touche `rgaa-agent` (RAG). C'est un ticket séparé, à faire avant P-03 et P-08.
 3. **GPL.** `alass` et certains builds de `ffmpeg` sont en GPL. Ils ne sont **jamais liés** : uniquement en sidecar, installés par le client, et la licence est affichée par `rgaa plugins list`.
-4. **Précision OCR en français.** Le banc d'essai de P-03 §2 compare `oar-ocr`, `ocrs` et `tesseract` sur 30 images du corpus. Celui qui fait le moins d'erreurs de caractères devient le défaut.
+4. **Précision OCR en français : mesurée le 2026-11-22 (PR #474).** Banc de 30 images françaises accentuées et de 5 images de contrôle en anglais (Liberation Serif 40 px, noir sur blanc). Taux d'erreur de caractères :
+   - `ocrs` : 0,009 en anglais, 0,086 en français ;
+   - `oar-ocr` : 0,000 en anglais, **0,001 en français**.
+
+   **`oar-ocr` est le moteur par défaut** (réglage `[analysis.images].ocr_engine` dans `rgaa.toml`) et partage avec fastembed le même `ort` 2.0.0-rc.15. Le premier essai donnait un taux de 1,046 : les images de test étaient mal rendues et les modèles `.rten` récupérés sur Hugging Face étaient incompatibles. On utilise désormais les fichiers ONNX officiels d'`ocrs-cli`. `tesseract` n'a pas été comparé, faute d'être installé sur la machine de mesure.

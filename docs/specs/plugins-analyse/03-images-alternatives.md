@@ -14,7 +14,7 @@ Ce sont les critères les plus fréquents d'un audit, et ils reposent tous sur H
 
 | Crate | Version | Usage |
 |-------|---------|-------|
-| `oar-ocr` | 0.11.x | **OCR par défaut pressenti** : modèles PaddleOCR multilingues (latin, français compris) sur `ort` |
+| `oar-ocr` | 0.11.x | **OCR par défaut** (taux d'erreur de caractères de 0,001 sur le banc français, PR #474) : modèles PaddleOCR multilingues sur `ort` |
 | `ocrs` + `rten` | 0.14.x / 0.28.x | OCR léger en pur Rust (détection + reconnaissance), modèles `.rten`, sans ONNX Runtime |
 | `fastembed` | ≥ 4 (déjà au workspace ; 7.7 disponible) | CLIP ViT-B/32 : plongements image (`ImageEmbedding`) et texte, similarité cosinus `alt` ↔ image, zéro-shot « décorative / icône / photo / graphique / texte » |
 | `image_hasher` | 3.1.x | pHash : dédoublonner les images entre pages, cache des décisions de revue |

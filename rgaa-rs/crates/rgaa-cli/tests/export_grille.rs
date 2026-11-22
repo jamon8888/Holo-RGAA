@@ -36,6 +36,7 @@ fn result(id: &str, status: CriterionStatus, verified: Option<CriterionStatus>) 
 fn audit() -> AuditResult {
     AuditResult {
         audit_id: "audit-1".into(),
+        audit_type: rgaa_core::AuditType::Complet,
         url: "https://example.test".into(),
         pages: vec![
             PageResult {

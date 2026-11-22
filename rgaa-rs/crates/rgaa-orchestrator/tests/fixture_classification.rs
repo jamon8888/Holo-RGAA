@@ -258,9 +258,14 @@ async fn registry_fixtures_are_classified_under_obscura() {
     let bridge = Arc::new(bridge);
 
     let url_of = |c: &Case| format!("http://127.0.0.1:{port}/{}.html", c.fixture);
-    let urls: Vec<String> = cases.iter().map(url_of).collect();
+    // Several mechanisms may name the same fixture (probe-13-9 and
+    // probe-13-9-orientation-render): each page is evaluated once and its result read
+    // by every case that names it.
+    let mut urls: Vec<String> = cases.iter().map(url_of).collect();
+    urls.sort();
+    urls.dedup();
 
-    let mut axe_by_url = bridge
+    let axe_by_url = bridge
         .clone()
         .run_axe_batch(urls.clone(), 1)
         .await
@@ -269,14 +274,14 @@ async fn registry_fixtures_are_classified_under_obscura() {
         .iter()
         .map(|(k, v)| (k.clone(), (*v).to_string()))
         .collect();
-    let mut gap_by_url = ObscuraBridge::run_gap_fix_batch(binary, urls, snippets, 1)
+    let gap_by_url = ObscuraBridge::run_gap_fix_batch(binary, urls, snippets, 1)
         .await
         .expect("gap-fix batch");
 
     let mut wrong = Vec::new();
     for case in &cases {
         let url = url_of(case);
-        let Some(axe_json) = axe_by_url.remove(&url) else {
+        let Some(axe_json) = axe_by_url.get(&url).cloned() else {
             wrong.push(format!(
                 "{} / {}: axe batch returned no result for {url}",
                 case.mechanism, case.fixture
@@ -305,7 +310,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
             }
             Err(error) => evidence.push(format!("axe parse error: {error}; raw: {axe_json}")),
         }
-        let Some(gap_js) = gap_by_url.remove(&url) else {
+        let Some(gap_js) = gap_by_url.get(&url).cloned() else {
             wrong.push(format!(
                 "{} / {}: gap-fix batch returned no result for {url}",
                 case.mechanism, case.fixture
@@ -350,6 +355,9 @@ async fn registry_fixtures_are_classified_under_obscura() {
                     };
                     evidence.push(format!("script-hook: {finding:?}"));
                     if let Some(finding) = finding {
+                        // The dedicated observation is this mechanism's own verdict;
+                        // it supersedes the generic gap-fix answer on the criterion.
+                        own_status = Some(finding.status.clone());
                         statuses.push(finding.status);
                     }
                 }
@@ -371,6 +379,9 @@ async fn registry_fixtures_are_classified_under_obscura() {
                         rgaa_rules::script_hooks::parse_orientation_observation(&snapshots);
                     evidence.push(format!("orientation: {finding:?}"));
                     if let Some(finding) = finding {
+                        // The dedicated observation is this mechanism's own verdict;
+                        // it supersedes the generic gap-fix answer on the criterion.
+                        own_status = Some(finding.status.clone());
                         statuses.push(finding.status);
                     }
                 }
@@ -393,6 +404,9 @@ async fn registry_fixtures_are_classified_under_obscura() {
                     let finding = rgaa_rules::script_hooks::parse_motion_observation(&observation);
                     evidence.push(format!("motion: {finding:?}"));
                     if let Some(finding) = finding {
+                        // The dedicated observation is this mechanism's own verdict;
+                        // it supersedes the generic gap-fix answer on the criterion.
+                        own_status = Some(finding.status.clone());
                         statuses.push(finding.status);
                     }
                 }

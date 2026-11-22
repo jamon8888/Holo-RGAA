@@ -664,7 +664,8 @@ pub struct Orchestrator {
 #[derive(Debug, Clone)]
 pub enum AuditEvent {
     Phase(AuditPhase),
-    Done(Result<AuditResult, String>),
+    /// Boxed: an `AuditResult` dwarfs every other variant.
+    Done(Box<Result<AuditResult, String>>),
 }
 
 impl Default for Orchestrator {

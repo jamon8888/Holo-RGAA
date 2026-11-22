@@ -467,6 +467,35 @@ async fn call_tool(server: &ToolServer, params: CallToolRequestParams) -> Result
                 ErrorData::internal_error(format!("serialize lint_static response: {e}"), None)
             })?
         }
+        "get_test_methodology" => {
+            let req: rgaa_mcp::GetTestMethodologyRequest = parse_args(name, arguments)?;
+            let McpJson(resp) = server.get_test_methodology(Parameters(req))?;
+            serde_json::to_value(resp).map_err(|e| {
+                ErrorData::internal_error(
+                    format!("serialize get_test_methodology response: {e}"),
+                    None,
+                )
+            })?
+        }
+        "list_analysis_plugins" => {
+            let McpJson(resp) = server.list_analysis_plugins()?;
+            serde_json::to_value(resp).map_err(|e| {
+                ErrorData::internal_error(
+                    format!("serialize list_analysis_plugins response: {e}"),
+                    None,
+                )
+            })?
+        }
+        "run_analysis_plugin" => {
+            let req: rgaa_mcp::RunAnalysisPluginInput = parse_args(name, arguments)?;
+            let McpJson(resp) = server.run_analysis_plugin(Parameters(req)).await?;
+            serde_json::to_value(resp).map_err(|e| {
+                ErrorData::internal_error(
+                    format!("serialize run_analysis_plugin response: {e}"),
+                    None,
+                )
+            })?
+        }
         other => {
             return Err(ErrorData::invalid_params(
                 format!("unknown tool: {other}"),

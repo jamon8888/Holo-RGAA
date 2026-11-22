@@ -7,9 +7,10 @@ description: Référence des 106 critères RGAA 4.1.2 — numéro, intitulé off
 
 # criteria — référentiel RGAA 4.1.2
 
-Intitulés : texte officiel du RGAA 4.1.2 (DINUM), sans les liens du glossaire. Pour le détail des tests
-d'un critère, appeler l'outil MCP `list_criteria` ou lire la méthode officielle
-(https://accessibilite.numerique.gouv.fr/methode/criteres-et-tests/).
+Intitulés : texte officiel du RGAA 4.1.2 (DINUM), sans les liens du glossaire. Pour la méthode
+officielle d'un test, appeler l'outil MCP `get_test_methodology` avec la clé du test (ex. `1.2.3`) :
+il retourne la méthode du RGAA, tirée de `RGAA/methodologies.json` (DISIC/
+accessibilite.numerique.gouv.fr, commit épinglé).
 
 **Moteur** : qui porte le verdict dans Holo-RGAA (`engine_plan.json`). Le moteur ne dit pas le
 niveau d'automatisation de chaque test : un test *Assisté* rend toujours `review` (la machine

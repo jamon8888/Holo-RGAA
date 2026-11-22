@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AuditResult, CheckpointResult, CrawlConfig, CriterionResult, CriterionStatus, Finding,
-    PageError, RgaaError, Violation,
+    AuditResult, AuditType, CheckpointResult, CrawlConfig, CriterionResult, CriterionStatus,
+    Finding, NonConformity, PageError, RgaaError, UserImpact, Violation,
 };
 
 pub const CURRENT_SCHEMA_VERSION: &str = "1.0";
@@ -15,6 +15,9 @@ pub struct AuditConfig {
     pub max_depth: u32,
     pub respect_robots: bool,
     pub sample_mode: bool,
+    /// Scope carried into reports; absent on older bundles means full audit.
+    #[serde(default)]
+    pub audit_type: AuditType,
 }
 
 impl Default for AuditConfig {
@@ -24,6 +27,7 @@ impl Default for AuditConfig {
             max_depth: 5,
             respect_robots: true,
             sample_mode: false,
+            audit_type: AuditType::Complet,
         }
     }
 }
@@ -64,9 +68,19 @@ pub struct AuditBundle {
     /// `None` means the source bundle predates this field or did not report it.
     #[serde(default)]
     pub audit_complete: Option<bool>,
+    /// Browser that actually ran the audit (e.g. `Obscura`, `Chrome via Claude
+    /// for Chrome`). The declaration uses it to name the audit environment
+    /// without a human having to declare it. `None` on bundles that predate
+    /// this field.
+    #[serde(default)]
+    pub navigateur_audit: Option<String>,
     pub config: AuditConfig,
     pub pages: Vec<PageAudit>,
     pub findings: Vec<Finding>,
+    /// Non-conformités, several per criterion and per page (Ara
+    /// `NotCompliantItem`). Empty on bundles that predate the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub non_conformities: Vec<NonConformity>,
     pub checkpoints: Vec<CheckpointResult>,
     pub summary: AuditSummary,
 }
@@ -78,12 +92,66 @@ impl AuditBundle {
             audit_id: audit_id.into(),
             url: url.into(),
             audit_complete: None,
+            navigateur_audit: None,
             config,
             pages: Vec::new(),
             findings: Vec::new(),
+            non_conformities: Vec::new(),
             checkpoints: Vec::new(),
             summary: AuditSummary::default(),
         }
+    }
+
+    /// Looks up a non-conformity by its stable identifier.
+    #[must_use]
+    pub fn non_conformity(&self, id: &str) -> Option<&NonConformity> {
+        self.non_conformities.iter().find(|item| item.id == id)
+    }
+
+    /// Records a machine impact proposal on a non-conformity. The value stays
+    /// a proposition and never becomes an authoritative impact (R3).
+    ///
+    /// # Errors
+    /// Returns [`RgaaError::NonConformityNotFound`] when `id` is unknown.
+    pub fn propose_impact(&mut self, id: &str, impact: UserImpact) -> Result<(), RgaaError> {
+        let item = self
+            .non_conformities
+            .iter_mut()
+            .find(|item| item.id == id)
+            .ok_or_else(|| RgaaError::NonConformityNotFound(id.to_owned()))?;
+        item.set_proposed_impact(impact);
+        Ok(())
+    }
+
+    /// Records a human decision setting the impact and quick-win flag of one
+    /// non-conformity (R5). Only a caller holding a reviewer identity can do
+    /// this; no machine tool writes these fields.
+    ///
+    /// # Errors
+    /// Returns [`RgaaError::NonConformityNotFound`] when `id` is unknown, or
+    /// [`RgaaError::MissingField`] when the author or timestamp is empty.
+    pub fn record_impact_review(
+        &mut self,
+        id: &str,
+        impact: UserImpact,
+        quick_win: bool,
+        author: &str,
+        reviewed_at: &str,
+    ) -> Result<(), RgaaError> {
+        let item = self
+            .non_conformities
+            .iter_mut()
+            .find(|item| item.id == id)
+            .ok_or_else(|| RgaaError::NonConformityNotFound(id.to_owned()))?;
+        item.record_review(impact, quick_win, author, reviewed_at)
+    }
+
+    /// Records the browser that ran the audit, so the declaration can name
+    /// the audit environment automatically.
+    #[must_use]
+    pub fn avec_navigateur_audit(mut self, navigateur: impl Into<String>) -> Self {
+        self.navigateur_audit = Some(navigateur.into());
+        self
     }
 
     /// Validates identifiers, statuses, finding uniqueness, and evidence completeness.
@@ -196,6 +264,7 @@ impl From<&CrawlConfig> for AuditConfig {
             max_depth: crawl.max_depth,
             respect_robots: crawl.respect_robots,
             sample_mode: crawl.sample_mode,
+            audit_type: crawl.audit_type,
         }
     }
 }
@@ -261,9 +330,14 @@ impl From<AuditResult> for AuditBundle {
             audit_id: result.audit_id,
             url: result.url,
             audit_complete: Some(result.audit_complete),
-            config: AuditConfig::default(),
+            navigateur_audit: None,
+            config: AuditConfig {
+                audit_type: result.audit_type,
+                ..AuditConfig::default()
+            },
             pages: page_audits,
             findings,
+            non_conformities: Vec::new(),
             checkpoints: Vec::new(),
             summary: AuditSummary {
                 total_pages: page_count,
@@ -320,6 +394,22 @@ mod tests {
             .remove("audit_complete");
         let legacy: AuditBundle = serde_json::from_value(legacy_json).unwrap();
         assert_eq!(legacy.audit_complete, None);
+    }
+
+    #[test]
+    fn bundle_enregistre_le_navigateur_utilise_et_reste_lisible_sans_lui() {
+        let bundle = AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        assert_eq!(bundle.navigateur_audit, None);
+
+        let bundle = bundle.avec_navigateur_audit("Obscura");
+        let json = serde_json::to_string(&bundle).unwrap();
+        let decoded: AuditBundle = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.navigateur_audit.as_deref(), Some("Obscura"));
+
+        let mut legacy: serde_json::Value = serde_json::from_str(&json).unwrap();
+        legacy.as_object_mut().unwrap().remove("navigateur_audit");
+        let legacy: AuditBundle = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.navigateur_audit, None);
     }
 
     #[test]
@@ -465,6 +555,7 @@ mod tests {
             etat_conformite: "partielle".into(),
             duration_ms: 1000,
             audit_complete: false,
+            audit_type: AuditType::Complet,
         }
     }
 
@@ -508,11 +599,13 @@ mod tests {
             max_depth: 3,
             respect_robots: false,
             sample_mode: true,
+            audit_type: AuditType::Rapide,
         };
         let config = AuditConfig::from(&crawl);
         assert_eq!(config.max_pages, 25);
         assert_eq!(config.max_depth, 3);
         assert!(!config.respect_robots);
         assert!(config.sample_mode);
+        assert_eq!(config.audit_type, AuditType::Rapide);
     }
 }

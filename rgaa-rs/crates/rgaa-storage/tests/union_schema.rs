@@ -151,5 +151,6 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
         etat_conformite: "partielle".into(),
         duration_ms: 1000,
         audit_complete: false,
+        audit_type: rgaa_core::AuditType::Complet,
     }
 }

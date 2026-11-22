@@ -657,7 +657,6 @@
   "axe_rules": [
    "label",
    "select-name",
-   "input-button-name",
    "form-field-multiple-labels",
    "aria-input-field-name"
   ],

@@ -11,6 +11,7 @@ pub async fn audit(url: Option<String>, output: Option<PathBuf>) -> anyhow::Resu
         max_depth: 3,
         respect_robots: true,
         sample_mode: false,
+        audit_type: rgaa_core::AuditType::Complet,
     };
 
     let orchestrator = rgaa_orchestrator::pipeline::Orchestrator::new();

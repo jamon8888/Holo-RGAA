@@ -207,17 +207,34 @@ mod tests {
 
     #[test]
     fn any_openai_compatible_provider_is_selectable() {
-        for (name, expected_url) in [
-            ("openai", "https://api.openai.com/v1/chat/completions"),
+        // The Souverain refusal of agent-publisher hosts (#440) is exercised
+        // elsewhere; these are Confort routes pointed at their own presets.
+        for (name, base_url, expected_url) in [
+            (
+                "openai",
+                "https://api.openai.com/v1",
+                "https://api.openai.com/v1/chat/completions",
+            ),
             (
                 "openrouter",
+                "https://openrouter.ai/api/v1",
                 "https://openrouter.ai/api/v1/chat/completions",
             ),
-            ("groq", "https://api.groq.com/openai/v1/chat/completions"),
-            ("mistral", "https://api.mistral.ai/v1/chat/completions"),
+            (
+                "groq",
+                "https://api.groq.com/openai/v1",
+                "https://api.groq.com/openai/v1/chat/completions",
+            ),
+            (
+                "mistral",
+                "https://api.mistral.ai/v1",
+                "https://api.mistral.ai/v1/chat/completions",
+            ),
         ] {
             let cfg = BackendConfig::from_env_with(env(&[
                 ("RGAA_LLM_PROVIDER", name),
+                ("RGAA_LLM_MODE", "managed"),
+                ("RGAA_LLM_BASE_URL", base_url),
                 ("RGAA_LLM_API_KEY", "k"),
                 ("RGAA_LLM_MODEL", "m"),
             ]))
@@ -289,6 +306,8 @@ mod tests {
     fn fallback_var_set_wraps_primary_and_secondary() {
         let cfg = BackendConfig::from_env_with(env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "primary-key"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
             ("RGAA_LLM_FALLBACK_PROVIDER", "ollama"),
@@ -334,18 +353,23 @@ mod tests {
     #[test]
     fn no_hardcoded_keys_every_credential_comes_from_env() {
         // Both routes are built purely from the `var` closure — nothing in
-        // `BackendConfig` supplies a credential on its own, so an empty
-        // environment always fails closed rather than silently using some
-        // default key.
-        assert!(
-            BackendConfig::from_env_with(env(&[("RGAA_LLM_FALLBACK_PROVIDER", "ollama")])).is_err()
-        );
+        // `BackendConfig` supplies a credential on its own. An empty
+        // environment is now a valid Souverain `off` config, so select a
+        // provider to check that a hosted route still fails without a key.
+        assert!(BackendConfig::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("RGAA_LLM_MODEL", "m"),
+            ("RGAA_LLM_FALLBACK_PROVIDER", "ollama"),
+        ]))
+        .is_err());
     }
 
     #[test]
     fn debug_never_leaks_a_key() {
         let cfg = BackendConfig::from_env_with(env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "sk-super-secret"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
             ("RGAA_LLM_FALLBACK_PROVIDER", "groq"),

@@ -1,0 +1,14 @@
+# Example sidecar for P-00 acceptance criteria 7 and 8.
+# Relative command paths resolve against this manifest's directory.
+id = "echo-sidecar"
+version = "0.1.0"
+tests = ["1.1.1"]
+commande = ["python3", "-I", "sidecar.py"]
+mode = "persistant"
+timeout_ms = 5000
+licence = "MIT"
+
+[[binaires_requis]]
+nom = "python3"
+version_min = "3.8"
+verif = ["python3", "--version"]

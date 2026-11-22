@@ -96,6 +96,14 @@ _Avoid_ : verdict (réservé à la machine), validation, avis
 Ce que la machine (règle ou modèle) rend sur un test RGAA. Sur un test Assisté, il ne sert qu'à ordonner la file de revue.
 _Avoid_ : décision, jugement
 
+**Impact utilisateur** :
+La gravité qu'une non-conformité fait subir à l'utilisateur : `mineur`, `majeur` ou `bloquant`. C'est le relecteur qui la pose dans sa décision de revue ; une proposition de la machine est affichée comme une proposition et ne devient jamais l'impact retenu (R3).
+_Avoid_ : gravité, sévérité, criticité
+
+**Quick win** :
+Le drapeau d'une non-conformité dont la correction est simple et rapide au regard de son impact utilisateur. Il est posé par le relecteur avec l'impact utilisateur et sert à trier le rapport et le plan de remédiation, après l'impact.
+_Avoid_ : correction facile, quickfix, priorité
+
 ### Analyse
 
 **Plugin d'analyse** :

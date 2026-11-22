@@ -20,7 +20,8 @@ for file in .codex-plugin/plugin.json .mcp.json README.md; do
   require_file "$file"
 done
 
-for skill in audit triage remediate verify report guided-test criteria; do
+for skill in audit triage remediate verify report guided-test criteria \
+             contraste daltonisme images medias mouvement langue structure pertinence; do
   skill_file="$PLUGIN_ROOT/skills/$skill/SKILL.md"
   require_file "skills/$skill/SKILL.md"
   if [[ -f "$skill_file" ]]; then

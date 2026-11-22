@@ -5,8 +5,35 @@ name = "rgaa-mcp"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# No plugin by default: the CLI must be able to build without any analysis
+# plugin (acceptance criterion 1). Downstream crates opt in explicitly.
+default = []
+plugin-echo = ["rgaa-analysis/plugin-echo", "rgaa-plugins/plugin-echo"]
+plugin-contrast = ["rgaa-analysis/plugin-contrast", "rgaa-plugins/plugin-contrast"]
+plugin-colorvision = ["rgaa-analysis/plugin-colorvision", "rgaa-plugins/plugin-colorvision"]
+plugin-images = ["rgaa-analysis/plugin-images", "rgaa-plugins/plugin-images"]
+plugin-media = ["rgaa-analysis/plugin-media", "rgaa-plugins/plugin-media"]
+plugin-motion = ["rgaa-analysis/plugin-motion", "rgaa-plugins/plugin-motion"]
+plugin-lang = ["rgaa-analysis/plugin-lang", "rgaa-plugins/plugin-lang"]
+plugin-layout = ["rgaa-analysis/plugin-layout", "rgaa-plugins/plugin-layout"]
+plugin-text = ["rgaa-analysis/plugin-text", "rgaa-plugins/plugin-text"]
+plugins-all = [
+    "plugin-echo",
+    "plugin-contrast",
+    "plugin-colorvision",
+    "plugin-images",
+    "plugin-media",
+    "plugin-motion",
+    "plugin-lang",
+    "plugin-layout",
+    "plugin-text",
+]
+
 [dependencies]
 dotenvy = { workspace = true }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rgaa-plugins = { path = "../rgaa-plugins", default-features = false }
 rgaa-core = { path = "../rgaa-core" }
 rgaa-linter = { path = "../rgaa-linter" }
 rgaa-obscura = { path = "../rgaa-obscura" }
@@ -22,6 +49,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+# The acceptance tests exercise the echo plugin; enabling it here unifies with
+# the normal dependency during `cargo test -p rgaa-mcp` without forcing it on
+# users of the library.
+rgaa-analysis = { path = "../rgaa-analysis", features = ["plugin-echo"] }
 serde_json = { workspace = true }
 # `test-util` for `#[tokio::test(start_paused = true)]`: the timeout
 # tests advance virtual time instead of sleeping 30 real seconds.

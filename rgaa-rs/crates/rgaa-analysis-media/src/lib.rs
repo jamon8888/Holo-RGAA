@@ -476,6 +476,7 @@ mod tests {
             message: None,
             duree_max_s: None,
             transcription_reference_url: Some(REF_URL.to_owned()),
+            duree_s: None,
         }
     }
 

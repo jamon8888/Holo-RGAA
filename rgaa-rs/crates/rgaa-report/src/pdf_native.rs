@@ -31,7 +31,7 @@ use krilla::tagging::{ContentTag, SpanTag, Tag, TagGroup, TagTree};
 use krilla::text::{Font, TextDirection};
 use krilla::{Document, SerializeSettings};
 
-use crate::declaration::DeclarationFrInput;
+use crate::declaration::{environnements_en_texte, environnements_utilises, DeclarationFrInput};
 use crate::packs::{etat_fr, RECOURS_FR};
 use crate::ReportError;
 
@@ -404,13 +404,15 @@ pub fn declaration_fr_blocks(input: &DeclarationFrInput) -> Result<Vec<Block>, R
         .map(|p| p.page_type.clone())
         .collect::<Vec<_>>()
         .join(", ");
+    let environnements = environnements_utilises(input.navigateur_audit, input.environnements);
+    let environnements_texte = environnements_en_texte(&environnements);
     out.extend([
         Block::Heading(2, "4. Établissement de cette déclaration".into()),
         Block::Paragraph(format!(
-            "Déclaration établie le {}. Technologies utilisées : {}. Environnement de test : {}. Pages auditées : {}.",
+            "Déclaration établie le {}. Technologies utilisées : {}. Environnements de test : {}. Pages auditées : {}.",
             input.date_declaration,
             input.technologies.join(", "),
-            input.environnement,
+            environnements_texte,
             pages
         )),
         Block::Heading(2, "5. Retour d'information et contact".into()),
@@ -520,7 +522,8 @@ mod tests {
             date_declaration: "2026-09-19",
             technologies: &technologies,
             pages: &pages,
-            environnement: "Firefox + NVDA",
+            environnements: &[],
+            navigateur_audit: Some("Obscura"),
             schema_pluriannuel_url: Some("https://example.test/schema"),
             plan_action_url: Some("https://example.test/plan"),
         })
@@ -627,7 +630,8 @@ mod tests {
             date_declaration: "2026-09-19",
             technologies: &tech,
             pages: &pages,
-            environnement: "e",
+            environnements: &[],
+            navigateur_audit: None,
             schema_pluriannuel_url: None,
             plan_action_url: None,
         })
@@ -640,5 +644,27 @@ mod tests {
         let error = render_pdf("t", "fr", &[Block::Heading(1, "x".into())], &font_bytes())
             .expect_err("H1 is reserved for the title");
         assert!(error.to_string().contains("niveau"));
+    }
+
+    #[test]
+    fn le_bloc_etablissement_declare_le_navigateur_sans_assistance_inventee() {
+        let etablissement = blocks_for(&[])
+            .into_iter()
+            .find_map(|block| match block {
+                Block::Paragraph(text) if text.starts_with("Déclaration établie le") => {
+                    Some(text)
+                }
+                _ => None,
+            })
+            .expect("le bloc d'établissement");
+        assert!(
+            etablissement.contains("Environnements de test : Navigateur : Obscura"),
+            "{etablissement}"
+        );
+        assert!(
+            etablissement.contains("aucune technologie d'assistance utilisée"),
+            "{etablissement}"
+        );
+        assert!(!etablissement.contains("Firefox + NVDA"), "{etablissement}");
     }
 }

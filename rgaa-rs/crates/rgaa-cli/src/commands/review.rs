@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use clap::ValueEnum;
-use rgaa_core::{AuditResult, CriterionResult, CriterionStatus, ReviewEvent, RgaaCriteria};
+use rgaa_core::{
+    AuditResult, CriterionResult, CriterionStatus, ReviewEvent, RgaaCriteria, TRANSVERSE_PAGE_URL,
+    TRANSVERSE_REFERENCE_SOURCE,
+};
 
 use crate::commands::CommonArgs;
 use crate::CliError;
@@ -122,6 +125,17 @@ pub fn run(args: ReviewArgs) -> Result<i32, CliError> {
 
     let (page_index, criterion_index) =
         locate_criterion(&audit, &args.criterion, args.url.as_deref())?;
+
+    // #429 / R5 : un élément transverse porte une seule décision nominative,
+    // sur la page `transverses`. Une page de l'échantillon ne fait que renvoyer
+    // à cette page ; elle ne peut pas recevoir une seconde décision.
+    if audit.pages[page_index].criteria[criterion_index].source == TRANSVERSE_REFERENCE_SOURCE {
+        return Err(CliError::invalid_input(format!(
+            "ce critère est évalué une seule fois sur la page '{TRANSVERSE_PAGE_URL}'; \
+             utilisez --url {TRANSVERSE_PAGE_URL} pour la décision nominative unique"
+        )));
+    }
+
     apply_review(
         &mut audit.pages[page_index].criteria[criterion_index],
         args.status.into(),

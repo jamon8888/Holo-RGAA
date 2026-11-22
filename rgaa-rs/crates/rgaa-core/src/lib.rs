@@ -44,5 +44,5 @@ pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};
 pub use types::{
     is_deterministic_source, reduce_test_outcomes, AuditResult, AutomatedVerdict, Classification,
     ConformityStatus, CrawlConfig, CriterionResult, CriterionStatus, PageResult, ReviewEvent,
-    TestOutcome, VerdictBasis, Violation,
+    TestOutcome, VerdictBasis, Violation, TRANSVERSE_PAGE_URL, TRANSVERSE_REFERENCE_SOURCE,
 };

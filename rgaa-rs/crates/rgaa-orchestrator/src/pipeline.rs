@@ -1,4 +1,4 @@
-use crate::{merge, site_comparison};
+use crate::{merge, site_comparison, transverse};
 use rgaa_agent::agent::RgaaAgent;
 use rgaa_browser_tools::{BrowserSession, ToolContext};
 use rgaa_core::catalog::Automatable;
@@ -960,28 +960,59 @@ async fn audit_discovered_urls(
         }
     }
 
-    // RGAA 12.1/12.2/12.4/12.5 are scoped to a set of pages. Capture their
-    // normalized signals in one Obscura scrape for this exact crawl sample.
-    // This is local browser instrumentation; it does not create Holo requests.
-    // A partial audit has none of these criteria in scope, so it must not run
-    // the site-level plugin at all (#428).
-    let site_results = if ["12.1", "12.2", "12.4", "12.5"]
-        .iter()
-        .any(|id| audit_type.contains(id))
-    {
-        let site_context = ObscuraBridge::extract_page_context_batch(
+    // One local scrape for this exact crawl sample. The normalized landmark
+    // subtrees drive transverse detection (all audit types); the same
+    // observations feed the site-level criteria when they are in scope.
+    // This is browser instrumentation only — it creates no Holo request.
+    let site_contexts = {
+        let extraction = ObscuraBridge::extract_page_context_batch(
             ObscuraBridge::from_env().binary_path().to_string(),
             urls.clone(),
             1,
         )
         .await;
-        let site_contexts = match site_context {
+        match extraction {
             Ok(contexts) => contexts,
             Err(error) => {
-                tracing::warn!(error = %error, "site-level Obscura observation failed; criteria remain unresolved");
+                tracing::warn!(error = %error, "page-context Obscura observation failed; transverse and site-level criteria remain unresolved");
                 HashMap::new()
             }
-        };
+        }
+    };
+
+    // #429: a block repeated on more than 80 % of the sample is evaluated once
+    // on the `transverses` page. Its findings live there alone, so the review
+    // queue holds a single decision for the whole sample (R5).
+    let mut page_landmarks = Vec::new();
+    for page_url in &urls {
+        if let Some(value) = site_contexts.get(page_url) {
+            match serde_json::from_value::<transverse::PageTransverseContext>(value.clone()) {
+                Ok(context) => page_landmarks.push(transverse::PageLandmarks {
+                    url: page_url.clone(),
+                    landmarks: context.transverse_landmarks,
+                }),
+                Err(error) => {
+                    tracing::warn!(page_url, error = %error, "invalid transverse landmark context")
+                }
+            }
+        }
+    }
+    let transverse_signatures = transverse::detect_transverse_landmarks(&page_landmarks);
+    if !transverse_signatures.is_empty() {
+        info!(
+            blocks = transverse_signatures.len(),
+            "transverse elements detected on the sample"
+        );
+        transverse::apply_transverse_pages(&mut all_pages, &transverse_signatures, audit_type);
+    }
+
+    // RGAA 12.1/12.2/12.4/12.5 are scoped to a set of pages. A partial audit
+    // has none of these criteria in scope, so it must not emit site-level
+    // verdicts at all (#428).
+    let site_results = if ["12.1", "12.2", "12.4", "12.5"]
+        .iter()
+        .any(|id| audit_type.contains(id))
+    {
         let page_observations: Vec<site_comparison::PageObservation> = urls
             .iter()
             .filter_map(|page_url| site_contexts.get(page_url))
@@ -1265,21 +1296,21 @@ pub fn aggregate_site_compliance(page_results: &[PageResult]) -> (f64, f64, Stri
         let has_fail_or_error = statuses
             .iter()
             .any(|s| matches!(s, CriterionStatus::Fail | CriterionStatus::Error));
-        let all_pass = statuses.iter().all(|s| matches!(s, CriterionStatus::Pass));
-        let all_na = statuses
+        // Ara's rule (DOCUMENTATION.md), now also applied to the transverses
+        // page: NC if NC anywhere, C if C or NA everywhere with at least one C.
+        // A mixed Pass/NA set is therefore C, not an unresolved criterion.
+        let all_pass_or_na = statuses
             .iter()
-            .all(|s| matches!(s, CriterionStatus::NotApplicable));
-
-        if all_na {
-            continue; // NA excluded from denominator
-        }
+            .all(|s| matches!(s, CriterionStatus::Pass | CriterionStatus::NotApplicable));
+        let at_least_one_pass = statuses.contains(&CriterionStatus::Pass);
 
         if has_fail_or_error {
             non_conforme += 1;
-        } else if all_pass {
+        } else if all_pass_or_na && at_least_one_pass {
             conforme += 1;
         } else {
-            // Mixed Pass/NeedsReview/NotTested → NonTeste (excluded from taux)
+            // All NA (excluded from denominator) or mixed with NeedsReview /
+            // NotTested → NonTeste, also excluded from taux.
             continue;
         }
     }

@@ -247,7 +247,9 @@ fn escape_xml(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::{AuditConfig, NonConformity, UserImpact};
+    use rgaa_core::{
+        AuditConfig, NonConformity, UserImpact, TRANSVERSE_PAGE_URL, TRANSVERSE_REFERENCE_SOURCE,
+    };
 
     /// The rendered report, not just the helper, presents reviewed impact and
     /// quick win in priority order (ticket #431).
@@ -431,6 +433,29 @@ mod tests {
         assert!(output.contains("sha256:abc"), "{output}");
     }
 
+    /// Ticket #429: the criteria table has an explicit transverse column,
+    /// like Ara's CSV grid. The transverses page owns the finding; a page of
+    /// the sample only points at it instead of repeating a decision.
+    #[test]
+    fn html_criteria_table_exposes_the_transverse_column() {
+        let mut bundle = bundle_with_citations();
+        let output = render(&bundle, ReportFormat::Html).expect("html");
+        assert!(output.contains("<th>Éléments transverses</th>"), "{output}");
+        assert!(
+            output.contains("—"),
+            "a normal page has no transverse finding"
+        );
+
+        bundle.pages[0].url = TRANSVERSE_PAGE_URL.into();
+        let output = render(&bundle, ReportFormat::Html).expect("html");
+        assert!(output.contains("Page transverses"), "{output}");
+
+        bundle.pages[0].url = "https://example.test/accueil".into();
+        bundle.pages[0].criteria[0].source = TRANSVERSE_REFERENCE_SOURCE.into();
+        let output = render(&bundle, ReportFormat::Html).expect("html");
+        assert!(output.contains("Voir page transverses"), "{output}");
+    }
+
     /// Every criteria row must have as many cells as that table's header has
     /// columns. Adding a column to the header and not the rows (or the
     /// reverse) shifts every value one cell left and is invisible in a diff:
@@ -448,7 +473,7 @@ mod tests {
             .expect("criteria table");
         let header = table.split("<tbody>").next().expect("criteria thead");
         let columns = header.matches("<th>").count();
-        assert_eq!(columns, 8, "criteria header is {columns} columns wide");
+        assert_eq!(columns, 9, "criteria header is {columns} columns wide");
 
         let body = table
             .split("<tbody>")

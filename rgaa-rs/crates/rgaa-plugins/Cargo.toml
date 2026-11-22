@@ -6,16 +6,17 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-# The plugins with no model to download are compiled by default (P-00 §3).
-default = ["plugin-echo", "plugin-lang"]
+# The plugins with no model to download are compiled by default (P-00 §3):
+# contrast (P-01), colorvision (P-02), lang (P-06) and layout (P-07).
+default = ["plugin-echo", "plugin-contrast", "plugin-colorvision", "plugin-lang", "plugin-layout"]
 plugin-echo = ["rgaa-analysis/plugin-echo"]
 plugin-lang = ["rgaa-analysis/plugin-lang", "dep:rgaa-analysis-lang"]
-plugin-contrast = ["rgaa-analysis/plugin-contrast"]
-plugin-colorvision = ["rgaa-analysis/plugin-colorvision"]
+plugin-contrast = ["dep:rgaa-analysis-contrast", "rgaa-analysis-contrast/plugin-contrast", "rgaa-analysis/plugin-contrast"]
+plugin-colorvision = ["dep:rgaa-analysis-colorvision", "rgaa-analysis-colorvision/plugin-colorvision", "rgaa-analysis/plugin-colorvision"]
 plugin-images = ["dep:rgaa-analysis-images", "rgaa-analysis-images/plugin-images", "rgaa-analysis/plugin-images"]
 plugin-media = ["rgaa-analysis/plugin-media", "dep:rgaa-analysis-media"]
 plugin-motion = ["rgaa-analysis/plugin-motion", "dep:rgaa-analysis-motion"]
-plugin-layout = ["rgaa-analysis/plugin-layout"]
+plugin-layout = ["dep:rgaa-analysis-layout", "rgaa-analysis-layout/plugin-layout", "rgaa-analysis/plugin-layout"]
 plugin-text = ["rgaa-analysis/plugin-text", "dep:rgaa-analysis-text"]
 plugins-all = [
     "plugin-echo",
@@ -31,8 +32,11 @@ plugins-all = [
 
 [dependencies]
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rgaa-analysis-contrast = { path = "../rgaa-analysis-contrast", default-features = false, optional = true }
+rgaa-analysis-colorvision = { path = "../rgaa-analysis-colorvision", default-features = false, optional = true }
 rgaa-analysis-lang = { path = "../rgaa-analysis-lang", optional = true }
 rgaa-analysis-text = { path = "../rgaa-analysis-text", optional = true }
 rgaa-analysis-images = { path = "../rgaa-analysis-images", default-features = false, optional = true }
 rgaa-analysis-media = { path = "../rgaa-analysis-media", optional = true }
 rgaa-analysis-motion = { path = "../rgaa-analysis-motion", optional = true }
+rgaa-analysis-layout = { path = "../rgaa-analysis-layout", default-features = false, optional = true }

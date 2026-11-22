@@ -8284,8 +8284,11 @@ name = "rgaa-plugins"
 version = "0.1.0"
 dependencies = [
  "rgaa-analysis",
+ "rgaa-analysis-colorvision",
+ "rgaa-analysis-contrast",
  "rgaa-analysis-images",
  "rgaa-analysis-lang",
+ "rgaa-analysis-layout",
  "rgaa-analysis-media",
  "rgaa-analysis-motion",
  "rgaa-analysis-text",

@@ -25,6 +25,14 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(rgaa_analysis::echo_plugin());
     }
+    #[cfg(feature = "plugin-contrast")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_contrast::ContrastPlugin));
+    }
+    #[cfg(feature = "plugin-colorvision")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_colorvision::COLORVISION_PLUGIN));
+    }
     #[cfg(feature = "plugin-lang")]
     {
         builder = builder.with(Box::new(rgaa_analysis_lang::LangPlugin::new()));
@@ -47,6 +55,10 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(rgaa_analysis_motion::motion_plugin());
     }
+    #[cfg(feature = "plugin-layout")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_layout::LayoutPlugin::default()));
+    }
 
     for sidecar in rgaa_analysis::sidecar::discover_default() {
         builder = builder.with(Box::new(sidecar));
@@ -68,6 +80,30 @@ mod tests {
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-contrast")]
+    fn default_registry_contains_the_contrast_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"contrast"), "{ids:?}");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-colorvision")]
+    fn default_registry_contains_the_colorvision_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"colorvision"), "{ids:?}");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-layout")]
+    fn default_registry_contains_the_layout_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"layout"), "{ids:?}");
     }
 
     #[test]

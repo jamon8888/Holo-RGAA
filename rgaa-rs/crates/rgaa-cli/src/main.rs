@@ -12,6 +12,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum TopCommand {
+    /// Print the active offer (Souverain / Confort) and LLM route.
+    #[command(about = "Show the active offer and LLM route")]
+    Status,
     #[command(about = "Audit commands")]
     Audit(AuditArgs),
     /// Indicateurs internes au pilote, jamais inclus dans le rapport client.
@@ -68,6 +71,7 @@ async fn main() {
 
     let cli = Cli::parse();
     let log_file = match &cli.command {
+        TopCommand::Status => None,
         TopCommand::Audit(args) => args.command.common().log_file.clone(),
         TopCommand::Export(args) => args.command.common().log_file.clone(),
         // Internal pilot metrics do not open an audit monitoring log.
@@ -75,6 +79,13 @@ async fn main() {
         TopCommand::McpServer(_) => None,
     };
     let action = match cli.command {
+        TopCommand::Status => match rgaa_cli::commands::status::run() {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(error.exit_code());
+            }
+        },
         TopCommand::Audit(args) => Action::Audit(args.command),
         TopCommand::Export(args) => Action::Export(args.command),
         TopCommand::Metrics(args) => {
@@ -105,6 +116,10 @@ async fn main() {
             return;
         }
     };
+
+    // Ticket #440: the active offer is visible before any audit work starts.
+    // Both the mode and the LLM route come from the existing configuration.
+    rgaa_cli::commands::status::print_audit_header();
 
     let (log_path, monitoring_guard) = match rgaa_cli::monitoring::init(log_file.as_deref()) {
         Ok(initialized) => initialized,

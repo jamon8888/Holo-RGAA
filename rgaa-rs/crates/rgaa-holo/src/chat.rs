@@ -14,6 +14,9 @@ use rgaa_core::{LlmProvenance, LlmSettings, RgaaError};
 #[derive(Debug, Clone)]
 pub struct ChatBackend {
     transport: ChatTransport,
+    /// `false` in `off` mode (Souverain): no request may be sent, not even to
+    /// a client-hosted endpoint (ticket #440).
+    model_calls_allowed: bool,
 }
 
 impl ChatBackend {
@@ -43,7 +46,22 @@ impl ChatBackend {
             settings.timeout,
             settings.params,
         )?;
-        Ok(Self { transport })
+        Ok(Self {
+            transport,
+            model_calls_allowed: settings.mode.allows_model_calls(),
+        })
+    }
+
+    /// Refuses a call in `off` mode before any HTTP client can send one.
+    fn guard(&self) -> Result<(), RgaaError> {
+        if self.model_calls_allowed {
+            Ok(())
+        } else {
+            Err(RgaaError::Llm {
+                message: "RGAA_LLM_MODE=off : aucun appel modèle n'est autorisé (Souverain)".into(),
+                code: Some("LLM_MODE_OFF".to_string()),
+            })
+        }
     }
 
     /// The parameters a call through this backend runs with — the same
@@ -78,6 +96,7 @@ impl LlmBackend for ChatBackend {
     }
 
     async fn evaluate(&self, prompt: &str) -> Result<HoloResponse, RgaaError> {
+        self.guard()?;
         self.transport
             .complete(ChatTransport::text_messages(prompt))
             .await
@@ -88,6 +107,7 @@ impl LlmBackend for ChatBackend {
         prompt: &str,
         image_base64: Option<&str>,
     ) -> Result<HoloResponse, RgaaError> {
+        self.guard()?;
         let messages = ChatTransport::multimodal_messages(prompt, image_base64)?;
         self.transport.complete(messages).await
     }
@@ -143,6 +163,8 @@ mod tests {
     fn debug_redacts_the_api_key() {
         let b = ChatBackend::new(&settings(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "sk-super-secret"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
         ]))
@@ -158,6 +180,8 @@ mod tests {
             spawn_mock_server(r#"{"verdict":"fail","confidence":0.8,"justification":"x"}"#);
         let backend = ChatBackend::new(&settings(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "test-key"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
         ]))
@@ -193,6 +217,8 @@ mod tests {
         let server = spawn_mock_server(OK_BODY);
         let backend = ChatBackend::new(&settings(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "k"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
         ]))
@@ -316,6 +342,30 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("authorization:"),
             "{}",
+            server.last_request()
+        );
+    }
+
+    /// Ticket #440: in mode `off` (Souverain) no request may leave the box,
+    /// not even towards a local mock server standing in for a model API.
+    #[tokio::test]
+    async fn off_mode_never_sends_a_request() {
+        let server = spawn_mock_server(OK_BODY);
+        let url = server.url();
+        let backend = ChatBackend::new(&settings(&[
+            ("RGAA_LLM_MODE", "off"),
+            ("RGAA_LLM_PROVIDER", "custom"),
+            ("RGAA_LLM_BASE_URL", url.as_str()),
+            ("RGAA_LLM_MODEL", "m"),
+        ]))
+        .unwrap()
+        .with_endpoint(server.url());
+
+        let err = backend.evaluate("prompt").await.unwrap_err();
+        assert!(format!("{err:?}").contains("LLM_MODE_OFF"), "{err:?}");
+        assert!(
+            server.last_request().is_empty(),
+            "off mode sent a request: {}",
             server.last_request()
         );
     }

@@ -38,7 +38,10 @@ pub use non_conformity::{
     compare_non_conformities, impact_rank, propose_impact_for_criterion, sort_non_conformities,
     ImpactReview, NonConformity, UserImpact,
 };
-pub use provider::{provider, LlmSettings, Provider, PROVIDERS};
+pub use provider::{
+    endpoint_host, is_agent_publisher_endpoint, provider, LlmMode, LlmSettings, ModeStatus,
+    Provider, FORBIDDEN_AGENT_HOSTS, PROVIDERS,
+};
 pub use registry::{Mechanism, MechanismKind, MechanismRegistry};
 pub use test_plan::{CoverageLevel, TestRoute, TestRoutePlan};
 pub use types::{

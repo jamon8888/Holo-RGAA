@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use rgaa_cli::commands::metrics::ReouvertureArgs;
 use rgaa_cli::commands::AuditCommand;
 use rgaa_cli::CliError;
 
@@ -13,6 +14,8 @@ struct Cli {
 enum TopCommand {
     #[command(about = "Audit commands")]
     Audit(AuditArgs),
+    /// Indicateurs internes au pilote, jamais inclus dans le rapport client.
+    Metrics(MetricsArgs),
     /// Serve the RGAA tools over MCP (HTTP + SSE, or stdio).
     ///
     /// The flags live in `rgaa_mcp_http::McpServerArgs` rather than here so
@@ -28,6 +31,18 @@ struct AuditArgs {
     command: AuditCommand,
 }
 
+#[derive(Debug, clap::Args)]
+struct MetricsArgs {
+    #[command(subcommand)]
+    command: MetricsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum MetricsCommand {
+    /// Taux de non-conformités posées là où l'outil n'avait rien signalé (#438).
+    Reouverture(ReouvertureArgs),
+}
+
 #[tokio::main]
 async fn main() {
     // Loads `.env` from the working directory (or any parent) so a local
@@ -40,6 +55,21 @@ async fn main() {
     let cli = Cli::parse();
     let args = match cli.command {
         TopCommand::Audit(args) => args,
+        // Internal pilot metrics do not open an audit monitoring log.
+        TopCommand::Metrics(args) => {
+            let result = match args.command {
+                MetricsCommand::Reouverture(reouverture) => {
+                    rgaa_cli::commands::metrics::run(reouverture)
+                }
+            };
+            match result {
+                Ok(code) => std::process::exit(code),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(error.exit_code());
+                }
+            }
+        }
         // Served before the audit monitoring is initialised: the MCP server
         // logs to stderr for its supervisor, and opening the audit JSON-lines
         // file for a long-lived server would leave a log nothing ever writes.
@@ -84,4 +114,57 @@ async fn main() {
 
 fn exit_code(error: &CliError) -> i32 {
     error.exit_code()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn metrics_reouverture_est_une_commande_de_premier_niveau() {
+        let cli = Cli::try_parse_from([
+            "rgaa",
+            "metrics",
+            "reouverture",
+            "bundle.json",
+            "--output",
+            "export.json",
+        ])
+        .expect("metrics reouverture est reconnue");
+        match cli.command {
+            TopCommand::Metrics(MetricsArgs {
+                command: MetricsCommand::Reouverture(args),
+            }) => {
+                assert_eq!(args.audit, Some(PathBuf::from("bundle.json")));
+                assert_eq!(args.output, Some(PathBuf::from("export.json")));
+                assert!(!args.all);
+            }
+            _ => panic!("attendu : rgaa metrics reouverture"),
+        }
+    }
+
+    #[test]
+    fn metrics_reouverture_all_accepte_un_dossier_et_la_recursion() {
+        let cli = Cli::try_parse_from([
+            "rgaa",
+            "metrics",
+            "reouverture",
+            "--all",
+            "--input",
+            "bundles",
+            "--recursive",
+        ])
+        .expect("--all, --input et --recursive sont reconnus");
+        match cli.command {
+            TopCommand::Metrics(MetricsArgs {
+                command: MetricsCommand::Reouverture(args),
+            }) => {
+                assert!(args.all);
+                assert!(args.recursive);
+                assert_eq!(args.input, Some(PathBuf::from("bundles")));
+            }
+            _ => panic!("attendu : rgaa metrics reouverture"),
+        }
+    }
 }

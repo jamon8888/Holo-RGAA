@@ -299,6 +299,28 @@ pub struct Analyseur<H: Horloge> {
     horloge: H,
 }
 
+/// Construit le NDJSON de l'artefact `parole.jsonl`.
+///
+/// L'ordre des clés est fixé explicitement : `serde_json` trie les clés par
+/// défaut, mais la feature `preserve_order` (activée ailleurs dans le
+/// workspace via `fastembed`/`safetensors`) les conserve dans l'ordre
+/// d'insertion. L'empreinte SHA-256 de l'artefact ne doit pas dépendre de
+/// cette feature : on écrit donc les clés dans un ordre constant.
+fn articulation_parole(enonces: &[Enonce]) -> String {
+    let lignes = enonces
+        .iter()
+        .map(|enonce| {
+            format!(
+                "{{\"horodatage\":{},\"horodatage_type\":\"reception\",\"texte\":{}}}",
+                json!(correlation::horodatage(&enonce.horodatage)),
+                json!(&enonce.texte),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{lignes}\n")
+}
+
 impl<H: Horloge> Analyseur<H> {
     #[must_use]
     pub fn new(configuration: Configuration, horloge: H) -> Self {
@@ -363,19 +385,7 @@ impl<H: Horloge> Analyseur<H> {
             tracing::warn!("preuve screenreader sans environnement déclaré");
         }
 
-        let articulation = enonces
-            .iter()
-            .map(|enonce| {
-                json!({
-                    "texte": enonce.texte,
-                    "horodatage": correlation::horodatage(&enonce.horodatage),
-                    "horodatage_type": "reception",
-                })
-                .to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let articulation = format!("{articulation}\n");
+        let articulation = articulation_parole(&enonces);
         let empreinte = format!(
             "sha256:{}",
             rgaa_analysis::sha256_hex(
@@ -498,6 +508,28 @@ mod tests {
             .expect_err("fichier absent");
         assert!(matches!(erreur, Erreur::ParoleAbsente(_)));
         assert!(erreur.to_string().contains("absent.log"));
+    }
+
+    #[test]
+    fn l_artefact_parole_a_un_ordre_de_cles_deterministe() {
+        // L'empreinte de l'artefact doit être indépendante de la feature
+        // `serde_json/preserve_order` activée ailleurs dans le workspace :
+        // les clés sont écrites dans l'ordre alphabétique, pas celui du `json!`.
+        let enonces = vec![
+            Enonce {
+                texte: "menu, bouton, pas coché".into(),
+                horodatage: instant("2026-11-22T09:14:00.500Z"),
+            },
+            Enonce {
+                texte: "menu, bouton, coché".into(),
+                horodatage: instant("2026-11-22T09:14:02.481Z"),
+            },
+        ];
+        assert_eq!(
+            articulation_parole(&enonces),
+            "{\"horodatage\":\"2026-11-22T09:14:00.500Z\",\"horodatage_type\":\"reception\",\"texte\":\"menu, bouton, pas coché\"}\n\
+             {\"horodatage\":\"2026-11-22T09:14:02.481Z\",\"horodatage_type\":\"reception\",\"texte\":\"menu, bouton, coché\"}\n"
+        );
     }
 
     #[test]

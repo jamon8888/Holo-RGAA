@@ -27,6 +27,11 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     }
     // P-06 links `rgaa-analysis-lang` here under `feature = "plugin-lang"`.
 
+    #[cfg(feature = "plugin-images")]
+    {
+        builder = builder.with(rgaa_analysis_images::images_plugin());
+    }
+
     for sidecar in rgaa_analysis::sidecar::discover_default() {
         builder = builder.with(Box::new(sidecar));
     }
@@ -47,6 +52,17 @@ mod tests {
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-images")]
+    fn images_plugin_is_linked_when_its_feature_is_enabled() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"images"), "{ids:?}");
+        let images = registry.get("images").expect("images plugin");
+        assert!(images.tests().contains(&"1.3.1"));
+        assert_eq!(images.models().len(), 9);
     }
 
     #[test]

@@ -1,0 +1,32 @@
+[package]
+description = "P-03 — native images analysis plugin (alternatives textuelles, OCR, CLIP)"
+license = "MIT"
+name = "rgaa-analysis-images"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["plugin-images"]
+# The plugin is gated by the P-00 feature name shared by the CLI, MCP and API.
+plugin-images = []
+plugins-all = ["plugin-images"]
+
+[dependencies]
+async-trait = "0.1"
+fastembed = { version = "7.7", default-features = false, features = ["onnx", "image-models", "ort-download-binaries-native-tls"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image_hasher = "3.1"
+indexmap = { workspace = true }
+ocrs = "0.14"
+resvg = "0.50"
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rten = { version = "0.28", features = ["rten_format"] }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+usvg = "0.50"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true }

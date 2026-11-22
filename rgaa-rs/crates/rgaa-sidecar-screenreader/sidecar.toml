@@ -1,0 +1,15 @@
+# P-10.a — sidecar lecteur d'écran NVDA (Speech Logger).
+# À copier (ou référencer) dans $RGAA_PLUGINS_DIR pour que `rgaa plugins list`
+# le découvre via le mécanisme P-00 §7 bis. Le binaire s'installe avec
+# `cargo install --path crates/rgaa-sidecar-screenreader` et se trouve sur PATH.
+id = "screenreader-nvda"
+version = "0.1.0"
+tests = ["7.1.1", "7.1.2", "7.1.3", "7.5.1", "7.5.2", "7.5.3"]
+commande = ["rgaa-sidecar-screenreader"]
+mode = "persistant"
+timeout_ms = 30000
+# NVDA et l'add-on Speech Logger tournent dans la VM Windows, pas sur l'hôte :
+# ils ne sont donc pas des binaires requis de ce processus. Leurs versions
+# exactes sont déclarées dans `options.environnement` (et donc dans la preuve).
+binaires_requis = []
+licence = "GPL-2.0 (add-on Speech Logger) ; sidecar seul, aucun code NVDA lié ni copié"

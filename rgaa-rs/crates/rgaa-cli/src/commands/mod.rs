@@ -1,5 +1,6 @@
 pub mod analyze;
 pub mod igt;
+pub mod metrics;
 pub mod policy;
 pub mod report;
 pub mod review;

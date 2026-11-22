@@ -643,6 +643,7 @@ mod tests {
         static TECHNOLOGIES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
         static PAGES: std::sync::OnceLock<Vec<PageEchantillon>> = std::sync::OnceLock::new();
         DeclarationFrInput {
+            audit_type: AuditType::Complet,
             service: "Service Client",
             organisme: "Ministère Exemple",
             metrics,

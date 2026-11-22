@@ -120,7 +120,7 @@ fn decision_letter(result: Option<&CriterionResult>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::{Classification, PageResult, RgaaCriteria};
+    use rgaa_core::{AuditType, Classification, PageResult, RgaaCriteria};
 
     fn result(
         id: &str,
@@ -164,6 +164,7 @@ mod tests {
     fn audit(pages: Vec<PageResult>) -> AuditResult {
         AuditResult {
             audit_id: "audit-test".into(),
+            audit_type: AuditType::Complet,
             url: "https://example.test".into(),
             pages,
             total_criteria: 106,

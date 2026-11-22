@@ -627,6 +627,7 @@ mod tests {
         let tech: Vec<String> = Vec::new();
         let pages: Vec<PageEchantillon> = Vec::new();
         let error = declaration_fr_blocks(&DeclarationFrInput {
+            audit_type: AuditType::Complet,
             service: "s",
             organisme: "o",
             metrics: &metrics,

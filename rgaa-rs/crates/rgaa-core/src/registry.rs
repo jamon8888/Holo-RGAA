@@ -197,7 +197,8 @@ impl MechanismRegistry {
                         }
                     }
                     Outcome::Pass => {
-                        if m.outcomes.contains(&Outcome::Fail) || m.outcomes.contains(&Outcome::Review)
+                        if m.outcomes.contains(&Outcome::Fail)
+                            || m.outcomes.contains(&Outcome::Review)
                         {
                             problems.push(format!(
                                 "{}: outcome_cap is \"pass\" but outcomes contain \"fail\" or \"review\" — \

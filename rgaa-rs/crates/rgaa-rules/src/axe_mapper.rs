@@ -1,10 +1,10 @@
 use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
+use rgaa_core::registry::Outcome;
 use rgaa_core::{
     Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
     RgaaCatalog, RgaaError, Violation,
 };
-use rgaa_core::registry::Outcome;
 use std::sync::OnceLock;
 
 pub struct AxeMapper;
@@ -797,7 +797,10 @@ mod tests {
                 CriterionStatus::Fail,
                 "{criterion_id} sans plafond doit Fail sur une violation prouvée"
             );
-            assert!(!r.violations.is_empty(), "{criterion_id} doit porter la violation");
+            assert!(
+                !r.violations.is_empty(),
+                "{criterion_id} doit porter la violation"
+            );
         }
     }
 

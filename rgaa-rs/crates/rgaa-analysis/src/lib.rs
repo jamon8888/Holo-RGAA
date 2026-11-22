@@ -55,8 +55,10 @@ pub async fn run_plugin(
     url: &str,
     options: &Value,
 ) -> Result<Vec<Preuve>> {
-    for model in plugin.models() {
-        models::ensure_present(plugin.id(), model)?;
+    if !plugin.models_optional() {
+        for model in plugin.models() {
+            models::ensure_present(plugin.id(), model)?;
+        }
     }
     let options: PluginOptions = serde_json::from_value(options.clone()).map_err(|error| {
         analysis_error(

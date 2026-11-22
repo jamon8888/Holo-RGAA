@@ -12,7 +12,7 @@ plugin-echo = ["rgaa-analysis/plugin-echo"]
 plugin-lang = ["rgaa-analysis/plugin-lang", "dep:rgaa-analysis-lang"]
 plugin-contrast = ["rgaa-analysis/plugin-contrast"]
 plugin-colorvision = ["rgaa-analysis/plugin-colorvision"]
-plugin-images = ["rgaa-analysis/plugin-images"]
+plugin-images = ["dep:rgaa-analysis-images", "rgaa-analysis-images/plugin-images", "rgaa-analysis/plugin-images"]
 plugin-media = ["rgaa-analysis/plugin-media"]
 plugin-motion = ["rgaa-analysis/plugin-motion"]
 plugin-layout = ["rgaa-analysis/plugin-layout"]
@@ -33,3 +33,4 @@ plugins-all = [
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
 rgaa-analysis-lang = { path = "../rgaa-analysis-lang", optional = true }
 rgaa-analysis-text = { path = "../rgaa-analysis-text", optional = true }
+rgaa-analysis-images = { path = "../rgaa-analysis-images", default-features = false, optional = true }

@@ -100,7 +100,9 @@ mod tests {
         let media = registry.get("media").expect("media plugin");
         assert!(media.tests().contains(&"4.2"));
         assert!(media.tests().contains(&"4.10"));
-        assert!(media.models().is_empty(), "PR 1 needs no model");
+        let names: Vec<&str> = media.models().iter().map(|model| model.nom).collect();
+        assert_eq!(names, vec!["silero_vad.onnx", "ggml-small.bin"]);
+        assert!(media.models().iter().all(|model| model.licence == "MIT"));
     }
 
     #[test]

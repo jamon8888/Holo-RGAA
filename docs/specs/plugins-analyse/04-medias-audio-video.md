@@ -29,6 +29,15 @@ Le relecteur n'écoute alors que les passages signalés.
 | Intensité sonore (4.10) | `ebur128` 0.1 (EBU R128, LUFS court terme) | — | natif |
 | Images vidéo (4.4, 4.6, P-05) | — | `ffmpeg` via `ffmpeg-sidecar` 2.7 (binaire externe, sans liaison) | sidecar |
 
+**Décision (ticket #421, PR 2)** : un seul ONNX Runtime par binaire. Le VAD Silero
+est donc exécuté avec l'`ort` déjà présent dans le workspace (même version que
+`fastembed`, vérifiée par `cargo tree -d`), et la transcription utilise
+`whisper-rs` 0.16 (ggml, sans ONNX) avec le modèle `small` par défaut. Les deux
+modèles sont déclarés en `ModelSpec` et téléchargés uniquement par
+`rgaa models pull media`, jamais pendant un audit (R-P3). **sherpa-onnx reste
+une option sidecar uniquement** (binaire externe, jamais lié) : elle est
+documentée ici mais **non implémentée** dans le plugin natif.
+
 **Points à trancher dans le ticket, avec mesure** :
 
 - **Moteur et modèle de transcription.** On compare `sherpa-onnx` et `whisper-rs`, avec les modèles Whisper `small` et `large-v3-turbo`, sur 5 fixtures FR. On mesure le taux d'erreur de mots et le facteur temps réel sur CPU 8 cœurs. Le défaut est le plus précis des couples qui tiennent 1× temps réel.

@@ -45,7 +45,7 @@ rig-agent = "0.42"
 rig-lancedb = "0.42"
 rig-memory = "0.42"
 lancedb = "0.30"
-fastembed = "4.0"
+fastembed = "7.7"
 futures = "0.3"
 indexmap = "2"
 chrono = { version = "0.4", features = ["serde"] }

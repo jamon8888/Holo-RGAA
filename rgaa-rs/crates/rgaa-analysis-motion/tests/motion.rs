@@ -14,7 +14,7 @@ use rgaa_analysis_motion::iris::{IrisOracle, OracleFlash};
 use rgaa_analysis_motion::limites::detecte_limites;
 use rgaa_analysis_motion::luminance::{red_metric, relative_luminance};
 use rgaa_analysis_motion::mouvement::{a_controle_pause, analyse_mouvement};
-use rgaa_analysis_motion::{MotionPlugin, AVERTISSEMENT, FENETTE_HAUTEUR, FENETTE_LARGEUR};
+use rgaa_analysis_motion::{MotionPlugin, AVERTISSEMENT, FENETRE_HAUTEUR, FENETRE_LARGEUR};
 use std::path::Path;
 
 /// GIF dont toute l'image (ou une zone) alterne deux couleurs à la fréquence
@@ -85,8 +85,8 @@ fn un_gif_noir_blanc_plein_a_5_hz_donne_5_flashs_et_une_surface_de_1() {
     let (general, _rouge) = detect_flashs(&frames);
     assert_eq!(general.max_par_s, 5, "{general:?}");
     assert!(general.surface > 0.99, "{general:?}");
-    assert_eq!(general.fenetre[2], FENETTE_LARGEUR);
-    assert_eq!(general.fenetre[3], FENETTE_HAUTEUR);
+    assert_eq!(general.fenetre[2], FENETRE_LARGEUR);
+    assert_eq!(general.fenetre[3], FENETRE_HAUTEUR);
 }
 
 #[test]

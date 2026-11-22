@@ -11,7 +11,7 @@
 use crate::frames::Frame;
 use crate::luminance::{red_metric, relative_luminance};
 use crate::{
-    DELTA_LUMINANCE, DELTA_ROUGE, FENETTE_HAUTEUR, FENETTE_LARGEUR, HAUTEUR_REFERENCE,
+    DELTA_LUMINANCE, DELTA_ROUGE, FENETRE_HAUTEUR, FENETRE_LARGEUR, HAUTEUR_REFERENCE,
     LARGEUR_REFERENCE, LUMINANCE_SOMBRE_MAX, PAS_FENETRE,
 };
 use image::imageops::FilterType;
@@ -43,7 +43,7 @@ impl Default for FlashResult {
             type_: FlashType::General,
             max_par_s: 0,
             a_s: 0.0,
-            fenetre: [0, 0, FENETTE_LARGEUR, FENETTE_HAUTEUR],
+            fenetre: [0, 0, FENETRE_LARGEUR, FENETRE_HAUTEUR],
             surface: 0.0,
         }
     }
@@ -213,21 +213,21 @@ fn surface_touchee(etats: &[EtatPixel], maintenant: u16) -> (f64, [u32; 4]) {
         }
     }
 
-    let aire = FENETTE_LARGEUR * FENETTE_HAUTEUR;
+    let aire = FENETRE_LARGEUR * FENETRE_HAUTEUR;
     let mut meilleure = 0.0;
-    let mut fenetre = [0, 0, FENETTE_LARGEUR, FENETTE_HAUTEUR];
-    for y in decalages(HAUTEUR_REFERENCE, FENETTE_HAUTEUR) {
-        for x in decalages(LARGEUR_REFERENCE, FENETTE_LARGEUR) {
-            let bas = (y + FENETTE_HAUTEUR) as usize * LARGE as usize;
+    let mut fenetre = [0, 0, FENETRE_LARGEUR, FENETRE_HAUTEUR];
+    for y in decalages(HAUTEUR_REFERENCE, FENETRE_HAUTEUR) {
+        for x in decalages(LARGEUR_REFERENCE, FENETRE_LARGEUR) {
+            let bas = (y + FENETRE_HAUTEUR) as usize * LARGE as usize;
             let haut = y as usize * LARGE as usize;
-            let droite = (x + FENETTE_LARGEUR) as usize;
+            let droite = (x + FENETRE_LARGEUR) as usize;
             let gauche = x as usize;
             let touche = integral[bas + droite] - integral[bas + gauche] - integral[haut + droite]
                 + integral[haut + gauche];
             let fraction = touche as f64 / aire as f64;
             if fraction > meilleure {
                 meilleure = fraction;
-                fenetre = [x, y, FENETTE_LARGEUR, FENETTE_HAUTEUR];
+                fenetre = [x, y, FENETRE_LARGEUR, FENETRE_HAUTEUR];
             }
         }
     }

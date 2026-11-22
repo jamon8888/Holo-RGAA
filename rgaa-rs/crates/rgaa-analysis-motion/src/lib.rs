@@ -47,8 +47,8 @@ pub const DUREE_OBSERVATION_DEFAUT_S: u64 = 10;
 /// Taille de référence et géométrie de la fenêtre de 10° (spec §3).
 pub const LARGEUR_REFERENCE: u32 = 1024;
 pub const HAUTEUR_REFERENCE: u32 = 768;
-pub const FENETTE_LARGEUR: u32 = 341;
-pub const FENETTE_HAUTEUR: u32 = 256;
+pub const FENETRE_LARGEUR: u32 = 341;
+pub const FENETRE_HAUTEUR: u32 = 256;
 pub const PAS_FENETRE: u32 = 64;
 pub const SURFACE_MIN: f64 = 0.25;
 pub const DELTA_LUMINANCE: f32 = 0.10;

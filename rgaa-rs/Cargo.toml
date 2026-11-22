@@ -5,6 +5,7 @@ members = [
     "crates/rgaa-analysis",
     "crates/rgaa-plugins",
     "crates/rgaa-analysis-contrast",
+    "crates/rgaa-analysis-colorvision",
     "crates/rgaa-rules",
     "crates/rgaa-holo",
     "crates/rgaa-obscura",

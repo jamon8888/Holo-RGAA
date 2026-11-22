@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80">
+  <!-- P-02 §7 fixture: two bars of the same shape, distinguished only by fill. -->
+  <rect class="series-1" x="10" y="20" width="30" height="50" fill="#ff0000" />
+  <rect class="series-2" x="70" y="20" width="30" height="50" fill="#00ff00" />
+</svg>

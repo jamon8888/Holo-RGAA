@@ -394,7 +394,7 @@ async fn forbidden_actions_are_never_simulated() {
             "nodes":[
               {"selecteur":"button.delete","tag":"button","text":"Supprimer"},
               {"selecteur":"div.pay","tag":"div","text":"Payer","cursor":"pointer","handlers":["click"]},
-              {"selecteur":"button.ok","tag":"button","text":"Valider"}
+              {"selecteur":"button.ok","tag":"button","text":"Afficher"}
             ],
             "actions":[
               {"target":0,"produced":[],"pixelsChanged":0.9},
@@ -418,6 +418,24 @@ async fn forbidden_actions_are_never_simulated() {
             .len(),
         1
     );
+}
+
+/// P-08 (#472) moved the forbidden-action list into `rgaa_analysis::actions`.
+/// The canonical list is broader than the old P-07 copy: "valider" is also a
+/// real-data-changing action and must never be simulated.
+#[tokio::test]
+async fn the_shared_forbidden_list_also_blocks_valider() {
+    let proofs = analyze(
+        r##"{
+            "nodes":[{"selecteur":"button.ok","tag":"button","text":"Valider"}],
+            "actions":[{"target":0,"produced":[],"pixelsChanged":0.9}]
+        }"##,
+        Some("fr"),
+        20,
+    )
+    .await;
+    let status = proof(&proofs, "status");
+    assert_eq!(status.mesures["actions_ignorees"], 1);
 }
 
 #[tokio::test]

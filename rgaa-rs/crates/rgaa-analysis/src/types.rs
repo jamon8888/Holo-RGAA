@@ -98,6 +98,10 @@ pub struct ModelInfo {
 pub struct PluginOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Terms a plugin should ignore (P-06 uses it for proper nouns and
+    /// loanwords). Absent means the plugin's own default list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclusions: Option<Vec<String>>,
 }
 
 /// Native or sidecar plugin (the orchestrator makes no distinction).

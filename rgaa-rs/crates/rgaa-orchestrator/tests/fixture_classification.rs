@@ -131,7 +131,10 @@ fn cases() -> Vec<Case> {
                 vec![CriterionStatus::NeedsReview]
             } else if expect_pass {
                 vec![CriterionStatus::Pass]
-            } else if declares_review {
+            } else if declares_review && m.kind != MechanismKind::AxeNative {
+                // A gap-fix probe always answers; a partial axe-native mechanism stays
+                // silent when none of its rules fired, and that silence is checked only
+                // as "no fail" below (axe cannot prove a partial criterion conforming).
                 vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
             } else {
                 Vec::new()

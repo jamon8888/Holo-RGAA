@@ -9,6 +9,7 @@ members = [
     "crates/rgaa-analysis-lang",
     "crates/rgaa-analysis-layout",
     "crates/rgaa-analysis-media",
+    "crates/rgaa-analysis-motion",
     "crates/rgaa-analysis-text",
     "crates/rgaa-plugins",
     "crates/rgaa-rules",

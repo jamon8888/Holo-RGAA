@@ -113,6 +113,9 @@ pub struct PluginOptions {
     /// keeps the model-free path driven by `transcription_reference_url`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_models: Option<bool>,
+    /// P-05: how long the page is observed, in seconds (`None` → 10 s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duree_s: Option<u64>,
 }
 
 /// Native or sidecar plugin (the orchestrator makes no distinction).

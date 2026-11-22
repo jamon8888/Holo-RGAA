@@ -1,0 +1,22 @@
+[package]
+description = "P-05 analysis plugin: flashes, movement and time limits (13.1, 13.7, 13.8)"
+license = "MIT"
+name = "rgaa-analysis-motion"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+# No `download_ffmpeg`: the audit uses the ffmpeg binary already available on
+# the machine. When it is absent, video analysis reports a missing proof.
+ffmpeg-sidecar = { version = "2.6", default-features = false }
+image = { version = "0.25", default-features = false, features = ["gif"] }
+indexmap = { workspace = true }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

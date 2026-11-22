@@ -43,6 +43,10 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(rgaa_analysis_media::media_plugin());
     }
+    #[cfg(feature = "plugin-motion")]
+    {
+        builder = builder.with(rgaa_analysis_motion::motion_plugin());
+    }
 
     for sidecar in rgaa_analysis::sidecar::discover_default() {
         builder = builder.with(Box::new(sidecar));
@@ -103,6 +107,19 @@ mod tests {
         let names: Vec<&str> = media.models().iter().map(|model| model.nom).collect();
         assert_eq!(names, vec!["silero_vad.onnx", "ggml-small.bin"]);
         assert!(media.models().iter().all(|model| model.licence == "MIT"));
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-motion")]
+    fn default_registry_contains_the_motion_plugin_off_by_default() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"motion"), "{ids:?}");
+        let motion = registry.get("motion").expect("motion plugin");
+        assert!(motion.tests().contains(&"13.7"));
+        assert!(motion.tests().contains(&"13.8"));
+        assert!(motion.tests().contains(&"13.1"));
+        assert!(motion.models().is_empty(), "P-05 needs no model");
     }
 
     #[test]

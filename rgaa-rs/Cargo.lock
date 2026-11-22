@@ -3089,6 +3089,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffmpeg-sidecar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "187df1a888981457401efeb1b36596aa97f34d0bbb6ab24d70a2226803b3fd52"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8016,6 +8025,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-analysis-motion"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ffmpeg-sidecar",
+ "image",
+ "indexmap 2.14.2",
+ "rgaa-analysis",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "rgaa-analysis-text"
 version = "0.1.0"
 dependencies = [
@@ -8262,6 +8287,7 @@ dependencies = [
  "rgaa-analysis-images",
  "rgaa-analysis-lang",
  "rgaa-analysis-media",
+ "rgaa-analysis-motion",
  "rgaa-analysis-text",
 ]
 

@@ -4,7 +4,7 @@
 
 The rgaa-consultant plugin provides RGAA 4.1.2 accessibility auditing through Claude Code / Claude Cowork. It wraps two backend providers:
 
-- **rgaa-mcp** (primary): MCP server exposing 6 tools
+- **rgaa-mcp** (primary): MCP server exposing 11 tools
 - **rgaa-cli** (fallback): CLI commands for local execution
 - **rgaa-api** (optional): HTTP API server for team deployments
 
@@ -117,6 +117,37 @@ No parameters.
 
 ---
 
+### `list_analysis_plugins` — List Compiled Analysis Plugins
+
+No parameters. Call it **before** `run_analysis_plugin`.
+
+**Returns:** `{ plugins[] }` where each plugin has `id`, `version`, `tests`,
+`models` (`nom`, `licence`, `present`), `kind`, and for sidecars `commande` and
+`sha256_executable`. A plugin absent from the list is not compiled (enable its
+`plugin-*` feature and rebuild `rgaa-mcp`); a model with `present: false` is
+installed with `rgaa models pull <plugin>`.
+
+---
+
+### `run_analysis_plugin` — Run One Plugin and Return Its Proofs
+
+Run one analysis plugin on a URL. Returns `Preuve` values only: measurements,
+artefacts, scope (`Mesuree` / `Estimee`) and a review hint (`indice`).
+**No status and no verdict are returned** — the orchestrator and a human
+reviewer decide (R7). Every analysis skill in this plugin calls this tool.
+
+**Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | Yes | Target page URL |
+| `plugin` | string | Yes | Plugin id: `contrast`, `colorvision`, `images`, `media`, `motion`, `lang`, `layout`, `text` |
+| `options` | PluginOptions | No | Per-call options (`message`) |
+
+**Returns:** `{ preuves[] }` — see `crates/rgaa-analysis/src/types.rs` (`Preuve`).
+
+---
+
 ## CLI Commands (rgaa-cli)
 
 | Command | Description |
@@ -152,6 +183,43 @@ No parameters.
 | `report` | `skills/report/SKILL.md` | Compliance documentation needed |
 | `guided-test` | `skills/guided-test/SKILL.md` | Manual testing (keyboard, focus, contrast) |
 | `criteria` | `skills/criteria/SKILL.md` | RGAA criterion knowledge lookup |
+| `contraste` | `skills/contraste/SKILL.md` | `/rgaa:contraste` — proof ratios from `contrast`, sorted ascending |
+| `daltonisme` | `skills/daltonisme/SKILL.md` | `/rgaa:daltonisme` — colour-vision proofs from `colorvision` |
+| `images` | `skills/images/SKILL.md` | `/rgaa:images` — pHash groups, OCR and similarity from `images` |
+| `medias` | `skills/medias/SKILL.md` | `/rgaa:medias` — missing passages and Whisper transcript from `media` |
+| `mouvement` | `skills/mouvement/SKILL.md` | `/rgaa:mouvement` — L(t) curve and static thumbnails from `motion` |
+| `langue` | `skills/langue/SKILL.md` | `/rgaa:langue` — language proofs from `lang` |
+| `structure` | `skills/structure/SKILL.md` | `/rgaa:structure` — rendered vs exposed structure from `layout` |
+| `pertinence` | `skills/pertinence/SKILL.md` | `/rgaa:pertinence` — text relevance from `text` |
+
+### Common template of the eight analysis skills (P-09 §2)
+
+All eight follow the same gabarit:
+
+1. Check `list_analysis_plugins`; explain a plugin that is not compiled; if a
+   model has `present: false`, print exactly `rgaa models pull <plugin>`.
+2. Call `run_analysis_plugin { "plugin": "<id>", "url": "<url>" }`.
+3. Sort the proofs (ratio ascending for `contrast`, phash groups for `images`,
+   timestamp for `media`, luminance peak for `motion`, similarity ascending for
+   `text`, selector otherwise) and present measurements and artefacts.
+4. **Never write a status** (R7). Prepare the decision; the reviewer takes it
+   in the review page or via `decide` with out-of-band confirmation (D2). The
+   model opinion is folded under « avis du modèle (indicatif) » (R3).
+5. `mouvement` warns about photosensitive content before any replay.
+
+The Codex plugin (`rgaa-codex`) ships short versions of the same eight skills,
+with **Codex for Chrome** in place of Claude for Chrome.
+
+### Evaluation of the skills (P-09 §4.1)
+
+This repository has no prompt-evaluation runner. `tests/skills-eval.sh` is the
+deterministic, model-free contract test: for each skill it checks the call to
+`run_analysis_plugin` with the right plugin id, the R7/D2 wording, the
+`list_analysis_plugins` prerequisite, the `rgaa models pull` command when the
+plugin has models, the photosensitive warning and the local `Preuve` fixture.
+Run it with `bash rgaa-rs/plugins/rgaa-consultant/tests/skills-eval.sh`.
+`tests/README-eval.md` documents how to run the three acceptance checks with a
+real agent on the same fixture.
 
 ---
 

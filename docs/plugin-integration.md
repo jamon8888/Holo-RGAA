@@ -130,7 +130,7 @@ do not control.
 
 ## 3. MCP tools
 
-Ten tools are registered. These names are what the server answers to —
+Twelve tools are registered. These names are what the server answers to —
 verify against `#[tool(name = ...)]` in
 `rgaa-rs/crates/rgaa-mcp/src/server.rs`, or just call `tools/list`.
 
@@ -141,8 +141,10 @@ verify against `#[tool(name = ...)]` in
 | `get_audit_result` | `GetAuditInput` | A previously run audit, by `audit_id` |
 | `get_test_methodology` | `GetTestMethodologyRequest` | The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit |
 | `lint_static` | `LintStaticRequest` | Static lint of HTML/JSX/TSX/Vue **source**: `rule`, `severity`, line/column, fix hint. No browser, no build — a first pass over source, not a conformance verdict |
+| `list_analysis_plugins` | *(none)* | Compiled analysis plugins, their tests, models and cache presence — check before `run_analysis_plugin` |
 | `list_criteria` | *(none)* | The 106 RGAA criteria: id, title, classification |
 | `remediate` | `RemediationRequest` | Approval-gated fix proposals |
+| `run_analysis_plugin` | `RunAnalysisPluginInput` | One plugin's `Preuve` values (measurements, artefacts); **no status, no verdict** (R7) |
 | `source_map` | `SourceMapRequest` | `source_location` (file, line, column, snippet) per finding, mapping a browser finding back to the template that produced it; ambiguous ones return in `unmappable` |
 | `verify_fix` | `VerifyFixRequest` | Re-verification against a reference audit: `fixed` / `remaining` / `new`, plus `unverified` for pages that could not be re-analysed |
 | `igt` | `GuidedTestRequest` | Guided keyboard test — **deprecated**, use `analyze` with `config.igt_tools: ["keyboard"]` |

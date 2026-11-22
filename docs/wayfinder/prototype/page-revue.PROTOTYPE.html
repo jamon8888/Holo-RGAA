@@ -1,0 +1,483 @@
+<title>Page de revue RGAA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* PROTOTYPE jetable — ticket wayfinder #409. Trois structures de page de revue, bascule par #variant-a / -b / -c.
+   Layout : bandeau relecteur en haut, corps propre à chaque variante, état enregistré en bas, sélecteur flottant. */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --fg: #17202b; --muted: #556170; --line: #d8dde4;
+  --accent: #1f5f8b; --accent-fg: #ffffff; --soft: #e7f0f6;
+  --yes: #1d6b45; --yes-bg: #e3f2ea; --no: #a3361f; --no-bg: #fbe8e3; --na: #6b5a12; --na-bg: #f6efd2;
+  --focus: #c2410c;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-head: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161c; --surface: #19212a; --fg: #e6ebf0; --muted: #9aa6b3; --line: #2d3843;
+  --accent: #7cb8e4; --accent-fg: #0d1a24; --soft: #1d2f3d;
+  --yes: #7fd1a3; --yes-bg: #173326; --no: #f2a28f; --no-bg: #3a1f19; --na: #e5cf73; --na-bg: #332c12;
+  --focus: #fb923c; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19212a; --fg: #e6ebf0; --muted: #9aa6b3; --line: #2d3843;
+  --accent: #7cb8e4; --accent-fg: #0d1a24; --soft: #1d2f3d;
+  --yes: #7fd1a3; --yes-bg: #173326; --no: #f2a28f; --no-bg: #3a1f19; --na: #e5cf73; --na-bg: #332c12;
+  --focus: #fb923c; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.55 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 96px; }
+h1, h2, h3 { font-family: var(--font-head); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: 1.35rem; } h2 { font-size: 1.15rem; } h3 { font-size: 1rem; }
+.mono { font-family: var(--font-mono); font-size: .82rem; }
+.muted { color: var(--muted); }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+button, select, textarea, input { font: inherit; color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; padding-top: 16px; }
+
+.proto { background: var(--na-bg); color: var(--na); border: 1px dashed var(--na); border-radius: 6px;
+  padding: 6px 10px; font-size: .85rem; }
+.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.who { display: flex; gap: 10px; align-items: center; font-size: .92rem; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-fg);
+  display: grid; place-items: center; font-weight: 700; }
+.rule3 { background: var(--soft); border-radius: 6px; padding: 10px 14px; font-size: .92rem; }
+.eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; color: var(--muted); font-weight: 700; }
+
+.chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 10px;
+  font-size: .8rem; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.chip.yes { background: var(--yes-bg); color: var(--yes); border-color: transparent; }
+.chip.no { background: var(--no-bg); color: var(--no); border-color: transparent; }
+.chip.na { background: var(--na-bg); color: var(--na); border-color: transparent; }
+
+.evidence { display: grid; gap: 12px; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); align-items: start; }
+.shot { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); overflow: hidden; max-width: 100%; }
+.shot svg { display: block; width: 100%; height: auto; }
+.shot figcaption { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); padding: 4px 8px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.facts { display: grid; gap: 8px; min-width: 0; }
+.fact { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 8px; font-size: .92rem; }
+.fact dt { color: var(--muted); } .fact dd { margin: 0; overflow-wrap: anywhere; }
+.conds { display: grid; gap: 8px; }
+.cond { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: baseline; }
+.cond p { margin: 0; grid-column: 2; color: var(--muted); font-size: .9rem; }
+
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0; display: grid; gap: 10px; }
+legend { font-weight: 700; padding: 0 6px; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { position: relative; }
+.choice input { position: absolute; opacity: 0; inset: 0; }
+.choice label { display: inline-block; border: 2px solid var(--line); border-radius: 6px; padding: 6px 14px; cursor: pointer; background: var(--surface); }
+.choice input:focus-visible + label { outline: 3px solid var(--focus); outline-offset: 2px; }
+.choice input:checked + label { border-color: var(--accent); background: var(--soft); font-weight: 700; }
+textarea { width: 100%; min-height: 70px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--surface); }
+.primary { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 6px; padding: 9px 18px; font-weight: 700; cursor: pointer; }
+.ghost { background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+.saved { font-size: .88rem; color: var(--yes); min-height: 1.4em; }
+
+/* Variante A : file + détail */
+.va { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 20px; }
+.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; align-content: start; }
+.queue button { width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+  padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; }
+.queue button[aria-current="true"] { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+.queue .rank { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 16px; min-width: 0; }
+
+/* Variante B : une à la fois */
+.vb { max-width: 760px; margin: 0 auto; width: 100%; display: grid; gap: 18px; }
+.progress { display: grid; gap: 6px; }
+.bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--accent); }
+.vb .shot { max-width: 420px; }
+.vb .evidence { grid-template-columns: minmax(0, 1fr); }
+.keys { font-size: .85rem; color: var(--muted); }
+kbd { font-family: var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); }
+
+/* Variante C : grille */
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: .9rem; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-family: var(--font-head); font-size: .82rem; color: var(--muted); background: var(--bg); position: sticky; top: 0; }
+td select { border: 1px solid var(--line); border-radius: 6px; padding: 5px; background: var(--surface); }
+td .conds { gap: 4px; }
+details summary { cursor: pointer; color: var(--accent); }
+details .shot { margin-top: 8px; max-width: 260px; }
+.vc-note { font-size: .88rem; }
+
+/* État enregistré */
+.state { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 8px; }
+.state pre { margin: 0; overflow-x: auto; font-family: var(--font-mono); font-size: .78rem; line-height: 1.5; max-height: 260px; }
+
+/* Composants de preuve (P-09). Aucun verdict affiché (R3) : l'indice est un
+   simple ordonnancement de la file, l'avis du modèle reste replié. */
+.preuves { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+.preuve { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.preuve h3 { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.preuve .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.preuve .lede { margin: 0; color: var(--muted); font-size: .88rem; }
+.ratio { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ratio strong { font-family: var(--font-head); font-size: 2.4rem; line-height: 1; }
+.swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+.swatch { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-family: var(--font-mono); font-size: .78rem; display: flex; align-items: center; gap: 6px; }
+.swatch i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); display: inline-block; }
+.masque { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; max-width: 100%; }
+.masque svg { display: block; width: 100%; height: auto; }
+.masque figcaption { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); padding: 4px 8px; border-top: 1px solid var(--line); }
+.ocr mark { background: var(--na-bg); color: var(--na); padding: 0 3px; border-radius: 3px; }
+.ocr { margin: 0; font-size: .92rem; }
+.sim { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: .9rem; margin: 0; }
+.sim dt { color: var(--muted); } .sim dd { margin: 0; }
+.sim dd.suspect { color: var(--no); font-weight: 700; }
+.preuve details { border-top: 1px solid var(--line); padding-top: 8px; }
+.preuve details summary { font-size: .88rem; }
+
+/* Sélecteur flottant de prototype (hors design évalué) */
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 6px; background: #111; color: #fff; border-radius: 999px; padding: 6px 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 20; font-size: .88rem; max-width: calc(100% - 32px); }
+.switcher button { background: #333; color: #fff; border: 0; border-radius: 999px; width: 32px; height: 32px; cursor: pointer; }
+.switcher span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 760px) {
+  .va { grid-template-columns: minmax(0, 1fr); }
+  .evidence { grid-template-columns: minmax(0, 1fr); }
+  .fact { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="proto" role="note">Prototype jetable (carte « Pilote payant M1 », ticket « Page de revue minimale du pilote »). Données d'exemple ; rien n'est envoyé.</p>
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">Revue des tests Assistés</p>
+      <h1>Boutique Orme — audit du 18 nov. 2026</h1>
+      <p class="muted mono">audit 7c1e…a42f · 15 pages · RGAA 4.1.2</p>
+    </div>
+    <div class="who">
+      <div class="avatar" aria-hidden="true">CM</div>
+      <div><strong>Camille Martin</strong> · relectrice<br><span class="muted">Compte personnel, connexion par lien envoyé par e-mail</span></div>
+    </div>
+  </header>
+
+  <p class="rule3"><strong>Le verdict du modèle n'est pas affiché.</strong> Vous voyez la preuve et les conditions vérifiées une à une. Le verdict sert uniquement à ordonner la file : les tests en tête sont ceux qui méritent le plus votre attention.</p>
+
+  <main id="view" aria-live="polite"></main>
+
+  <section class="preuves" aria-labelledby="preuves-h">
+    <div style="grid-column:1/-1">
+      <h2 id="preuves-h">Preuves d'analyse (exemples)</h2>
+      <p class="muted" style="margin:4px 0 0">Deux composants alimentés par des preuves JSON conformes au schéma <code>Preuve</code> (P-00 §5). Les valeurs viennent des oracle des specs P-01 et P-03, pas d'un avis de modèle. Aucun verdict n'est affiché (R3) : l'avis du modèle reste replié et indicatif.</p>
+    </div>
+    <article id="preuve-contraste" class="preuve" aria-label="PreuveContraste"></article>
+    <article id="preuve-image" class="preuve" aria-label="PreuveImage"></article>
+  </section>
+
+  <section class="state" aria-labelledby="state-h">
+    <h2 id="state-h">Ce que le bundle enregistre</h2>
+    <p class="muted" style="margin:0">Chaque décision porte votre compte, l'horodatage et le hash de la preuve examinée. Le serveur refuse toute décision sans compte personnel.</p>
+    <pre id="state"></pre>
+  </section>
+</div>
+
+<nav class="switcher" aria-label="Variantes du prototype">
+  <button type="button" id="prev" aria-label="Variante précédente">←</button>
+  <span id="vlabel"></span>
+  <button type="button" id="next" aria-label="Variante suivante">→</button>
+</nav>
+
+<!-- Preuves JSON d'exemple, conformes au schéma Preuve (P-00 §5).
+     Mêmes valeurs que tests/fixtures/preuves-analyse.json du plugin rgaa-consultant. -->
+<script type="application/json" id="preuves-exemple">
+[
+  {
+    "plugin": "contrast",
+    "version_plugin": "0.1.0",
+    "version_modele": null,
+    "tests": ["3.2.1"],
+    "sujet": { "Element": { "selecteur": "main p a.lien-gris", "xpath": "/html/body/main/p/a",
+      "bbox": { "x": 120.0, "y": 318.0, "width": 96.0, "height": 20.0 } } },
+    "portee": "Mesuree",
+    "mesures": { "etape": "A", "etat": "repos", "ratio": 4.48, "seuil": 4.5,
+      "texte_grand": false, "couleur_avant": "#777777", "couleur_fond": "#ffffff",
+      "fond_p5": null, "fond_p95": null, "taille_px": 16, "graisse": 400 },
+    "indice": { "Suspect": { "raison": "ratio 4,48 inférieur au seuil 4,5 (oracle WebAIM, spec P-01 §6)" } },
+    "artefacts": [],
+    "empreinte_entree": "sha256:9f2c1b0e4d7a6f3581c0b2e9d4a7f6c3b8e5d2a1f0c9b6e3d8a5f2c7b1e4d9a0"
+  },
+  {
+    "plugin": "images",
+    "version_plugin": "0.1.0",
+    "version_modele": "clip-vi-t-b32+ocr-fr-2026-01",
+    "tests": ["1.3.1", "1.8.1"],
+    "sujet": { "Element": { "selecteur": "header a.logo img", "xpath": "/html/body/header/a/img",
+      "bbox": { "x": 24.0, "y": 16.0, "width": 132.0, "height": 44.0 } } },
+    "portee": "Estimee",
+    "mesures": { "type_noeud": "img", "nom_accessible": "Logo", "dans_lien": true, "occurrences_site": 41,
+      "ocr": { "texte": "SOLDES -50%", "couverture": 0.62, "confiance": 0.88 },
+      "clip": { "classe": "capture d'écran de texte", "score": 0.71, "similarite_alt": 0.19, "ancre_hasard": 0.22 },
+      "regles": ["alt-nom-fichier"],
+      "avis_modele": { "pertinente": "non", "manque": "le pourcentage de remise" } },
+    "indice": { "Suspect": { "raison": "similarité alt 0,19 inférieure à l'ancre de hasard 0,22 (spec P-03 §6)" } },
+    "artefacts": [ { "nom": "vignette-logo.png", "media_type": "image/png",
+      "chemin_bundle": "analysis/images/4b1c…/vignette-logo.png",
+      "sha256": "sha256:4b1c9a2e7f5d80631c4b9a2e7d5c80631c1b4a9e2f7d5c80631b4a9e2f7d5c80631" } ],
+    "empreinte_entree": "sha256:2c7e5b1a9f4d8063c2b7e5b1a9f4d8063c2b7e5b1a9f4d8063c2b7e5b1a9f4d8063"
+  }
+]
+</script>
+
+<script>
+// ---------- Données d'exemple (ordre = signal interne du modèle, jamais affiché) ----------
+const ARMCHAIR = '<svg viewBox="0 0 220 140" role="img" aria-label="Vignette : fauteuil en bois au tissu vert"><rect width="220" height="140" fill="#e9e4da"/><rect x="62" y="34" width="96" height="58" rx="10" fill="#6f8f6a"/><rect x="50" y="78" width="120" height="24" rx="8" fill="#5c7a58"/><rect x="58" y="100" width="8" height="28" fill="#8a5a2b"/><rect x="154" y="100" width="8" height="28" fill="#8a5a2b"/></svg>';
+const CHART = '<svg viewBox="0 0 220 140" role="img" aria-label="Vignette : histogramme de ventes mensuelles"><rect width="220" height="140" fill="#eef1f5"/><g fill="#1f5f8b"><rect x="24" y="80" width="18" height="44"/><rect x="52" y="64" width="18" height="60"/><rect x="80" y="70" width="18" height="54"/><rect x="108" y="46" width="18" height="78"/><rect x="136" y="38" width="18" height="86"/><rect x="164" y="26" width="18" height="98"/></g><line x1="16" y1="124" x2="200" y2="124" stroke="#556170"/></svg>';
+const TABLE = '<svg viewBox="0 0 220 140" role="img" aria-label="Vignette : tableau des frais de livraison"><rect width="220" height="140" fill="#f4f6f8"/><rect x="14" y="18" width="192" height="22" fill="#1f5f8b"/><g stroke="#c7ced6"><line x1="14" y1="62" x2="206" y2="62"/><line x1="14" y1="84" x2="206" y2="84"/><line x1="14" y1="106" x2="206" y2="106"/><line x1="78" y1="18" x2="78" y2="128"/><line x1="142" y1="18" x2="142" y2="128"/></g><rect x="14" y="18" width="192" height="110" fill="none" stroke="#8b97a5"/></svg>';
+const BEFORE_AFTER = '<svg viewBox="0 0 220 140" role="img" aria-label="Vignettes avant et après : la liste des pays recharge la page"><rect width="220" height="140" fill="#eef1f5"/><rect x="10" y="14" width="96" height="112" fill="#fff" stroke="#8b97a5"/><rect x="114" y="14" width="96" height="112" fill="#fff" stroke="#8b97a5"/><rect x="20" y="30" width="76" height="14" fill="#d8dde4"/><rect x="124" y="30" width="76" height="14" fill="#1f5f8b"/><text x="58" y="118" font-size="10" text-anchor="middle" fill="#556170">avant</text><text x="162" y="118" font-size="10" text-anchor="middle" fill="#556170">après</text></svg>';
+const TITLE = '<svg viewBox="0 0 220 140" role="img" aria-label="Vignette : onglet de navigateur titré Accueil"><rect width="220" height="140" fill="#eef1f5"/><rect x="14" y="16" width="110" height="22" rx="4" fill="#fff" stroke="#8b97a5"/><text x="24" y="31" font-size="11" fill="#17202b">Accueil</text><rect x="14" y="44" width="192" height="80" fill="#fff" stroke="#8b97a5"/><rect x="26" y="58" width="120" height="10" fill="#d8dde4"/></svg>';
+
+const TESTS = [
+  { id: "1.3.1", family: "Alternative d'image", calibrated: true, page: "/catalogue/fauteuil-orme",
+    title: "L'alternative de cette image porteuse d'information est-elle pertinente ?",
+    shot: ARMCHAIR, hash: "sha256:9f2c…41be",
+    facts: [["Alternative", "« fauteuil »"], ["Contexte de la page", "Fiche produit : « Fauteuil Orme, chêne massif, assise velours vert sauge »"]],
+    conds: [["Complétude vis-à-vis de l'image", "no", "L'alternative ne nomme ni le bois ni la couleur du tissu, visibles sur l'image."],
+            ["Cohérence avec le contexte", "yes", "Elle reprend le sujet de la fiche produit."]] },
+  { id: "7.4.1", family: "Changement de contexte", calibrated: false, page: "/livraison",
+    title: "L'utilisateur est-il averti, ou garde-t-il le contrôle, avant un changement de contexte ?",
+    shot: BEFORE_AFTER, hash: "sha256:03ad…9c70",
+    facts: [["État provoqué", "Choix de « Belgique » dans la liste des pays, au clavier"], ["Effet observé", "La page se recharge sans bouton de validation"], ["Capture", "Refaite par notre outil après le geste de l'agent, puis hachée"]],
+    conds: [["Avertissement préalable", "no", "Aucun texte n'annonce le rechargement."],
+            ["Bouton de validation explicite", "no", "Aucun bouton à proximité de la liste."]] },
+  { id: "1.7.1", family: "Description détaillée", calibrated: false, page: "/a-propos/chiffres",
+    title: "La description détaillée de cette image est-elle pertinente ?",
+    shot: CHART, hash: "sha256:b81e…07d3",
+    facts: [["Description liée", "« Nos ventes ont fortement progressé au cours de l'année. »"], ["Lien", "aria-describedby → #desc-ventes"]],
+    conds: [["Complétude", "no", "Les six valeurs mensuelles du graphique ne sont pas restituées."],
+            ["Cohérence avec le contexte", "yes", "La description porte bien sur les ventes présentées."]] },
+  { id: "5.2.1", family: "Résumé de tableau", calibrated: false, page: "/livraison",
+    title: "Le résumé de ce tableau de données complexe est-il pertinent ?",
+    shot: TABLE, hash: "sha256:5d40…e2a9",
+    facts: [["Résumé", "« Tarifs de livraison par zone et par poids. Lignes : zones ; colonnes : tranches de poids. »"], ["Structure", "En-têtes sur deux niveaux, portées explicites"]],
+    conds: [["Décrit la nature du tableau", "yes", "Annonce le sujet : tarifs par zone et par poids."],
+            ["Décrit la structure", "yes", "Indique ce que portent les lignes et les colonnes."]] },
+  { id: "8.6.1", family: "Résumé et libellé", calibrated: false, page: "/compte/commandes",
+    title: "Le titre de cette page est-il pertinent ?",
+    shot: TITLE, hash: "sha256:e7a9…1f6b",
+    facts: [["Titre", "« Accueil »"], ["Contenu principal", "Liste des commandes passées et de leur suivi"]],
+    conds: [["Identifie le contenu de la page", "no", "« Accueil » ne décrit pas la page des commandes."],
+            ["Permet de distinguer la page", "no", "Même titre que la page d'accueil du site."]] },
+];
+
+const LABEL = { yes: "oui", no: "non", na: "sans objet" };
+const DECISIONS = { conforme: "Conforme", non_conforme: "Non conforme", non_applicable: "Non applicable" };
+const decisions = {};   // id -> {decision, commentaire, horodatage}
+let current = 0;
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const condsHTML = t => '<div class="conds">' + t.conds.map(([n, v, why]) =>
+  `<div class="cond"><span class="chip ${v}">${esc(n)} : ${LABEL[v]}</span><p>${esc(why)}</p></div>`).join("") + "</div>";
+const factsHTML = t => '<dl class="facts">' + t.facts.map(([k, v]) =>
+  `<div class="fact"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("") + "</dl>";
+const shotHTML = t => `<figure class="shot" style="margin:0">${t.shot}<figcaption>${t.hash}</figcaption></figure>`;
+const metaHTML = t => `<p class="muted" style="margin:0"><span class="mono">${t.id}</span> · ${esc(t.family)} · ${t.calibrated ? "famille calibrée" : "famille non calibrée"} · <span class="mono">${t.page}</span></p>`;
+
+function decisionForm(t, suffix, submitLabel) {
+  const d = decisions[t.id] || {};
+  return `<form class="decide" data-id="${t.id}">
+    <fieldset><legend>Votre décision de revue</legend>
+      <div class="choices">${Object.entries(DECISIONS).map(([k, l]) => `
+        <span class="choice"><input type="radio" name="d-${t.id}-${suffix}" id="d-${t.id}-${k}-${suffix}" value="${k}" ${d.decision === k ? "checked" : ""} required>
+        <label for="d-${t.id}-${k}-${suffix}">${l}</label></span>`).join("")}</div>
+      <label for="c-${t.id}-${suffix}">Commentaire (obligatoire pour « Non conforme »)</label>
+      <textarea id="c-${t.id}-${suffix}" name="commentaire">${esc(d.commentaire || "")}</textarea>
+      <div><button class="primary" type="submit">${submitLabel}</button></div>
+      <p class="saved" role="status"></p>
+    </fieldset></form>`;
+}
+
+function record(form) {
+  const id = form.dataset.id;
+  const decision = (form.querySelector("input[type=radio]:checked") || {}).value;
+  const commentaire = form.querySelector("textarea").value.trim();
+  const status = form.querySelector(".saved");
+  if (!decision) { status.textContent = "Choisissez une décision."; status.style.color = "var(--no)"; return false; }
+  if (decision === "non_conforme" && !commentaire) { status.textContent = "Ajoutez un commentaire pour une non-conformité."; status.style.color = "var(--no)"; return false; }
+  decisions[id] = { decision, commentaire, horodatage: new Date().toISOString() };
+  status.style.color = "var(--yes)"; status.textContent = "Décision enregistrée.";
+  renderState(); return true;
+}
+
+function renderState() {
+  const out = TESTS.filter(t => decisions[t.id]).map(t => ({
+    test: t.id, page: t.page, decision: decisions[t.id].decision, commentaire: decisions[t.id].commentaire || null,
+    relecteur: { compte: "camille.martin", authentification: "lien e-mail" },
+    horodatage: decisions[t.id].horodatage, preuve_examinee: t.hash }));
+  document.getElementById("state").textContent = out.length ? JSON.stringify(out, null, 2) : "Aucune décision pour l'instant.";
+}
+
+// ---------- Variante A : file + détail ----------
+function viewA() {
+  const t = TESTS[current];
+  return `<div class="va">
+    <nav aria-label="File de revue"><p class="eyebrow">File · ${TESTS.length} tests à revoir</p>
+      <ol class="queue">${TESTS.map((x, i) => `<li><button type="button" data-go="${i}" aria-current="${i === current}">
+        <span class="rank">#${i + 1} · ${x.id}${decisions[x.id] ? " · " + DECISIONS[decisions[x.id].decision] : ""}</span>
+        <span>${esc(x.family)}</span><span class="muted mono">${x.page}</span></button></li>`).join("")}</ol></nav>
+    <article class="panel"><div><h2>${esc(t.title)}</h2>${metaHTML(t)}</div>
+      <div class="evidence">${shotHTML(t)}${factsHTML(t)}</div>
+      <section><h3 style="margin-bottom:8px">Conditions vérifiées</h3>${condsHTML(t)}</section>
+      ${decisionForm(t, "a", "Enregistrer la décision")}</article></div>`;
+}
+
+// ---------- Variante B : une à la fois ----------
+function viewB() {
+  const t = TESTS[current], done = Object.keys(decisions).length;
+  return `<div class="vb">
+    <div class="progress"><p class="eyebrow">Test ${current + 1} sur ${TESTS.length} · ${done} décidé${done > 1 ? "s" : ""}</p>
+      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${TESTS.length}" aria-valuenow="${done}" aria-label="Avancement de la revue"><span style="width:${100 * done / TESTS.length}%"></span></div></div>
+    <h2>${esc(t.title)}</h2>${metaHTML(t)}
+    <div class="evidence">${shotHTML(t)}${factsHTML(t)}</div>
+    <section><h3 style="margin-bottom:8px">Conditions vérifiées</h3>${condsHTML(t)}</section>
+    ${decisionForm(t, "b", "Enregistrer et passer au suivant")}
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" type="button" data-step="-1">Test précédent</button><button class="ghost" type="button" data-step="1">Passer sans décider</button></div>
+    <p class="keys">Raccourcis hors champ de texte : <kbd>1</kbd> Conforme · <kbd>2</kbd> Non conforme · <kbd>3</kbd> Non applicable</p></div>`;
+}
+
+// ---------- Variante C : grille ----------
+function viewC() {
+  return `<p class="vc-note muted">Vue d'ensemble pour un responsable conformité : une ligne par test, décision dans la ligne. Pas de décision groupée : chaque test se décide seul.</p>
+  <div class="scroll"><table><caption class="eyebrow" style="text-align:left;padding:10px 12px">Tests Assistés à revoir, dans l'ordre de priorité</caption>
+    <thead><tr><th scope="col">Test</th><th scope="col">Page</th><th scope="col">Conditions</th><th scope="col">Preuve</th><th scope="col">Décision</th></tr></thead>
+    <tbody>${TESTS.map(t => `<tr><th scope="row"><span class="mono">${t.id}</span><br>${esc(t.family)}<br><span class="muted">${t.calibrated ? "calibrée" : "non calibrée"}</span></th>
+      <td class="mono">${t.page}</td><td>${condsHTML(t)}</td>
+      <td><details><summary>Voir la preuve</summary>${shotHTML(t)}${factsHTML(t)}</details></td>
+      <td><label class="eyebrow" for="sel-${t.id}">Décision ${t.id}</label><br>
+        <select id="sel-${t.id}" data-id="${t.id}"><option value="">À décider</option>${Object.entries(DECISIONS).map(([k, l]) =>
+          `<option value="${k}" ${decisions[t.id] && decisions[t.id].decision === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <p class="saved" id="st-${t.id}" role="status"></p></td></tr>`).join("")}</tbody></table></div>`;
+}
+
+// ---------- Montage, bascule, événements ----------
+const VARIANTS = { a: ["A", "File et détail", viewA], b: ["B", "Une à la fois", viewB], c: ["C", "Grille", viewC] };
+const keys = Object.keys(VARIANTS);
+const variant = () => { const m = location.hash.match(/^#variant-([abc])$/); return m ? m[1] : "a"; };
+
+function render() {
+  const v = variant();
+  document.getElementById("view").innerHTML = VARIANTS[v][2]();
+  document.getElementById("vlabel").textContent = `${VARIANTS[v][0]} (${VARIANTS[v][1]})`;
+  renderState();
+}
+function cycle(step) { const i = (keys.indexOf(variant()) + step + keys.length) % keys.length; location.hash = "variant-" + keys[i]; }
+
+document.getElementById("prev").addEventListener("click", () => cycle(-1));
+document.getElementById("next").addEventListener("click", () => cycle(1));
+window.addEventListener("hashchange", render);
+document.addEventListener("keydown", e => {
+  const typing = e.target.closest("input, textarea, select, [contenteditable]");
+  if (typing && e.target.type !== "radio") return;
+  if (e.key === "ArrowLeft" && !typing) cycle(-1);
+  if (e.key === "ArrowRight" && !typing) cycle(1);
+  if (variant() === "b" && ["1", "2", "3"].includes(e.key)) {
+    const k = Object.keys(DECISIONS)[+e.key - 1];
+    const input = document.getElementById(`d-${TESTS[current].id}-${k}-b`); if (input) { input.checked = true; input.focus(); }
+  }
+});
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]"); if (go) { current = +go.dataset.go; render(); return; }
+  const st = e.target.closest("[data-step]"); if (st) { current = (current + +st.dataset.step + TESTS.length) % TESTS.length; render(); }
+});
+document.addEventListener("submit", e => {
+  e.preventDefault();
+  const form = e.target.closest("form.decide"); if (!form || !record(form)) return;
+  if (variant() === "b") { current = Math.min(current + 1, TESTS.length - 1); render(); }
+  else if (variant() === "a") { const keep = form.querySelector(".saved").textContent; render(); const s = document.querySelector("form.decide .saved"); if (s) s.textContent = keep; }
+});
+document.addEventListener("change", e => {
+  const sel = e.target.closest("select[data-id]"); if (!sel) return;
+  const id = sel.dataset.id, st = document.getElementById("st-" + id);
+  if (!sel.value) { delete decisions[id]; st.textContent = ""; renderState(); return; }
+  if (sel.value === "non_conforme") { st.style.color = "var(--no)"; st.textContent = "Non enregistrée : une non-conformité demande un commentaire, que cette vue ne permet pas de saisir."; return; }
+  decisions[id] = { decision: sel.value, commentaire: "", horodatage: new Date().toISOString() };
+  st.style.color = "var(--yes)"; st.textContent = "Décision enregistrée.";
+  renderState();
+});
+
+// ---------- Composants de preuve (spec P-09 §3) ----------
+// Alimentés par les preuves JSON du bloc #preuves-exemple (schéma Preuve).
+const PREUVES = JSON.parse(document.getElementById("preuves-exemple").textContent);
+const indiceHTML = p => {
+  if (p.indice && p.indice.Suspect) return `<span class="chip no">indice de revue : Suspect</span>`;
+  if (p.indice && p.indice.Rassurant) return `<span class="chip yes">indice de revue : Rassurant</span>`;
+  return `<span class="chip">indice : Neutre</span>`;
+};
+const decisionHTML = note => `<p class="lede">Décision de revue à prendre par le relecteur (R7) — ${esc(note)}.</p>`;
+
+// PreuveContraste : pastilles des couleurs, ratio en gros, seuil, vignette
+// avec masque texte, état (repos, survol, focus).
+function preuveContrasteHTML(p) {
+  const m = p.mesures;
+  const etat = { repos: "repos", hover: "survol", focus: "focus" }[m.etat] || m.etat;
+  const etapes = { A: "mesure CSS", B: "mesure sur pixels", C: "composant non textuel" };
+  const vignette = `<figure class="masque" style="margin:0">
+    <svg viewBox="0 0 300 90" role="img" aria-label="Vignette illustrative : texte gris « En savoir plus » sur fond blanc, avec le masque texte en pointillés">
+      <rect width="300" height="90" fill="${esc(m.couleur_fond)}"/>
+      <text x="16" y="54" font-size="22" font-family="sans-serif" fill="${esc(m.couleur_avant)}">En savoir plus</text>
+      <rect x="12" y="28" width="150" height="34" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="4 3"/>
+    </svg>
+    <figcaption>${esc(p.sujet.Element.selecteur)} · masque texte en pointillés · vignette illustrative (preuve ${esc(m.etape)}, aucun artefact joint)</figcaption></figure>`;
+  return `<h3>PreuveContraste <span class="chip">contrast</span></h3>
+    <div class="badges"><span class="chip">${esc(p.portee)}</span><span class="chip">${esc(etapes[m.etape] || m.etape)}</span>
+      <span class="chip">état : ${esc(etat)}</span>${indiceHTML(p)}</div>
+    <p class="lede">${esc(p.tests.join(" · "))} · ${esc(m.taille_px)} px / ${esc(m.graisse)}${m.texte_grand ? " · texte grand" : ""}</p>
+    <div class="ratio"><strong>${String(m.ratio).replace(".", ",")}:1</strong>
+      <span>seuil <strong>${String(m.seuil).replace(".", ",")}:1</strong></span></div>
+    <div class="swatches">
+      <span class="swatch"><i style="background:${esc(m.couleur_avant)}"></i> texte ${esc(m.couleur_avant)}</span>
+      <span class="swatch"><i style="background:${esc(m.couleur_fond)}"></i> fond ${esc(m.couleur_fond)}</span></div>
+    ${vignette}
+    <p class="lede">Ratio mesuré par le plugin, jamais estimé visuellement. Aucun avis de modèle pour ce plugin.</p>
+    ${decisionHTML("décision dans la page de revue ou par la commande decide (confirmation hors bande, D2)")}`;
+}
+
+// PreuveImage : vignette, alt, texte OCR surligné, similarité face à l'ancre
+// de hasard, nombre d'occurrences. Avis du modèle replié (R3).
+function preuveImageHTML(p) {
+  const m = p.mesures;
+  const suspect = m.clip.similarite_alt < m.clip.ancre_hasard;
+  const vignette = `<figure class="masque" style="margin:0">
+    <svg viewBox="0 0 300 90" role="img" aria-label="Vignette : bannière de soldes affichant SOLDES -50 pour cent">
+      <rect width="300" height="90" fill="#f3e9e9"/>
+      <rect x="10" y="18" width="280" height="54" rx="6" fill="#a3361f"/>
+      <text x="150" y="54" font-size="26" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="#ffffff">SOLDES -50%</text>
+    </svg>
+    <figcaption>${esc(p.artefacts[0] ? p.artefacts[0].nom : "vignette")} · « ${esc(m.nom_accessible)} »</figcaption></figure>`;
+  return `<h3>PreuveImage <span class="chip">images</span></h3>
+    <div class="badges"><span class="chip">${esc(p.portee)}</span><span class="chip">${esc(m.occurrences_site)} occurrences</span>${indiceHTML(p)}</div>
+    <p class="lede">${esc(p.tests.join(" · "))} · « ce logo, ${esc(m.occurrences_site)} pages » · ${esc(m.clip.classe)}</p>
+    ${vignette}
+    <p class="ocr"><strong>Texte OCR :</strong> <mark>${esc(m.ocr.texte)}</mark> — couverture ${String(m.ocr.couverture).replace(".", ",")}, confiance ${String(m.ocr.confiance).replace(".", ",")}</p>
+    <dl class="sim">
+      <dt>Alt / nom accessible</dt><dd>« ${esc(m.nom_accessible)} »${m.dans_lien ? " (dans un lien)" : ""}</dd>
+      <dt>Similarité alt</dt><dd class="${suspect ? "suspect" : ""}">${String(m.clip.similarite_alt).replace(".", ",")}</dd>
+      <dt>Ancre de hasard</dt><dd>${String(m.clip.ancre_hasard).replace(".", ",")}</dd>
+      <dt>Règles</dt><dd>${esc(m.regles.join(", ") || "aucune")}</dd>
+    </dl>
+    <details><summary>avis du modèle (indicatif)</summary>
+      <p class="ocr">Pertinence : ${esc(m.avis_modele.pertinente)} — manque : ${esc(m.avis_modele.manque)}</p></details>
+    ${decisionHTML("un lot sur le même pHash ne s'applique qu'après confirmation du relecteur (R5)")}`;
+}
+
+document.getElementById("preuve-contraste").innerHTML = preuveContrasteHTML(
+  PREUVES.find(p => p.plugin === "contrast"));
+document.getElementById("preuve-image").innerHTML = preuveImageHTML(
+  PREUVES.find(p => p.plugin === "images"));
+
+render();
+</script>

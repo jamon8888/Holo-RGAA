@@ -7,7 +7,10 @@ duplique pas les règles d’audit.
 ## Contenu
 
 - Skills : audit, triage, remédiation, vérification, rapport, test guidé et
-  référence des critères.
+  référence des critères, plus les huit skills de preuves d'analyse (contraste,
+  daltonisme, images, medias, mouvement, langue, structure, pertinence). Ces
+  derniers appellent `list_analysis_plugins` puis `run_analysis_plugin`, et ne
+  jamais écrivent de statut (R7) : la décision revient au relecteur (D2).
 - Serveur MCP local `rgaa-mcp`, qui expose les outils décrits ci-dessous.
 - Aucune modification automatique du code : les propositions de remédiation
   restent soumises à l’approbation explicite de l’utilisateur.
@@ -41,7 +44,7 @@ source de découverte du plugin.
 
 ## Outils MCP
 
-Le serveur enregistre actuellement ces neuf outils :
+Le serveur enregistre actuellement ces onze outils :
 
 | Outil | Rôle |
 |---|---|
@@ -49,8 +52,10 @@ Le serveur enregistre actuellement ces neuf outils :
 | `audit_url` | Audit de site ; renvoie un résumé et les URLs échantillonnées. |
 | `get_audit_result` | Relit un audit sauvegardé à partir de son identifiant. |
 | `lint_static` | Première vérification statique de HTML, JSX/TSX et Vue, sans verdict de conformité. |
+| `list_analysis_plugins` | Liste les plugins d'analyse compilés, leurs tests, modèles et présence en cache. |
 | `list_criteria` | Liste les 106 critères RGAA et leur classification. |
 | `remediate` | Génère des propositions de correction pour 1 à 25 problèmes. |
+| `run_analysis_plugin` | Exécute un plugin d'analyse et renvoie ses `Preuve` — aucun statut, aucun verdict (R7). |
 | `source_map` | Recherche les emplacements source probables d’observations navigateur. |
 | `verify_fix` | Compare une nouvelle analyse avec un audit de référence. |
 | `igt` | Test guidé clavier historique ; préférer `analyze` avec `config.igt_tools: ["keyboard"]`. |
@@ -73,6 +78,8 @@ Exemples :
 - « Propose des corrections pour ces constats, sans les appliquer »
 - « Vérifie les fichiers corrigés contre l’audit de référence »
 - « Explique le critère RGAA 1.1 »
+- « Présente les preuves de contraste de https://exemple.fr (/rgaa:contraste) »
+- « Montre les images répétées et leur OCR (/rgaa:images) »
 
 ## Vérification du paquet
 
@@ -83,4 +90,4 @@ bash rgaa-rs/plugins/rgaa-codex/tests/plugin-contract.sh
 ```
 
 Ce contrôle vérifie le manifeste, la configuration MCP, l’entrée marketplace et
-la présence des sept skills.
+la présence des quinze skills (dont les huit skills de preuves d'analyse).

@@ -22,8 +22,8 @@ Le relecteur n'écoute alors que les passages signalés.
 | Récupération du média | `ResourceFetcher` (P-00), même origine et cookies | — | natif |
 | Démultiplexage et décodage audio (mp3, aac/mp4, ogg/vorbis, opus, flac, wav) | `symphonia` 0.6 | `ffmpeg` (webm, hls/m3u8, codecs absents de symphonia) | symphonia, puis ffmpeg en repli automatique |
 | Rééchantillonnage en 16 kHz mono | `rubato` 5.1 | inclus dans `ffmpeg -ar 16000 -ac 1` | natif |
-| Détection de parole (VAD) | `sherpa-onnx` 2.0 (Silero VAD) | — | natif |
-| Transcription horodatée | `sherpa-onnx` 2.0 (modèles Whisper ONNX) ; alternative `whisper-rs` 0.16 (dépôt déplacé sur Codeberg) | `whisper.cpp` `whisper-server` (HTTP local, GPU possible) ; ou **Voxtral** (Mistral) via la passerelle LLM, *Offre Confort* uniquement | `sherpa-onnx` ; modèle à fixer par la mesure du §2 |
+| Détection de parole (VAD) | modèle Silero VAD (ONNX) exécuté par l'`ort` du workspace | — | natif |
+| Transcription horodatée | `whisper-rs` 0.16 (whisper.cpp, ggml, sans ONNX) | `whisper.cpp` `whisper-server` (HTTP local, GPU possible) ; `sherpa-onnx` (pas lié : il embarque un second ONNX Runtime) ; ou **Voxtral** (Mistral) via la passerelle LLM, *Offre Confort* uniquement | `whisper-rs`, modèle `small` par défaut |
 | Lecture des sous-titres | `webvtt-parser` 1.4 (VTT) ; SRT lu par un parseur maison (~40 lignes, `subparse` est abandonné) | — | natif |
 | Synchronisation des sous-titres (recoupement) | — | `alass` (GPL-3.0, donc jamais lié) : décalage optimal audio/sous-titres | optionnel |
 | Intensité sonore (4.10) | `ebur128` 0.1 (EBU R128, LUFS court terme) | — | natif |

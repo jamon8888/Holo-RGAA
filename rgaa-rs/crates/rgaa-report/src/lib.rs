@@ -21,6 +21,7 @@ pub mod packs;
 pub mod pdf;
 #[cfg(feature = "pdf-native")]
 pub mod pdf_native;
+pub mod reouverture;
 pub mod report;
 pub mod sources;
 pub mod ue;

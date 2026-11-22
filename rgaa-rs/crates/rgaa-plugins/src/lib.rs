@@ -25,7 +25,10 @@ pub fn default_registry() -> rgaa_analysis::Result<Registry> {
     {
         builder = builder.with(rgaa_analysis::echo_plugin());
     }
-    // P-06 links `rgaa-analysis-lang` here under `feature = "plugin-lang"`.
+    #[cfg(feature = "plugin-lang")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_lang::LangPlugin::new()));
+    }
 
     for sidecar in rgaa_analysis::sidecar::discover_default() {
         builder = builder.with(Box::new(sidecar));
@@ -44,6 +47,20 @@ mod tests {
         let registry = default_registry().expect("registry");
         let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
         assert!(ids.contains(&"echo"), "{ids:?}");
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-lang")]
+    fn default_registry_contains_the_lang_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"lang"), "{ids:?}");
+        let lang = registry.get("lang").expect("lang plugin");
+        assert!(lang.tests().contains(&"8.4.1"));
+        assert!(lang.tests().contains(&"8.8.1"));
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         assert_eq!(ids, sorted, "the registry must be deterministic");

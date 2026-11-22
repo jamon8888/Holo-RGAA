@@ -7,10 +7,9 @@ edition = "2021"
 
 [features]
 # The plugins with no model to download are compiled by default (P-00 §3).
-default = ["plugin-echo"]
+default = ["plugin-echo", "plugin-lang"]
 plugin-echo = ["rgaa-analysis/plugin-echo"]
-# Marker until rgaa-analysis-lang lands in P-06; the P-06 PR links the crate.
-plugin-lang = ["rgaa-analysis/plugin-lang"]
+plugin-lang = ["rgaa-analysis/plugin-lang", "dep:rgaa-analysis-lang"]
 plugin-contrast = ["rgaa-analysis/plugin-contrast"]
 plugin-colorvision = ["rgaa-analysis/plugin-colorvision"]
 plugin-images = ["rgaa-analysis/plugin-images"]
@@ -32,3 +31,4 @@ plugins-all = [
 
 [dependencies]
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+rgaa-analysis-lang = { path = "../rgaa-analysis-lang", optional = true }

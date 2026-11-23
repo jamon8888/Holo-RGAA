@@ -39,7 +39,7 @@ pub(crate) struct LinkCheck {
 /// `true` when `robots_txt` forbids `path` for every user agent (`User-agent: *`).
 /// Longest matching rule wins; `Allow` beats `Disallow` on a tie, as in the RFC 9309.
 pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
-    let mut in_star_group = false;
+    let mut in_matching_group = false;
     let mut group_has_rules = false;
     let mut best: Option<(usize, bool)> = None; // (length, allowed)
     for raw in robots_txt.lines() {
@@ -51,33 +51,52 @@ pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
         match key.as_str() {
             "user-agent" => {
                 if group_has_rules {
-                    in_star_group = false;
+                    in_matching_group = false;
                     group_has_rules = false;
                 }
-                if value == "*" {
-                    in_star_group = true;
+                if value == "*" || "rgaa-rs-linkcheck".contains(&value.to_ascii_lowercase()) {
+                    in_matching_group = true;
                 }
             }
-            "allow" | "disallow" if in_star_group => {
+            "allow" | "disallow" if in_matching_group => {
                 group_has_rules = true;
-                if value.is_empty() || !path.starts_with(value) {
+                if value.is_empty() || !robots_pattern_matches(value, path) {
                     continue;
                 }
                 let allowed = key == "allow";
                 let better = match best {
                     None => true,
                     Some((len, was_allowed)) => {
-                        value.len() > len || (value.len() == len && allowed && !was_allowed)
+                        let specificity = value.bytes().filter(|byte| !matches!(byte, b'*' | b'$')).count();
+                        specificity > len || (specificity == len && allowed && !was_allowed)
                     }
                 };
                 if better {
-                    best = Some((value.len(), allowed));
+                    best = Some((value.bytes().filter(|byte| !matches!(byte, b'*' | b'$')).count(), allowed));
                 }
             }
             _ => {}
         }
     }
     matches!(best, Some((_, false)))
+}
+
+fn robots_pattern_matches(pattern: &str, path: &str) -> bool {
+    let (pattern, anchored) = pattern.strip_suffix('$').map_or((pattern, false), |p| (p, true));
+    let mut rest = path;
+    for part in pattern.split('*') {
+        if part.is_empty() {
+            continue;
+        }
+        let Some(index) = rest.find(part) else {
+            return false;
+        };
+        if index != 0 && part == pattern.split('*').next().unwrap_or("") {
+            return false;
+        }
+        rest = &rest[index + part.len()..];
+    }
+    !anchored || rest.is_empty()
 }
 
 /// Same-host http(s) links, deduplicated in first-seen order, fragment removed.
@@ -128,15 +147,13 @@ pub(crate) async fn check_links(
         }
         check.checked += 1;
         match client.head(link).send().await {
-            Ok(response)
-                if response.status().is_client_error() || response.status().is_server_error() =>
-            {
+            Ok(response) if matches!(response.status().as_u16(), 404 | 410) => {
                 check
                     .broken
                     .push((link.clone(), response.status().as_u16()));
             }
             Ok(_) => {}
-            Err(_) => check.broken.push((link.clone(), 0)),
+            Err(_) => {}
         }
     }
     check
@@ -146,7 +163,7 @@ pub(crate) async fn check_links(
 pub(crate) fn link_client() -> Result<reqwest::Client, reqwest::Error> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::limited(5))
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent("rgaa-rs-linkcheck")
         .build()
 }
@@ -215,6 +232,8 @@ mod tests {
         assert!(!robots_disallows(robots, "/public"));
         assert!(!robots_disallows("User-agent: bot\nDisallow: /\n", "/x"));
         assert!(!robots_disallows("User-agent: *\nDisallow:\n", "/x"));
+        assert!(robots_disallows("User-agent: *\nDisallow: /*.pdf$", "/guide.pdf"));
+        assert!(!robots_disallows("User-agent: *\nDisallow: /*.pdf$", "/guide.pdf/extra"));
     }
 
     #[test]

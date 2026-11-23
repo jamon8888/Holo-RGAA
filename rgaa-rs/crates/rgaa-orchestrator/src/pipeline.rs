@@ -359,6 +359,7 @@ fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
         // No comparison mechanism decided this criterion: it is not evaluated at site
         // level, whatever a single page said.
         criterion.status = CriterionStatus::NeedsReview;
+        criterion.verified_status = None;
         // `tests` and `automated_verdict` stay as the evidence of the page the result was
         // taken from; only the verdict and its explanation are the site's.
         criterion.violations.clear();
@@ -391,10 +392,11 @@ pub fn assemble_site_audit(
     }
     let (taux_global, coverage_percent, etat_conformite) =
         aggregate_compliance_with_site_criteria(&all_pages, &site_criteria);
-    let all_criteria: Vec<CriterionResult> = all_pages
+    let mut all_criteria: Vec<CriterionResult> = all_pages
         .iter()
         .flat_map(|page| page.criteria.clone())
         .collect();
+    all_criteria.extend(site_criteria.iter().cloned());
     let total = RgaaCriteria::count();
     let pass_count = all_criteria
         .iter()
@@ -1039,6 +1041,15 @@ async fn audit_discovered_urls(
         })
         .collect();
     let (page_observations, exclusions) = site_comparison::select_comparable_pages(&sampled, url);
+    let all_observations: Vec<_> = sampled
+        .iter()
+        .filter_map(|(page_url, observation)| {
+            observation.clone().map(|mut observation| {
+                observation.url = page_url.clone();
+                observation
+            })
+        })
+        .collect();
     let failed_pages = urls
         .iter()
         .filter(|page_url| {
@@ -1049,11 +1060,25 @@ async fn audit_discovered_urls(
         && failed_pages == 0
         && sampled.iter().all(|(_, observation)| observation.is_some());
     let mut site_results = site_comparison::compare_site(
+        &all_observations,
+        sampled.len(),
+        failed_pages,
+        sample_complete,
+    );
+    let comparable_results = site_comparison::compare_site(
         &page_observations,
         page_observations.len(),
         failed_pages,
         sample_complete,
     );
+    for criterion_id in ["12.2", "12.5"] {
+        if let (Some(current), Some(comparable)) = (
+            site_results.iter_mut().find(|r| r.criterion_id == criterion_id),
+            comparable_results.iter().find(|r| r.criterion_id == criterion_id),
+        ) {
+            *current = comparable.clone();
+        }
+    }
     site_comparison::apply_comparable_set(&mut site_results, page_observations.len(), &exclusions);
     // 12.3: check the links of the site-map page with capped HEAD requests (#271).
     let sitemap_check = check_sitemap_links(&sampled, url, &site_context_binary()).await;
@@ -1139,17 +1164,23 @@ async fn check_sitemap_links(
         .filter(|path| path.starts_with('/'))
         .find_map(|path| base.join(path).ok())?
         .to_string();
+    let client = crate::sitemap_links::link_client().ok()?;
+    let robots = match client.get(base.join("/robots.txt").ok()?).send().await {
+        Ok(response) if response.status().is_success() => response.text().await.ok(),
+        _ => None,
+    };
+    let sitemap = reqwest::Url::parse(&sitemap_url).ok()?;
+    if robots.as_deref().is_some_and(|rules| {
+        crate::sitemap_links::robots_disallows(rules, sitemap.path())
+    }) {
+        return None;
+    }
     let contexts =
         ObscuraBridge::extract_page_context_batch(binary.to_string(), vec![sitemap_url.clone()], 1)
             .await
             .ok()?;
     let page: site_comparison::PageObservation =
         serde_json::from_value(contexts.get(&sitemap_url)?.clone()).ok()?;
-    let client = crate::sitemap_links::link_client().ok()?;
-    let robots = match client.get(base.join("/robots.txt").ok()?).send().await {
-        Ok(response) if response.status().is_success() => response.text().await.ok(),
-        _ => None,
-    };
     Some(
         crate::sitemap_links::check_links(
             &client,

@@ -44,8 +44,11 @@ export function parseContract(text) {
   const spec = JSON.parse(text);
   if ((spec.contract_version ?? 1) > CONTRACT_VERSION) throw new Error(`contract_version ${spec.contract_version} non pris en charge (max ${CONTRACT_VERSION})`);
   if (!Array.isArray(spec.findings)) throw new Error('"findings" est requis');
+  const ids = new Set();
   for (const f of spec.findings) {
     if (!f.id || !f.target) throw new Error(`finding invalide (id et target requis) : ${JSON.stringify(f).slice(0, 80)}`);
+    if (ids.has(f.id)) throw new Error(`id de finding en double : ${f.id}`);
+    ids.add(f.id);
     if (f.tier && !(f.tier in TIERS)) throw new Error(`tier inconnu : ${f.tier}`);
   }
   return spec;
@@ -73,51 +76,59 @@ export function preview(sel, p) {
   if (!el) return { ok: false, error: 'cible introuvable dans la page' };
   const undo = [];
   const revert = () => { undo.reverse().forEach((f) => f()); delete window.__rgaaPreview; };
-  if (p?.css) {
-    const s = document.createElement('style');
-    s.textContent = p.css;
-    document.head.append(s);
-    undo.push(() => s.remove());
-  }
   // Même règle que pour le html : une proposition est une donnée, jamais du code.
-  const unsafe = (k, v) => /^on/i.test(k) || /^srcdoc$/i.test(k) || (/^(href|src|action|formaction|xlink:href)$/i.test(k) && /^\s*javascript:/i.test(String(v)));
-  for (const [k, v] of Object.entries(p?.attributes ?? {})) {
-    if (unsafe(k, v)) { revert(); return { ok: false, error: `attribut refusé : ${k}` }; }
-    const old = el.getAttribute(k);
-    v === null ? el.removeAttribute(k) : el.setAttribute(k, String(v));
-    undo.push(() => (old === null ? el.removeAttribute(k) : el.setAttribute(k, old)));
-  }
-  let shown = el;
-  if (p?.html) {
-    const t = document.createElement('template');
-    t.innerHTML = p.html.trim();
-    // Une proposition est une donnée, jamais du code : on retire scripts, gestionnaires on* et URL javascript:.
-    t.content.querySelectorAll('script,iframe,object,embed').forEach((n) => n.remove());
-    for (const n of t.content.querySelectorAll('*')) {
-      for (const a of [...n.attributes]) {
-        if (/^on/i.test(a.name) || (/^(href|src|action|formaction|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
-      }
+  const unsafe = (k, v) => {
+    const url = String(v).replace(/[\t\n\r]/g, '').trim();
+    return /^on/i.test(k) || /^srcdoc$/i.test(k) || (/^(href|src|action|formaction|xlink:href)$/i.test(k) && (/^javascript:/i.test(url) || (/^(href|xlink:href)$/i.test(k) && /^data:/i.test(url))));
+  };
+  try {
+    if (p?.css) {
+      const s = document.createElement('style');
+      s.textContent = p.css;
+      document.head.append(s);
+      undo.push(() => s.remove());
     }
-    const r = t.content.firstElementChild;
-    if (!r) { revert(); return { ok: false, error: 'html de la proposition vide' }; }
-    const nodes = [...t.content.childNodes]; // tout le fragment, comme capture.mjs
-    el.replaceWith(...nodes);
-    undo.push(() => { nodes[0].replaceWith(el); nodes.slice(1).forEach((n) => n.remove()); });
-    shown = r;
+    for (const [k, v] of Object.entries(p?.attributes ?? {})) {
+      if (unsafe(k, v)) { revert(); return { ok: false, error: `attribut refusé : ${k}` }; }
+      const old = el.getAttribute(k);
+      v === null ? el.removeAttribute(k) : el.setAttribute(k, String(v));
+      undo.push(() => (old === null ? el.removeAttribute(k) : el.setAttribute(k, old)));
+    }
+    let shown = el;
+    if (p?.html) {
+      const t = document.createElement('template');
+      t.innerHTML = p.html.trim();
+      // Une proposition est une donnée, jamais du code : on retire scripts, gestionnaires on* et URL javascript:.
+      t.content.querySelectorAll('script,iframe,object,embed').forEach((n) => n.remove());
+      for (const n of t.content.querySelectorAll('*')) {
+        for (const a of [...n.attributes]) {
+          if (unsafe(a.name, a.value)) n.removeAttribute(a.name);
+        }
+      }
+      const r = t.content.firstElementChild;
+      if (!r) { revert(); return { ok: false, error: 'html de la proposition vide' }; }
+      const nodes = [...t.content.childNodes]; // tout le fragment, comme capture.mjs
+      el.replaceWith(...nodes);
+      undo.push(() => { nodes[0].replaceWith(el); nodes.slice(1).forEach((n) => n.remove()); });
+      shown = r;
+    }
+    const oldStyle = shown.getAttribute('style');
+    undo.push(() => {
+      shown.style.removeProperty('outline');
+      shown.style.removeProperty('outline-offset');
+      // removeProperty laisse `style=""` ; on rend l'attribut tel qu'il était (absent ou valeur d'origine).
+      if (oldStyle === null) { if (!shown.getAttribute('style')) shown.removeAttribute('style'); }
+      else shown.setAttribute('style', oldStyle);
+    });
+    shown.style.setProperty('outline', `4px solid ${p ? '#006b2d' : '#c00000'}`, 'important');
+    shown.style.setProperty('outline-offset', '2px', 'important');
+    shown.scrollIntoView({ block: 'center' });
+    window.__rgaaPreview = { revert };
+    return { ok: true };
+  } catch (e) {
+    revert();
+    return { ok: false, error: `aperçu impossible (${e.message})` };
   }
-  const oldStyle = shown.getAttribute('style');
-  shown.style.setProperty('outline', `4px solid ${p ? '#006b2d' : '#c00000'}`, 'important');
-  shown.style.setProperty('outline-offset', '2px', 'important');
-  undo.push(() => {
-    shown.style.removeProperty('outline');
-    shown.style.removeProperty('outline-offset');
-    // removeProperty laisse `style=""` ; on rend l'attribut tel qu'il était (absent ou valeur d'origine).
-    if (oldStyle === null) { if (!shown.getAttribute('style')) shown.removeAttribute('style'); }
-    else shown.setAttribute('style', oldStyle);
-  });
-  shown.scrollIntoView({ block: 'center' });
-  window.__rgaaPreview = { revert };
-  return { ok: true };
 }
 
 export function clearPreview() {

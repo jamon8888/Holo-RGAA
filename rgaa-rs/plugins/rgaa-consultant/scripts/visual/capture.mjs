@@ -32,6 +32,10 @@ if (!input) {
   process.exit(2);
 }
 const spec = JSON.parse(await readFile(input, 'utf8'));
+if ((spec.contract_version ?? 1) > 1) {
+  console.error(`contract_version ${spec.contract_version} non pris en charge (max 1)`);
+  process.exit(2);
+}
 if (!spec.url || !Array.isArray(spec.findings)) {
   console.error('entrée invalide : "url" et "findings" sont requis');
   process.exit(2);
@@ -97,19 +101,33 @@ async function apply(page, sel, p) {
   return page.evaluate(({ sel, p }) => {
     let el = document.querySelector(sel);
     if (!el) return null;
-    for (const [k, v] of Object.entries(p.attributes ?? {})) {
-      v === null ? el.removeAttribute(k) : el.setAttribute(k, String(v));
-    }
+    const marker = Math.random().toString(36).slice(2);
+    let target = el;
+    let roots = [el];
+    const unsafe = (k, v) => {
+      const url = String(v).replace(/[\t\n\r]/g, '').trim();
+      return /^on/i.test(k) || /^srcdoc$/i.test(k) || (/^(href|src|action|formaction|xlink:href)$/i.test(k) && (/^javascript:/i.test(url) || (/^(href|xlink:href)$/i.test(k) && /^data:/i.test(url))));
+    };
     if (p.html) {
       const t = document.createElement('template');
       t.innerHTML = p.html.trim();
-      const repl = t.content.firstElementChild;
-      if (!repl) return null;
-      repl.setAttribute('data-rgaa-applied', '');
+      t.content.querySelectorAll('script,iframe,object,embed,style,link,meta,base').forEach((n) => n.remove());
+      for (const n of t.content.querySelectorAll('*')) {
+        for (const a of [...n.attributes]) {
+          if (unsafe(a.name, a.value)) n.removeAttribute(a.name);
+        }
+      }
+      roots = [...t.content.children];
+      if (!roots.length) return null;
+      target = roots[0];
       el.replaceWith(t.content);
-      return '[data-rgaa-applied]';
     }
-    return sel;
+    for (const [k, v] of Object.entries(p.attributes ?? {})) {
+      if (unsafe(k, v)) continue;
+      v === null ? target.removeAttribute(k) : target.setAttribute(k, String(v));
+    }
+    for (const root of roots) root.setAttribute('data-rgaa-applied', marker);
+    return `[data-rgaa-applied="${marker}"]`;
   }, { sel, p });
 }
 

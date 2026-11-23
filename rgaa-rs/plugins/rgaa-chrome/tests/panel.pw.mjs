@@ -14,11 +14,17 @@ const listen = (h) => new Promise((r) => { const s = http.createServer(h).listen
 
 const site = await listen((_, res) => { res.setHeader('content-type', 'text/html'); res.end(readFileSync(new URL('page.html', fx))); });
 const siteUrl = `http://127.0.0.1:${site.address().port}/`;
-const api = await listen((req, res) => {
+let releaseAnalysis;
+let analysisStartedResolve;
+const analysisStarted = new Promise((resolve) => { analysisStartedResolve = resolve; });
+const analysisGate = new Promise((resolve) => { releaseAnalysis = resolve; });
+const api = await listen(async (req, res) => {
   res.setHeader('access-control-allow-origin', '*');
   res.setHeader('access-control-allow-headers', 'content-type, authorization');
   if (req.method === 'OPTIONS') return res.end();
   if (req.headers.authorization !== 'Bearer secret') { res.statusCode = 401; return res.end(); }
+  analysisStartedResolve();
+  if (!process.env.RGAA_MCP_BIN) await analysisGate;
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { structuredContent: { url: siteUrl, findings: [
     { id: 'srv1', status: 'fail', rule: 'image-alt', criterion_id: '1.1', target: 'img.hero', description: 'Image sans alternative', remediation: 'Ajouter un alt' },
@@ -36,8 +42,16 @@ writeFileSync(join(dir, 'input.json'), JSON.stringify({ ...spec, url: siteUrl })
 const ctx = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'rgaa-prof-')), {
   channel: 'chromium', args: [`--disable-extensions-except=${dir}`, `--load-extension=${dir}`],
 });
+let real;
 try {
   const sw = ctx.serviceWorkers()[0] ?? await ctx.waitForEvent('serviceworker');
+  const targetTabId = () => sw.evaluate(async () => {
+    const own = chrome.runtime.getURL('');
+    const tabs = (await chrome.tabs.query({ lastFocusedWindow: true })).filter((t) => !t.url?.startsWith(own));
+    return (tabs.find((t) => t.active) ?? tabs.at(-1))?.id ?? null;
+  });
+  const outlineIn = (id) => sw.evaluate(async (tabId) =>
+    (await chrome.scripting.executeScript({ target: { tabId }, func: () => document.querySelector('img.hero')?.style.outline }))[0]?.result, id);
   const id = new URL(sw.url()).host;
   const page = await ctx.newPage();
   await page.goto(siteUrl);
@@ -48,7 +62,10 @@ try {
   // 1. Import du contrat, navigation par critère (1.1, 3.2 dans l'ordre).
   await panel.setInputFiles('#file', join(dir, 'input.json'));
   await panel.getByRole('heading', { name: 'Critère 1.1' }).waitFor();
-  await panel.getByRole('button', { name: 'Critère suivant →' }).click();
+  await panel.locator('#next').evaluate((el) => {
+    el.dispatchEvent(new Event('click'));
+    el.dispatchEvent(new Event('click'));
+  });
   await panel.getByRole('heading', { name: 'Critère 3.2' }).waitFor();
   await panel.getByRole('button', { name: '← Critère précédent' }).click();
 
@@ -71,12 +88,11 @@ try {
   await panel.setInputFiles('#file', join(dir, 'empty.json'));
   await panel.getByText('Aucun finding.').waitFor();
   assert.equal(await panel.locator('#review').isHidden(), true, 'ancienne revue encore affichée');
-  assert.equal(await panel.getByRole('button', { name: '← Critère précédent' }).isDisabled(), true);
-  assert.equal(await panel.getByRole('button', { name: 'Critère suivant →' }).isDisabled(), true);
+  assert.equal(await panel.locator('#prev').isDisabled(), true);
+  assert.equal(await panel.locator('#next').isDisabled(), true);
 
   // 3. Analyse via le serveur : jeton exigé, puis findings affichés avec leur niveau.
   //    RGAA_MCP_BIN=<rgaa-mcp-http> (+ obscura sur le PATH) : contre le vrai serveur, sinon le faux.
-  let real;
   if (process.env.RGAA_MCP_BIN) {
     const port = 38000 + Math.floor(Math.random() * 1000);
     real = spawn(process.env.RGAA_MCP_BIN, ['--port', String(port)], {
@@ -95,14 +111,23 @@ try {
   await panel.getByRole('button', { name: "Analyser l'onglet courant" }).click();
   await panel.getByText(/Analyse impossible : serveur : HTTP 401/).waitFor();
   await panel.fill('#token', 'secret');
+  const analyzedTabId = await targetTabId();
   await panel.getByRole('button', { name: "Analyser l'onglet courant" }).click();
   if (real) {
     await panel.getByText(/\d+ finding\(s\), \d+ critère\(s\)/).waitFor({ timeout: 120_000 });
   } else {
+    await analysisStarted;
+    const during = await ctx.newPage();
+    await during.goto(siteUrl);
+    await during.bringToFront();
+    const switchedTabId = await targetTabId();
+    releaseAnalysis();
     await panel.getByText('Image sans alternative').waitFor();
     await panel.getByText(/Verdict automatique/).waitFor();
     await panel.getByText('Piste du serveur : Ajouter un alt').waitFor();
+    await panel.getByRole('button', { name: 'Voir l’existant' }).first().click();
+    assert.ok((await outlineIn(analyzedTabId)).includes('rgb(192, 0, 0)'), 'analyse n’ayant pas conservé son onglet');
+    assert.equal(await outlineIn(switchedTabId), '', 'analyse déplacée vers le nouvel onglet');
   }
-  real?.kill();
   console.log('panel ok');
-} finally { await ctx.close(); site.close(); api.close(); }
+} finally { real?.kill(); await ctx.close(); site.close(); api.close(); }

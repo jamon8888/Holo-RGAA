@@ -17,6 +17,7 @@ test('critères triés numériquement, findings regroupés', () => {
 test('contrat invalide refusé', () => {
   assert.throws(() => parseContract('{"findings":[{"id":"a"}]}'), /target/);
   assert.throws(() => parseContract('{"findings":[{"id":"a","target":"x","tier":"zzz"}]}'), /tier/);
+  assert.throws(() => parseContract('{"findings":[{"id":"a","target":"x"},{"id":"a","target":"y"}]}'), /en double/);
   assert.throws(() => parseContract('{}'), /findings/);
 });
 

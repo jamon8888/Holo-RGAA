@@ -50,6 +50,7 @@ son approbation.
        "description": "Image porteuse d'information sans alternative",
        "proposals": [
          { "label": "Alternative descriptive", "rationale": "1.1 — texte à valider par l'éditeur",
+           "needs_human_review": true,
            "attributes": { "alt": "Équipe en réunion" } },
          { "label": "Image décorative", "rationale": "1.2 — si l'image n'apporte pas d'information",
            "attributes": { "alt": "", "role": null } }

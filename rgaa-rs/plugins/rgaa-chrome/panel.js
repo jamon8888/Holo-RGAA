@@ -65,6 +65,7 @@ function renderFinding(f) {
 
 async function show() {
   await run(clearPreview, []);
+  if (!criteria.length) return;
   const [crit, fs] = criteria[i];
   $('pos').textContent = `${i + 1} / ${criteria.length}`;
   $('crit').textContent = `Critère ${crit}`;
@@ -74,9 +75,9 @@ async function show() {
   $('crit').focus();
 }
 
-async function load(spec) {
+async function load(spec, tabId) {
     await run(clearPreview, []); // annule l'aperçu de l'audit précédent, dans son onglet
-    auditTabId = (await targetTab())?.id ?? null;
+    auditTabId = tabId ?? (await targetTab())?.id ?? null;
     criteria = byCriterion(spec.findings);
     if (!criteria.length) {
       i = 0;
@@ -102,8 +103,8 @@ $('analyze').onclick = async () => {
   localStorage.setItem('server', $('server').value);
   chrome.storage.session.set({ token: $('token').value });
   say('Analyse en cours…');
-  try { await load(await analyzeUrl($('server').value, $('token').value, tab.url)); }
+  try { await load(await analyzeUrl($('server').value, $('token').value, tab.url), tab.id); }
   catch (err) { say(`Analyse impossible : ${err.message}`); }
 };
-$('prev').onclick = () => { i--; show(); };
-$('next').onclick = () => { i++; show(); };
+$('prev').onclick = () => { i = Math.max(0, i - 1); show(); };
+$('next').onclick = () => { i = Math.min(criteria.length - 1, i + 1); show(); };

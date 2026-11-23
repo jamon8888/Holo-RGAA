@@ -5,6 +5,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 (cd "$ROOT/scripts/visual" && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npx playwright install ${CI:+--with-deps} chromium >/dev/null)
+jq '. + {contract_version: 2}' "$ROOT/tests/fixtures/visual/input.json" > "$TMP/unsupported.json"
+if node "$ROOT/scripts/visual/capture.mjs" "$TMP/unsupported.json" "$TMP/unsupported-out" > "$TMP/unsupported.log" 2>&1; then
+  echo "❌ version de contrat future acceptée"; exit 1
+else
+  status=$?
+  [[ $status -eq 2 ]] && grep -q 'contract_version 2 non pris en charge' "$TMP/unsupported.log" \
+    && echo "✅ version de contrat future refusée" || { cat "$TMP/unsupported.log"; exit 1; }
+fi
 sed "s|__PAGE__|file://$ROOT/tests/fixtures/visual/page.html|" "$ROOT/tests/fixtures/visual/input.json" > "$TMP/input.json"
 node "$ROOT/scripts/visual/capture.mjs" "$TMP/input.json" "$TMP/out"
 fail=0

@@ -81,18 +81,29 @@ fn le_rouge_sature_est_ordonne_par_le_rapport_rouge_sur_total() {
 #[test]
 fn un_gif_noir_blanc_plein_a_5_hz_donne_5_flashs_et_une_surface_de_1() {
     let octets = gif_alternance(5, 256, 192, None, blanc(), noir());
-    let frames = decode_gif(&octets).expect("décodage GIF");
+    let frames = decode_gif(&octets, 10).expect("décodage GIF");
     let (general, _rouge) = detect_flashs(&frames);
     assert_eq!(general.max_par_s, 5, "{general:?}");
-    assert!(general.surface > 0.99, "{general:?}");
+    assert!(
+        general.surface > 0.99 && general.surface <= 1.0,
+        "{general:?}"
+    );
     assert_eq!(general.fenetre[2], FENETRE_LARGEUR);
     assert_eq!(general.fenetre[3], FENETRE_HAUTEUR);
 }
 
 #[test]
+fn le_decodage_gif_respecte_la_limite_d_observation() {
+    let octets = gif_alternance(5, 128, 96, None, blanc(), noir());
+    let frames = decode_gif(&octets, 1).expect("décodage GIF");
+    assert_eq!(frames.len(), 10, "{frames:?}");
+    assert!(frames.last().is_some_and(|frame| frame.t_s < 1.0));
+}
+
+#[test]
 fn le_meme_gif_a_2_hz_reste_sous_le_seuil_de_trois_flashs() {
     let octets = gif_alternance(2, 256, 192, None, blanc(), noir());
-    let frames = decode_gif(&octets).expect("décodage GIF");
+    let frames = decode_gif(&octets, 10).expect("décodage GIF");
     let (general, _rouge) = detect_flashs(&frames);
     assert_eq!(general.max_par_s, 2, "{general:?}");
 }
@@ -100,7 +111,7 @@ fn le_meme_gif_a_2_hz_reste_sous_le_seuil_de_trois_flashs() {
 #[test]
 fn une_zone_de_100_sur_100_a_5_hz_reste_sous_le_seuil_de_surface() {
     let octets = gif_alternance(5, 1024, 768, Some((100, 100, 100, 100)), blanc(), noir());
-    let frames = decode_gif(&octets).expect("décodage GIF");
+    let frames = decode_gif(&octets, 10).expect("décodage GIF");
     let (general, _rouge) = detect_flashs(&frames);
     assert_eq!(general.max_par_s, 5, "{general:?}");
     // 10 000 px / (341*256) ≈ 0,11 < 0,25 : pas d'échec probable.
@@ -110,7 +121,7 @@ fn une_zone_de_100_sur_100_a_5_hz_reste_sous_le_seuil_de_surface() {
 #[test]
 fn une_alternance_rouge_noir_a_4_hz_donne_un_red_flash() {
     let octets = gif_alternance(4, 256, 192, None, rouge(), noir());
-    let frames = decode_gif(&octets).expect("décodage GIF");
+    let frames = decode_gif(&octets, 10).expect("décodage GIF");
     let (_general, rouge) = detect_flashs(&frames);
     assert_eq!(rouge.max_par_s, 4, "{rouge:?}");
     assert!(rouge.surface > 0.9, "{rouge:?}");
@@ -236,6 +247,7 @@ fn ffmpeg_absent_est_une_preuve_manquante() {
     let erreur = decode_video_avec(
         Path::new("/aucun/chemin/vers/ffmpeg"),
         "https://example.test/video.mp4",
+        10,
     )
     .expect_err("ffmpeg absent");
     let message = erreur.to_string();

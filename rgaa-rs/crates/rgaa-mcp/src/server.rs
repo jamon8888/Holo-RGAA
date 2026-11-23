@@ -197,6 +197,7 @@ impl McpFailure {
             | RgaaError::MissingId(_)
             | RgaaError::MissingField(_)
             | RgaaError::DuplicateFindingId(_)
+            | RgaaError::NonConformityNotFound(_)
             | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
             RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
             RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
@@ -208,7 +209,8 @@ impl McpFailure {
             | RgaaError::AxeCore(_)
             | RgaaError::Holo3(_)
             | RgaaError::Media(_)
-            | RgaaError::Storage(_) => Self::execution(err.to_string()),
+            | RgaaError::Storage(_)
+            | RgaaError::Analysis { .. } => Self::execution(err.to_string()),
         }
     }
     pub fn into_error_data(self) -> ErrorData {

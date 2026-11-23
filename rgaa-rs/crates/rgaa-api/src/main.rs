@@ -64,8 +64,8 @@ async fn main() -> anyhow::Result<()> {
     let orchestrator = Arc::new(Orchestrator::with_storage(storage.clone()));
 
     // Licence (#87): quota enforced (a server counter is not user-editable,
-    // unlike the CLI's). Never fails at startup — an unusable licence is
-    // reported per request as 401, not by refusing to boot.
+    // unlike the CLI's). Never fails at startup; invalid tokens are reported
+    // per request as 401, tier/expiry refusals as 402, and quota as 429.
     let upgrade_url = std::env::var("RGAA_UPGRADE_URL")
         .ok()
         .filter(|u| !u.trim().is_empty());

@@ -55,7 +55,7 @@ pub fn duration(secs: u64) -> String {
 }
 
 fn days(n: i64) -> String {
-    if n <= 1 {
+    if n == 1 {
         format!("{n} jour")
     } else {
         format!("{n} jours")
@@ -186,5 +186,6 @@ mod tests {
             grace_warning(t0, until, now),
             "Licence activée depuis 3 jours — mode hors ligne, 4 jours restants."
         );
+        assert_eq!(days(0), "0 jours");
     }
 }

@@ -109,12 +109,21 @@ impl AxeMapper {
                     });
                 // A proven Fail from any mechanism outranks a capped NeedsReview: never
                 // degrade a hard failure to review (issue #279).
-                let capped_status = match mechanism.outcome_cap {
-                    Some(rgaa_core::Outcome::Review) => CriterionStatus::NeedsReview,
-                    _ => CriterionStatus::Fail,
-                };
+                let capped = matches!(mechanism.outcome_cap, Some(rgaa_core::Outcome::Review));
                 if result.status != CriterionStatus::Fail {
-                    result.status = capped_status;
+                    result.status = if capped {
+                        CriterionStatus::NeedsReview
+                    } else {
+                        CriterionStatus::Fail
+                    };
+                    // A cap only lowers the verdict: the auditor still needs the review
+                    // cue on the result (including the HTML report's annotation).
+                    result.review_required = capped;
+                    result.review_reason = capped.then(|| {
+                        "axe outcome cap (issue #279): a proven violation was downgraded \
+                         from Fail to NeedsReview"
+                            .to_string()
+                    });
                 }
                 result.violations.push(Violation {
                     rule_id: violation.id.clone(),
@@ -782,5 +791,38 @@ mod tests {
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(rule_refs, 89, "expected 89 criterion/rule pairs");
+    }
+
+    /// The 12.8 cap downgrades a proven violation to `NeedsReview`, but a review
+    /// verdict without `review_required` drops the human-review cue (including the
+    /// HTML report's annotation), making the downgrade invisible to the auditor.
+    #[test]
+    fn an_outcome_cap_keeps_the_review_markers() {
+        let axe_json = r#"{"violations":[
+            {"id":"tabindex","impact":"serious",
+             "description":"synthetic positive tabindex","nodes":[{"html":"<div tabindex=\"1\">"}]},
+            {"id":"image-alt","impact":"critical",
+             "description":"synthetic missing alternative","nodes":[{"html":"<img/>"}]}]}"#;
+        let results = AxeMapper::map(axe_json).expect("l'objet complet d'axe doit être accepté");
+        let capped = results
+            .get("12.8")
+            .expect("tabindex doit produire un résultat pour 12.8");
+        assert_eq!(capped.status, CriterionStatus::NeedsReview);
+        assert!(
+            capped.review_required,
+            "une violation plafonnée doit rester marquée comme exigeant une revue"
+        );
+        assert!(
+            capped
+                .review_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("cap")),
+            "la raison doit expliquer le plafond, obtenu {:?}",
+            capped.review_reason
+        );
+
+        // The cap is criterion-specific: an uncapped violation still fails outright.
+        let uncapped = results.get("1.1").expect("image-alt non présent");
+        assert_eq!(uncapped.status, CriterionStatus::Fail);
     }
 }

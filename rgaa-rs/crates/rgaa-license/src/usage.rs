@@ -99,13 +99,18 @@ impl UsageCounter {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    fn roll(state: &mut UsageFile, today: NaiveDate) {
-        if state.day != today {
+    /// Advances the counter to a newer UTC day, never back to an older one.
+    /// `now` is captured by the caller before it takes the locks, so a request
+    /// delayed across midnight must not reset the new day's consumption with
+    /// yesterday's timestamp. Returns the effective day to use for this call.
+    fn roll(state: &mut UsageFile, today: NaiveDate) -> NaiveDate {
+        if state.day < today {
             *state = UsageFile {
                 day: today,
                 count: 0,
             };
         }
+        state.day
     }
 
     /// Adopts a higher count for today from the shared file, if another counter
@@ -129,12 +134,12 @@ impl UsageCounter {
         let today = now.date_naive();
         let _file = self.persist_lock();
         let mut state = self.lock();
-        Self::roll(&mut state, today);
-        self.refresh_from_disk(&mut state, today);
+        let day = Self::roll(&mut state, today);
+        self.refresh_from_disk(&mut state, day);
         RateInfo {
             limit,
             remaining: limit.saturating_sub(state.count),
-            reset_at: next_midnight(today),
+            reset_at: next_midnight(day),
         }
     }
 
@@ -147,13 +152,13 @@ impl UsageCounter {
         now: DateTime<Utc>,
     ) -> Result<RateInfo, RateInfo> {
         let today = now.date_naive();
-        let reset_at = next_midnight(today);
         // Lock order everywhere: `persist_lock`, then `state`.
         let file = self.persist_lock();
-        let (after, snapshot) = {
+        let (after, snapshot, reset_at) = {
             let mut state = self.lock();
-            Self::roll(&mut state, today);
-            self.refresh_from_disk(&mut state, today);
+            let day = Self::roll(&mut state, today);
+            self.refresh_from_disk(&mut state, day);
+            let reset_at = next_midnight(day);
             let remaining = limit.saturating_sub(state.count);
             if cost > remaining {
                 return Err(RateInfo {
@@ -163,7 +168,7 @@ impl UsageCounter {
                 });
             }
             state.count += cost;
-            (limit.saturating_sub(state.count), *state)
+            (limit.saturating_sub(state.count), *state, reset_at)
         };
         self.write_snapshot(&snapshot);
         drop(file);
@@ -335,6 +340,29 @@ mod tests {
         assert!(c.try_consume(1, 10, at(23, 59, 59)).is_err());
         let next = Utc.with_ymd_and_hms(2026, 11, 20, 0, 0, 0).unwrap();
         assert_eq!(c.try_consume(1, 10, next).unwrap().remaining, 9);
+    }
+
+    /// `now` is captured before the locks are taken. A request delayed across
+    /// midnight must not rewind the new day's exhausted quota with yesterday's
+    /// timestamp — neither by consuming nor by reporting the remaining quota.
+    #[test]
+    fn a_delayed_request_cannot_rewind_the_day() {
+        let c = UsageCounter::in_memory();
+        let next_day = Utc.with_ymd_and_hms(2026, 11, 20, 12, 0, 0).unwrap();
+        for _ in 0..10 {
+            c.try_consume(1, 10, next_day).unwrap();
+        }
+        let stale = at(23, 59, 59); // still 19 November, captured before midnight
+        assert!(
+            c.try_consume(1, 10, stale).is_err(),
+            "un timestamp périmé ne peut pas rouvrir le quota du jour suivant"
+        );
+        let info = c.peek(10, stale);
+        assert_eq!(info.remaining, 0, "le solde du jour courant reste épuisé");
+        assert_eq!(
+            info.reset_at,
+            Utc.with_ymd_and_hms(2026, 11, 21, 0, 0, 0).unwrap()
+        );
     }
 
     #[test]

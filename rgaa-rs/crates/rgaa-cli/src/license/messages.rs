@@ -3,8 +3,9 @@
 use chrono::{DateTime, Utc};
 use rgaa_license::{Denial, LicenseError, LicenseStatus, Tier};
 
-/// Command used to install a replacement licence key.
-pub const ACTIVATE_HINT: &str = "`rgaa licence activate <clé>`";
+/// Recovery path for a licence key. The CLI has no `licence` subcommand: the only
+/// key it reads is `RGAA_LICENSE_KEY`, via `LicenseGate::from_env`.
+pub const ACTIVATE_HINT: &str = "`RGAA_LICENSE_KEY=<clé>` (variable d'environnement)";
 
 fn tier_name(tier: Tier) -> &'static str {
     match tier {
@@ -30,9 +31,15 @@ fn duration(secs: u64) -> String {
 
 fn upgrade_tail(upgrade_url: Option<&str>) -> String {
     match upgrade_url {
-        Some(url) => format!("Mettez à niveau : {url} — puis {ACTIVATE_HINT}."),
-        None => format!("Mettez à niveau votre licence, puis {ACTIVATE_HINT}."),
+        Some(url) => format!("Mettez à niveau : {url} — définissez {ACTIVATE_HINT}, puis relancez la commande."),
+        None => format!("Mettez à niveau votre licence : définissez {ACTIVATE_HINT}, puis relancez la commande."),
     }
+}
+
+fn invalid_license_message() -> String {
+    format!(
+        "Licence invalide. Définissez {ACTIVATE_HINT} pour la remplacer, ou supprimez-la pour revenir à l'offre Free."
+    )
 }
 
 /// Formats a refusal without exposing token contents or verifier details.
@@ -57,16 +64,17 @@ pub fn denial(denial: &Denial, now: DateTime<Utc>) -> String {
             let wait = denial
                 .retry_after_secs()
                 .unwrap_or_else(|| (*reset_at - now).num_seconds().max(0) as u64);
-            format!("Quota journalier de {limit} atteint. Réessayez dans {}.", duration(wait))
+            format!(
+                "Quota journalier de {limit} atteint. Réessayez dans {}.",
+                duration(wait)
+            )
         }
         LicenseError::Malformed(_)
         | LicenseError::InvalidSignature
         | LicenseError::NoVerificationKey
         | LicenseError::NotYetValid { .. }
         | LicenseError::Cache(_)
-        | LicenseError::Sync(_) => format!(
-            "Licence invalide. Réactivez-la avec {ACTIVATE_HINT}, ou supprimez-la pour revenir à l'offre Free."
-        ),
+        | LicenseError::Sync(_) => invalid_license_message(),
     }
 }
 
@@ -92,5 +100,32 @@ pub fn status_label(status: &LicenseStatus) -> &'static str {
         LicenseStatus::Expired { .. } => "expirée",
         LicenseStatus::GraceExceeded { .. } => "délai hors ligne expiré",
         LicenseStatus::Invalid(_) => "invalide",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A refusal used to advertise `rgaa licence activate`, which the binary does
+    /// not implement: following it left the user stuck. Every message that offers
+    /// a recovery path must now quote the environment variable actually read.
+    #[test]
+    fn activation_hint_points_to_a_supported_recovery_path() {
+        let messages = [
+            upgrade_tail(None),
+            upgrade_tail(Some("https://example.test/upgrade")),
+            invalid_license_message(),
+        ];
+        for message in messages {
+            assert!(
+                message.contains("RGAA_LICENSE_KEY"),
+                "le message doit citer la variable lue par la CLI : {message}"
+            );
+            assert!(
+                !message.contains("licence activate"),
+                "le message ne doit pas proposer une commande inexistante : {message}"
+            );
+        }
     }
 }

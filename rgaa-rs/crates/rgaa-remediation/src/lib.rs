@@ -17,7 +17,7 @@ pub use proposals::*;
 ///
 /// The finding's `html` (rendered element HTML) becomes `element_html`; its
 /// `url` becomes `page_url`; `description` becomes `summary`; `remediation`
-/// (if present) is kept, otherwise the rule name is used; `criterion_id`
+/// (if present) is kept, otherwise a sentence naming the rule is generated; `criterion_id`
 /// (if present) is prefixed with `"RGAA-"` and placed in `criteria`.
 /// `source_locations` is empty — callers must supply source file locations
 /// from their build system or IDE.
@@ -88,6 +88,19 @@ mod contract_tests {
             criteria: vec!["RGAA-1.1".into()],
             framework: Some(Framework::React),
         }
+    }
+
+    /// The documented fallback is a sentence that names the rule, not the bare
+    /// rule id; keep the two in sync so callers know what text to expect.
+    #[test]
+    fn from_finding_documents_its_actual_remediation_fallback() {
+        let mut finding = rgaa_core::Finding::new("f-fallback");
+        finding.rule = "image-alt".into();
+        let issue = from_finding(&finding);
+        assert_eq!(
+            issue.remediation, "Fix image-alt-related accessibility issue",
+            "le texte de repli doit rester une phrase nommant la règle"
+        );
     }
 
     #[test]

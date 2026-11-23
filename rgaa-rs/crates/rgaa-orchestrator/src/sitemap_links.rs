@@ -39,7 +39,9 @@ pub(crate) struct LinkCheck {
 /// Whether the link-checker user agent is disallowed from requesting `path`.
 /// Specific user-agent groups take precedence over `*`; the longest matching path rule wins.
 pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
-    let mut groups: Vec<(Vec<String>, Vec<(String, bool)>)> = Vec::new();
+    // (user agents, [(path rule, allowed)])
+    type Group = (Vec<String>, Vec<(String, bool)>);
+    let mut groups: Vec<Group> = Vec::new();
     let mut agents = Vec::new();
     let mut rules = Vec::new();
     for raw in robots_txt.lines() {
@@ -57,10 +59,8 @@ pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
                     agents.push(value.to_ascii_lowercase());
                 }
             }
-            "allow" | "disallow" if !agents.is_empty() => {
-                if !value.is_empty() {
-                    rules.push((value.to_string(), key == "allow"));
-                }
+            "allow" | "disallow" if !agents.is_empty() && !value.is_empty() => {
+                rules.push((value.to_string(), key == "allow"));
             }
             _ => {}
         }
@@ -98,7 +98,7 @@ pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
                 .bytes()
                 .filter(|byte| !matches!(byte, b'*' | b'$'))
                 .count();
-            if best.map_or(true, |(best_len, was_allowed)| {
+            if best.is_none_or(|(best_len, was_allowed)| {
                 length > best_len || (length == best_len && allowed && !was_allowed)
             }) {
                 best = Some((length, allowed));
@@ -112,20 +112,27 @@ fn robots_pattern_matches(pattern: &str, path: &str) -> bool {
     let (pattern, anchored) = pattern
         .strip_suffix('$')
         .map_or((pattern, false), |p| (p, true));
-    let mut rest = path;
-    for part in pattern.split('*') {
-        if part.is_empty() {
-            continue;
-        }
+    let mut parts = pattern.split('*');
+    // The text before the first `*` is a prefix of the path, never a substring.
+    let Some(mut rest) = path.strip_prefix(parts.next().unwrap_or("")) else {
+        return false;
+    };
+    let parts: Vec<&str> = parts.collect();
+    let Some((last, middle)) = parts.split_last() else {
+        return !anchored || rest.is_empty();
+    };
+    for part in middle {
         let Some(index) = rest.find(part) else {
             return false;
         };
-        if index != 0 && part == pattern.split('*').next().unwrap_or("") {
-            return false;
-        }
         rest = &rest[index + part.len()..];
     }
-    !anchored || rest.is_empty()
+    // `$` anchors the last part at the end: test it as a suffix, not at its first occurrence.
+    if anchored {
+        rest.ends_with(last)
+    } else {
+        rest.contains(last)
+    }
 }
 
 /// Same-host http(s) links, deduplicated in first-seen order, fragment removed.
@@ -268,6 +275,15 @@ mod tests {
         assert!(!robots_disallows(
             "User-agent: *\nDisallow: /*.pdf$",
             "/guide.pdf/extra"
+        ));
+        assert!(robots_disallows(
+            "User-agent: *\nDisallow: /*.pdf$",
+            "/a.pdf.pdf"
+        ));
+        assert!(robots_disallows("User-agent: *\nDisallow: /a*/a", "/a/x/a"));
+        assert!(!robots_disallows(
+            "User-agent: *\nDisallow: /a*/a",
+            "/x/a/a"
         ));
         assert!(robots_disallows(
             "User-agent: *\nAllow: /private/open/long\nUser-agent: rgaa-rs-linkcheck\nDisallow: /private",

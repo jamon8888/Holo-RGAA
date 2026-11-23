@@ -12,6 +12,7 @@ use std::net::TcpListener;
 use std::path::Path;
 use std::time::Duration;
 
+use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::script_hooks::{
     parse_redirect_observation, PartialProbeStatus, REDIRECT_HOOK, REDIRECT_OBSERVATION_MS,

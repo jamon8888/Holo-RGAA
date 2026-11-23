@@ -59,6 +59,30 @@ fn run_analysis_plugin_schema_has_no_status_or_verdict() {
     assert!(!text.contains("\"verdict\""), "{text}");
 }
 
+/// The skills call `run_analysis_plugin` without `options`. `serde_json::Value`'s
+/// default is `null`, which `PluginOptions` rejects: omitted (and explicit null)
+/// options must arrive at the runner as `{}` instead.
+#[test]
+fn run_analysis_plugin_defaults_omitted_options_to_an_empty_object() {
+    let input: rgaa_mcp::RunAnalysisPluginInput = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "plugin": "echo"
+    }))
+    .expect("omitted options are valid");
+    assert_eq!(input.options, serde_json::json!({}));
+
+    let input: rgaa_mcp::RunAnalysisPluginInput = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "plugin": "echo",
+        "options": null
+    }))
+    .expect("explicit null options are valid");
+    assert_eq!(input.options, serde_json::json!({}));
+
+    serde_json::from_value::<rgaa_analysis::PluginOptions>(input.options)
+        .expect("{} is a valid PluginOptions for the runner");
+}
+
 #[tokio::test]
 async fn run_analysis_plugin_returns_only_proofs() {
     struct EchoAnalysis(rgaa_analysis::Registry);

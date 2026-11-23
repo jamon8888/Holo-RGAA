@@ -126,8 +126,24 @@ impl AnalyzeRequest {
 pub struct RunAnalysisPluginInput {
     pub url: String,
     pub plugin: String,
-    #[serde(default)]
+    /// Absent or explicit `null` becomes `{}` so `PluginOptions` keeps its defaults.
+    #[serde(
+        default = "default_plugin_options",
+        deserialize_with = "deserialize_plugin_options"
+    )]
     pub options: serde_json::Value,
+}
+
+fn default_plugin_options() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+fn deserialize_plugin_options<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.unwrap_or_else(default_plugin_options))
 }
 
 /// Proofs only: a verdict would violate R-P1.

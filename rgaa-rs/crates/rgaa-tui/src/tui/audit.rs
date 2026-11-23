@@ -394,7 +394,7 @@ fn render_audit(wizard: &mut AuditWizard, frame: &mut Frame, input: &str) {
             ];
             frame.render_widget(Paragraph::new(Text::from(lines)).fg(color), chunks[0]);
 
-            if audit.pages.first().is_some() || !audit.site_criteria.is_empty() {
+            if !audit.pages.is_empty() || !audit.site_criteria.is_empty() {
                 let criteria = rgaa_core::RgaaCriteria::all();
                 let rows: Vec<Row> = visible_criteria(audit)
                     .iter()

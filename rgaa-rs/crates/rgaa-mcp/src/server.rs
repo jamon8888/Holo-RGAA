@@ -1,4 +1,5 @@
 use crate::tools::*;
+use futures_util::StreamExt;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -503,14 +504,23 @@ pub trait AnalysisService: Send + Sync {
 /// Default service: the registry built from the plugins linked into this binary.
 pub struct RegistryAnalysisService {
     registry: Result<rgaa_analysis::Registry, String>,
+    bridge: Arc<LazyObscuraBridge>,
 }
 
 impl RegistryAnalysisService {
     /// Builds the registry once, at service construction.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_bridge(Arc::new(LazyObscuraBridge::new(
+            rgaa_obscura::ObscuraBridge::from_env(),
+        )))
+    }
+
+    #[must_use]
+    pub fn with_bridge(bridge: Arc<LazyObscuraBridge>) -> Self {
         Self {
             registry: rgaa_plugins::default_registry().map_err(|error| error.to_string()),
+            bridge,
         }
     }
 }
@@ -547,6 +557,7 @@ impl AnalysisService for RegistryAnalysisService {
         let url = url.to_owned();
         let plugin_id = plugin.to_owned();
         let options = options.clone();
+        let bridge = Arc::clone(&self.bridge);
         Box::pin(async move {
             let registry = self.registry.as_ref().map_err(|error| {
                 McpFailure::execution(format!("registre des plugins indisponible : {error}"))
@@ -554,11 +565,143 @@ impl AnalysisService for RegistryAnalysisService {
             let plugin = registry.get(&plugin_id).ok_or_else(|| {
                 McpFailure::invalid(format!("plugin d'analyse inconnu : {plugin_id}"))
             })?;
-            rgaa_analysis::run_plugin(plugin, &url, &options)
-                .await
-                .map_err(|error| McpFailure::execution(error.to_string()))
+            let capture = bridge.capture_analysis_page(&url).await?;
+            let mut dom_json: serde_json::Value = serde_json::from_str(&capture.dom_snapshot.json)
+                .map_err(|error| {
+                    McpFailure::execution(format!("capture DOM invalide : {error}"))
+                })?;
+            if plugin_id == "images" {
+                if let Some(images) = dom_json.get("images_for_plugins").cloned() {
+                    dom_json["images"] = images;
+                }
+            }
+            let dom_snapshot = rgaa_analysis::DomSnapshot::new(dom_json.to_string());
+            let resource_fetcher = SameOriginResourceFetcher::new(&url)?;
+            run_analysis_on_capture(
+                plugin,
+                &url,
+                &options,
+                &dom_snapshot,
+                &capture.ax_tree,
+                &capture.screenshot,
+                capture.dpr,
+                capture.lang_declared.as_deref(),
+                &resource_fetcher,
+            )
+            .await
+            .map_err(|error| McpFailure::execution(error.to_string()))
         })
     }
+}
+
+const MAX_PAGE_RESOURCE_BYTES: u64 = 20 * 1024 * 1024;
+
+struct SameOriginResourceFetcher {
+    client: reqwest::Client,
+    page: reqwest::Url,
+}
+
+impl SameOriginResourceFetcher {
+    fn new(page: &str) -> Result<Self, McpFailure> {
+        let page = reqwest::Url::parse(page)
+            .map_err(|error| McpFailure::invalid(format!("invalid page URL: {error}")))?;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| {
+                McpFailure::execution(format!("resource client unavailable: {error}"))
+            })?;
+        Ok(Self { client, page })
+    }
+}
+
+#[async_trait::async_trait]
+impl rgaa_analysis::ResourceFetcher for SameOriginResourceFetcher {
+    async fn fetch(&self, url: &str) -> rgaa_analysis::Result<Vec<u8>> {
+        let resource = self.page.join(url).map_err(|error| {
+            rgaa_analysis::analysis_error("resources", format!("invalid resource URL: {error}"))
+        })?;
+        if resource.scheme() != self.page.scheme()
+            || resource.host_str() != self.page.host_str()
+            || resource.port_or_known_default() != self.page.port_or_known_default()
+            || !resource.username().is_empty()
+            || resource.password().is_some()
+        {
+            return Err(rgaa_analysis::analysis_error(
+                "resources",
+                "resource is outside the audited page origin",
+            ));
+        }
+        let response = self.client.get(resource).send().await.map_err(|error| {
+            rgaa_analysis::analysis_error("resources", format!("resource request failed: {error}"))
+        })?;
+        if !response.status().is_success() {
+            return Err(rgaa_analysis::analysis_error(
+                "resources",
+                format!("resource returned {}", response.status()),
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_PAGE_RESOURCE_BYTES)
+        {
+            return Err(rgaa_analysis::analysis_error(
+                "resources",
+                "resource exceeds 20 MiB",
+            ));
+        }
+        let mut stream = response.bytes_stream();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| {
+                rgaa_analysis::analysis_error("resources", format!("resource read failed: {error}"))
+            })?;
+            if bytes.len() as u64 + chunk.len() as u64 > MAX_PAGE_RESOURCE_BYTES {
+                return Err(rgaa_analysis::analysis_error(
+                    "resources",
+                    "resource exceeds 20 MiB",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_analysis_on_capture(
+    plugin: &dyn rgaa_analysis::AnalysisPlugin,
+    url: &str,
+    options: &serde_json::Value,
+    dom_snapshot: &rgaa_analysis::DomSnapshot,
+    ax_tree: &rgaa_analysis::AxTree,
+    screenshot: &rgaa_analysis::RgbaImage,
+    dpr: f32,
+    lang_declared: Option<&str>,
+    resources: &dyn rgaa_analysis::ResourceFetcher,
+) -> rgaa_analysis::Result<Vec<rgaa_analysis::Preuve>> {
+    if !plugin.models_optional() {
+        for model in plugin.models() {
+            rgaa_analysis::models::ensure_present(plugin.id(), model)?;
+        }
+    }
+    let options: rgaa_analysis::PluginOptions =
+        serde_json::from_value(options.clone()).map_err(|error| {
+            rgaa_analysis::analysis_error(
+                plugin.id(),
+                format!("options de plugin invalides : {error}"),
+            )
+        })?;
+    let capture = rgaa_analysis::PageCapture {
+        url,
+        dom_snapshot,
+        ax_tree: Some(ax_tree),
+        screenshot: Some(screenshot),
+        dpr,
+        resources,
+        lang_declared,
+    };
+    plugin.analyze(&capture, &options).await
 }
 
 pub struct LazyObscuraBridge {
@@ -587,6 +730,19 @@ impl LazyObscuraBridge {
         })?;
         self.started.store(true, Ordering::Release);
         Ok(())
+    }
+
+    async fn capture_analysis_page(
+        &self,
+        url: &str,
+    ) -> Result<rgaa_obscura::AnalysisPageCapture, McpFailure> {
+        self.ensure_started().await?;
+        self.bridge
+            .lock()
+            .await
+            .capture_analysis_page(url)
+            .await
+            .map_err(classify_obscura_error)
     }
 }
 
@@ -1199,6 +1355,83 @@ impl ServerHandler for ToolServer {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct CaptureProbe;
+
+    #[async_trait::async_trait]
+    impl rgaa_analysis::AnalysisPlugin for CaptureProbe {
+        fn id(&self) -> &'static str {
+            "capture-probe"
+        }
+        fn version(&self) -> &'static str {
+            "test"
+        }
+        fn tests(&self) -> &'static [&'static str] {
+            &["1.1.1"]
+        }
+
+        async fn analyze(
+            &self,
+            page: &rgaa_analysis::PageCapture<'_>,
+            _options: &rgaa_analysis::PluginOptions,
+        ) -> rgaa_analysis::Result<Vec<rgaa_analysis::Preuve>> {
+            Ok(vec![rgaa_analysis::Preuve {
+                plugin: self.id().to_owned(),
+                version_plugin: self.version().to_owned(),
+                version_modele: None,
+                tests: vec!["1.1.1".into()],
+                sujet: rgaa_analysis::Subject::Page,
+                portee: rgaa_analysis::Portee::Mesuree,
+                mesures: serde_json::json!({
+                    "dom": page.dom_snapshot.json,
+                    "ax_nodes": page.ax_tree.map(|tree| tree.nodes.len()),
+                    "screenshot": page.screenshot.map(|image| [image.width, image.height]),
+                    "dpr": page.dpr,
+                    "lang": page.lang_declared,
+                }),
+                indice: None,
+                artefacts: Vec::new(),
+                empreinte_entree: "captured-page".into(),
+            }])
+        }
+    }
+
+    #[tokio::test]
+    async fn plugin_receives_the_populated_browser_capture() {
+        let dom = rgaa_analysis::DomSnapshot::new(
+            r#"{"page":{"contenu_principal":"texte de la page"},"texts":[{"target":"p#real"}]}"#,
+        );
+        let ax = rgaa_analysis::AxTree {
+            nodes: vec![rgaa_analysis::AxNode {
+                role: "paragraph".into(),
+                name: "texte de la page".into(),
+            }],
+        };
+        let screenshot = rgaa_analysis::RgbaImage {
+            width: 2,
+            height: 1,
+            pixels: vec![1, 2, 3, 255, 4, 5, 6, 255],
+        };
+        let proofs = run_analysis_on_capture(
+            &CaptureProbe,
+            "https://example.test/page",
+            &serde_json::json!({}),
+            &dom,
+            &ax,
+            &screenshot,
+            2.0,
+            Some("fr"),
+            &rgaa_analysis::NoopResourceFetcher,
+        )
+        .await
+        .expect("plugin runs on the supplied capture");
+
+        assert_eq!(proofs[0].mesures["dom"], dom.json);
+        assert_eq!(proofs[0].mesures["ax_nodes"], 1);
+        assert_eq!(proofs[0].mesures["screenshot"], serde_json::json!([2, 1]));
+        assert_eq!(proofs[0].mesures["dpr"], 2.0);
+        assert_eq!(proofs[0].mesures["lang"], "fr");
+    }
 
     #[test]
     fn redaction_covers_multiple_occurrences() {

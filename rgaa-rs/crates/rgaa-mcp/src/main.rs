@@ -1,6 +1,6 @@
 use rgaa_mcp::{
     LazyObscuraBridge, NoOpStorageService, ObscuraAnalyzeService, ObscuraGuidedService,
-    OrchestrationService, RemediationServiceImpl, ToolServer,
+    OrchestrationService, RegistryAnalysisService, RemediationServiceImpl, ToolServer,
 };
 use rmcp::{transport::io::stdio, ServiceExt};
 use std::sync::Arc;
@@ -32,12 +32,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bridge = Arc::new(LazyObscuraBridge::new(
         rgaa_obscura::ObscuraBridge::from_env(),
     ));
-    let service = ToolServer::new(
+    let service = ToolServer::new_with_analysis(
         Arc::new(ObscuraAnalyzeService::new(Arc::clone(&bridge))),
         Arc::new(RemediationServiceImpl::default()),
-        Arc::new(ObscuraGuidedService::new(bridge)),
+        Arc::new(ObscuraGuidedService::new(Arc::clone(&bridge))),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
+        Arc::new(RegistryAnalysisService::with_bridge(bridge)),
     );
     service.serve(stdio()).await?.waiting().await?;
     Ok(())

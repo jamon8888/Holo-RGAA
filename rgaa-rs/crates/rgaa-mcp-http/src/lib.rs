@@ -614,12 +614,13 @@ pub fn default_tool_server() -> ToolServer {
     let bridge = Arc::new(rgaa_mcp::LazyObscuraBridge::new(
         rgaa_obscura::ObscuraBridge::from_env(),
     ));
-    ToolServer::new(
+    ToolServer::new_with_analysis(
         Arc::new(rgaa_mcp::ObscuraAnalyzeService::new(Arc::clone(&bridge))),
         Arc::new(rgaa_mcp::RemediationServiceImpl::default()),
-        Arc::new(rgaa_mcp::ObscuraGuidedService::new(bridge)),
+        Arc::new(rgaa_mcp::ObscuraGuidedService::new(Arc::clone(&bridge))),
         Arc::new(rgaa_mcp::OrchestrationService::new()),
         Arc::new(rgaa_mcp::NoOpStorageService),
+        Arc::new(rgaa_mcp::RegistryAnalysisService::with_bridge(bridge)),
     )
 }
 

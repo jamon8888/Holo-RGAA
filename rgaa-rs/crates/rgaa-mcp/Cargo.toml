@@ -31,7 +31,9 @@ plugins-all = [
 ]
 
 [dependencies]
+async-trait = "0.1"
 dotenvy = { workspace = true }
+futures-util = "0.3"
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
 rgaa-plugins = { path = "../rgaa-plugins", default-features = false }
 rgaa-core = { path = "../rgaa-core" }
@@ -39,6 +41,7 @@ rgaa-linter = { path = "../rgaa-linter" }
 rgaa-obscura = { path = "../rgaa-obscura" }
 rgaa-orchestrator = { path = "../rgaa-orchestrator" }
 rgaa-remediation = { path = "../rgaa-remediation" }
+reqwest = { workspace = true, features = ["stream"] }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

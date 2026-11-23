@@ -6,8 +6,8 @@ use chrono::{TimeZone, Utc};
 use rgaa_cli::commands::review::{apply_review, run, ReviewArgs, ReviewError, ReviewStatus};
 use rgaa_cli::commands::CommonArgs;
 use rgaa_core::{
-    AuditResult, AutomatedVerdict, Classification, CriterionResult, CriterionStatus, EvidenceRef,
-    PageResult, ReviewEvent, VerdictBasis,
+    AuditResult, AuditType, AutomatedVerdict, Classification, CriterionResult, CriterionStatus,
+    EvidenceRef, PageResult, ReviewEvent, VerdictBasis,
 };
 
 static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -94,6 +94,7 @@ fn audit(page_urls: &[&str], criterion_ids: &[&str]) -> AuditResult {
         etat_conformite: "incomplete".to_owned(),
         duration_ms: 1,
         audit_complete: true,
+        audit_type: AuditType::Complet,
     }
 }
 

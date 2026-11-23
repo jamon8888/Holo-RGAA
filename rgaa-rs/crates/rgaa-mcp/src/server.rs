@@ -263,8 +263,7 @@ impl McpFailure {
             | RgaaError::AxeCore(_)
             | RgaaError::Holo3(_)
             | RgaaError::Media(_)
-            | RgaaError::Storage(_)
-            | RgaaError::Analysis { .. } => Self::execution(err.to_string()),
+            | RgaaError::Storage(_) => Self::execution(err.to_string()),
         }
     }
     pub fn into_error_data(self) -> ErrorData {

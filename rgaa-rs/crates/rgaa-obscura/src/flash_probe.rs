@@ -9,7 +9,7 @@
 //! successive kept transitions as one flash. The answer is the highest count inside any
 //! one-second window of the animation's timeline.
 //!
-//! Known limits, kept explicit: disposal "restore previous" is treated as "keep";
+//! Known limits, kept explicit:
 //! APNG, video, CSS and script animation are **not** analysed here; a clean report
 //! never proves conformity (the mechanism stays `partial`).
 
@@ -77,6 +77,7 @@ pub fn analyze_gif(bytes: &[u8]) -> Result<FlashReport, String> {
         frames += 1;
         let (fl, ft) = (usize::from(frame.left), usize::from(frame.top));
         let (fw, fh) = (usize::from(frame.width), usize::from(frame.height));
+        let restore = (frame.dispose == gif::DisposalMethod::Previous).then(|| canvas.clone());
         for y in 0..fh {
             for x in 0..fw {
                 let src = &frame.buffer[(y * fw + x) * 4..(y * fw + x) * 4 + 4];
@@ -107,7 +108,9 @@ pub fn analyze_gif(bytes: &[u8]) -> Result<FlashReport, String> {
         }
         previous = Some(lum);
         time_ms += u64::from(frame.delay.max(1)) * 10;
-        if frame.dispose == gif::DisposalMethod::Background {
+        if let Some(before) = restore {
+            canvas = before;
+        } else if frame.dispose == gif::DisposalMethod::Background {
             for y in 0..fh {
                 for x in 0..fw {
                     if ft + y < h && fl + x < w {
@@ -169,6 +172,38 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn restore_previous_disposal_reverts_the_canvas() {
+        // Black base, then white frames disposed "restore previous" interleaved with
+        // fully transparent frames: the visible image alternates white/black.
+        let side = 200u16;
+        let n = usize::from(side) * usize::from(side);
+        let mut out = Vec::new();
+        {
+            let palette = [0, 0, 0, 255, 255, 255];
+            let mut enc = gif::Encoder::new(&mut out, side, side, &palette).unwrap();
+            let frame = |index: u8, dispose, transparent| gif::Frame {
+                width: side,
+                height: side,
+                delay: 10,
+                dispose,
+                transparent,
+                buffer: std::borrow::Cow::Owned(vec![index; n]),
+                ..gif::Frame::default()
+            };
+            enc.write_frame(&frame(0, gif::DisposalMethod::Keep, None))
+                .unwrap();
+            for _ in 0..15 {
+                enc.write_frame(&frame(1, gif::DisposalMethod::Previous, None))
+                    .unwrap();
+                enc.write_frame(&frame(0, gif::DisposalMethod::Keep, Some(0)))
+                    .unwrap();
+            }
+        }
+        let report = analyze_gif(&out).unwrap();
+        assert!(report.max_flashes_per_second > 3, "{report:?}");
     }
 
     #[test]

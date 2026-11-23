@@ -24,9 +24,10 @@ pub const MOTION_HOOK: &str = r#"
     return e ? e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') : 'other';
   };
   window.__rgaaMotion = () => {
-    const pause = [...document.querySelectorAll('button, [role=button], a')].some((e) =>
+    const pause = [...document.querySelectorAll(
+      'button, [role=button], a, input[type=button], input[type=submit], input[type=reset], summary')].some((e) =>
       /(pause|stop|arr[eê]t|suspend)/i.test(
-        (e.getAttribute('aria-label') || '') + ' ' + (e.textContent || '') + ' ' + (e.title || '')));
+        (e.getAttribute('aria-label') || '') + ' ' + (e.textContent || '') + ' ' + (e.title || '') + ' ' + (e.value || '')));
     return JSON.stringify({
       mutated: [...counts].map(([target, count]) => ({ target, count })),
       has_pause_control: pause,

@@ -27,6 +27,19 @@ let nextId = 1;
 const JSONRPC_LICENSE_REQUIRED = -32002;
 const JSONRPC_QUOTA_EXCEEDED = -32003;
 
+// A licence refusal over HTTP is a JSON-RPC envelope whose licence body lives
+// in `error.data` (see the server's `Denial::jsonrpc_error`), not at the top
+// level like a plain REST error. Unwrap it before classifying the refusal.
+function licenseBody(body) {
+  if (
+    body?.error?.code === JSONRPC_LICENSE_REQUIRED ||
+    body?.error?.code === JSONRPC_QUOTA_EXCEEDED
+  ) {
+    return body.error.data;
+  }
+  return body;
+}
+
 // Longest `Retry-After` this example will sit through before retrying once.
 // A daily quota resets at 00:00 UTC — hours away — so it is reported, never
 // waited out.
@@ -86,7 +99,8 @@ async function rpc(method, params, { retried = false } = {}) {
   // (`--auth-token`), which has no licence body, so only a body with a
   // licence `code` is treated as one.
   if ([401, 402, 429].includes(response.status)) {
-    const body = await response.json().catch(() => null);
+    const raw = await response.json().catch(() => null);
+    const body = licenseBody(raw);
     const retryAfterHeader = response.headers.get("retry-after");
     if (body?.code) {
       const err = licenseError(method, body, retryAfterHeader);
@@ -105,7 +119,12 @@ async function rpc(method, params, { retried = false } = {}) {
     throw new Error(`transport: HTTP ${response.status} from ${BASE}/mcp`);
   }
 
-  const body = await response.json();
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error(`transport: HTTP ${response.status} from ${BASE}/mcp (invalid JSON response)`);
+  }
   if (body.error) {
     if (
       body.error.code === JSONRPC_LICENSE_REQUIRED ||

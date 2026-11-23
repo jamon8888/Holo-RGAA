@@ -578,8 +578,15 @@ pub async fn create_batch(
     let admission = match service.license.check(Feature::Batch, cost) {
         Ok(admission) => admission,
         // The denial carries its own status, headers (`Retry-After`,
-        // `X-RateLimit-*`) and body.
-        Err(denial) => return (*denial).into_response(),
+        // `X-RateLimit-*`) and body. Install them as handler headers so the
+        // outer `restore_handler_license_headers` overwrites the licence
+        // layer's pre-consumption (cost=0) headers with these accurate ones.
+        Err(denial) => {
+            let headers = denial.headers();
+            let mut response = (*denial).into_response();
+            set_license_headers(&mut response, headers);
+            return response;
+        }
     };
 
     let now = service.now();

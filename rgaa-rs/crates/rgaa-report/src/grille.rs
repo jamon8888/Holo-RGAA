@@ -48,25 +48,6 @@ pub fn render_grille_csv(audit: &AuditResult) -> String {
     for page in &normal_pages {
         row.push(page_column_name(page));
     }
-    // Si la page transverses existe, utiliser ses critères ; sinon NT.
-    if let Some(tp) = transverse_page {
-        // Build index from transverse page criteria.
-        let tp_index: HashMap<String, CriterionResult> = tp
-            .criteria
-            .iter()
-            .map(|c| (c.criterion_id.clone(), c.clone()))
-            .collect();
-        for criterion in RgaaCriteria::all() {
-            let c = tp_index.get(criterion.id);
-            row.push(decision_letter(c).to_string());
-        }
-    } else {
-        row.push(NOT_TESTED.to_string());
-        // Push NT for each normal page (they will be overridden per criterion below).
-        for _ in &normal_pages {
-            row.push(NOT_TESTED.to_string());
-        }
-    }
     write_row(&mut output, &row);
 
     row.clear();
@@ -309,5 +290,32 @@ mod tests {
         )]));
         let lines: Vec<&str> = csv.lines().collect();
         assert_eq!(lines[1], "1.1,NT,C");
+    }
+
+    #[test]
+    fn transverse_page_populates_one_dedicated_column() {
+        let csv = render_grille_csv(&audit(vec![
+            page(
+                rgaa_core::TRANSVERSE_PAGE_URL,
+                Some("Éléments transverses"),
+                vec![result(
+                    "1.1",
+                    CriterionStatus::Fail,
+                    Some(CriterionStatus::Fail),
+                )],
+            ),
+            page(
+                "https://example.test/",
+                Some("Accueil"),
+                vec![result(
+                    "1.1",
+                    CriterionStatus::Pass,
+                    Some(CriterionStatus::Pass),
+                )],
+            ),
+        ]));
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines[0], "Critères,Éléments transverses,Accueil");
+        assert_eq!(lines[1], "1.1,NC,C");
     }
 }

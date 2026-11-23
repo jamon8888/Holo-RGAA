@@ -21,7 +21,7 @@ pub struct CrawlConfigInput {
     pub respect_robots: bool,
     #[serde(default = "default_sample_mode")]
     pub sample_mode: bool,
-    #[serde(default)]
+    #[serde(default = "default_audit_type")]
     pub audit_type: AuditType,
 }
 
@@ -47,6 +47,10 @@ impl From<CrawlConfigInput> for CrawlConfig {
             audit_type: input.audit_type,
         }
     }
+}
+
+fn default_audit_type() -> AuditType {
+    AuditType::Complet
 }
 
 #[cfg(test)]

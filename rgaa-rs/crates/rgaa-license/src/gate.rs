@@ -46,8 +46,8 @@ pub mod headers {
 pub const JSONRPC_LICENSE_REQUIRED: i32 = -32002;
 pub const JSONRPC_QUOTA_EXCEEDED: i32 = -32003;
 
-/// Set to the licence service base URL to enable online revalidation and the
-/// offline grace period.
+/// Set to a licence service base URL to enable the offline grace period.
+/// Online revalidation is deferred until a service protocol is implemented.
 pub const LICENSE_SERVER_ENV: &str = "RGAA_LICENSE_SERVER";
 /// Overrides the 7-day default grace period.
 pub const GRACE_DAYS_ENV: &str = "RGAA_LICENSE_GRACE_DAYS";

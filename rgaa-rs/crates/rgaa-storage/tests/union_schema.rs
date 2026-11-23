@@ -65,7 +65,7 @@ async fn union_schema_supports_every_live_api_path() {
         .expect("get_bundle_by_audit_id")
         .expect("bundle readable by audit_id");
     assert_eq!(fetched.audit_id, audit_id);
-    assert_eq!(fetched.findings.len(), 1);
+    assert_eq!(fetched.findings.len(), 2);
     assert_eq!(fetched.checkpoints.len(), 1);
 
     // /v1/findings path: Repository::list_findings against the findings table.
@@ -74,17 +74,47 @@ async fn union_schema_supports_every_live_api_path() {
         .list_findings(&audit_id, None, None, None, 100, 0)
         .await
         .expect("list_findings");
-    assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].rule, "image-alt");
-    assert_eq!(findings[0].criterion_id.as_deref(), Some("1.1"));
-    assert_eq!(findings[0].audit_id.to_string(), audit_id);
+    assert_eq!(findings.len(), 2);
+    assert!(findings.iter().any(|finding| {
+        finding.rule == "image-alt" && finding.criterion_id.as_deref() == Some("1.1")
+    }));
+    assert!(findings.iter().all(|finding| finding.audit_id == audit_id));
 
-    // Multi-filter: status + rule together (severity is None in sample).
-    let filtered = repo
+    // Each filter excludes the other finding in this two-finding fixture.
+    let by_severity = repo
+        .list_findings(
+            &audit_id,
+            Some("fail"),
+            Some("critical"),
+            None,
+            100,
+            0,
+        )
+        .await
+        .expect("list_findings severity filter");
+    assert_eq!(by_severity.len(), 1);
+    assert_eq!(by_severity[0].rule, "image-alt");
+
+    let by_rule = repo
         .list_findings(&audit_id, Some("fail"), None, Some("image-alt"), 100, 0)
         .await
-        .expect("list_findings multi-filter");
+        .expect("list_findings rule filter");
+    assert_eq!(by_rule.len(), 1);
+    assert_eq!(by_rule[0].rule, "image-alt");
+
+    let filtered = repo
+        .list_findings(
+            &audit_id,
+            Some("fail"),
+            Some("critical"),
+            Some("image-alt"),
+            100,
+            0,
+        )
+        .await
+        .expect("list_findings combined filters");
     assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].rule, "image-alt");
 
     // Multi-filter: no match when status contradicts.
     let empty = repo
@@ -93,12 +123,17 @@ async fn union_schema_supports_every_live_api_path() {
         .expect("list_findings empty");
     assert!(empty.is_empty());
 
-    // Multi-filter: limit/offset respected.
+    // Limit and nonzero offset both constrain a result set with two rows.
     let limited = repo
         .list_findings(&audit_id, None, None, None, 1, 0)
         .await
         .expect("list_findings limit");
     assert_eq!(limited.len(), 1);
+    let offset = repo
+        .list_findings(&audit_id, None, None, None, 2, 1)
+        .await
+        .expect("list_findings offset");
+    assert_eq!(offset.len(), 1);
 
     // Auth path: api_keys provisioning + validation.
     let scopes = vec!["audit:write".to_string()];
@@ -134,12 +169,20 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
                 title: "Image alt".into(),
                 classification: Classification::Deterministe,
                 status: CriterionStatus::Fail,
-                violations: vec![Violation {
-                    rule_id: "image-alt".into(),
-                    impact: "critical".into(),
-                    description: "Missing alt".into(),
-                    nodes_affected: 2,
-                }],
+                violations: vec![
+                    Violation {
+                        rule_id: "image-alt".into(),
+                        impact: "critical".into(),
+                        description: "Missing alt".into(),
+                        nodes_affected: 2,
+                    },
+                    Violation {
+                        rule_id: "link-name".into(),
+                        impact: "serious".into(),
+                        description: "Missing link name".into(),
+                        nodes_affected: 1,
+                    },
+                ],
                 confidence: None,
                 raw_confidence: None,
                 justification: None,

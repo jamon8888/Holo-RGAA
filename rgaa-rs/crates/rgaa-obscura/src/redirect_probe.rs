@@ -71,7 +71,7 @@ impl RedirectObservation {
     /// Fails when the hook never ran (`null`) or the payload has an unexpected shape.
     pub fn from_cdp(result: &serde_json::Value) -> Result<Self, String> {
         let raw = result
-            .pointer("/result/value")
+            .pointer("/value")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| format!("no value in observation result: {result}"))?;
         if raw == "null" {
@@ -105,7 +105,7 @@ mod tests {
     use super::*;
 
     fn cdp(value: &str) -> serde_json::Value {
-        serde_json::json!({"result": {"type": "string", "value": value}})
+        serde_json::json!({"type": "string", "value": value})
     }
 
     #[test]

@@ -80,7 +80,7 @@ pub struct ListenerHint {
 /// Fails when the hook never ran or the payload has an unexpected shape.
 pub fn parse_listeners(result: &serde_json::Value) -> Result<Vec<ListenerCall>, String> {
     let raw = result
-        .pointer("/result/value")
+        .pointer("/value")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| format!("no value in observation result: {result}"))?;
     if raw == "null" {
@@ -188,14 +188,14 @@ mod tests {
 
     #[test]
     fn a_hook_that_never_ran_is_an_error() {
-        let r = serde_json::json!({"result": {"value": "null"}});
+        let r = serde_json::json!({"value": "null"});
         assert!(parse_listeners(&r).is_err());
     }
 
     #[test]
     fn parses_recorded_calls() {
-        let r = serde_json::json!({"result": {"value":
-            r#"[{"type":"keydown","target":"document","at_ms":4}]"#}});
+        let r = serde_json::json!({"value":
+            r#"[{"type":"keydown","target":"document","at_ms":4}]"#});
         assert_eq!(
             parse_listeners(&r).unwrap(),
             [call("keydown", "document").with_at(4)]

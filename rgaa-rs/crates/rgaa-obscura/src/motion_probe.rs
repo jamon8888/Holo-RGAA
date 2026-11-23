@@ -75,7 +75,7 @@ impl MotionObservation {
     /// Fails when the hook never ran or the payload has an unexpected shape.
     pub fn from_cdp(result: &serde_json::Value) -> Result<Self, String> {
         let raw = result
-            .pointer("/result/value")
+            .pointer("/value")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| "motion hook did not run (no window.__rgaaMotion)".to_string())?;
         serde_json::from_str(raw).map_err(|e| format!("unexpected motion payload: {e}"))
@@ -104,7 +104,7 @@ mod tests {
     use super::*;
 
     fn cdp(value: &str) -> serde_json::Value {
-        serde_json::json!({"result": {"value": value}})
+        serde_json::json!({"value": value})
     }
 
     #[test]
@@ -121,6 +121,6 @@ mod tests {
 
     #[test]
     fn a_hook_that_never_ran_is_an_error() {
-        assert!(MotionObservation::from_cdp(&serde_json::json!({"result": {}})).is_err());
+        assert!(MotionObservation::from_cdp(&serde_json::json!({})).is_err());
     }
 }

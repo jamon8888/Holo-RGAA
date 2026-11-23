@@ -1392,7 +1392,9 @@ impl ObscuraBridge {
         }
         .await;
 
-        let _ = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        if let Err(error) = Self::cleanup_target(&mut ws, &session_id, &target_id).await {
+            warn!(%error, target_id, "CDP target cleanup failed");
+        }
         outcome
     }
 

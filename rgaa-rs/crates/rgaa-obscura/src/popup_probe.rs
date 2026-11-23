@@ -45,7 +45,7 @@ pub struct AutoPopup {
 /// Fails when the hook never ran or the payload has an unexpected shape.
 pub fn parse_popups(result: &serde_json::Value) -> Result<Vec<AutoPopup>, String> {
     let raw = result
-        .pointer("/result/value")
+        .pointer("/value")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| format!("no value in observation result: {result}"))?;
     if raw == "null" {
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn parses_recorded_popups() {
-        let r = serde_json::json!({"result": {"value": r#"[{"url":"/ad","at_ms":12}]"#}});
+        let r = serde_json::json!({"value": r#"[{"url":"/ad","at_ms":12}]"#});
         assert_eq!(
             parse_popups(&r).unwrap(),
             [AutoPopup {
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn a_hook_that_never_ran_is_an_error_not_an_empty_list() {
-        let r = serde_json::json!({"result": {"value": "null"}});
+        let r = serde_json::json!({"value": "null"});
         assert!(parse_popups(&r).is_err());
     }
 }

@@ -47,7 +47,7 @@ pub struct OrientationLock {
 /// Fails when the hook never ran or the payload has an unexpected shape.
 pub fn parse_locks(result: &serde_json::Value) -> Result<Vec<OrientationLock>, String> {
     let raw = result
-        .pointer("/result/value")
+        .pointer("/value")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| format!("no value in observation result: {result}"))?;
     if raw == "null" {
@@ -201,7 +201,7 @@ impl ObscuraBridge {
             )
             .await?;
             let raw = result
-                .pointer("/result/value")
+                .pointer("/value")
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| format!("no value in rendering result: {result}"))?;
             serde_json::from_str::<Rendering>(raw)
@@ -231,13 +231,13 @@ mod tests {
 
     #[test]
     fn parses_lock_requests() {
-        let r = serde_json::json!({"result": {"value": r#"[{"orientation":"landscape"}]"#}});
+        let r = serde_json::json!({"value": r#"[{"orientation":"landscape"}]"#});
         assert_eq!(parse_locks(&r).unwrap()[0].orientation, "landscape");
     }
 
     #[test]
     fn a_hook_that_never_ran_is_an_error() {
-        let r = serde_json::json!({"result": {"value": "null"}});
+        let r = serde_json::json!({"value": "null"});
         assert!(parse_locks(&r).is_err());
     }
 

@@ -282,7 +282,16 @@ impl LicenseGate {
         match (key_error, file) {
             (_, Ok(None)) => {}
             (Some(e), Ok(Some(_))) | (_, Err(e)) => gate.install_error(e),
-            (None, Ok(Some(f))) => gate.install(Some(&f)),
+            (None, Ok(Some(f))) => {
+                if !gate.verifier.has_keys() {
+                    // Otherwise the only trace is a 401 on the first gated request.
+                    tracing::warn!(
+                        "a licence is installed but no verification key is configured \
+                         (set RGAA_LICENSE_PUBLIC_KEYS): it will be rejected as invalid"
+                    );
+                }
+                gate.install(Some(&f))
+            }
         }
         gate
     }

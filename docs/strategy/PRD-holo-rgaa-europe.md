@@ -384,10 +384,9 @@ Décisions : [Action GitHub du pilote](https://github.com/jamon8888/Holo-RGAA/is
 |---|---|---|
 | Promesse juridique (« conforme ») | Élevée | Vocabulaire contractuel ; R1-R3 ; NF-11 ; attestation humaine des partenaires |
 | Injection de prompt depuis une page auditée | Élevée | R7, F-SEC-1, 3, 4 |
-| Large 4 non admis à la calibration | Élevée | Calibration en M0 ; modèle de repli décidé dans [Admettre ou non Mistral Large 4 après calibration](https://github.com/jamon8888/Holo-RGAA/issues/406) |
+| Large 4 juge mal la pertinence sur preuve | Élevée | Calibration abandonnée (F-LLM-9, D7) : plugins d'analyse qui mesurent, relecteur qui décide, taux de réouverture suivi au pilote ; modèle de repli si ce taux dérive |
 | Marge IA négative (raisonnement `high` facturé en sortie) | Élevée | Mesure sur l'API Mistral ; effort par tier ; découpage des lots ; crédits prépayés |
 | Durée d'audit trop longue à l'effort `high` | Moyenne | Mesure de latence (#414) ; effort et lots par critère (F-LLM-12) |
-| Étiquetage humain non réalisé | Élevée | Bloque la calibration : décider qui étiquette (porteur ou cabinet partenaire) |
 | Conditions d'usage des agents navigateur | Moyenne | Pas dans le pilote ; relecture humaine des CGU (OpenAI illisibles en recherche) avant M2 |
 | Fuite de données vers les éditeurs d'agents | Moyenne | P-1 ; offre Souveraine |
 | Concurrent qui ajoute un MCP | Moyenne | RGAA natif, 12 pays, piste attribuée, revue guidée |
@@ -396,8 +395,8 @@ Décisions : [Action GitHub du pilote](https://github.com/jamon8888/Holo-RGAA/is
 
 1. Coût et latence réels sur l'API Mistral, par effort ; sortie maximale ; facturation des échecs ; limites de débit
    ([#414](https://github.com/jamon8888/Holo-RGAA/issues/414)).
-2. Accord de Large 4 avec l'étiquetage humain, et donc son admission ([#415](https://github.com/jamon8888/Holo-RGAA/issues/415),
-   [#406](https://github.com/jamon8888/Holo-RGAA/issues/406)) ; qui étiquette.
+2. ~~Accord de Large 4 avec l'étiquetage humain~~ — sans objet depuis F-LLM-9 / D7 : l'admission de Large 4 ne
+   dépend plus d'une calibration ni d'étiquettes humaines ; seuil de taux de réouverture à fixer pour le pilote.
 3. Valeur d'un crédit, marge cible, grille du pilote ([#407](https://github.com/jamon8888/Holo-RGAA/issues/407)).
 4. Premier client pilote, critères de succès, contrat ([#413](https://github.com/jamon8888/Holo-RGAA/issues/413)).
 5. Contenu de l'offre Souveraine pour un acheteur public (brouillard de la carte).
@@ -413,9 +412,9 @@ Décisions : [Action GitHub du pilote](https://github.com/jamon8888/Holo-RGAA/is
 
 | Ticket ouvert | Bloqué par | Besoin |
 |---|---|---|
-| [Calibrer Mistral Large 4 sur les familles de preuve étiquetées](https://github.com/jamon8888/Holo-RGAA/issues/415) | Aucune étiquette humaine | Étiquetage d'un lot ; `pip` / `python3-venv` sur la machine |
+| [Calibrer Mistral Large 4 sur les familles de preuve étiquetées](https://github.com/jamon8888/Holo-RGAA/issues/415) | **Caduc** (F-LLM-9) — à fermer | — |
 | [Mesurer coût et latence de Mistral Large 4 sur l'API Mistral, par niveau d'effort](https://github.com/jamon8888/Holo-RGAA/issues/414) | — | Clé Mistral |
-| [Admettre ou non Mistral Large 4 après calibration](https://github.com/jamon8888/Holo-RGAA/issues/406) | Calibration | Grilling |
+| [Admettre ou non Mistral Large 4 après calibration](https://github.com/jamon8888/Holo-RGAA/issues/406) | **Caduc** (F-LLM-9, D7) — ne bloque pas M0 | — |
 | [Valeur d'un crédit, marge cible et grille du pilote](https://github.com/jamon8888/Holo-RGAA/issues/407) | Mesure Mistral | Grilling |
 | [Premier client pilote : profil, critères de succès, contrat](https://github.com/jamon8888/Holo-RGAA/issues/413) | Grille de crédits | Grilling |
 

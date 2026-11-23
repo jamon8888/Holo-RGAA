@@ -104,7 +104,7 @@ pub struct Artefact { pub nom: String, pub media_type: String, pub chemin_bundle
 
 - Les artefacts sont écrits dans le **bundle d'audit** existant (`rgaa-storage`), sous `analysis/<plugin>/<sha256>.<ext>`. La rétention suit le PRD §10 : bundles 3 ans, captures 90 jours. Les artefacts image comptent comme des **captures**.
 - Le moteur de règles (`rgaa-orchestrator`) lit les preuves et décide du statut :
-  - `Portee::Mesuree` avec un seuil franchi peut donner `fail` **uniquement** sur un test classé Automatique ;
+  - `Portee::Mesuree` sur un test classé Automatique : seuil franchi → `fail`, seuil respecté → `pass` (voir P-01 §5) ;
   - tout le reste donne `review`, avec la preuve jointe.
 
 ## 6. Modèles locaux

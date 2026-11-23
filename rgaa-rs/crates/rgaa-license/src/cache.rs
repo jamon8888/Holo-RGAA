@@ -42,11 +42,12 @@ pub struct LicenseCache;
 
 impl LicenseCache {
     /// Pure path resolution, testable without touching the environment.
-    /// Empty values are ignored, as the XDG spec requires.
+    /// Empty and relative `XDG_CONFIG_HOME` values are ignored, as the XDG spec requires.
     pub fn dir_from(xdg_config_home: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
         let non_empty = |v: Option<OsString>| v.filter(|s| !s.is_empty());
         let base = non_empty(xdg_config_home)
             .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
             .or_else(|| non_empty(home).map(|h| PathBuf::from(h).join(".config")))?;
         Some(base.join("rgaa"))
     }
@@ -94,9 +95,10 @@ fn load_toml<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, LicenseError
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(LicenseError::Cache(format!("{}: {e}", path.display()))),
     };
+    // `message()` only: the full `Display` quotes the source line, which may be the token.
     toml::from_str(&text)
         .map(Some)
-        .map_err(|e| LicenseError::Cache(format!("{}: {e}", path.display())))
+        .map_err(|e| LicenseError::Cache(format!("{}: {}", path.display(), e.message())))
 }
 
 /// Atomic write: a sibling temp file, created `0600` on unix (the token is a
@@ -138,6 +140,8 @@ mod tests {
         let d = LicenseCache::dir_from(Some("".into()), Some("/h".into()));
         assert_eq!(d, Some(PathBuf::from("/h/.config/rgaa")));
         assert_eq!(LicenseCache::dir_from(None, None), None);
+        let d = LicenseCache::dir_from(Some("local-config".into()), Some("/h".into()));
+        assert_eq!(d, Some(PathBuf::from("/h/.config/rgaa")));
         assert_eq!(
             LicenseCache::dir_from(Some("".into()), Some("".into())),
             None
@@ -171,6 +175,17 @@ mod tests {
             LicenseCache::load_license(&path),
             Err(LicenseError::Cache(_))
         ));
+    }
+
+    #[test]
+    fn decode_error_does_not_echo_the_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(LICENSE_FILE);
+        fs::write(&path, "token = \"v4.public.SECRET\" trailing\n").unwrap();
+        let Err(LicenseError::Cache(msg)) = LicenseCache::load_license(&path) else {
+            panic!("expected a cache error");
+        };
+        assert!(!msg.contains("SECRET"), "{msg}");
     }
 
     #[cfg(unix)]

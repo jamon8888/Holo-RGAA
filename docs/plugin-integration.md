@@ -141,6 +141,10 @@ Quotas are counted per UTC day and enforced only by the HTTP servers
 (`rgaa-api`, `rgaa-mcp-http`). Local CLI and stdio runs check the tier only.
 Each URL in `POST /v1/batches` consumes one unit; the whole batch is refused
 without consuming units if the remaining quota cannot cover every URL.
+Units are consumed at admission and never refunded: if the server then fails
+to record the batch (`500`), the units stay spent, so a client should retry a
+`500` only if the remaining quota covers it. A `503` with code `usage_storage`
+means the usage counter itself is unavailable and nothing was consumed.
 
 Every gated response carries `X-License-Tier`, `X-License-Status`
 (`unlicensed`, `valid`, `grace`, `expired`, `grace_exceeded`, `invalid`),

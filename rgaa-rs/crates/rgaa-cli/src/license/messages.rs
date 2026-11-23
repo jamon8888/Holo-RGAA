@@ -90,6 +90,9 @@ pub fn invalid_reason(error: &LicenseError) -> String {
             format!("le fichier de licence est illisible ({detail})")
         }
         LicenseError::Sync(detail) => format!("synchronisation impossible ({detail})"),
+        LicenseError::UsageStorage(detail) => {
+            format!("le compteur d'utilisation est indisponible ({detail})")
+        }
     }
 }
 

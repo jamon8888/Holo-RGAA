@@ -70,7 +70,7 @@ pub async fn enforce(State(state): State<LicenseLayerState>, req: Request, next:
         Classification::Access(f) => (f, 0),
         Classification::Metered(f, n) => (f, n),
     };
-    match state.gate.check(feature, cost) {
+    match state.gate.clone().check_async(feature, cost).await {
         Ok(admission) => {
             let mut response = next.run(req).await;
             append_headers(&mut response, admission.headers());

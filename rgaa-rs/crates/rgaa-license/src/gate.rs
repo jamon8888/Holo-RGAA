@@ -17,7 +17,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::LicenseError;
 use crate::tiers::{Feature, Tier};
 use crate::token::{LicenseClaims, LicenseVerifier};
-use crate::usage::{RateInfo, UsageCounter, UsageEvent, UsageReporter};
+use crate::usage::{ConsumeError, RateInfo, UsageCounter, UsageEvent, UsageReporter};
 
 /// Response header names. Servers must list these in CORS `expose_headers`,
 /// or browser clients cannot read them.
@@ -191,12 +191,12 @@ impl LicenseGate {
         let grace = std::env::var_os(LICENSE_SERVER_ENV)
             .filter(|v| !v.is_empty())
             .map(|_| {
-                let days = std::env::var(GRACE_DAYS_ENV)
+                std::env::var(GRACE_DAYS_ENV)
                     .ok()
                     .and_then(|v| v.trim().parse::<i64>().ok())
                     .filter(|d| *d >= 0)
-                    .unwrap_or(DEFAULT_GRACE_DAYS);
-                Duration::days(days)
+                    .and_then(Duration::try_days)
+                    .unwrap_or_else(|| Duration::days(DEFAULT_GRACE_DAYS))
             });
         let config = GateConfig {
             grace,
@@ -218,9 +218,11 @@ impl LicenseGate {
         };
         let gate = Self::new(verifier, Arc::new(counter), clock, config);
 
+        // Trimmed, as the verifier does, so whitespace cannot mint a fresh baseline.
         let env_token = std::env::var(LICENSE_KEY_ENV)
             .ok()
-            .filter(|t| !t.trim().is_empty());
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty());
         let file = match env_token {
             Some(token) => {
                 let cached = dir.as_ref().and_then(|d| {
@@ -309,8 +311,8 @@ impl LicenseGate {
         &self.config
     }
 
-    fn evaluate(&self, now: DateTime<Utc>) -> (LicenseStatus, Tier, u32) {
-        match &*self.read() {
+    fn evaluate(&self, loaded: &Loaded, now: DateTime<Utc>) -> (LicenseStatus, Tier, u32) {
+        match loaded {
             Loaded::None => (
                 LicenseStatus::Unlicensed,
                 Tier::Free,
@@ -344,7 +346,9 @@ impl LicenseGate {
                         return (LicenseStatus::GraceExceeded { since }, Tier::Free, free);
                     }
                     if age > self.config.revalidate_after {
-                        let until = *last_validated + grace;
+                        let until = last_validated
+                            .checked_add_signed(grace)
+                            .unwrap_or(DateTime::<Utc>::MAX_UTC);
                         return (
                             LicenseStatus::Grace { until },
                             claims.tier,
@@ -359,13 +363,17 @@ impl LicenseGate {
 
     pub fn snapshot(&self) -> LicenseSnapshot {
         let now = self.clock.now();
-        let (status, tier, limit) = self.evaluate(now);
-        let (claims, last_validated) = match &*self.read() {
-            Loaded::Licensed {
-                claims,
-                last_validated,
-            } => (Some(claims.clone()), Some(*last_validated)),
-            _ => (None, None),
+        let (status, tier, limit, claims, last_validated) = {
+            let loaded = self.read();
+            let (status, tier, limit) = self.evaluate(&loaded, now);
+            let (claims, last_validated) = match &*loaded {
+                Loaded::Licensed {
+                    claims,
+                    last_validated,
+                } => (Some(claims.clone()), Some(*last_validated)),
+                _ => (None, None),
+            };
+            (status, tier, limit, claims, last_validated)
         };
         LicenseSnapshot {
             status,
@@ -376,19 +384,42 @@ impl LicenseGate {
         }
     }
 
+    /// [`check`](Self::check) for async request handlers. The persistent
+    /// counter's lock/read/check/write transaction blocks on a file lock, so
+    /// the whole decision runs on the blocking pool, never on a runtime worker.
+    pub async fn check_async(
+        self: Arc<Self>,
+        feature: Feature,
+        cost: u32,
+    ) -> Result<Admission, Box<Denial>> {
+        match tokio::task::spawn_blocking(move || self.check(feature, cost)).await {
+            Ok(decision) => decision,
+            Err(e) => std::panic::resume_unwind(e.into_panic()),
+        }
+    }
+
     /// The decision. `cost == 0` checks access without metering (status
     /// polls, reads of past results).
     pub fn check(&self, feature: Feature, cost: u32) -> Result<Admission, Box<Denial>> {
         let now = self.clock.now();
-        if matches!(&*self.read(), Loaded::Unrestricted) {
-            return Ok(Admission {
-                tier: Tier::Team,
-                status: LicenseStatus::Valid,
-                rate: None,
-                now,
-            });
-        }
-        let (status, tier, limit) = self.evaluate(now);
+        // One read: the usage subject is the licence that was evaluated.
+        let (status, tier, limit, subject) = {
+            let loaded = self.read();
+            if matches!(&*loaded, Loaded::Unrestricted) {
+                return Ok(Admission {
+                    tier: Tier::Team,
+                    status: LicenseStatus::Valid,
+                    rate: None,
+                    now,
+                });
+            }
+            let (status, tier, limit) = self.evaluate(&loaded, now);
+            let subject = match &*loaded {
+                Loaded::Licensed { claims, .. } => Some(claims.sub.clone()),
+                _ => None,
+            };
+            (status, tier, limit, subject)
+        };
         let deny = |error: LicenseError, rate: Option<RateInfo>| {
             Box::new(Denial {
                 error,
@@ -431,21 +462,20 @@ impl LicenseGate {
         } else {
             match self.counter.try_consume(cost, limit, now) {
                 Ok(rate) => rate,
-                Err(rate) => {
+                Err(ConsumeError::Exhausted(rate)) => {
                     let error = LicenseError::QuotaExceeded {
                         limit,
                         reset_at: rate.reset_at,
                     };
                     return Err(deny(error, Some(rate)));
                 }
+                Err(ConsumeError::Storage(detail)) => {
+                    return Err(deny(LicenseError::UsageStorage(detail), None));
+                }
             }
         };
         if cost > 0 {
             if let Some(reporter) = &self.reporter {
-                let subject = match &*self.read() {
-                    Loaded::Licensed { claims, .. } => Some(claims.sub.clone()),
-                    _ => None,
-                };
                 reporter.record(UsageEvent {
                     feature,
                     units: cost,
@@ -548,10 +578,11 @@ pub struct Denial {
 }
 
 impl Denial {
-    /// 401 invalid token, 402 tier/expiry, 429 quota.
+    /// 401 invalid token, 402 tier/expiry, 429 quota, 503 usage counter unavailable.
     pub fn http_status(&self) -> u16 {
         match self.error {
             LicenseError::QuotaExceeded { .. } => 429,
+            LicenseError::UsageStorage(_) => 503,
             LicenseError::FeatureNotInTier { .. }
             | LicenseError::Expired { .. }
             | LicenseError::GraceExceeded { .. } => 402,
@@ -562,6 +593,8 @@ impl Denial {
     pub fn jsonrpc_code(&self) -> i32 {
         match self.error {
             LicenseError::QuotaExceeded { .. } => JSONRPC_QUOTA_EXCEEDED,
+            // JSON-RPC "Internal error": a broken counter is not a licence problem.
+            LicenseError::UsageStorage(_) => -32603,
             _ => JSONRPC_LICENSE_REQUIRED,
         }
     }

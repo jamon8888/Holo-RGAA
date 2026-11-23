@@ -87,7 +87,13 @@ pub fn activate(
             fr::invalid_reason(&LicenseError::NotYetValid { at })
         );
     }
-    let previous = LicenseCache::load_license(path).ok().flatten();
+    // An unreadable file must not pass for "no baseline": that would reset grace offline.
+    let previous = LicenseCache::load_license(path).map_err(|e| {
+        anyhow!(
+            "Licence existante illisible : {}. Aucun fichier n'a été écrit.",
+            fr::invalid_reason(&e)
+        )
+    })?;
     let last_validated = activation_baseline(token, previous, now);
     let file = LicenseFile {
         token: token.to_string(),

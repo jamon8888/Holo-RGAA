@@ -26,5 +26,6 @@ pub use gate::{Admission, Denial, GateConfig, LicenseGate, LicenseSnapshot, Lice
 pub use tiers::{Feature, Tier};
 pub use token::{LicenseClaims, LicenseIssuer, LicenseVerifier};
 pub use usage::{
-    NoopSink, RateInfo, ReporterConfig, UsageCounter, UsageEvent, UsageReporter, UsageSink,
+    ConsumeError, NoopSink, RateInfo, ReporterConfig, UsageCounter, UsageEvent, UsageReporter,
+    UsageSink,
 };

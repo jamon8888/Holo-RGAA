@@ -459,7 +459,13 @@ async fn quota_refusal_is_429_not_503_under_the_resilience_stack() {
         let (client, url) = (client.clone(), url.clone());
         async move { client.post(url).send().await.expect("first").status() }
     });
-    started.notified().await;
+    // Fails instead of hanging if the first request never reaches the handler.
+    if tokio::time::timeout(Duration::from_secs(10), started.notified())
+        .await
+        .is_err()
+    {
+        panic!("first request never reached the handler: {:?}", first.await);
+    }
 
     let second = client.post(&url).send().await.expect("second");
     assert_eq!(second.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);

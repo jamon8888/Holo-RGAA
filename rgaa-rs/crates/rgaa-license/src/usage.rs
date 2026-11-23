@@ -40,6 +40,15 @@ fn next_midnight(day: NaiveDate) -> DateTime<Utc> {
         .unwrap_or(DateTime::<Utc>::MAX_UTC)
 }
 
+/// Why [`UsageCounter::try_consume`] consumed nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsumeError {
+    /// The request does not fit in what is left today.
+    Exhausted(RateInfo),
+    /// The persistent counter could not be locked or written.
+    Storage(String),
+}
+
 /// Units consumed today (UTC), for the whole installation.
 ///
 /// A mutex guards in-process requests; a file lock serializes persistent
@@ -99,8 +108,9 @@ impl UsageCounter {
 
     /// Current position without consuming anything.
     pub fn peek(&self, limit: u32, now: DateTime<Utc>) -> RateInfo {
-        let today = now.date_naive();
         let mut state = self.lock();
+        // A caller that sampled `now` before waiting must not move the day back.
+        let today = now.date_naive().max(state.day);
         if let Some(path) = &self.persist {
             match lock_usage_file(path)
                 .and_then(|_guard| Ok(LicenseCache::load_usage(path)?.unwrap_or(*state)))
@@ -124,19 +134,16 @@ impl UsageCounter {
         cost: u32,
         limit: u32,
         now: DateTime<Utc>,
-    ) -> Result<RateInfo, RateInfo> {
-        let today = now.date_naive();
+    ) -> Result<RateInfo, ConsumeError> {
         let mut state = self.lock();
+        // A caller that sampled `now` before waiting must not move the day back.
+        let today = now.date_naive().max(state.day);
         let persistent_lock = match &self.persist {
             Some(path) => match lock_usage_file(path) {
                 Ok(lock) => Some(lock),
                 Err(error) => {
                     tracing::error!(%error, "failed to lock persistent usage counter");
-                    return Err(RateInfo {
-                        limit,
-                        remaining: 0,
-                        reset_at: next_midnight(today),
-                    });
+                    return Err(ConsumeError::Storage(error.to_string()));
                 }
             },
             None => None,
@@ -152,11 +159,11 @@ impl UsageCounter {
         let reset_at = next_midnight(state.day);
         let remaining = limit.saturating_sub(state.count);
         if cost > remaining {
-            return Err(RateInfo {
+            return Err(ConsumeError::Exhausted(RateInfo {
                 limit,
                 remaining,
                 reset_at,
-            });
+            }));
         }
         let previous = *state;
         state.count += cost;
@@ -164,11 +171,7 @@ impl UsageCounter {
             if let Err(error) = LicenseCache::store_usage(path, &state) {
                 *state = previous;
                 tracing::error!(%error, "failed to persist usage counter");
-                return Err(RateInfo {
-                    limit,
-                    remaining: 0,
-                    reset_at,
-                });
+                return Err(ConsumeError::Storage(error.to_string()));
             }
         }
         drop(persistent_lock);
@@ -191,6 +194,7 @@ fn lock_usage_file(path: &Path) -> Result<File, Box<dyn std::error::Error + Send
     lock_path.push(".lock");
     let lock = OpenOptions::new()
         .create(true)
+        .truncate(false) // a lock file: its contents are never read
         .read(true)
         .write(true)
         .open(lock_path)?;
@@ -328,7 +332,9 @@ mod tests {
             let r = c.try_consume(1, 10, at(12, 0, 0)).unwrap();
             assert_eq!(r.remaining, 10 - i);
         }
-        let refused = c.try_consume(1, 10, at(12, 0, 0)).unwrap_err();
+        let Err(ConsumeError::Exhausted(refused)) = c.try_consume(1, 10, at(12, 0, 0)) else {
+            panic!("expected exhaustion");
+        };
         assert_eq!(refused.remaining, 0);
         assert_eq!(
             refused.reset_at,
@@ -395,6 +401,33 @@ mod tests {
         drop(c);
         let c = UsageCounter::persistent(path);
         assert_eq!(c.peek(10, at(10, 0, 0)).remaining, 6);
+    }
+
+    #[test]
+    fn persistent_reload_does_not_move_the_day_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = UsageCounter::persistent(dir.path().join("usage.toml"));
+        c.try_consume(3, 10, at(10, 0, 0)).unwrap();
+        // `peek` rolls memory to the next day without writing the file.
+        let next_day = at(0, 0, 1) + chrono::Duration::days(1);
+        c.peek(10, next_day);
+        // A request that sampled `now` before midnight is charged to the new day.
+        let late = c.try_consume(1, 10, at(23, 59, 59)).unwrap();
+        assert_eq!(late.remaining, 9);
+        assert_eq!(late.reset_at, next_midnight(next_day.date_naive()));
+    }
+
+    #[test]
+    fn unwritable_counter_is_a_storage_error_not_exhaustion() {
+        let dir = tempfile::tempdir().unwrap();
+        // The parent of the usage file is a regular file, so nothing can be created under it.
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, "").unwrap();
+        let c = UsageCounter::persistent(blocker.join("usage.toml"));
+        assert!(matches!(
+            c.try_consume(1, 10, at(10, 0, 0)),
+            Err(ConsumeError::Storage(_))
+        ));
     }
 
     #[test]

@@ -43,6 +43,11 @@ pub enum LicenseError {
 
     #[error("usage sync error: {0}")]
     Sync(String),
+
+    /// The local usage counter could not be locked, read or written. Not a
+    /// quota refusal: waiting until the reset does not repair it.
+    #[error("usage counter unavailable: {0}")]
+    UsageStorage(String),
 }
 
 impl LicenseError {
@@ -59,6 +64,7 @@ impl LicenseError {
             Self::QuotaExceeded { .. } => "quota_exceeded",
             Self::Cache(_) => "license_cache",
             Self::Sync(_) => "usage_sync",
+            Self::UsageStorage(_) => "usage_storage",
         }
     }
 }

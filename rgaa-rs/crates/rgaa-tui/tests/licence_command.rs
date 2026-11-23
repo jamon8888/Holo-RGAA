@@ -46,6 +46,19 @@ fn exp() -> DateTime<Utc> {
 }
 
 #[test]
+fn activate_refuses_to_overwrite_an_unreadable_licence() {
+    let issuer = LicenseIssuer::generate().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = licence_path(&dir.path().join("rgaa"));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "token = [not toml").unwrap();
+    let token = issuer.sign(&claims(Tier::Professional, exp())).unwrap();
+
+    assert!(activate(&gate(&issuer, None), &token, &path, now()).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "token = [not toml");
+}
+
+#[test]
 fn activate_writes_a_private_file_with_last_validated_now() {
     let issuer = LicenseIssuer::generate().unwrap();
     let dir = tempfile::tempdir().unwrap();

@@ -575,7 +575,12 @@ pub async fn create_batch(
     // validation so a malformed request costs nothing, and before the insert
     // so a refused batch never exists.
     let cost = u32::try_from(payload.urls.len()).unwrap_or(u32::MAX);
-    let admission = match service.license.check(Feature::Batch, cost) {
+    let admission = match service
+        .license
+        .clone()
+        .check_async(Feature::Batch, cost)
+        .await
+    {
         Ok(admission) => admission,
         // The denial carries its own status, headers (`Retry-After`,
         // `X-RateLimit-*`) and body. Install them as handler headers so the
@@ -605,6 +610,9 @@ pub async fn create_batch(
         now,
     );
 
+    // Units admitted above stay consumed if the insert fails (documented in
+    // docs/plugin-integration.md): usage is never refunded, so a reported
+    // event never has to be withdrawn.
     if let Err(e) = service.store.insert(&record).await {
         tracing::error!(error = %e, "batch store insert failed");
         let mut response = (

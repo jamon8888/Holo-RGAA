@@ -98,6 +98,7 @@ Skills activate automatically when relevant — no need to invoke them directly.
 | `report` | Compliance documentation or export needed |
 | `guided-test` | Manual accessibility testing (keyboard, focus, contrast) |
 | `criteria` | A specific RGAA criterion needs looking up or explaining |
+| `visual-remediation` | Screenshots of the existing site per RGAA criterion, plus several AI remediation proposals rendered side by side in Playwright/Chromium |
 
 ## MCP Server
 
@@ -243,9 +244,12 @@ rgaa-consultant/
 │   ├── audit-project.md
 │   └── generate-report.md
 ├── hooks/hooks.json
-├── scripts/check-runtime.sh
+├── scripts/
+│   ├── check-runtime.sh
+│   └── visual/capture.mjs   # Playwright/Chromium screenshots (npm ci)
 ├── tests/
 │   ├── plugin-contract.sh
+│   ├── visual-capture.sh
 │   └── e2e-local.sh
 └── skills/
     ├── audit/
@@ -254,7 +258,8 @@ rgaa-consultant/
     ├── verify/
     ├── report/
     ├── guided-test/
-    └── criteria/
+    ├── criteria/
+    └── visual-remediation/
 ```
 
 ## Getting Help

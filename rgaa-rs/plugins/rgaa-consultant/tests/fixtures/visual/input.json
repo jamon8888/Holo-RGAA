@@ -1,0 +1,16 @@
+{
+  "url": "__PAGE__",
+  "findings": [
+    { "id": "fng_img", "criterion_id": "1.1", "target": "img.hero", "description": "Image sans alternative",
+      "proposals": [
+        { "label": "Alternative descriptive", "rationale": "Image porteuse d'information", "attributes": { "alt": "Bandeau gris" } },
+        { "label": "Image décorative", "rationale": "Image sans information", "attributes": { "alt": "", "role": "presentation" } }
+      ] },
+    { "id": "fng_contrast", "criterion_id": "3.2", "target": ".pale", "description": "Contraste insuffisant",
+      "proposals": [
+        { "label": "Gris foncé", "rationale": "Ratio 7:1", "css": ".pale{color:#595959 !important}" },
+        { "label": "Balise forte", "rationale": "Texte remplacé", "html": "<p class=\"pale\" style=\"color:#1a1a1a\"><strong>Texte contrasté</strong></p>" }
+      ] },
+    { "id": "fng_missing", "criterion_id": "1.1", "target": "#absent", "description": "Cible disparue", "proposals": [] }
+  ]
+}

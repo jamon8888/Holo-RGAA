@@ -49,7 +49,7 @@ check_file "scripts/check-runtime.sh" "Runtime check script"
 check_file "hooks/hooks.json" "Hooks config"
 
 # Skills
-for skill in audit triage remediate verify report guided-test criteria; do
+for skill in audit triage remediate verify report guided-test criteria visual-remediation; do
   check_file "skills/$skill/SKILL.md" "Skill: $skill"
 done
 
@@ -89,7 +89,7 @@ else
 fi
 
 # Skill files have required front matter
-for skill in audit triage remediate verify report guided-test criteria; do
+for skill in audit triage remediate verify report guided-test criteria visual-remediation; do
   if ! grep -q "^name:" "$PLUGIN_ROOT/skills/$skill/SKILL.md" 2>/dev/null; then
     echo "❌ MISSING FRONT MATTER 'name' in skills/$skill/SKILL.md"
     FAILURES=$((FAILURES + 1))

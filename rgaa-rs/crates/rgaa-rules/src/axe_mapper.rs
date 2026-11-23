@@ -9,6 +9,9 @@ use std::sync::OnceLock;
 
 pub struct AxeMapper;
 
+const CAPPED_REVIEW_JUSTIFICATION: &str =
+    "axe-core violation sur une entrée plafonnée à review : l'indice est réel mais le verdict est plafonné à needs_review";
+
 impl AxeMapper {
     /// Map axe-core output to RGAA criterion results.
     ///
@@ -96,17 +99,13 @@ impl AxeMapper {
                         violations: vec![],
                         confidence: None,
                         raw_confidence: None,
-                        justification: Some(
-                            if capped {
-                                "axe-core violation sur une entrée plafonnée à review : \
-                                 l'indice est réel mais le verdict est plafonné à needs_review"
-                                    .to_string()
-                            } else {
-                                "Partial axe coverage: a violation was found, but axe does not \
+                        justification: Some(if capped {
+                            CAPPED_REVIEW_JUSTIFICATION.to_string()
+                        } else {
+                            "Partial axe coverage: a violation was found, but axe does not \
                                  decide every test of this criterion"
-                                    .to_string()
-                            },
-                        ),
+                                .to_string()
+                        }),
                         source: "axe-core".to_string(),
                         citations: vec![],
                         considered_sources: vec![],
@@ -115,28 +114,18 @@ impl AxeMapper {
                         verdict_basis: Vec::new(),
                         evidence: Vec::new(),
                         confidence_calibration_version: None,
-                        review_required: capped,
-                        review_reason: if capped {
-                            Some(format!(
-                                "verdict plafonné à review par le mécanisme axe {} — violation {:?} n'est pas un Fail ferme",
-                                violation.id, violation.id
-                            ))
-                        } else {
-                            None
-                        },
+                        review_required: false,
+                        review_reason: None,
                         verified_status: None,
                         review_events: Vec::new(),
                     });
                 // Un Fail prouvé ne se dégrade jamais en revue : si une autre règle du
                 // même critère a déjà produit un Fail, on le garde. Mais on ajoute
                 // toujours la violation comme preuve.
-                if result.status != CriterionStatus::Fail {
-                    result.status = if capped {
-                        CriterionStatus::NeedsReview
-                    } else {
-                        CriterionStatus::Fail
-                    };
-                    result.review_required = capped;
+                if capped {
+                    Self::apply_capped_review(result, &violation.id);
+                } else if result.status != CriterionStatus::Fail {
+                    result.status = CriterionStatus::Fail;
                 }
                 result.violations.push(Violation {
                     rule_id: violation.id.clone(),
@@ -158,6 +147,25 @@ impl AxeMapper {
         Self::apply_incomplete(&mut results, mapping, &incomplete);
 
         Ok(results)
+    }
+
+    /// Applique le plafond `review` à un résultat, qu'il vienne d'être créé pour une
+    /// couverture partielle ou qu'il ait déjà été initialisé à `Pass` pour une
+    /// couverture complète. Un `Fail` prouvé ne se dégrade jamais.
+    fn apply_capped_review(result: &mut CriterionResult, violation_id: &str) {
+        if result.status == CriterionStatus::Fail {
+            return;
+        }
+        result.status = CriterionStatus::NeedsReview;
+        result.review_required = true;
+        if result.review_reason.is_none() {
+            result.review_reason = Some(format!(
+                "verdict plafonné à review par une entrée axe — violation {violation_id} n'est pas un Fail ferme"
+            ));
+        }
+        if result.justification.is_none() {
+            result.justification = Some(CAPPED_REVIEW_JUSTIFICATION.to_string());
+        }
     }
 
     /// Accepte le tableau de violations nu comme l'objet complet d'`axe.run()`.
@@ -787,6 +795,32 @@ mod tests {
         assert_eq!(violation.nodes_affected, 1);
         assert_eq!(violation.nodes.len(), 1);
         assert_eq!(violation.nodes[0]["html"], "<button tabindex='3'>");
+    }
+
+    /// Un mécanisme complet plafonné à `review` existe déjà dans les résultats sous la
+    /// forme d'un `Pass` initialisé. Une violation doit y ajouter la justification et la
+    /// raison de revue qui manquent au chemin de création d'un mécanisme partiel.
+    #[test]
+    fn a_complete_result_updated_by_a_capped_violation_gets_review_context() {
+        let mut result = AxeMapper::map("[]")
+            .expect("axe sans violation doit être accepté")
+            .shift_remove("2.1")
+            .expect("2.1 doit avoir une couverture axe complète");
+        assert_eq!(result.status, CriterionStatus::Pass);
+        assert!(result.justification.is_none());
+
+        AxeMapper::apply_capped_review(&mut result, "tabindex");
+
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert!(result.review_required);
+        assert!(result
+            .justification
+            .as_deref()
+            .is_some_and(|reason| reason.contains("plafonnée")));
+        assert!(result
+            .review_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("tabindex")));
     }
 
     /// Issue #279 : les entrées sans plafond gardent leur comportement exact — une

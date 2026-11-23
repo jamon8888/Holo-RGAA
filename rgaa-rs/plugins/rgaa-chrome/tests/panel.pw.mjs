@@ -71,6 +71,8 @@ try {
   await panel.setInputFiles('#file', join(dir, 'empty.json'));
   await panel.getByText('Aucun finding.').waitFor();
   assert.equal(await panel.locator('#review').isHidden(), true, 'ancienne revue encore affichée');
+  assert.equal(await panel.getByRole('button', { name: '← Critère précédent' }).isDisabled(), true);
+  assert.equal(await panel.getByRole('button', { name: 'Critère suivant →' }).isDisabled(), true);
 
   // 3. Analyse via le serveur : jeton exigé, puis findings affichés avec leur niveau.
   //    RGAA_MCP_BIN=<rgaa-mcp-http> (+ obscura sur le PATH) : contre le vrai serveur, sinon le faux.

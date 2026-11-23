@@ -78,7 +78,12 @@ async function load(spec) {
     await run(clearPreview, []); // annule l'aperçu de l'audit précédent, dans son onglet
     auditTabId = (await targetTab())?.id ?? null;
     criteria = byCriterion(spec.findings);
-    if (!criteria.length) { $('review').hidden = true; $('findings').replaceChildren(); return say('Aucun finding.'); }
+    if (!criteria.length) {
+      i = 0;
+      $('review').hidden = true; $('findings').replaceChildren();
+      $('prev').disabled = $('next').disabled = true;
+      return say('Aucun finding.');
+    }
     i = 0; $('review').hidden = false;
     say(`${spec.findings.length} finding(s), ${criteria.length} critère(s) — ${spec.url ?? ''}`);
     show();

@@ -11,8 +11,10 @@
 //! classe correctement en `violations`. Via `ObscuraBridge::run_axe_batch` (même règle, même
 //! page), elle atterrit en `passes` — axe conclut, à tort, qu'il n'y a rien à redire.
 //!
-//! Ce test pose la question à l'audit réel : axe ne doit jamais rendre `Pass` pour 10.6 sur
-//! cette page.
+//! #439 — contournement de #371 par la collecte. Le pont mesure désormais le contraste du
+//! lien et du texte environnant depuis les styles calculés lus via CDP, en Rust, et injecte
+//! une violation `link-in-text-block` quand l'écart est inférieur à 3:1 sans distinction
+//! autre que la couleur. La page doit rendre `Fail` (ou `review`), jamais `Pass`.
 //!
 //! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
 //! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
@@ -95,15 +97,15 @@ async fn criterion_10_6_never_passes_on_a_link_distinguished_by_color_alone() {
     let status = mapped.get("10.6").map(|r| r.status.clone());
     eprintln!("lien distingué uniquement par une couleur proche : axe -> {status:?}");
 
-    // Note #371 : ce lien ne rend pas `Fail` aujourd'hui — `link-in-text-block` rend un
-    // faux `passes` dans cet environnement, alors qu'un vrai Chrome le classe correctement
-    // en violation sur la même page. Ce que ce correctif garantit, c'est qu'il ne rend pas
-    // non plus `Pass` : son absence de verdict retombe honnêtement sur le repli du
-    // pipeline, jamais sur une conformité inventée.
-    assert_ne!(
-        status,
-        Some(CriterionStatus::Pass),
-        "axe rend Pass pour 10.6 sur un lien distingué uniquement par une couleur à peine \
-         différente du texte environnant (ratio ≈ 1.46:1, sous le seuil de 3:1)"
+    // #439 : la mesure déterministe doit rendre `Fail` (ou, à défaut, une revue), jamais
+    // `Pass` — les faux `passes` d'axe dans Obscura ne sont plus tolérés.
+    assert!(
+        matches!(
+            status,
+            Some(CriterionStatus::Fail) | Some(CriterionStatus::NeedsReview)
+        ),
+        "10.6 doit rendre Fail ou NeedsReview sur un lien distingué uniquement par une \
+         couleur à peine différente du texte environnant (ratio ≈ 1.46:1, sous le seuil \
+         de 3:1) — obtenu : {status:?}"
     );
 }

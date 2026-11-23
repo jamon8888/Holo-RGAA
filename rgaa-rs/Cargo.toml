@@ -11,6 +11,7 @@ members = [
     "crates/rgaa-analysis-media",
     "crates/rgaa-analysis-motion",
     "crates/rgaa-analysis-text",
+    "crates/rgaa-plugins",
     "crates/rgaa-rules",
     "crates/rgaa-holo",
     "crates/rgaa-obscura",

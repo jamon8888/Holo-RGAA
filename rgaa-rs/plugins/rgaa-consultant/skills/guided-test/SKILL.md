@@ -11,6 +11,8 @@ Execute bounded, reproducible guided accessibility tests for criteria that requi
 
 **Key principle: Guided tests are reproducible — same steps produce same results.**
 
+> **Méthode officielle par test** : pour la méthode de vérification officielle du RGAA d'un test (sa clé, ex. `7.3.1`), appeler l'outil MCP `get_test_methodology` avec la clé du test. Il retourne la méthode officielle tirée de `RGAA/methodologies.json` (DISIC/accessibilite.numerique.gouv.fr, commit épinglé). Cette skill décrit le protocole de test guidé de Holo-RGAA ; elle ne réécrit pas la méthode officielle de mémoire.
+
 ## When This Skill Activates
 
 - User asks "run keyboard navigation test", "check focus visibility", "verify contrast"
@@ -22,11 +24,11 @@ Execute bounded, reproducible guided accessibility tests for criteria that requi
 
 | Test | Criteria | What It Checks |
 |------|----------|----------------|
-| `keyboard-navigation` | 12.1, 12.2 | Tab through page, all focusables reachable |
-| `focus-visibility` | 12.1 | Focus indicators visible on all interactive elements |
-| `color-contrast` | 3.2, 3.3 | Text contrast meets 4.5:1 (normal) or 3:1 (large) |
-| `touch-targets` | 12.5 | Touch targets at least 44x44px |
-| `reading-order` | 9.1, 10.3 | Logical reading order in AXTree |
+| `keyboard-navigation` | 7.3, 12.8, 12.9 | Tab through page: every script control reachable and operable (7.3), coherent tab order (12.8), no keyboard trap (12.9) |
+| `focus-visibility` | 10.7 | Focus indicator visible on every element receiving focus |
+| `color-contrast` | 3.2, 3.3 | Text contrast ≥ 4.5:1, or ≥ 3:1 for large text (3.2); interface components and informative graphics ≥ 3:1 (3.3). Measured from computed colours and pixels, never estimated by vision |
+| `touch-targets` | — (not an RGAA 4.1.2 criterion) | Target size is WCAG 2.2 (2.5.8). Report it as an *additional observation*, never as an RGAA non-conformity |
+| `reading-order` | 10.3, 12.8 | Content understandable in DOM order with styles off (10.3); tab order coherent with visual order (12.8) |
 | `forms-manual` | 11.1–11.13 | Labels, errors, autocomplete attributes |
 
 ## Test Definition Format
@@ -49,8 +51,9 @@ steps:
       expected:
         focus_order: 2
 criterion_mapping:
-  - 12.1
-  - 12.2
+  - 7.3
+  - 12.8
+  - 12.9
 evidence_requirements:
   - screenshot-on-focus
   - axtree-on-step
@@ -172,7 +175,7 @@ steps:
         dialog_open: true
   - screenshot
 criterion_mapping:
-  - 12.1
+  - 7.1
 ```
 
 ## Example Interactions
@@ -187,15 +190,15 @@ Claude: → Reports: "All 12 focusable elements reached in logical order. No key
 User: "Check color contrast on the contact form"
 Claude: → Loads color-contrast test
 Claude: → Navigates to form
-Claude: → Captures screenshot
-Claude: → Claude's vision evaluates contrast ratios
-Claude: → Reports specific failures with WCAG levels
+Claude: → Runs the contrast measurement (computed colours; pixel sampling over images and gradients)
+Claude: → Highlights each failing element in the page and shows ratio, threshold and crop
+Claude: → Reports failures against RGAA 3.2 / 3.3 — the ratio comes from the measurement, never from Claude's vision
 ```
 
 ## Limitations
 
 Guided tests cannot verify:
-- Actual screen reader experience (requires real screen reader)
+- Actual screen reader experience (requires a real screen reader: the RGAA reference environment, e.g. NVDA + Firefox, VoiceOver + Safari). Computer use sees the screen but does not hear speech output: never conclude on restitution (7.1, 7.5, accessible names) from screenshots alone
 - Browser-specific assistive technology behavior
 - User-installed browser extensions
 - Touch device behavior on non-touch environments

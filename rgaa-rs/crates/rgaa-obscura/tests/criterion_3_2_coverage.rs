@@ -17,11 +17,18 @@
 //!    C'est un défaut d'infrastructure du navigateur piloté par `obscura` (#371), pas un
 //!    défaut de mapping ; ce test ne le corrige pas, il en constate l'effet.
 //!
-//! Témoin inclus pour mémoire de #371 : une page à violation flagrante (texte `#cccccc` sur
-//! fond `#ffffff`, ratio ≈ 1.6:1) rend ici aussi `axe -> None` plutôt que `Fail` — la preuve
-//! la plus directe que `color-contrast` ne se déclenche pas dans cet environnement. Tant
-//! que #371 n'est pas résolu, ce test ne peut prouver que l'absence de `Pass` fabriqué ; il
-//! ne peut pas prouver qu'axe détecte correctement une vraie violation de contraste.
+//! #439 — contournement de #371 par la collecte. Comme `color-contrast` ne se déclenche
+//! jamais dans Obscura (cause B : rastérisation de texte approchée → `isIconLigature()`
+//! toujours vrai → matcher inapplicable), le pont mesure désormais le contraste **lui-même**
+//! en Rust, depuis les styles calculés lus via CDP (`Runtime.evaluate` +
+//! `getComputedStyle`), et injecte une violation `color-contrast` dans le résultat axe.
+//! Le témoin `#cccccc` sur `#ffffff` (ratio ≈ 1.6:1) doit donc rendre `Fail`, et non plus
+//! `None` — c'est l'acceptation 1 de #439. Le navigateur réellement utilisé reste Obscura
+//! 0.2.4 épinglé (#430) : aucun changement de substrate, aucune décision produit.
+//!
+//! Le second scénario (mécanisme de contraste cassé) reste sur le chargement : axe ne clique
+//! jamais, la sonde non plus — ce test continue d'exiger seulement qu'aucun `Pass` ne soit
+//! fabriqué sur un état par défaut correct.
 //!
 //! Câblé dans le job CI `E2E (navigateur)`, qui pose `RUN_E2E=1`. En local, lancer
 //! à la main avec `RUN_E2E=1` (nécessite le binaire Obscura épinglé sur le PATH).
@@ -107,18 +114,16 @@ async fn criterion_3_2_never_passes_on_silence_alone() {
     let bridge = Arc::new(server);
 
     // Violation flagrante dès le chargement, sans qu'aucun mécanisme n'ait besoin d'être
-    // activé. Note #371 : ce témoin ne rend pas `Fail` aujourd'hui — `color-contrast` ne se
-    // déclenche pas du tout dans cet environnement. Ce qui compte ici, et ce que le fix de
-    // cette PR garantit, c'est qu'il ne rend pas non plus `Pass` : son absence de verdict
-    // retombe honnêtement sur le repli du pipeline, jamais sur une conformité inventée.
+    // activé. #439 : la mesure déterministe du contraste depuis les styles calculés doit
+    // rendre `Fail` — l'absence de verdict d'axe ne suffit plus.
     let control = format!("http://127.0.0.1:{port}/coverage-3-2-low-contrast-control.html");
     let control_status = audit_3_2(&bridge, &control).await;
     eprintln!("témoin (violation flagrante) : axe -> {control_status:?}");
-    assert_ne!(
+    assert_eq!(
         control_status,
-        Some(CriterionStatus::Pass),
-        "axe rend Pass pour 3.2 sur une page dont le contraste est manifestement insuffisant \
-         dès le chargement"
+        Some(CriterionStatus::Fail),
+        "3.2 doit rendre Fail sur une page dont le contraste est manifestement insuffisant \
+         dès le chargement (#ccc sur #fff, ratio ≈ 1.6:1) — obtenu : {control_status:?}"
     );
 
     // Mécanisme d'affichage de contraste qui, une fois activé, produit un contraste
@@ -132,5 +137,86 @@ async fn criterion_3_2_never_passes_on_silence_alone() {
         Some(CriterionStatus::Pass),
         "axe rend Pass pour 3.2 alors que le mécanisme d'affichage de contraste, une fois \
          activé, produit un contraste insuffisant"
+    );
+}
+
+/// Relecture #439 : la mesure ne doit jamais fabriquer de fail sur un fond non mesurable.
+async fn start_reliability_server(test_name: &str) -> Option<(Arc<ObscuraBridge>, u16)> {
+    if !rgaa_test_corpus::e2e::enabled(test_name) {
+        return None;
+    }
+    rgaa_test_corpus::e2e::allow_private_network();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let port = serve(dir).expect("fixture server");
+    let mut server = ObscuraBridge::new()
+        .with_ephemeral_port()
+        .expect("port CDP libre");
+    server
+        .start_server()
+        .await
+        .expect("démarrage du serveur CDP d'Obscura");
+    Some((Arc::new(server), port))
+}
+
+#[tokio::test]
+async fn white_text_on_background_image_is_review_not_fail() {
+    let Some((bridge, port)) = start_reliability_server("criterion_3_2_background_image").await
+    else {
+        return;
+    };
+    let url = format!("http://127.0.0.1:{port}/coverage-3-2-background-image.html");
+    let status = audit_3_2(&bridge, &url).await;
+    eprintln!("texte blanc sur image : {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::NeedsReview),
+        "un fond image n'est pas mesurable : 3.2 doit partir en revue, jamais en fail"
+    );
+}
+
+#[tokio::test]
+async fn rgba_background_is_composited_over_the_opaque_ancestor() {
+    let Some((bridge, port)) = start_reliability_server("criterion_3_2_rgba_composite").await
+    else {
+        return;
+    };
+    let url = format!("http://127.0.0.1:{port}/coverage-3-2-rgba-composite.html");
+    let status = audit_3_2(&bridge, &url).await;
+    eprintln!("fond rgba(0,0,0,0.5) sur blanc : {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::Fail),
+        "noir à 50 % composé sur blanc donne #7f7f7f : blanc dessus est à ~4,0:1, sous 4,5"
+    );
+}
+
+#[tokio::test]
+async fn without_opaque_background_is_review_not_a_white_guess() {
+    let Some((bridge, port)) = start_reliability_server("criterion_3_2_no_opaque_background").await
+    else {
+        return;
+    };
+    let url = format!("http://127.0.0.1:{port}/coverage-3-2-no-opaque-background.html");
+    let status = audit_3_2(&bridge, &url).await;
+    eprintln!("aucun fond opaque : {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::NeedsReview),
+        "sans ancêtre opaque, le fond par défaut n'est pas une donnée de mesure"
+    );
+}
+
+#[tokio::test]
+async fn opacity_filter_blend_and_position_are_review_not_fail() {
+    let Some((bridge, port)) = start_reliability_server("criterion_3_2_risky_layers").await else {
+        return;
+    };
+    let url = format!("http://127.0.0.1:{port}/coverage-3-2-risky-layers.html");
+    let status = audit_3_2(&bridge, &url).await;
+    eprintln!("opacité / filtre / blend / position : {status:?}");
+    assert_eq!(
+        status,
+        Some(CriterionStatus::NeedsReview),
+        "une couleur modifiée par opacité, filtre, fusion ou positionnement n'est pas mesurable"
     );
 }

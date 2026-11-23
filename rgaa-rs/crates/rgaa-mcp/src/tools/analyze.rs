@@ -2,11 +2,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::tools::igt::IgtResultsDto;
-use rgaa_core::CrawlConfig;
+use rgaa_core::{AuditType, CrawlConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditUrlInput {
     pub url: String,
+    /// Scope of the audit; absent means the full 106-criterion audit.
+    #[serde(default)]
+    pub audit_type: AuditType,
     #[serde(default)]
     pub config: Option<CrawlConfigInput>,
 }
@@ -41,6 +44,7 @@ impl From<CrawlConfigInput> for CrawlConfig {
             max_depth: input.max_depth,
             respect_robots: input.respect_robots,
             sample_mode: input.sample_mode,
+            audit_type: AuditType::Complet,
         }
     }
 }
@@ -63,6 +67,12 @@ pub struct AuditUrlResult {
     pub audit_id: String,
     pub taux_global: f64,
     pub etat_conformite: String,
+    /// Scope actually evaluated (`rapide`, `complementaire`, `complet`).
+    pub audit_type: AuditType,
+    /// Human-readable scope label for clients that render the summary.
+    pub audit_type_label: String,
+    /// Mandatory disclaimer for a partial audit; `null` for a full audit.
+    pub audit_notice: Option<String>,
     /// URLs of pages that were crawled and can be analyzed in detail with the `analyze` tool.
     /// Use these URLs with `analyze` to get per-criterion findings with evidence.
     pub sampled_page_urls: Vec<String>,
@@ -75,6 +85,9 @@ impl From<rgaa_core::AuditResult> for AuditUrlResult {
             audit_id: result.audit_id,
             taux_global: result.taux_global,
             etat_conformite: result.etat_conformite,
+            audit_type: result.audit_type,
+            audit_type_label: result.audit_type.label().to_owned(),
+            audit_notice: result.audit_type.partial_notice().map(str::to_owned),
             sampled_page_urls,
         }
     }

@@ -114,7 +114,7 @@ impl CdpSessionGuard {
 }
 
 /// Send a CDP command on a session connection
-async fn cdp_send_session(
+pub(crate) async fn cdp_send_session(
     ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     session_id: &str,
     method: &str,
@@ -343,7 +343,12 @@ async fn run_axe_core_static(
     )
     .await?;
 
-    extract_axe_violations(&result)
+    let axe_json = extract_axe_violations(&result)?;
+
+    // #439 : axe ne sait pas mesurer le contraste dans obscura. Complète le résultat avec
+    // la mesure déterministe lue sur la même page/session, avant que le garde ne rende la
+    // session au pool — aucun second navigateur, aucun changement de substrate.
+    crate::contrast::augment_result(ws, session_id, axe_json).await
 }
 
 /// Pull what the mapper needs out of a `Runtime.evaluate` response for `axe.run()`.

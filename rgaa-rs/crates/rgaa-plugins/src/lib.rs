@@ -1,0 +1,189 @@
+//! Aggregator that builds the analysis plugin registry for a binary (P-00 §4).
+//!
+//! `rgaa-analysis` owns the contract and cannot depend on the crates that
+//! implement it. This crate depends on each native plugin behind a feature and
+//! assembles the linked ones, followed by the discovered sidecars, into one
+//! explicit [`Registry`]. `rgaa-cli` and `rgaa-mcp` use this function instead of
+//! a feature-driven global registry.
+
+use rgaa_analysis::Registry;
+
+/// Builds the registry of every plugin linked into this binary.
+///
+/// Plugins are sorted by stable identifier by [`Registry::builder`]; a
+/// duplicate identifier is reported as an error rather than silently making
+/// `run_analysis_plugin` ambiguous.
+///
+/// # Errors
+///
+/// Returns [`rgaa_analysis::RgaaError::Analysis`] when two linked plugins
+/// declare the same identifier.
+pub fn default_registry() -> rgaa_analysis::Result<Registry> {
+    let mut builder = Registry::builder();
+
+    #[cfg(feature = "plugin-echo")]
+    {
+        builder = builder.with(rgaa_analysis::echo_plugin());
+    }
+    #[cfg(feature = "plugin-contrast")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_contrast::ContrastPlugin));
+    }
+    #[cfg(feature = "plugin-colorvision")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_colorvision::COLORVISION_PLUGIN));
+    }
+    #[cfg(feature = "plugin-lang")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_lang::LangPlugin::new()));
+    }
+    #[cfg(feature = "plugin-text")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_text::TextPlugin::new()));
+    }
+
+    #[cfg(feature = "plugin-images")]
+    {
+        builder = builder.with(rgaa_analysis_images::images_plugin());
+    }
+
+    #[cfg(feature = "plugin-media")]
+    {
+        builder = builder.with(rgaa_analysis_media::media_plugin());
+    }
+    #[cfg(feature = "plugin-motion")]
+    {
+        builder = builder.with(rgaa_analysis_motion::motion_plugin());
+    }
+    #[cfg(feature = "plugin-layout")]
+    {
+        builder = builder.with(Box::new(rgaa_analysis_layout::LayoutPlugin::default()));
+    }
+
+    for sidecar in rgaa_analysis::sidecar::discover_default() {
+        builder = builder.with(Box::new(sidecar));
+    }
+
+    builder.build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "plugin-echo")]
+    fn default_registry_contains_the_echo_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"echo"), "{ids:?}");
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-contrast")]
+    fn default_registry_contains_the_contrast_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"contrast"), "{ids:?}");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-colorvision")]
+    fn default_registry_contains_the_colorvision_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"colorvision"), "{ids:?}");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-layout")]
+    fn default_registry_contains_the_layout_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"layout"), "{ids:?}");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-lang")]
+    fn default_registry_contains_the_lang_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"lang"), "{ids:?}");
+        let lang = registry.get("lang").expect("lang plugin");
+        assert!(lang.tests().contains(&"8.4.1"));
+        assert!(lang.tests().contains(&"8.8.1"));
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-images")]
+    fn images_plugin_is_linked_when_its_feature_is_enabled() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"images"), "{ids:?}");
+        let images = registry.get("images").expect("images plugin");
+        assert!(images.tests().contains(&"1.3.1"));
+        assert_eq!(images.models().len(), 12);
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-media")]
+    fn default_registry_contains_the_media_plugin_off_by_default() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"media"), "{ids:?}");
+        let media = registry.get("media").expect("media plugin");
+        assert!(media.tests().contains(&"4.2"));
+        assert!(media.tests().contains(&"4.10"));
+        let names: Vec<&str> = media.models().iter().map(|model| model.nom).collect();
+        assert_eq!(names, vec!["silero_vad.onnx", "ggml-small.bin"]);
+        assert!(media.models().iter().all(|model| model.licence == "MIT"));
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-motion")]
+    fn default_registry_contains_the_motion_plugin_off_by_default() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"motion"), "{ids:?}");
+        let motion = registry.get("motion").expect("motion plugin");
+        assert!(motion.tests().contains(&"13.7"));
+        assert!(motion.tests().contains(&"13.8"));
+        assert!(motion.tests().contains(&"13.1"));
+        assert!(motion.models().is_empty(), "P-05 needs no model");
+    }
+
+    #[test]
+    #[cfg(not(feature = "plugin-echo"))]
+    fn default_registry_can_be_empty() {
+        let registry = default_registry().expect("registry");
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "plugin-text")]
+    fn default_registry_contains_the_text_plugin() {
+        let registry = default_registry().expect("registry");
+        let ids: Vec<&str> = registry.iter().map(|plugin| plugin.id()).collect();
+        assert!(ids.contains(&"text"), "{ids:?}");
+        let text = registry.get("text").expect("text plugin");
+        for test in ["6.1.1", "8.6.1", "11.13.1", "12.3.1", "13.4.1"] {
+            assert!(text.tests().contains(&test), "test manquant : {test}");
+        }
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "the registry must be deterministic");
+    }
+
+    #[test]
+    #[cfg(not(feature = "plugin-echo"))]
+    fn default_registry_has_no_echo_without_the_feature() {
+        let registry = default_registry().expect("registry");
+        assert!(registry.get("echo").is_none());
+    }
+}

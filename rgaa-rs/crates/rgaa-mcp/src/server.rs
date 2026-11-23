@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use rgaa_core::CrawlConfig;
+use rgaa_core::{AuditType, CrawlConfig};
 use rgaa_orchestrator::Orchestrator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -121,6 +121,26 @@ impl AnalyzeRequest {
     }
 }
 
+/// Input of `run_analysis_plugin`. There is deliberately no status field.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RunAnalysisPluginInput {
+    pub url: String,
+    pub plugin: String,
+    #[serde(default)]
+    pub options: serde_json::Value,
+}
+
+/// Proofs only: a verdict would violate R-P1.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RunAnalysisPluginResponse {
+    pub preuves: Vec<rgaa_analysis::Preuve>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListAnalysisPluginsResponse {
+    pub plugins: Vec<rgaa_analysis::PluginInfo>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RemediationRequest {
     pub issues: Vec<RemediationIssueInput>,
@@ -133,6 +153,22 @@ impl RemediationRequest {
             .then_some(())
             .ok_or_else(|| McpFailure::invalid("issues must contain between 1 and 25 items"))
     }
+}
+
+/// Arguments for `get_test_methodology`: one RGAA test key, e.g. `"1.2.3"`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetTestMethodologyRequest {
+    pub test: String,
+}
+
+/// `get_test_methodology` response: the official method for the test, taken
+/// from `RGAA/methodologies.json` (DISIC/accessibilite.numerique.gouv.fr) at
+/// the pinned commit. `methodology` is `None` when the key is not an RGAA test.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetTestMethodologyResponse {
+    pub test: String,
+    pub methodology: Option<String>,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -197,6 +233,7 @@ impl McpFailure {
             | RgaaError::MissingId(_)
             | RgaaError::MissingField(_)
             | RgaaError::DuplicateFindingId(_)
+            | RgaaError::NonConformityNotFound(_)
             | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
             RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
             RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
@@ -208,7 +245,8 @@ impl McpFailure {
             | RgaaError::AxeCore(_)
             | RgaaError::Holo3(_)
             | RgaaError::Media(_)
-            | RgaaError::Storage(_) => Self::execution(err.to_string()),
+            | RgaaError::Storage(_)
+            | RgaaError::Analysis { .. } => Self::execution(err.to_string()),
         }
     }
     pub fn into_error_data(self) -> ErrorData {
@@ -409,6 +447,7 @@ pub trait AuditOrchestrationService: Send + Sync {
         &self,
         url: &str,
         config: &CrawlConfig,
+        audit_type: AuditType,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
     >;
@@ -425,6 +464,85 @@ pub trait AuditStorageService: Send + Sync {
                 + '_,
         >,
     >;
+}
+
+/// Analysis plugins are exposed through this narrow seam so the tool schema
+/// can be tested without a browser (P-00 §7).
+pub trait AnalysisService: Send + Sync {
+    fn list(&self) -> Vec<rgaa_analysis::PluginInfo>;
+    fn run(
+        &self,
+        url: &str,
+        plugin: &str,
+        options: &serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<rgaa_analysis::Preuve>, McpFailure>>
+                + Send
+                + '_,
+        >,
+    >;
+}
+
+/// Default service: the registry built from the plugins linked into this binary.
+pub struct RegistryAnalysisService {
+    registry: Result<rgaa_analysis::Registry, String>,
+}
+
+impl RegistryAnalysisService {
+    /// Builds the registry once, at service construction.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            registry: rgaa_plugins::default_registry().map_err(|error| error.to_string()),
+        }
+    }
+}
+
+impl Default for RegistryAnalysisService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AnalysisService for RegistryAnalysisService {
+    fn list(&self) -> Vec<rgaa_analysis::PluginInfo> {
+        match &self.registry {
+            Ok(registry) => registry.list(),
+            Err(error) => {
+                tracing::error!(error = %error, "registre des plugins d'analyse indisponible");
+                Vec::new()
+            }
+        }
+    }
+
+    fn run(
+        &self,
+        url: &str,
+        plugin: &str,
+        options: &serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<rgaa_analysis::Preuve>, McpFailure>>
+                + Send
+                + '_,
+        >,
+    > {
+        let url = url.to_owned();
+        let plugin_id = plugin.to_owned();
+        let options = options.clone();
+        Box::pin(async move {
+            let registry = self.registry.as_ref().map_err(|error| {
+                McpFailure::execution(format!("registre des plugins indisponible : {error}"))
+            })?;
+            let plugin = registry.get(&plugin_id).ok_or_else(|| {
+                McpFailure::invalid(format!("plugin d'analyse inconnu : {plugin_id}"))
+            })?;
+            rgaa_analysis::run_plugin(plugin, &url, &options)
+                .await
+                .map_err(|error| McpFailure::execution(error.to_string()))
+        })
+    }
 }
 
 pub struct LazyObscuraBridge {
@@ -586,11 +704,13 @@ impl AuditOrchestrationService for OrchestrationService {
         &self,
         url: &str,
         config: &CrawlConfig,
+        audit_type: AuditType,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<rgaa_core::AuditResult, String>> + Send + '_>,
     > {
         let url = url.to_string();
-        let config = config.clone();
+        let mut config = config.clone();
+        config.audit_type = audit_type;
         Box::pin(async move { self.orchestrator.run_crawl_and_audit(&url, &config).await })
     }
 }
@@ -644,10 +764,11 @@ pub struct ToolServer {
     guided_service: Arc<dyn GuidedService>,
     audit_service: Arc<dyn AuditOrchestrationService>,
     storage_service: Arc<dyn AuditStorageService>,
+    analysis_service: Arc<dyn AnalysisService>,
 }
 
 impl ToolServer {
-    pub const fn tool_names() -> [&'static str; 9] {
+    pub const fn tool_names() -> [&'static str; 12] {
         [
             "analyze",
             "remediate",
@@ -658,6 +779,9 @@ impl ToolServer {
             "lint_static",
             "source_map",
             "verify_fix",
+            "get_test_methodology",
+            "list_analysis_plugins",
+            "run_analysis_plugin",
         ]
     }
 
@@ -668,12 +792,31 @@ impl ToolServer {
         audit: Arc<dyn AuditOrchestrationService>,
         storage: Arc<dyn AuditStorageService>,
     ) -> Self {
+        Self::new_with_analysis(
+            analyze,
+            remediation,
+            guided,
+            audit,
+            storage,
+            Arc::new(RegistryAnalysisService::new()),
+        )
+    }
+
+    pub fn new_with_analysis(
+        analyze: Arc<dyn AnalyzeService>,
+        remediation: Arc<dyn RemediationService>,
+        guided: Arc<dyn GuidedService>,
+        audit: Arc<dyn AuditOrchestrationService>,
+        storage: Arc<dyn AuditStorageService>,
+        analysis: Arc<dyn AnalysisService>,
+    ) -> Self {
         Self {
             analyze_service: analyze,
             remediation_service: remediation,
             guided_service: guided,
             audit_service: audit,
             storage_service: storage,
+            analysis_service: analysis,
         }
     }
 }
@@ -787,7 +930,7 @@ impl ToolServer {
 
     #[tool(
         name = "audit_url",
-        description = "Run a full RGAA audit on a URL using the orchestrator pipeline. Returns a summary (taux_global, etat_conformite) and sampled_page_urls. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
+        description = "Run an RGAA audit on a URL using the orchestrator pipeline. `audit_type` selects the scope: rapide (25 criteria), complementaire (50) or complet (106, the default). Only in-scope criteria are evaluated — a rapide audit makes no LLM call for the other 81. Returns a summary (audit_type, taux_global, etat_conformite) and sampled_page_urls. A rapide audit never yields a conformity declaration. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
     )]
     pub async fn audit_url(
         &self,
@@ -797,7 +940,7 @@ impl ToolServer {
         let config = input.config.unwrap_or_default().into();
         let result = self
             .audit_service
-            .run_audit(&input.url, &config)
+            .run_audit(&input.url, &config, input.audit_type)
             .await
             .map_err(|e| McpFailure::execution(e).into_error_data())?;
         Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(
@@ -964,6 +1107,61 @@ impl ToolServer {
         Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
             criteria,
         }))
+    }
+
+    #[tool(
+        name = "get_test_methodology",
+        description = "Return the official RGAA test method for one test key (e.g. \"1.2.3\"): the numbered verification steps from RGAA/methodologies.json (DISIC/accessibilite.numerique.gouv.fr, pinned commit). Skills cite this instead of describing a method from memory. Returns `methodology: null` when the key is not an RGAA 4.1.2 test."
+    )]
+    pub fn get_test_methodology(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<GetTestMethodologyRequest>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<GetTestMethodologyResponse>, ErrorData> {
+        let test = request.0.test;
+        let methodology = rgaa_core::RgaaMethodologies::get(&test);
+        Ok(rmcp::handler::server::wrapper::Json(
+            GetTestMethodologyResponse {
+                test,
+                methodology: methodology.map(|steps| steps.to_string()),
+                source: format!(
+                    "RGAA/methodologies.json @ DISIC/accessibilite.numerique.gouv.fr commit {}",
+                    rgaa_core::METHODOLOGIES_COMMIT
+                ),
+            },
+        ))
+    }
+
+    #[tool(
+        name = "list_analysis_plugins",
+        description = "List compiled analysis plugins with their versions, RGAA tests, required models and presence. Sidecars show their exact command and executable digest. Plugins produce proofs, never statuses."
+    )]
+    pub fn list_analysis_plugins(
+        &self,
+    ) -> Result<rmcp::handler::server::wrapper::Json<ListAnalysisPluginsResponse>, ErrorData> {
+        Ok(rmcp::handler::server::wrapper::Json(
+            ListAnalysisPluginsResponse {
+                plugins: self.analysis_service.list(),
+            },
+        ))
+    }
+
+    #[tool(
+        name = "run_analysis_plugin",
+        description = "Run one analysis plugin on a URL and return its Preuve values (measurements, artefacts, hashes). No status or verdict is returned: the orchestrator and a human reviewer decide (R-P1)."
+    )]
+    pub async fn run_analysis_plugin(
+        &self,
+        request: rmcp::handler::server::wrapper::Parameters<RunAnalysisPluginInput>,
+    ) -> Result<rmcp::handler::server::wrapper::Json<RunAnalysisPluginResponse>, ErrorData> {
+        let input = request.0;
+        let preuves = self
+            .analysis_service
+            .run(&input.url, &input.plugin, &input.options)
+            .await
+            .map_err(McpFailure::into_error_data)?;
+        Ok(rmcp::handler::server::wrapper::Json(
+            RunAnalysisPluginResponse { preuves },
+        ))
     }
 
     #[tool(

@@ -14,6 +14,7 @@ use tracing::{info, warn};
 
 pub mod cdp_pool;
 pub mod config;
+mod contrast;
 pub mod evidence;
 pub mod guided;
 pub mod results;
@@ -1649,7 +1650,11 @@ impl ObscuraBridge {
         )
         .await?;
 
-        Self::validate_axe_result(&result)
+        let axe_json = Self::validate_axe_result(&result)?;
+
+        // #439 : même complément déterministe que dans le chemin groupé (cdp_pool) —
+        // les deux chemins doivent produire exactement le même verdict.
+        crate::contrast::augment_result(ws, session_id, axe_json).await
     }
 
     /// Validate the resolved axe.run() result and return its violations array. Any
@@ -2020,6 +2025,35 @@ impl ObscuraBridge {
       .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim() }));
     const landmarks = Array.from(document.querySelectorAll('header, nav, main, aside, footer, [role="banner"], [role="navigation"], [role="main"], [role="complementary"], [role="contentinfo"]'))
       .map(el => ({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), label: el.getAttribute('aria-label') }));
+    // #429 — normalized subtree descriptions for the three transverse
+    // landmarks. Only tag, role, aria-label and direct text survive: volatile
+    // ids, generated classes and interaction state are excluded, so the same
+    // header/menu/footer yields the same signature on every page.
+    const transverseKind = el => {
+      const role = (el.getAttribute('role') || '').toLowerCase();
+      if (role === 'banner' || role === 'navigation' || role === 'contentinfo') return role;
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'header') return 'banner';
+      if (tag === 'nav') return 'navigation';
+      if (tag === 'footer') return 'contentinfo';
+      return null;
+    };
+    const transverse_landmarks = Array.from(document.querySelectorAll('header, nav, footer, [role="banner"], [role="navigation"], [role="contentinfo"]'))
+      .map(el => {
+        const kind = transverseKind(el);
+        if (!kind) return null;
+        const nodes = Array.from(el.querySelectorAll('*')).map(n => ({
+          tag: n.tagName.toLowerCase(),
+          role: n.getAttribute('role') || '',
+          label: n.getAttribute('aria-label') || '',
+          text: Array.from(n.childNodes)
+            .filter(c => c.nodeType === 3)
+            .map(c => c.textContent)
+            .join(' ')
+        }));
+        return { kind, nodes };
+      })
+      .filter(Boolean);
     // Les sept porteurs d'alternative du critere RGAA 1.3 (tests 1.3.1 a 1.3.8).
     // On lit l'ATTRIBUT alt, jamais la propriete IDL `.alt` : elle n'est pas
     // implementee sous obscura 0.2.4 (`typeof img.alt === 'undefined'`, verifie sur
@@ -2100,7 +2134,7 @@ impl ObscuraBridge {
           placeholder: el.placeholder || null
         }))
       }));
-    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access });
+    return JSON.stringify({ title, lang, headings, landmarks, transverse_landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access });
   })()
   "#
     }
@@ -2755,6 +2789,28 @@ mod tests {
                 "le script d'extraction n'interroge pas le porteur {carrier}"
             );
         }
+    }
+
+    /// #429 : la sonde doit décrire les trois points de repère transverses et
+    /// les inclure dans le contexte sérialisé, sinon l'orchestrateur n'a aucun
+    /// sous-arbre à normaliser et ne peut détecter aucun bloc répété.
+    #[test]
+    fn page_context_script_emits_transverse_landmark_subtrees() {
+        let script = ObscuraBridge::build_page_context_script();
+        for landmark in ["banner", "navigation", "contentinfo"] {
+            assert!(
+                script.contains(&format!("'{landmark}'")),
+                "le point de repère {landmark} doit être reconnu"
+            );
+        }
+        assert!(
+            script.contains("transverse_landmarks"),
+            "champ de sortie absent"
+        );
+        assert!(
+            script.contains("querySelectorAll('*')"),
+            "sous-arbre non décrit"
+        );
     }
 
     /// Garde, et non test de comportement : `.alt` **n'est pas implémentée** comme

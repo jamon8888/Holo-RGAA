@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>3.2 — texte blanc sur image de fond : mesure non fiable</title>
+<style>
+/* Image déclarée en feuille de style : Obscura renvoie "" pour background-image, donc
+   seule la déclaration auteur (CSSOM) permet de savoir que le fond n'est pas mesurable. */
+body { color: #ffffff; font-size: 18px; margin: 0; }
+.hero {
+  background-image: url(data:image/png;base64,iVBORw0KGgo=);
+  background-color: transparent;
+}
+</style>
+</head>
+<body>
+<div class="hero">
+  <p>Texte blanc posé sur une image de fond : la couleur réellement derrière lui dépend
+  des pixels de l'image. Aucune mesure CSS ne peut trancher.</p>
+</div>
+</body>
+</html>

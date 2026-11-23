@@ -20,11 +20,17 @@ section [Écarts constatés](#12-écarts-constatés-sur-le-serveur-de-référenc
 | Architecture | x86_64 (**obligatoire** pour les binaires précompilés ; en aarch64, compiler avec `install.sh --build`) |
 | CPU / RAM | 8 vCPU / 31 Go |
 | Disque | 387 Go (dont environ 127 Go utilisés ; le dossier `target/` du workspace Rust prend facilement **30 à 60 Go**) |
-| Utilisateur | `root` |
+| Utilisateur sur la référence | `root` (à ne pas reproduire pour les agents et les builds) |
 | Pare-feu | `ufw` inactif |
 
 **Minimum recommandé** : 4 vCPU, **16 Go de RAM** (l'édition de liens LTO de la pile
 lancedb/arrow/datafusion fait tomber les machines plus petites en OOM), 100 Go de disque.
+
+Sur un nouveau serveur, gardez `root` pour l'administration et créez un compte
+non privilégié (par exemple `holo-rgaa`) pour le clone, Orca, les agents, les builds
+et les tests. Les scripts de ce guide qui installent des paquets ou configurent
+systemd sont à lancer avec `sudo` depuis ce compte. Le serveur de référence décrit
+ci-dessus tourne en root ; ce détail d'inventaire ne doit pas être repris.
 
 ---
 
@@ -35,20 +41,33 @@ lancedb/arrow/datafusion fait tomber les machines plus petites en OOM), 100 Go d
 ```bash
 # Poste local
 ssh-keygen -t ed25519 -C "holo-rgaa-<nom-du-poste>" -f ~/.ssh/holo_rgaa
-ssh-copy-id -i ~/.ssh/holo_rgaa.pub root@<IP_DU_SERVEUR>
+ssh-copy-id -i ~/.ssh/holo_rgaa.pub <compte-admin>@<IP_DU_SERVEUR>
 ```
 
-Le serveur de référence accepte deux clés `ssh-ed25519` dans
-`/root/.ssh/authorized_keys` : celle du poste d'administration et celle d'Orca
-(`orca-vps-jp`). Il faut ajouter la clé d'Orca sur le nouveau serveur si vous
-pilotez les agents depuis Orca (voir §5.4).
+Sur le VPS, depuis ce compte d'administration, créer le compte des agents :
+
+```bash
+sudo adduser holo-rgaa
+sudo adduser holo-rgaa sudo
+```
+
+Puis sur le poste local, installer la clé pour le compte des agents :
+
+```bash
+ssh-copy-id -i ~/.ssh/holo_rgaa.pub holo-rgaa@<IP_DU_SERVEUR>
+```
+
+Sur le nouveau serveur, ajoutez la clé d'administration puis la clé d'Orca
+(`orca-vps-jp`) au compte non privilégié qui exécutera les agents (voir §5.4).
+La référence conserve ces clés dans `/root/.ssh/authorized_keys` ; ne reproduisez
+pas cette configuration pour les agents.
 
 ### 1.2 Alias côté poste (`~/.ssh/config`)
 
 ```sshconfig
 Host holo-rgaa
     HostName <IP_DU_SERVEUR>
-    User root
+    User holo-rgaa
     IdentityFile ~/.ssh/holo_rgaa
     ServerAliveInterval 30
 ```
@@ -61,11 +80,11 @@ Une fois la connexion par clé **vérifiée dans un second terminal**, interdire
 mots de passe :
 
 ```bash
-cat >/etc/ssh/sshd_config.d/00-key-only.conf <<'EOF'
+sudo tee /etc/ssh/sshd_config.d/00-key-only.conf <<'EOF'
 PasswordAuthentication no
 PermitRootLogin prohibit-password
 EOF
-sshd -t && systemctl reload ssh
+sudo sshd -t && sudo systemctl reload ssh
 ```
 
 Le préfixe `00-` compte. Sur les images cloud, `50-cloud-init.conf` contient
@@ -73,7 +92,7 @@ Le préfixe `00-` compte. Sur les images cloud, `50-cloud-init.conf` contient
 fichier `00-` est lu avant et l'emporte. Vérifier :
 
 ```bash
-sshd -T | grep -Ei 'passwordauthentication|permitrootlogin'
+sudo sshd -T | grep -Ei 'passwordauthentication|permitrootlogin'
 # attendu : passwordauthentication no / permitrootlogin without-password
 ```
 
@@ -276,7 +295,9 @@ Les tests E2E et les audits réels exigent **exactement** `obscura 0.2.4`, avec 
 contrôle que la CI :
 
 ```bash
-mkdir -p ~/.local/bin && cd "$(mktemp -d)"
+mkdir -p ~/.local/bin
+(
+cd "$(mktemp -d)"
 curl -fSL -o obscura.tar.gz \
   https://github.com/h4ckf0r0day/obscura/releases/download/v0.2.4/obscura-x86_64-linux.tar.gz
 echo "757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000  obscura.tar.gz" | sha256sum -c -
@@ -285,6 +306,7 @@ chmod +x obscura obscura-worker
 install -m 755 obscura obscura-worker ~/.local/bin/
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
 obscura --version   # doit afficher : obscura 0.2.4
+)
 ```
 
 `obscura-worker` doit se trouver **à côté** d'`obscura`. Les tests de couverture
@@ -305,7 +327,7 @@ Toutes les commandes se lancent depuis `rgaa-rs/`.
 cd rgaa-rs
 make build            # cargo build --workspace
 make build-release    # premier build à froid : compter de 20 à 40 min
-make check            # fmt-check + clippy -D warnings + nextest (= CI hors E2E)
+make check            # fmt-check + clippy -D warnings + nextest (sous-ensemble Rust de la CI)
 make ci               # check + build-release
 cargo test --workspace --doc   # doctests (nextest ne les lance pas)
 ```
@@ -341,14 +363,24 @@ Sans `RUN_E2E=1`, les tests E2E se terminent immédiatement sans rien vérifier.
 ## 8. PostgreSQL (facultatif)
 
 Postgres n'est nécessaire que pour `rgaa-api` en stockage distant et pour le test
-d'intégration `rgaa-storage` (sauté si `DATABASE_URL` n'est pas défini). Ni Docker ni
+d'intégration `rgaa-api` (sauté si `DATABASE_URL` n'est pas défini). Ni Docker ni
 Postgres ne sont présents sur la référence.
 
 ```bash
-apt-get install -y docker.io docker-compose-v2
-docker compose up -d postgres          # postgres:16-alpine sur :5432 (postgres/postgres)
-export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/rgaa
+sudo apt-get install -y docker.io docker-compose-v2
+sudo docker compose up -d postgres          # postgres:16-alpine sur 127.0.0.1:5432
+sudo docker compose exec -T postgres createdb -U postgres rgaa_test
+export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/rgaa_test
 ```
+
+Le compose lie le port à `127.0.0.1` et utilise des identifiants de développement.
+Ne publiez jamais ce service sur un réseau ; pour un déploiement distant, configurez
+des secrets propres à l'environnement et un accès réseau restreint.
+
+Le test `batch_state_survives_a_round_trip_through_postgres` purge toutes les lignes
+expirées à une date future pour vérifier le nettoyage. Ne lancez pas `make check` avec
+une base contenant des données à conserver : créez une base jetable dédiée aux tests
+et pointez `DATABASE_URL` dessus.
 
 Le schéma est créé par `rgaa-api` à son démarrage (migrations sqlx dans
 `crates/rgaa-storage/migrations`).
@@ -382,15 +414,21 @@ Variables d'environnement prises en compte : `RGAA_VERSION` (tag de release) et
 ### 9.2 À la main
 
 ```bash
+# Installer le serveur MCP avant le plugin Claude (qui lance `rgaa-mcp` par son nom)
+cargo install --path rgaa-rs/crates/rgaa-mcp
+
 # Plugin Claude Code via la marketplace du dépôt
 claude plugin marketplace add ./
 claude plugin install rgaa-accessibility@holo-rgaa
 claude plugin details rgaa-accessibility
 
 # Plugin Codex
-cargo install --path rgaa-rs/crates/rgaa-mcp
 codex plugin marketplace add .
+codex plugin marketplace list
 ```
+
+Dans Codex desktop, ouvrez **Plugin Directory**, sélectionnez la marketplace
+`Holo RGAA`, puis installez `rgaa-accessibility-codex`.
 
 Le guide détaillé des plugins se trouve dans `docs/rgaa-plugin-install.md`.
 
@@ -402,12 +440,16 @@ Ce mode sert à faire tourner Obscura comme service partagé, au lieu de laisser
 `ObscuraBridge` lancer son propre processus. Le gabarit est `deploy/obscura.service` :
 
 ```bash
-useradd --system --no-create-home obscura
-mkdir -p /opt/holo-rgaa && install -m 755 ~/.local/bin/obscura ~/.local/bin/obscura-worker /opt/holo-rgaa/
-cp deploy/obscura.service /etc/systemd/system/
-# dans le fichier, remplacer --workers 4 par le nombre de CPU (nproc)
-systemctl daemon-reload && systemctl enable --now obscura
+sudo useradd --system --no-create-home obscura
+sudo mkdir -p /opt/holo-rgaa && sudo install -m 755 ~/.local/bin/obscura ~/.local/bin/obscura-worker /opt/holo-rgaa/
+sudo cp deploy/obscura.service /etc/systemd/system/
+# conserver 4 au départ ; augmenter après mesure et relever MemoryHigh/MemoryMax
+sudo systemctl daemon-reload && sudo systemctl enable --now obscura
 ```
+
+`MemoryMax=4G` est un plafond pour l'ensemble du service. N'alignez pas le nombre
+de workers sur `nproc` sans mesurer la mémoire de charge ; si vous augmentez les
+workers, ajustez aussi les limites du fichier systemd.
 
 Le port CDP 9222 écoute uniquement en loopback. Ne **jamais** l'exposer sur `0.0.0.0`
 sans authentification devant, car il n'en a aucune.
@@ -436,7 +478,7 @@ versions).
 | `CLAUDE.md` affirme | Réalité au 2026-11-19 |
 |---|---|
 | sccache câblé dans `~/.cargo/config.toml` | pas de `~/.cargo/config.toml`, sccache absent |
-| mold câblé via `rustflags` | mold installé (apt) mais **non câblé** |
+| mold câblé via `rustflags` dans `~/.cargo/config.toml` | pas de config Cargo globale ; le `.cargo/config.toml` commité du workspace active mold si `mold` est dans le `PATH` |
 | `cargo-binstall`, `cargo-watch`, `cargo-hack`, `cargo-outdated` installés | absents (seuls `cargo-nextest` et `cargo-audit` sont présents) |
 | basemind disponible | absent |
 | Obscura 0.2.4 disponible pour l'E2E | absent du `PATH` (une copie temporaire traîne seulement dans `/tmp/pr388-browser/`) |

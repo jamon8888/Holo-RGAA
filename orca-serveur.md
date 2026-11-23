@@ -49,14 +49,14 @@ Sur le **poste local** :
    orca.dev/docs/install).
 2. Avoir l'alias SSH qui fonctionne (`ssh holo-rgaa`, voir `installation.md` §1.2).
 3. Dans Orca : **Settings → SSH → Add Target**. Renseigner l'hôte, l'utilisateur
-   `root`, le port 22 et la clé (ou choisir `holo-rgaa` dans le sélecteur de la
+   `holo-rgaa`, le port 22 et la clé (ou choisir `holo-rgaa` dans le sélecteur de la
    config OpenSSH), puis **Test** et **Save**.
 4. À la première connexion, Orca déploie son serveur géré sur le VPS
    (`~/.orca-remote/orcad-*`, son Node, et la CLI `~/.orca/cli/bin/orca`).
 5. Ajouter le dépôt : cloner `https://github.com/jamon8888/Holo-RGAA.git` sur le
    VPS, ou `orca project setup-clone`. À la création d'un worktree, choisir la cible
    SSH dans **Run on**. Les worktrees se créent sous
-   `/root/orca/workspaces/Holo-RGAA/<nom>`.
+   `/home/holo-rgaa/orca/workspaces/Holo-RGAA/<nom>`.
 6. Facultatif : cocher **« Allow this host's orca CLI to control Orca »** pour que
    les agents du VPS puissent utiliser `orca` (orchestration, terminaux).
 
@@ -78,16 +78,15 @@ Sur le **VPS** :
    V=1.4.264   # dernière release au 2026-11-19 : gh release view -R stablyai/orca
    cd /tmp
    curl -fLO https://github.com/stablyai/orca/releases/download/v$V/orca-server-linux-x64.tar.gz
-   curl -fLO https://github.com/stablyai/orca/releases/download/v$V/orca-server-sha256sums.txt
-   grep linux-x64 orca-server-sha256sums.txt | sha256sum -c -
-   # v1.4.264 : 8f78b5acb5e57a53aa9058edc701af4d9e4b41a0caf3f77f8ce23c2e1bbecad6
-   mkdir -p /opt/orca && tar -xzf orca-server-linux-x64.tar.gz -C /opt/orca
-   ln -sfn /opt/orca/orca-server-$V-linux-x64 /opt/orca/current
-   ln -sf /opt/orca/current/bin/orca-ide /usr/local/bin/orca-ide
+   echo '8f78b5acb5e57a53aa9058edc701af4d9e4b41a0caf3f77f8ce23c2e1bbecad6  orca-server-linux-x64.tar.gz' | sha256sum -c -
+   sudo mkdir -p /opt/orca && sudo tar -xzf orca-server-linux-x64.tar.gz -C /opt/orca
+   sudo ln -sfn /opt/orca/orca-server-$V-linux-x64 /opt/orca/current
+   sudo ln -sf /opt/orca/current/bin/orca-ide /usr/local/bin/orca-ide
    orca-ide --version
    ```
    Le lanceur résout son vrai chemin à travers le lien symbolique (`readlink -f`).
-   Le lien `/opt/orca/current` permet de changer de version sans toucher au service.
+   Après un changement de `/opt/orca/current`, redémarrez le service et mettez à
+   jour les clients ensemble pour éviter un décalage de version de protocole.
    Sur ARM, prendre `orca-server-linux-arm64.tar.gz`.
 
    Dans la suite, `orca` désigne `orca-ide`. Lancez les commandes depuis un shell de
@@ -107,7 +106,7 @@ Sur le **VPS** :
    ```
 2. Essai au premier plan :
    ```bash
-   orca serve --port 6768 --pairing-address 100.x.y.z
+   orca-ide serve --port 6768 --pairing-address 100.x.y.z
    ```
    La commande affiche un lien d'appairage. Il donne accès au serveur : gardez-le
    privé.
@@ -116,16 +115,18 @@ Sur le **VPS** :
    orca-ide serve service install --port 6768 --pairing-address 100.x.y.z --dry-run   # affiche l'unité, n'installe rien
    orca-ide serve service install --port 6768 --pairing-address 100.x.y.z \
      --command /usr/local/bin/orca-ide
-   loginctl enable-linger root       # sinon le service s'arrête à la déconnexion
-   orca serve service status
-   orca pair --address 100.x.y.z     # génère le lien sans redémarrer le serveur
+   sudo loginctl enable-linger holo-rgaa  # sinon le service s'arrête à la déconnexion
+   # après un changement de version, redémarrer l'unité systemd générée
+   systemctl --user restart <nom-de-l-unite>
+   orca-ide serve service status
+   orca-ide pair --address 100.x.y.z     # génère le lien sans redémarrer le serveur
    ```
 4. Comptes et skills côté serveur :
    ```bash
-   orca account add --agent claude
-   orca account add --agent codex
-   orca account list
-   orca skills install --skill orca-cli --skill orchestration
+   orca-ide account add --agent claude
+   orca-ide account add --agent codex
+   orca-ide account list
+   orca-ide skills install --skill orca-cli --skill orchestration
    ```
 
 Sur le **poste local** (Tailscale connecté au même tailnet) : **Settings → Remote
@@ -133,7 +134,7 @@ Orca Servers → Add Server**, donner un nom, coller le lien, **Add Server**, pu
 **Connect**.
 
 Sans Tailscale, passez par un tunnel SSH plutôt que d'ouvrir le port. Lancez
-`orca serve --bind 127.0.0.1 --port 6768 --pairing-address 127.0.0.1` sur le VPS,
+`orca-ide serve --bind 127.0.0.1 --port 6768 --pairing-address 127.0.0.1` sur le VPS,
 puis `ssh -N -L 6768:127.0.0.1:6768 holo-rgaa` sur le poste. Je n'ai pas testé ce
 montage, et la documentation déconseille `127.0.0.1` comme adresse annoncée à un
 client distant. Tailscale reste la voie documentée.
@@ -144,8 +145,8 @@ Internet.
 ## 5. Vérifications et pannes connues
 
 ```bash
-~/.orca/cli/bin/orca status        # runtimeState: ready, runtimeReachable: true
-~/.orca/cli/bin/orca agent installed   # claude, codex, opencode, pi
+orca-ide status        # runtimeState: ready, runtimeReachable: true
+orca-ide agent installed   # claude, codex, opencode, pi
 ```
 
 - Le message `degraded: Browser automation has no backend` est attendu sur un VPS

@@ -2,6 +2,13 @@
 resolver = "2"
 members = [
     "crates/rgaa-core",
+    "crates/rgaa-analysis",
+    "crates/rgaa-analysis-colorvision",
+    "crates/rgaa-analysis-contrast",
+    "crates/rgaa-analysis-lang",
+    "crates/rgaa-analysis-layout",
+    "crates/rgaa-analysis-motion",
+    "crates/rgaa-analysis-text",
     "crates/rgaa-rules",
     "crates/rgaa-holo",
     "crates/rgaa-obscura",

@@ -36,7 +36,10 @@ pub fn render_grille_csv(audit: &AuditResult) -> String {
     row.push("Critères".to_string());
     row.push("Éléments transverses".to_string());
     // Séparer la page transverses des pages normales.
-    let transverse_page = audit.pages.iter().find(|p| p.url == rgaa_core::TRANSVERSE_PAGE_URL);
+    let transverse_page = audit
+        .pages
+        .iter()
+        .find(|p| p.url == rgaa_core::TRANSVERSE_PAGE_URL);
     let normal_pages: Vec<&PageResult> = audit
         .pages
         .iter()
@@ -54,7 +57,7 @@ pub fn render_grille_csv(audit: &AuditResult) -> String {
             .map(|c| (c.criterion_id.clone(), c.clone()))
             .collect();
         for criterion in RgaaCriteria::all() {
-            let c = tp_index.get(&criterion.id.to_string());
+            let c = tp_index.get(criterion.id);
             row.push(decision_letter(c).to_string());
         }
     } else {
@@ -78,7 +81,7 @@ pub fn render_grille_csv(audit: &AuditResult) -> String {
                 .iter()
                 .map(|c| (c.criterion_id.clone(), c.clone()))
                 .collect();
-            let c = tp_index.get(&criterion.id.to_string());
+            let c = tp_index.get(criterion.id);
             row.push(decision_letter(c).to_string());
         } else {
             row.push(NOT_TESTED.to_string());

@@ -7600,6 +7600,7 @@ name = "rgaa-analysis-colorvision"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "image",
  "image_hasher",
  "indexmap 2.14.2",
@@ -7615,6 +7616,7 @@ name = "rgaa-analysis-contrast"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "image",
  "imageproc",
  "indexmap 2.14.2",

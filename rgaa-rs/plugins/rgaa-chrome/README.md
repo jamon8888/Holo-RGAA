@@ -17,6 +17,13 @@ source du site ; l'application réelle passe par `remediate` (approbation) puis 
 npm ci && npx playwright install chromium && npm test
 ```
 
+Contre le vrai serveur (binaire `rgaa-mcp-http` + `obscura` 0.2.4 sur le `PATH` ; le serveur refuse
+les IP privées, la page auditée doit être publique) :
+
+```
+RGAA_MCP_BIN=/chemin/rgaa-mcp-http RGAA_AUDIT_URL=https://… node tests/panel.pw.mjs
+```
+
 ## Serveur d'audit
 
 Le panneau (« Serveur d'audit ») appelle l'outil `analyze` de `rgaa-mcp-http` pour l'onglet courant.

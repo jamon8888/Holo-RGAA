@@ -5,6 +5,7 @@ import http from 'node:http';
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 
 const fx = new URL('../../rgaa-consultant/tests/fixtures/visual/', import.meta.url);
@@ -28,7 +29,7 @@ const api = await listen((req, res) => {
 const dir = mkdtempSync(join(tmpdir(), 'rgaa-ext-'));
 cpSync(new URL('..', import.meta.url).pathname, dir, { recursive: true, filter: (s) => !s.includes('node_modules') });
 const mf = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
-mf.host_permissions = ['http://127.0.0.1/*'];
+mf.host_permissions = process.env.RGAA_MCP_BIN ? ['<all_urls>'] : ['http://127.0.0.1/*'];
 writeFileSync(join(dir, 'manifest.json'), JSON.stringify(mf));
 writeFileSync(join(dir, 'input.json'), JSON.stringify({ ...spec, url: siteUrl }));
 
@@ -61,14 +62,34 @@ try {
   assert.equal(await page.content(), before, 'la page doit être restaurée');
 
   // 3. Analyse via le serveur : jeton exigé, puis findings affichés avec leur niveau.
+  //    RGAA_MCP_BIN=<rgaa-mcp-http> (+ obscura sur le PATH) : contre le vrai serveur, sinon le faux.
+  let real;
+  if (process.env.RGAA_MCP_BIN) {
+    const port = 38000 + Math.floor(Math.random() * 1000);
+    real = spawn(process.env.RGAA_MCP_BIN, ['--port', String(port)], {
+      env: { ...process.env, RGAA_MCP_TOKEN: 'secret', RGAA_CORS_ORIGINS: `chrome-extension://${id}` }, stdio: 'ignore',
+    });
+    for (let i = 0; i < 50; i++) { if (await fetch(`http://127.0.0.1:${port}/health`).then((r) => r.ok, () => false)) break; await new Promise((r) => setTimeout(r, 200)); }
+    real.port = port;
+  }
+  if (real) { // le vrai serveur refuse les IP privées : on audite une page publique
+    await page.goto(process.env.RGAA_AUDIT_URL ?? 'https://www.w3.org/WAI/demos/bad/before/home.html');
+    await page.bringToFront();
+  }
+  const apiPort = real?.port ?? api.address().port;
   await panel.getByText("Serveur d'audit").click(); // <details> fermé par défaut
-  await panel.fill('#server', `http://127.0.0.1:${api.address().port}`);
+  await panel.fill('#server', `http://127.0.0.1:${apiPort}`);
   await panel.getByRole('button', { name: "Analyser l'onglet courant" }).click();
   await panel.getByText(/Analyse impossible : serveur : HTTP 401/).waitFor();
   await panel.fill('#token', 'secret');
   await panel.getByRole('button', { name: "Analyser l'onglet courant" }).click();
-  await panel.getByText('Image sans alternative').waitFor();
-  await panel.getByText(/Verdict automatique/).waitFor();
-  await panel.getByText('Piste du serveur : Ajouter un alt').waitFor();
+  if (real) {
+    await panel.getByText(/\d+ finding\(s\), \d+ critère\(s\)/).waitFor({ timeout: 120_000 });
+  } else {
+    await panel.getByText('Image sans alternative').waitFor();
+    await panel.getByText(/Verdict automatique/).waitFor();
+    await panel.getByText('Piste du serveur : Ajouter un alt').waitFor();
+  }
+  real?.kill();
   console.log('panel ok');
 } finally { await ctx.close(); site.close(); api.close(); }

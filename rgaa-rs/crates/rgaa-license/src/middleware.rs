@@ -70,7 +70,13 @@ pub async fn enforce(State(state): State<LicenseLayerState>, req: Request, next:
         Classification::Access(f) => (f, 0),
         Classification::Metered(f, n) => (f, n),
     };
-    match state.gate.check(feature, cost) {
+    // `check` holds the usage `persist_lock` across a read-modify-write of
+    // `usage.toml` (blocking file I/O): keep it off the async worker threads.
+    let gate = Arc::clone(&state.gate);
+    let Ok(checked) = tokio::task::spawn_blocking(move || gate.check(feature, cost)).await else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    match checked {
         Ok(admission) => {
             let mut response = next.run(req).await;
             append_headers(&mut response, admission.headers());

@@ -239,6 +239,16 @@ mod cors_tests {
         assert_eq!(origins.len(), 2);
     }
 
+    /// Browsers send IPv6 origins bracketed (`http://[::1]:3000`); the value is
+    /// kept byte-for-byte, so it matches the `Origin` header exactly.
+    #[test]
+    fn ipv6_literal_origins_are_accepted_verbatim() {
+        let raw = "http://[::1]:3000,https://[2001:db8::1]:8443";
+        let origins = parse_cors_origins(Some(raw)).expect("valid IPv6 origins");
+        let got: Vec<&str> = origins.iter().map(|o| o.to_str().unwrap()).collect();
+        assert_eq!(got, ["http://[::1]:3000", "https://[2001:db8::1]:8443"]);
+    }
+
     #[test]
     fn wildcard_is_rejected_not_emitted() {
         assert_eq!(

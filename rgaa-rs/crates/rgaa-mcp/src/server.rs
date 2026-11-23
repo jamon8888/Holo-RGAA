@@ -250,8 +250,9 @@ impl McpFailure {
             | RgaaError::MissingId(_)
             | RgaaError::MissingField(_)
             | RgaaError::DuplicateFindingId(_)
+            | RgaaError::InvalidStatus(_)
             | RgaaError::NonConformityNotFound(_)
-            | RgaaError::InvalidStatus(_) => Self::invalid(err.to_string()),
+            | RgaaError::Analysis { .. } => Self::invalid(err.to_string()),
             RgaaError::UnsupportedSchemaVersion(_) => Self::unsupported(err.to_string()),
             RgaaError::IncompleteEvidence(_) => Self::incomplete(err.to_string()),
             RgaaError::Llm { .. }

@@ -89,6 +89,7 @@ pub fn echo_proof(url: &str, options: &PluginOptions) -> Preuve {
             media_type: "text/plain".to_owned(),
             chemin_bundle: format!("analysis/echo/{artefact_hash}.txt"),
             sha256: artefact_hash,
+            contenu_base64: None,
         }],
         empreinte_entree,
     }

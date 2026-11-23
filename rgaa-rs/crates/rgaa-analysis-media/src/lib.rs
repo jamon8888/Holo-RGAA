@@ -187,15 +187,21 @@ async fn analyse_media(
 
     let mono = audio::to_mono_16k(&decoded)?;
     let (cues, piste) = read_subtitles(media, page).await?;
+    let reference_available =
+        options.use_models.unwrap_or(false) || options.transcription_reference_url.is_some();
     let (reference, part_parole, langue_detectee, moteur_transcription) =
         if options.use_models.unwrap_or(false) {
-            speech_from_models(&mono)?
+            let (segments, ratio, langue, moteur) = speech_from_models(&mono)?;
+            (segments, Some(ratio), langue, moteur)
         } else {
             let segments = match options.transcription_reference_url.as_deref() {
                 Some(url) => read_text_segments(url, page).await?,
                 None => Vec::new(),
             };
-            let ratio = align::speech_ratio(&segments, duree);
+            let ratio = options
+                .transcription_reference_url
+                .as_ref()
+                .map(|_| align::speech_ratio(&segments, duree));
             (segments, ratio, None, None)
         };
     let fournie = match media.transcript_url.as_deref() {
@@ -223,12 +229,12 @@ async fn analyse_media(
         part_parole,
         langue_detectee,
         decodage,
-        transcription_fournie: Some(TranscriptionMesure {
+        transcription_fournie: reference_available.then(|| TranscriptionMesure {
             url: media.transcript_url.clone().unwrap_or_default(),
             couverture: align::coverage(&reference_words, &fournie_words),
             passages_manquants: align::missing_passages(&reference, &fournie, FENETTE_MANQUANTE_S),
         }),
-        sous_titres: Some(SousTitresMesure {
+        sous_titres: reference_available.then(|| SousTitresMesure {
             piste,
             couverture: align::coverage(&reference_words, &cue_words),
             decalage_median_ms: median_ms,
@@ -240,12 +246,15 @@ async fn analyse_media(
         moteur_transcription,
         note: None,
     };
-    let indice = if part_parole < SEUIL_PAROLE {
+    let indice = if part_parole.is_some_and(|ratio| ratio < SEUIL_PAROLE) {
         mesures.note = Some(
             "média sans parole détectée ; transcription peut-être non nécessaire (4.1)".to_owned(),
         );
         Some(Indice::Neutre)
     } else {
+        if !reference_available {
+            mesures.note = Some("preuve manquante : analyse de la parole indisponible (transcription de référence ou modèles requis)".to_owned());
+        }
         None
     };
     let mut preuves = vec![new_preuve(
@@ -638,7 +647,7 @@ mod tests {
             .await
             .expect("analysis");
         let mesures = mesures_of(&proofs, "part_parole");
-        assert!(mesures.part_parole < 0.02, "{}", mesures.part_parole);
+        assert!(mesures.part_parole.expect("reference speech ratio") < 0.02);
         assert!(matches!(proofs[0].indice, Some(Indice::Neutre)));
     }
 
@@ -653,6 +662,14 @@ mod tests {
         )
         .await
         .expect("analysis");
+        let speech = mesures_of(&proofs, "part_parole");
+        assert_eq!(speech.part_parole, None);
+        assert!(speech.transcription_fournie.is_none());
+        assert!(speech.sous_titres.is_none());
+        assert!(speech
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("preuve manquante")));
         let proof = proofs
             .iter()
             .find(|proof| proof.tests == vec!["4.10".to_owned()])
@@ -684,7 +701,10 @@ mod tests {
             .await
             .expect("model-backed analysis");
         let mesures = mesures_of(&proofs, "part_parole");
-        assert!(mesures.part_parole > 0.1, "{mesures:?}");
+        assert!(
+            mesures.part_parole.expect("model speech ratio") > 0.1,
+            "{mesures:?}"
+        );
         assert!(mesures
             .moteur_transcription
             .as_deref()

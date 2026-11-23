@@ -14,7 +14,7 @@ pub struct Mesures {
     pub duree_s: f64,
     /// Share of the media carrying speech. From the transcription stand-in in
     /// PR 1, from Silero VAD in PR 2.
-    pub part_parole: f64,
+    pub part_parole: Option<f64>,
     pub langue_detectee: Option<String>,
     pub decodage: DecodageMesure,
     pub transcription_fournie: Option<TranscriptionMesure>,

@@ -432,6 +432,7 @@ mod tests {
                         impact: "critical".into(),
                         description: "Missing alt".into(),
                         nodes_affected: 2,
+                        nodes: vec![],
                     }],
                     confidence: None,
                     raw_confidence: None,

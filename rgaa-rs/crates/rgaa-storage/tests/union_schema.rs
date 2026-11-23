@@ -118,6 +118,7 @@ fn sample_audit_result(audit_id: &str) -> AuditResult {
                     impact: "critical".into(),
                     description: "Missing alt".into(),
                     nodes_affected: 2,
+                    nodes: vec![],
                 }],
                 confidence: None,
                 raw_confidence: None,

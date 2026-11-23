@@ -143,6 +143,14 @@ impl AxeMapper {
                     impact: violation.impact.clone(),
                     description: violation.description.clone(),
                     nodes_affected: violation.nodes.len(),
+                    // A capped finding is sent to human review, so it must keep the
+                    // affected nodes as evidence. Uncapped findings keep their
+                    // historical payload unchanged (#279).
+                    nodes: if capped {
+                        violation.nodes.clone()
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
         }
@@ -606,7 +614,6 @@ mod tests {
         ("label-content-name-mismatch", "11.2"),
         ("scrollable-region-focusable", "7.3"),
         ("server-side-image-map", "7.3"),
-        ("focus-order-semantics", "7.3"),
         ("blink", "13.8"),
         ("marquee", "13.8"),
         ("meta-refresh", "13.1"),
@@ -770,11 +777,16 @@ mod tests {
             "la raison de revue doit mentionner le plafond, obtenu {:?}",
             r.review_reason
         );
-        assert!(
-            r.violations.iter().any(|v| v.rule_id == "tabindex"),
-            "12.8 doit porter la violation tabindex comme preuve, got {:?}",
-            r.violations
-        );
+        let violation = r
+            .violations
+            .iter()
+            .find(|violation| violation.rule_id == "tabindex")
+            .expect("12.8 doit porter la violation tabindex comme preuve");
+        assert_eq!(violation.impact, "serious");
+        assert!(violation.description.contains("tabindex"));
+        assert_eq!(violation.nodes_affected, 1);
+        assert_eq!(violation.nodes.len(), 1);
+        assert_eq!(violation.nodes[0]["html"], "<button tabindex='3'>");
     }
 
     /// Issue #279 : les entrées sans plafond gardent leur comportement exact — une
@@ -868,13 +880,15 @@ mod tests {
             37,
             "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
              decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
-             to 8.5 and button-name to 11.9; axe-12-8 added in #279"
+             to 8.5 and button-name to 11.9 (+2 criteria). axe-12-8 (#279) adds criterion 12.8 (+1). \
+             Net: 43 - 9 + 2 + 1 = 37 criteria with axe rules."
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 89,
-            "expected 89 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-             the injected axe-core 4.9.1; axe-12-8 adds tabindex + focus-order-semantics)"
+            rule_refs, 88,
+            "expected 88 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
+             the injected axe-core 4.9.1; axe-12-8 adds tabindex + focus-order-semantics for 12.8; \
+             #398 removes the inactive focus-order-semantics rule from 7.3)"
         );
     }
 }

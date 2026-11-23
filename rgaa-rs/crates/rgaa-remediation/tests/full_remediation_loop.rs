@@ -196,6 +196,7 @@ fn failed_page_remains_in_bundle() {
                 impact: "serious".into(),
                 description: "Low contrast".into(),
                 nodes_affected: 3,
+                nodes: vec![],
             }],
             confidence: Some(1.0),
             raw_confidence: None,

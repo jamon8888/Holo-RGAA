@@ -82,14 +82,7 @@ async fn union_schema_supports_every_live_api_path() {
 
     // Each filter excludes the other finding in this two-finding fixture.
     let by_severity = repo
-        .list_findings(
-            &audit_id,
-            Some("fail"),
-            Some("critical"),
-            None,
-            100,
-            0,
-        )
+        .list_findings(&audit_id, Some("fail"), Some("critical"), None, 100, 0)
         .await
         .expect("list_findings severity filter");
     assert_eq!(by_severity.len(), 1);

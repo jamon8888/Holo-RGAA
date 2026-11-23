@@ -779,9 +779,10 @@ kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
 # Tests 1 (refresh by script/object) and 3 (redirect by script) of 13.1: a page that moves on
-# its own within ~6 s is the fail; a suspicious navigation timer is review (#265).
+# its own within ~6 s, or a suspicious navigation timer, is review: the probe cannot tell
+# whether the user can stop or restart the redirect, which 13.1 allows (#265).
 tests     = ["1", "3"]
-outcomes  = ["fail", "review"]
+outcomes  = ["review"]
 fixtures  = ["13.1-script-redirect-pass", "13.1-script-redirect-fail", "13.1-script-redirect-href-fail"]
 legacy    = false
 
@@ -852,11 +853,12 @@ criterion = "13.9"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Page rendered at 390x844 and 844x390 (Emulation.setDeviceMetricsOverride): lock call, rotate
-# message or half the visible text lost is the fail; a smaller difference is review (#268).
+# Page rendered at 390x844 and 844x390 (Emulation.setDeviceMetricsOverride): a lock call or a
+# rotate message is the fail; lost visible text is review, since per-element text cannot prove
+# content loss across markup regrouping (#268).
 tests     = ["1"]
 outcomes  = ["fail", "review"]
-fixtures  = ["13.9-orientation-pass", "13.9-orientation-hidden-fail", "13.9-orientation-lock-fail", "13.9-orientation-message-fail"]
+fixtures  = ["13.9-orientation-pass", "13.9-orientation-hidden-review", "13.9-orientation-lock-fail", "13.9-orientation-message-fail"]
 legacy    = false
 
 [[mechanism]]
@@ -865,7 +867,8 @@ criterion = "13.8"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# DOM mutations observed ~6 s without interaction, pause/stop control heuristic (#267). CSS
+# DOM mutations observed ~8 s without interaction: more than 5 s of motion on a target with no
+# pause/stop control is the fail, anything shorter or uncertain is review (#267). CSS
 # animations are NOT detected: Obscura 0.2.4 returns no animation from document.getAnimations().
 tests     = ["1"]
 outcomes  = ["fail", "review"]

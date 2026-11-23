@@ -392,10 +392,13 @@ pub fn assemble_site_audit(
     mut all_pages: Vec<PageResult>,
     duration_ms: u64,
 ) -> AuditResult {
-    // The completion gate and the coverage metrics look at every catalog criterion, so
-    // they run before the site-level criteria leave the pages.
-    let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
     let site_criteria = split_site_criteria(&mut all_pages);
+    // Metrics expect every catalog criterion on every page: count the site-level results
+    // as split (verdicts not reused from a single page), exactly as the report renders them.
+    let audit_metrics = rgaa_report::compute_audit_metrics(&rgaa_core::pages_with_site_criteria(
+        &all_pages,
+        &site_criteria,
+    ));
     let audit_complete = pages_have_complete_automatic_coverage(&all_pages)
         && validate_site_coverage(&site_criteria).is_ok();
     for page in &mut all_pages {
@@ -1687,7 +1690,7 @@ async fn audit_one(
                 &url,
                 rgaa_rules::script_hooks::MOTION_HOOK,
                 rgaa_rules::script_hooks::MOTION_READ,
-                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::MOTION_OBSERVATION_MS),
             )
             .await
         {

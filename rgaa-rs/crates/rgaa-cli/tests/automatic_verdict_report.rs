@@ -396,7 +396,9 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             page_audit.site_criteria.len(),
             rgaa_core::SITE_LEVEL_CRITERIA.len()
         );
-        assert!(page_audit.audit_complete);
+        // No site comparison runs on a single mocked page, so 12.1-12.5 stay unresolved
+        // and the audit cannot be complete (#269).
+        assert!(!page_audit.audit_complete);
 
         if page_index == 0 {
             let human_review = page_audit.pages[0]
@@ -450,8 +452,22 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         audit.site_criteria.len(),
         rgaa_core::SITE_LEVEL_CRITERIA.len()
     );
-    assert!(audit.audit_complete);
-    assert_eq!(audit.automatic_verdict_coverage_percent, 100.0);
+    // The mock runs no site comparison: 12.1-12.5 carry no automatic verdict, so the
+    // site-level criteria keep the audit incomplete and below full verdict coverage.
+    assert!(!audit.audit_complete);
+    assert!(audit
+        .site_criteria
+        .iter()
+        .all(|criterion| criterion.automated_verdict.is_none()));
+    assert_eq!(
+        audit.automatic_verdict_coverage_percent,
+        rgaa_report::compute_audit_metrics(&rgaa_core::pages_with_site_criteria(
+            &audit.pages,
+            &audit.site_criteria
+        ))
+        .automatic_verdict_coverage_percent
+    );
+    assert!(audit.automatic_verdict_coverage_percent < 100.0);
     let complete_route_count = TestRoutePlan::builtin()
         .routes()
         .iter()
@@ -496,7 +512,7 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
     let report = rgaa_report::render(&AuditBundle::from(audit.clone()), ReportFormat::Html)
         .expect("native report should render");
     assert!(report.contains("Couverture des verdicts automatiques"));
-    assert!(report.contains("100.0%"));
+    assert!(report.contains(&format!("{:.1}%", audit.automatic_verdict_coverage_percent)));
     assert!(report.contains("estimation"));
     assert_cli_report_does_not_claim_conformance(&audit);
 }

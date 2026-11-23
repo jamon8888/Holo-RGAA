@@ -83,6 +83,9 @@ struct Case {
     criterion: String,
     fixture: String,
     expect_fail: bool,
+    /// `-review` fixture: an adverse case the mechanism itself must flag as `NeedsReview`
+    /// (never `Fail`), because the probe cannot prove the failure.
+    expect_review: bool,
     /// A criterion-wide `Fail` is only mandatory when the mechanism declares it:
     /// a review-only probe can flag an adverse fixture as `NeedsReview` instead.
     expect_failure: bool,
@@ -115,16 +118,20 @@ fn cases() -> Vec<Case> {
             {
                 continue;
             }
-            if !expect_fail && !f.ends_with("-pass") {
+            let expect_review = f.ends_with("-review");
+            if !expect_fail && !expect_review && !f.ends_with("-pass") {
                 continue;
             }
             let expect_pass = !expect_fail
+                && !expect_review
                 && m.coverage == rgaa_core::catalog::AxeCoverage::Complete
                 && m.outcomes.contains(&Outcome::Pass);
             let declares_fail = m.outcomes.contains(&Outcome::Fail);
             let declares_review = m.outcomes.contains(&Outcome::Review);
             let expect_failure = expect_fail && declares_fail;
-            let expected_statuses = if expect_fail && declares_fail {
+            let expected_statuses = if expect_review {
+                vec![CriterionStatus::NeedsReview]
+            } else if expect_fail && declares_fail {
                 vec![CriterionStatus::Fail]
             } else if expect_fail && declares_review && shares_a_decisive_probe(m) {
                 // Gap-fix reports one verdict per criterion: a sibling probe that
@@ -146,6 +153,7 @@ fn cases() -> Vec<Case> {
                 criterion: m.criterion.clone(),
                 fixture: f.clone(),
                 expect_fail,
+                expect_review,
                 expect_failure,
                 expected_statuses,
                 expect_pass,
@@ -410,7 +418,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
                     rgaa_rules::script_hooks::MOTION_HOOK,
                     rgaa_rules::script_hooks::MOTION_READ,
                     std::time::Duration::from_millis(
-                        rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS,
+                        rgaa_rules::script_hooks::MOTION_OBSERVATION_MS,
                     ),
                 )
                 .await
@@ -485,6 +493,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
             }
         }
         let silent_review_fixture = !case.expect_fail
+            && !case.expect_review
             && !case.expect_pass
             && case
                 .expected_statuses

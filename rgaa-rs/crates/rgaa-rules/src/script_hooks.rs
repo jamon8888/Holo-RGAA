@@ -20,6 +20,10 @@ use rgaa_core::{Classification, CriterionResult, CriterionStatus};
 /// How long the page is observed without interaction.
 pub const REDIRECT_OBSERVATION_MS: u64 = 6_000;
 
+/// 13.8 observation window: it must exceed the 5 s motion threshold with margin, or a
+/// 1 s slider can never show more than 5 s of motion after the load snapshot.
+pub const MOTION_OBSERVATION_MS: u64 = 8_000;
+
 /// Installed before any page script.
 pub const REDIRECT_HOOK: &str = r#"
 (() => {
@@ -828,7 +832,7 @@ pub fn parse_motion_observation(observation: &serde_json::Value) -> Option<Redir
     let window = format!(
         "{} mutations en {} s sans interaction",
         delta,
-        REDIRECT_OBSERVATION_MS / 1000
+        MOTION_OBSERVATION_MS / 1000
     );
     if all_on_loaders {
         return Some(RedirectFinding {

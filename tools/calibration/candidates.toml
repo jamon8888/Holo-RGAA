@@ -1,0 +1,41 @@
+# Candidats juges pour la calibration (voir promote.py). Les clés ne sont JAMAIS ici :
+# seul le NOM de la variable d'environnement est consigné (key_env).
+#
+# `external = true` : les cartes quittent la machine. L'utilisateur a donné son accord permanent
+# (fil du projet, 2026-11-04) pour ces trois modèles NIM et des cartes SYNTHÉTIQUES uniquement.
+# Ne jamais y envoyer de vraies captures de sites audités (grilling #350).
+
+[[candidate]]
+name = "nemotron-3.5-super-vl"
+model = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+role = "reasoning"
+external = true
+max_tokens = 3000
+
+[[candidate]]
+name = "mistral-large-4"
+model = "mistralai/mistral-large-4-1t-a52b"
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+role = "general"
+external = true
+max_tokens = 3000
+
+[[candidate]]
+name = "glm-5.3-flash"
+model = "z-ai/glm-5.3-flash"
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+role = "fast"
+external = true
+max_tokens = 3000
+
+# Témoin de discrimination (protocole §4) : un lot où il ne tombe pas nettement sous le modèle fort
+# est déclaré non discriminant. Local, rien ne sort.
+[witness]
+name = "gemma4-e2b"
+backend = "ollama"
+model = "gemma4:e2b"
+external = false

@@ -24,7 +24,7 @@ Généré par script à partir de : `rgaa-rs/crates/rgaa-core/data/rgaa-4.1.2/cr
 | `table-fake-caption` | oui | oui | 5.4 | RGAA-5.4.1 |
 | `td-has-header` | oui | oui | 5.7 | RGAA-5.7.4 |
 | `label-content-name-mismatch` | non | oui | 11.2 | RGAA-6.1.5 |
-| `aria-tab-name` | non | non | 7.1 | RGAA-7.1.1 |
+| `aria-tab-name` | non | non | aucun (retirée de 7.1 par #261 : absente de la version injectée) | RGAA-7.1.1 |
 
 ## Tableau par test
 

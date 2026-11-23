@@ -1,18 +1,25 @@
 //! Classification of the registry's fixtures under Obscura (spec §4 points 6-7,
-//! issue #261). Runs in the E2E job (Obscura 0.2.4 on PATH, network for the axe-core
-//! CDN); skipped unless `RUN_E2E=1`.
+//! issue #261). Runs in the unconditional `E2E (navigateur)` CI job (Obscura 0.2.4 on
+//! PATH, network for the axe-core CDN, no LLM key); skipped unless `RUN_E2E=1`, and
+//! `RGAA_E2E_REQUIRED=1` turns that skip into a failure in CI.
 //!
 //! For every fixture a registry mechanism names:
 //! * where the mechanism declares `fail` as an outcome, a `-fail` fixture must make
 //!   axe-core or a gap-fix probe emit a `Fail` for the fixture's criterion;
-//! * a `-pass` fixture must not (for a `partial` mechanism "conforming" means "emits no
-//!   `fail`" — silence never counts as `pass`).
+//! * a `-fail` fixture of a review-only mechanism must make that mechanism emit
+//!   `NeedsReview`, never `Fail` (spec §4.1, "orienté") — unless a decisive probe
+//!   shares its criterion, since gap-fix reports one verdict per criterion;
+//! * a `-pass` fixture must not draw a `Fail` from any engine (for a `partial`
+//!   mechanism "conforming" means "emits no `fail`" — silence never counts as `pass`);
+//! * a `-pass` fixture of a `complete` mechanism that declares `pass` must make **that
+//!   mechanism** (axe for `axe-native`, the gap-fix probe otherwise) emit `Pass` (spec
+//!   §4.1): its silence is the only one allowed to stand as conformance, so it is proven.
 //!
 //! A mechanism that misclassifies its fixture blocks the PR. The presence of the
 //! fixture files is checked separately, without a browser, in
 //! `rgaa-test-corpus/tests/registry_invariants.rs`.
 
-use rgaa_core::{CriterionStatus, MechanismKind, MechanismRegistry};
+use rgaa_core::{registry::Outcome, CriterionStatus, MechanismKind, MechanismRegistry};
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::{AxeMapper, GapFixRules};
 use std::collections::HashMap;
@@ -71,38 +78,136 @@ struct Case {
     criterion: String,
     fixture: String,
     expect_fail: bool,
+    /// A criterion-wide `Fail` is only mandatory when the mechanism declares it:
+    /// a review-only probe can flag an adverse fixture as `NeedsReview` instead.
+    expect_failure: bool,
+    /// Statuses the declared mechanism may report on this fixture. A review-only
+    /// probe is constrained too, but either a detected failure or an explicit
+    /// review request is an acceptable adverse answer.
+    expected_statuses: Vec<CriterionStatus>,
+    /// `complete` with `pass` declared, on a `-pass` fixture: the mechanism's own
+    /// source must report `Pass`, not merely stay silent.
+    expect_pass: bool,
+    axe_native: bool,
+    axe_rules: Vec<String>,
 }
 
 fn cases() -> Vec<Case> {
     let mut out = Vec::new();
     for m in MechanismRegistry::builtin().mechanisms() {
         // Site mechanisms are evaluated by the crawl-level comparator, not by
-        // axe/gap-fix on an isolated page. Their paired page observations are
-        // covered by `site_comparison` tests instead of this single-page harness.
+        // axe/gap-fix on an isolated page. The comparator's logic is unit-tested on
+        // synthetic observations in `site_comparison`; their fixture files are not
+        // classified anywhere yet (docs/testing-layers.md).
         if m.kind == MechanismKind::Site {
             continue;
         }
         for f in &m.fixtures {
             let expect_fail = f.ends_with("-fail");
-            // A review-only inventory can show a candidate, but by contract it
-            // cannot classify even a deliberately adverse single-page fixture.
-            // Its non-failing signal is checked through the normal `-pass` case;
-            // site mechanisms use the separate crawl-level comparator tests.
-            if expect_fail && !m.outcomes.contains(&rgaa_core::registry::Outcome::Fail) {
+            if expect_fail
+                && !m.outcomes.contains(&Outcome::Fail)
+                && !m.outcomes.contains(&Outcome::Review)
+            {
                 continue;
             }
             if !expect_fail && !f.ends_with("-pass") {
                 continue;
             }
+            let expect_pass = !expect_fail
+                && m.coverage == rgaa_core::catalog::AxeCoverage::Complete
+                && m.outcomes.contains(&Outcome::Pass);
+            let declares_fail = m.outcomes.contains(&Outcome::Fail);
+            let declares_review = m.outcomes.contains(&Outcome::Review);
+            let expect_failure = expect_fail && declares_fail;
+            let expected_statuses = if expect_fail && declares_fail {
+                vec![CriterionStatus::Fail]
+            } else if expect_fail && declares_review && shares_a_decisive_probe(m) {
+                // Gap-fix reports one verdict per criterion: a sibling probe that
+                // declares `fail` on the same criterion (12.9) may decide this fixture.
+                vec![CriterionStatus::NeedsReview, CriterionStatus::Fail]
+            } else if expect_fail && declares_review {
+                // Review-only ("orienté", spec §4.1): an adverse fixture is `review`,
+                // never `fail`.
+                vec![CriterionStatus::NeedsReview]
+            } else if expect_pass {
+                vec![CriterionStatus::Pass]
+            } else if declares_review {
+                vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
+            } else {
+                Vec::new()
+            };
             out.push(Case {
                 mechanism: m.id.clone(),
                 criterion: m.criterion.clone(),
                 fixture: f.clone(),
                 expect_fail,
+                expect_failure,
+                expected_statuses,
+                expect_pass,
+                axe_native: m.kind == MechanismKind::AxeNative,
+                axe_rules: m.axe_rules.clone(),
             });
         }
     }
     out
+}
+
+/// Another non-axe, non-site mechanism on the same criterion declares `fail`.
+fn shares_a_decisive_probe(m: &rgaa_core::registry::Mechanism) -> bool {
+    MechanismRegistry::builtin()
+        .mechanisms()
+        .iter()
+        .any(|other| {
+            other.id != m.id
+                && other.criterion == m.criterion
+                && !matches!(other.kind, MechanismKind::AxeNative | MechanismKind::Site)
+                && other.outcomes.contains(&Outcome::Fail)
+        })
+}
+
+/// The ids of the violations in an axe result, whichever shape the bridge returns:
+/// `{"violations": [...], "incomplete": [...]}` under Obscura, or a bare array.
+fn violation_ids(axe_json: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(axe_json) else {
+        return Vec::new();
+    };
+    let violations = match &value {
+        serde_json::Value::Array(items) => items.as_slice(),
+        serde_json::Value::Object(map) => map
+            .get("violations")
+            .and_then(serde_json::Value::as_array)
+            .map_or(&[][..], Vec::as_slice),
+        _ => &[],
+    };
+    violations
+        .iter()
+        .filter_map(|v| v.get("id").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Retry when another process claims the selected port before Obscura binds it.
+async fn start_fixture_browser() -> Result<ObscuraBridge, String> {
+    const MAX_RETRIES: usize = 2;
+
+    let mut retries = 0;
+    loop {
+        let mut bridge = ObscuraBridge::from_env().with_ephemeral_port()?;
+        let error = match bridge.start_server().await {
+            Ok(()) => return Ok(bridge),
+            Err(error) => error,
+        };
+        let port = bridge.server_port();
+        let collision = error.starts_with(&format!("port {port} is already in use"))
+            || (error.contains("obscura serve exited during startup")
+                && TcpListener::bind(("127.0.0.1", port))
+                    .is_err_and(|err| err.kind() == std::io::ErrorKind::AddrInUse));
+        if !collision || retries == MAX_RETRIES {
+            return Err(error);
+        }
+        retries += 1;
+        tracing::warn!(port, retries, "retrying Obscura after a CDP port collision");
+    }
 }
 
 #[tokio::test]
@@ -118,7 +223,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
         let unclassifiable: Vec<&str> = MechanismRegistry::builtin()
             .mechanisms()
             .iter()
-            .filter(|m| !m.legacy)
+            .filter(|m| !m.legacy && m.kind != MechanismKind::Site)
             .map(|m| m.id.as_str())
             .collect();
         assert!(
@@ -138,9 +243,10 @@ async fn registry_fixtures_are_classified_under_obscura() {
     std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
 
     let port = serve(corpus_dir()).expect("fixture server must bind");
-    let mut bridge = ObscuraBridge::from_env();
-    bridge
-        .start_server()
+    // Never the fixed 9222: this test now runs in `E2E (navigateur)` beside the
+    // coverage tests, and a shared CDP port lets concurrent runs steal each other's
+    // server (CLAUDE.md, #382).
+    let bridge = start_fixture_browser()
         .await
         .expect("obscura 0.2.4 must start");
     let binary = bridge.binary_path().to_string();
@@ -165,13 +271,23 @@ async fn registry_fixtures_are_classified_under_obscura() {
     let mut wrong = Vec::new();
     for case in &cases {
         let url = url_of(case);
-        let axe_json = axe_by_url.remove(&url).unwrap_or_else(|| "[]".to_string());
+        let Some(axe_json) = axe_by_url.remove(&url) else {
+            wrong.push(format!(
+                "{} / {}: axe batch returned no result for {url}",
+                case.mechanism, case.fixture
+            ));
+            continue;
+        };
         let mut statuses: Vec<CriterionStatus> = Vec::new();
+        let mut own_status: Option<CriterionStatus> = None;
         let mut evidence = Vec::new();
         match AxeMapper::map(&axe_json) {
             Ok(axe) => {
                 if let Some(result) = axe.get(&case.criterion) {
                     statuses.push(result.status.clone());
+                    if case.axe_native {
+                        own_status = Some(result.status.clone());
+                    }
                     evidence.push(format!(
                         "axe: {:?} {:?}",
                         result.status, result.justification
@@ -184,21 +300,69 @@ async fn registry_fixtures_are_classified_under_obscura() {
             }
             Err(error) => evidence.push(format!("axe parse error: {error}; raw: {axe_json}")),
         }
-        let gap_js = gap_by_url.remove(&url).unwrap_or_default();
+        let Some(gap_js) = gap_by_url.remove(&url) else {
+            wrong.push(format!(
+                "{} / {}: gap-fix batch returned no result for {url}",
+                case.mechanism, case.fixture
+            ));
+            continue;
+        };
         if let Some(result) = GapFixRules::parse_results(&gap_js).get(&case.criterion) {
             statuses.push(result.status.clone());
+            if !case.axe_native {
+                own_status = Some(result.status.clone());
+            }
             evidence.push(format!(
                 "gap-fix: {:?} {:?}",
                 result.status, result.justification
             ));
         }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
-        if failed != case.expect_fail {
+        if case.axe_native && case.expect_fail {
+            let declared_rule_fired = violation_ids(&axe_json)
+                .iter()
+                .any(|id| case.axe_rules.contains(id));
+            if !declared_rule_fired {
+                wrong.push(format!(
+                    "{} / {}: expected this axe mechanism to fail, but none of its declared rules fired ({})",
+                    case.mechanism,
+                    case.fixture,
+                    evidence.join("; ")
+                ));
+            }
+        }
+        if !case.expected_statuses.is_empty()
+            && !case
+                .expected_statuses
+                .iter()
+                .any(|expected| own_status.as_ref() == Some(expected))
+        {
+            wrong.push(format!(
+                "{} / {}: expected its own mechanism to report one of {:?}, it said {own_status:?} ({})",
+                case.mechanism,
+                case.fixture,
+                case.expected_statuses,
+                evidence.join("; ")
+            ));
+        }
+        if case.expect_pass && own_status != Some(CriterionStatus::Pass) {
+            wrong.push(format!(
+                "{} / {}: complete mechanism expected Pass, it said {own_status:?} ({})",
+                case.mechanism,
+                case.fixture,
+                evidence.join("; ")
+            ));
+        }
+        // A `Fail` is mandatory only where the mechanism declares it; a conforming
+        // fixture must draw none from any engine on its criterion.
+        let fail_expected = case.expect_failure;
+        let fail_forbidden = !case.expect_fail;
+        if (fail_expected && !failed) || (fail_forbidden && failed) {
             wrong.push(format!(
                 "{} / {}: expected {}, mechanisms said {:?} ({})",
                 case.mechanism,
                 case.fixture,
-                if case.expect_fail { "fail" } else { "no fail" },
+                if fail_expected { "fail" } else { "no fail" },
                 statuses,
                 evidence.join("; ")
             ));

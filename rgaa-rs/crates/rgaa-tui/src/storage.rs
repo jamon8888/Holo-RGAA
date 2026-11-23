@@ -236,6 +236,7 @@ mod tests {
             etat_conformite: "partielle".to_string(),
             duration_ms: 12,
             audit_complete: false,
+            audit_type: rgaa_core::AuditType::Complet,
         }
     }
 

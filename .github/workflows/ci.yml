@@ -93,6 +93,7 @@ jobs:
           ( while true; do sleep 240; echo "::notice::still building…"; done ) &
           heartbeat=$!
           (cd rgaa-rs && cargo run -p rgaa-mcp --bin dump-tool-schemas) > types/schemas.json
+          (cd rgaa-rs && cargo run -p rgaa-analysis --bin dump-analysis-schemas) > types/analysis-schemas.json
           kill "$heartbeat" 2>/dev/null || true
           python3 scripts/generate-ts-types.py
 

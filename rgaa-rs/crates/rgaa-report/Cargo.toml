@@ -12,6 +12,7 @@ pdf-native = ["dep:krilla", "dep:rustybuzz"]
 
 [dependencies]
 rgaa-core = { path = "../rgaa-core" }
+indexmap = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }

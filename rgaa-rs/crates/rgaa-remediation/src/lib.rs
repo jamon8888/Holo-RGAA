@@ -3,6 +3,7 @@ mod baseline;
 mod dedup;
 mod lifecycle;
 mod policy;
+mod priority;
 mod proposals;
 
 pub use adapters::*;
@@ -10,6 +11,7 @@ pub use baseline::*;
 pub use dedup::*;
 pub use lifecycle::*;
 pub use policy::*;
+pub use priority::*;
 pub use proposals::*;
 
 #[cfg(test)]

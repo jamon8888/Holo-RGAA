@@ -61,13 +61,16 @@ impl RuleId {
     /// `RgaaCriteria::all()` so a renumbering cannot leave a rule citing a
     /// criterion that no longer exists. The pairing follows the repository's own
     /// axe → RGAA mapping (`crates/rgaa-core/data/rgaa-4.1.2/mechanisms.toml`),
-    /// where `image-alt` → 1.1, `link-name` → 6.1 and both `label` and
-    /// `button-name` → 11.1.
+    /// and the `RGAAv4` tags axe-core puts on the equivalent rules (recorded in
+    /// `engine_plan.json`): `image-alt` → 1.1, `label` → 11.1, `button-name` →
+    /// 11.9 (RGAA-11.9.1) and `link-name` → 6.2 — a link with no name fails
+    /// "chaque lien a-t-il un intitulé ?", not the pertinence question of 6.1.
     pub const fn rgaa_criterion(self) -> &'static str {
         match self {
             Self::ImgAlt => "1.1",
-            Self::FormLabel | Self::ButtonName => "11.1",
-            Self::LinkName => "6.1",
+            Self::FormLabel => "11.1",
+            Self::ButtonName => "11.9",
+            Self::LinkName => "6.2",
         }
     }
 

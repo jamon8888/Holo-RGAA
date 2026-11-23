@@ -380,6 +380,7 @@ mod tests {
             etat_conformite: "non".to_string(),
             duration_ms: 0,
             audit_complete: false,
+            audit_type: rgaa_core::AuditType::Complet,
         }
     }
 

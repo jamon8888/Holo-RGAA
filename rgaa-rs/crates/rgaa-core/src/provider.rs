@@ -12,7 +12,7 @@
 //! workspace default may provide a model; an unconfigured environment still
 //! fails closed with a message naming the missing credential variable.
 
-use crate::completion::{CompletionParams, LlmProvenance, ResponseFormat};
+use crate::completion::{CompletionParams, LlmProvenance, ReasoningEffort, ResponseFormat};
 use crate::error::RgaaError;
 
 /// One OpenAI-compatible provider preset.
@@ -39,6 +39,112 @@ pub struct Provider {
     /// longer default timeout than a hosted API — see
     /// [`LlmSettings::timeout`].
     pub local: bool,
+}
+
+/// Offer-level IA mode (PRD D1 / P-4), read from `RGAA_LLM_MODE`.
+///
+/// `off` and `byok` are the two Souverain modes (no third-party agent
+/// required); `managed` is the Confort gateway. The default is `off` when no
+/// provider is configured, `byok` otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmMode {
+    /// No model call at all.
+    Off,
+    /// Client's own key, or a local model: Souverain.
+    Byok,
+    /// Instance gateway with prepaid credits: Confort.
+    Managed,
+}
+
+impl LlmMode {
+    /// Parses a configured value case-insensitively.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(Self::Off),
+            "byok" => Some(Self::Byok),
+            "managed" => Some(Self::Managed),
+            _ => None,
+        }
+    }
+
+    /// Configuration token, as written in `RGAA_LLM_MODE`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Byok => "byok",
+            Self::Managed => "managed",
+        }
+    }
+
+    /// Whether this is the Souverain offer.
+    #[must_use]
+    pub fn is_souverain(self) -> bool {
+        !matches!(self, Self::Managed)
+    }
+
+    /// `false` in `off`: no request may leave the process.
+    #[must_use]
+    pub fn allows_model_calls(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    /// Offer name shown by the CLI (D1).
+    #[must_use]
+    pub fn display_name(self) -> &'static str {
+        if self.is_souverain() {
+            "Souverain"
+        } else {
+            "Confort"
+        }
+    }
+}
+
+/// Hosts of agent publishers and of routers that can reach one (ticket #440).
+///
+/// Versioned here so the CLI, the agent and the raw transport all refuse the
+/// same endpoints. Subdomains are covered; client-hosted OpenAI-compatible
+/// endpoints, `api.mistral.ai` and local/private runtimes are deliberately not
+/// listed. This is a product choice to confirm with the offer owner.
+pub const FORBIDDEN_AGENT_HOSTS: &[&str] = &[
+    "api.anthropic.com",
+    "api.openai.com",
+    "generativelanguage.googleapis.com",
+    "openrouter.ai",
+];
+
+/// Lowercase host of an HTTP(S) endpoint, without userinfo, port or trailing
+/// dot. `None` when the string carries no authority.
+#[must_use]
+pub fn endpoint_host(base_url: &str) -> Option<String> {
+    let after_scheme = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    let authority = after_scheme.split(['/', '?', '#']).next()?;
+    let hostport = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if let Some(inside) = hostport.strip_prefix('[') {
+        inside.split_once(']').map_or(hostport, |(h, _)| h)
+    } else {
+        hostport.split_once(':').map_or(hostport, |(h, _)| h)
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    (!host.is_empty()).then_some(host)
+}
+
+/// Whether `base_url` resolves to a versioned agent-publisher host, including
+/// its subdomains but not lookalike suffixes.
+#[must_use]
+pub fn is_agent_publisher_endpoint(base_url: &str) -> bool {
+    let Some(host) = endpoint_host(base_url) else {
+        return false;
+    };
+    FORBIDDEN_AGENT_HOSTS.iter().any(|forbidden| {
+        host == *forbidden
+            || host
+                .strip_suffix(forbidden)
+                .is_some_and(|prefix| prefix.ends_with('.'))
+    })
 }
 
 /// Default request timeout for a hosted API.
@@ -95,7 +201,7 @@ pub const PROVIDERS: &[Provider] = &[
         name: "mistral",
         base_url: "https://api.mistral.ai/v1",
         key_var: "MISTRAL_API_KEY",
-        default_model: None,
+        default_model: Some("mistral-large-4"),
         requires_key: true,
         local: false,
     },
@@ -181,6 +287,99 @@ fn config_error(message: impl Into<String>) -> RgaaError {
     }
 }
 
+/// Whether any provider-selection variable is set (empty counts as unset).
+/// `RGAA_LLM_MODEL` and the legacy per-provider variables count too: nobody
+/// sets a model or a key unless they intend to reach a backend.
+fn provider_is_configured(var: &impl Fn(&str) -> Option<String>) -> bool {
+    const SELECTION_VARS: &[&str] = &[
+        "RGAA_LLM_PROVIDER",
+        "RGAA_LLM_MODEL",
+        "RGAA_LLM_API_KEY",
+        "MYIA_API_KEY",
+        "MYIA_BASE_URL",
+        "HOLO3_API_KEY",
+        "HOLO3_BASE_URL",
+        "HOLO3_MODEL",
+    ];
+    let is_set = |name: &str| var(name).is_some_and(|v| !v.trim().is_empty());
+    SELECTION_VARS.iter().any(|name| is_set(name)) || PROVIDERS.iter().any(|p| is_set(p.key_var))
+}
+
+/// Resolves `RGAA_LLM_MODE` and whether a provider was configured.
+///
+/// # Errors
+/// Returns [`RgaaError::Llm`] naming `RGAA_LLM_MODE` when it holds an unknown
+/// value.
+fn resolve_mode(var: &impl Fn(&str) -> Option<String>) -> Result<(LlmMode, bool), RgaaError> {
+    let configured = provider_is_configured(var);
+    let mode = match var("RGAA_LLM_MODE") {
+        Some(raw) if !raw.trim().is_empty() => LlmMode::parse(&raw).ok_or_else(|| {
+            config_error(format!(
+                "unknown RGAA_LLM_MODE `{raw}` (expected off, byok or managed)"
+            ))
+        })?,
+        _ if configured => LlmMode::Byok,
+        _ => LlmMode::Off,
+    };
+    Ok((mode, configured))
+}
+
+/// Read-only view of the active offer, for `rgaa status` and audit headers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModeStatus {
+    /// Souverain (`off` / `byok`) or Confort (`managed`).
+    pub mode: LlmMode,
+    /// Provider actually configured; `None` when nothing is configured.
+    pub provider: Option<&'static str>,
+    /// Effective LLM host; `None` when nothing is configured.
+    pub host: Option<String>,
+    /// Human-readable reason the mode was selected.
+    pub reason: String,
+}
+
+impl ModeStatus {
+    /// Resolves the mode from the process environment.
+    ///
+    /// # Errors
+    /// See [`LlmSettings::from_env`], plus an unknown `RGAA_LLM_MODE`.
+    pub fn from_env() -> Result<Self, RgaaError> {
+        Self::from_env_with(|k| std::env::var(k).ok())
+    }
+
+    /// As [`Self::from_env`], reading through `var` instead of the process
+    /// environment.
+    ///
+    /// # Errors
+    /// See [`Self::from_env`].
+    pub fn from_env_with(var: impl Fn(&str) -> Option<String>) -> Result<Self, RgaaError> {
+        let (_, configured) = resolve_mode(&var)?;
+        let settings = LlmSettings::from_env_with(&var)?;
+        let mode = settings.mode;
+        let reason = match (mode, configured) {
+            (LlmMode::Off, false) => {
+                "aucun fournisseur LLM configuré : aucun appel modèle (D1)".to_string()
+            }
+            (LlmMode::Off, true) => "RGAA_LLM_MODE=off : aucun appel modèle (D1)".to_string(),
+            (LlmMode::Byok, _) => {
+                "clé du client ou modèle local, aucun agent tiers requis (D1)".to_string()
+            }
+            (LlmMode::Managed, _) => {
+                "passerelle managed de l'instance, crédits prépayés (D1, D4)".to_string()
+            }
+        };
+        Ok(Self {
+            mode,
+            provider: configured.then_some(settings.provider.name),
+            host: if configured {
+                endpoint_host(&settings.base_url)
+            } else {
+                None
+            },
+            reason,
+        })
+    }
+}
+
 /// Fully resolved LLM settings for one route.
 ///
 /// Build with [`Self::from_env`] (the whole process environment) or
@@ -188,6 +387,8 @@ fn config_error(message: impl Into<String>) -> RgaaError {
 /// fallback route in `rgaa-holo`).
 #[derive(Clone, PartialEq)]
 pub struct LlmSettings {
+    /// Offer-level mode this route was resolved under (D1, P-4).
+    pub mode: LlmMode,
     /// Preset this was resolved from; `name` is recorded with verdicts.
     pub provider: &'static Provider,
     /// Effective base URL, after any `RGAA_LLM_BASE_URL` override.
@@ -211,6 +412,7 @@ pub struct LlmSettings {
 impl std::fmt::Debug for LlmSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LlmSettings")
+            .field("mode", &self.mode.as_str())
             .field("provider", &self.provider.name)
             .field("base_url", &self.base_url)
             .field(
@@ -297,6 +499,9 @@ impl LlmSettings {
         // hiding the provider's own, a blank timeout failing to parse).
         let non_empty = |v: String| Some(v).filter(|v| !v.trim().is_empty());
         let get = |name: &str| var(name).and_then(non_empty);
+        // `RGAA_LLM_MODE` is unprefixed: it is an offer-level setting, not a
+        // per-route one. Both the primary and any fallback route obey it.
+        let (mode, _) = resolve_mode(var)?;
         let provider_var = key("PROVIDER");
         let explicitly_selected_provider = get(&provider_var);
         let has_myia_key = get("MYIA_API_KEY").is_some();
@@ -349,6 +554,25 @@ impl LlmSettings {
                 "{base_url_var} is not set (required by provider `custom`)"
             )));
         }
+        // D1 / D4: `managed` is the instance gateway, which is always
+        // configured explicitly. The fallback route has no gateway of its own.
+        if mode == LlmMode::Managed && is_primary && get("RGAA_LLM_BASE_URL").is_none() {
+            return Err(config_error(
+                "RGAA_LLM_BASE_URL is required when RGAA_LLM_MODE=managed (instance gateway)",
+            ));
+        }
+        // Ticket #440: the Souverain offer never sends data to an agent
+        // publisher (or to a router that can reach one). Fail at resolution,
+        // before any client is built, with a distinct error code.
+        if mode.is_souverain() && is_agent_publisher_endpoint(&base_url) {
+            return Err(RgaaError::Llm {
+                message: format!(
+                    "mode {} (Souverain) refuse l'endpoint {base_url} : éditeur d'agent ou routeur (liste versionnée dans rgaa-core)",
+                    mode.as_str()
+                ),
+                code: Some("AGENT_PUBLISHER_FORBIDDEN".to_string()),
+            });
+        }
 
         let api_key_var = key("API_KEY");
         // Provider-native keys belong to the primary route only. A fallback
@@ -358,7 +582,9 @@ impl LlmSettings {
         let api_key = get(&api_key_var)
             .or_else(|| native_key(provider.key_var))
             .unwrap_or_default();
-        if provider.requires_key && api_key.is_empty() {
+        // In `off` no request is ever sent, so a missing credential is not a
+        // startup error: the CLI must still be able to report the mode.
+        if provider.requires_key && api_key.is_empty() && mode.allows_model_calls() {
             let required_var = if is_primary {
                 format!("{} or {api_key_var}", provider.key_var)
             } else {
@@ -371,15 +597,19 @@ impl LlmSettings {
         }
 
         let model_var = key("MODEL");
-        let model = get(&model_var)
+        let model = match get(&model_var)
             .or_else(|| holo3_setting("HOLO3_MODEL"))
             .or_else(|| provider.default_model.map(str::to_string))
-            .ok_or_else(|| {
-                config_error(format!(
+        {
+            Some(model) => model,
+            None if !mode.allows_model_calls() => String::new(),
+            None => {
+                return Err(config_error(format!(
                     "{model_var} is not set (provider `{}` has no default model)",
                     provider.name
-                ))
-            })?;
+                )))
+            }
+        };
 
         // A blank tier variable falls back to the route's model rather than
         // being sent as an empty model identifier.
@@ -467,7 +697,19 @@ impl LlmSettings {
             None => ResponseFormat::None,
         };
 
+        let effort_var = key("REASONING_EFFORT");
+        let reasoning_effort = match get(&effort_var) {
+            Some(raw) => Some(ReasoningEffort::parse(&raw).ok_or_else(|| {
+                config_error(format!(
+                    "{effort_var} is `{raw}` (expected low, medium or high; \
+                     `none` is refused by Mistral Large 4)"
+                ))
+            })?),
+            None => None,
+        };
+
         Ok(Self {
+            mode,
             provider,
             // A trailing slash would produce `/v1//chat/completions`.
             base_url: base_url.trim_end_matches('/').to_string(),
@@ -481,6 +723,7 @@ impl LlmSettings {
                 max_tokens,
                 enable_thinking,
                 response_format,
+                reasoning_effort,
             },
         })
     }
@@ -551,6 +794,70 @@ mod tests {
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect();
         move |k| map.get(k).cloned()
+    }
+
+    #[test]
+    fn mistral_defaults_to_the_pinned_large_4_model() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+        ]))
+        .unwrap();
+        // A versioned identifier, not `mistral-large-latest`: verdicts must
+        // stay reproducible when Mistral moves the floating alias.
+        assert_eq!(s.model, "mistral-large-4");
+        assert_eq!(s.model_tactical, "mistral-large-4");
+        assert_eq!(s.model_reasoning, "mistral-large-4");
+        assert_eq!(
+            s.chat_completions_url(),
+            "https://api.mistral.ai/v1/chat/completions"
+        );
+    }
+
+    /// Mistral Large 4 always reasons and defaults to `high`; the effort is
+    /// the cost lever, so it must reach the wire on both LLM paths.
+    #[test]
+    fn reasoning_effort_reaches_the_request_body_on_both_paths() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+            ("RGAA_LLM_REASONING_EFFORT", "Low"),
+        ]))
+        .unwrap();
+        assert_eq!(s.params.extra_body()["reasoning_effort"], "low");
+        assert_eq!(
+            s.params.extra_body_without_response_format()["reasoning_effort"],
+            "low"
+        );
+        assert!(s.provenance("m").summary().contains("reasoning_effort=low"));
+    }
+
+    #[test]
+    fn reasoning_effort_unset_sends_nothing() {
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+        ]))
+        .unwrap();
+        assert!(!s.params.extra_body().contains_key("reasoning_effort"));
+    }
+
+    /// `none` is refused by Mistral Large 4 (HTTP 400) and by NVIDIA's
+    /// endpoint; fail at configuration time instead of on every call.
+    #[test]
+    fn reasoning_effort_none_or_unknown_is_rejected() {
+        for bad in ["none", "max", "hgh"] {
+            let err = LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "mistral"),
+                ("MISTRAL_API_KEY", "k"),
+                ("RGAA_LLM_REASONING_EFFORT", bad),
+            ]))
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("RGAA_LLM_REASONING_EFFORT"),
+                "{bad}: {err}"
+            );
+        }
     }
 
     #[test]
@@ -729,6 +1036,8 @@ mod tests {
     fn per_tier_models_override_the_default() {
         let s = LlmSettings::from_env_with(env(&[
             ("RGAA_LLM_PROVIDER", "openrouter"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://openrouter.ai/api/v1"),
             ("RGAA_LLM_API_KEY", "k"),
             ("RGAA_LLM_MODEL", "mistralai/mistral-small"),
             ("RGAA_LLM_MODEL_TACTICAL", "mistralai/ministral-8b"),
@@ -778,6 +1087,8 @@ mod tests {
     fn timeouts_default_by_locality_and_are_overridable() {
         let remote = LlmSettings::from_env_with(env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "k"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
         ]))
@@ -827,6 +1138,8 @@ mod tests {
     fn debug_never_leaks_the_key() {
         let s = LlmSettings::from_env_with(env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "sk-super-secret"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
         ]))
@@ -840,6 +1153,8 @@ mod tests {
     fn a_prefixed_route_reads_only_its_own_variables() {
         let vars = env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "primary-key"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
             ("RGAA_LLM_FALLBACK_PROVIDER", "ollama"),
@@ -865,6 +1180,8 @@ mod tests {
         // here. CWE-522.
         let vars = env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "sk-primary-secret"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
             ("RGAA_LLM_FALLBACK_PROVIDER", "custom"),
@@ -886,6 +1203,8 @@ mod tests {
         // A fallback key set explicitly is still honoured.
         let vars = env(&[
             ("RGAA_LLM_PROVIDER", "openai"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://api.openai.com/v1"),
             ("RGAA_LLM_API_KEY", "sk-primary-secret"),
             ("RGAA_LLM_MODEL", "gpt-4o-mini"),
             ("RGAA_LLM_FALLBACK_PROVIDER", "custom"),
@@ -946,6 +1265,9 @@ mod tests {
             let err = LlmSettings::from_env_with(env(&[
                 ("RGAA_LLM_PROVIDER", p.name),
                 ("RGAA_LLM_MODEL", "m"),
+                // Neutral host: this test is about credentials, not the
+                // Souverain refusal of agent-publisher hosts.
+                ("RGAA_LLM_BASE_URL", "https://llm.example/v1"),
             ]))
             .unwrap_err();
             assert!(err.to_string().contains(p.key_var), "{}: {err}", p.name);
@@ -1117,5 +1439,138 @@ mod tests {
         assert_eq!(p.enable_thinking, Some(false));
         assert_eq!(p.response_format, "none");
         assert!(p.summary().contains("thinking=off"), "{}", p.summary());
+    }
+
+    // Ticket #440 — the two offers are driven by RGAA_LLM_MODE (D1, P-4).
+    // Expected values come from the coordinator's decision, not from the
+    // implementation: off/byok => Souverain, managed => Confort.
+
+    #[test]
+    fn mode_defaults_to_off_then_byok_when_a_provider_is_configured() {
+        let off = LlmSettings::from_env_with(env(&[])).unwrap();
+        assert_eq!(off.mode, LlmMode::Off);
+        assert_eq!(off.mode.display_name(), "Souverain");
+        assert!(!off.mode.allows_model_calls());
+
+        let byok = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+        ]))
+        .unwrap();
+        assert_eq!(byok.mode, LlmMode::Byok);
+        assert_eq!(byok.mode.display_name(), "Souverain");
+        assert!(byok.mode.allows_model_calls());
+    }
+
+    #[test]
+    fn managed_mode_requires_the_instance_gateway_url() {
+        let err = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+            ("RGAA_LLM_MODE", "managed"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("RGAA_LLM_BASE_URL"), "{err}");
+
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+            ("RGAA_LLM_MODE", "managed"),
+            ("RGAA_LLM_BASE_URL", "https://gateway.rgaa.example/v1"),
+        ]))
+        .unwrap();
+        assert_eq!(s.mode, LlmMode::Managed);
+        assert_eq!(s.mode.display_name(), "Confort");
+    }
+
+    #[test]
+    fn an_unknown_llm_mode_fails_closed() {
+        for bad in ["bidon", "auto", "managed-v2"] {
+            let err = LlmSettings::from_env_with(env(&[("RGAA_LLM_MODE", bad)])).unwrap_err();
+            assert!(err.to_string().contains("RGAA_LLM_MODE"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn souverain_mode_refuses_agent_publisher_hosts_and_subdomains() {
+        // Versioned list from the coordinator's decision (#440): these are
+        // agent publishers or routers that can reach one.
+        for url in [
+            "https://api.anthropic.com/v1",
+            "https://api.openai.com/v1",
+            "https://openrouter.ai/api/v1",
+            "https://generativelanguage.googleapis.com/v1beta",
+            "https://eu.api.openai.com/v1",
+        ] {
+            let err = LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "custom"),
+                ("RGAA_LLM_BASE_URL", url),
+                ("RGAA_LLM_MODEL", "m"),
+            ]))
+            .unwrap_err();
+            assert!(
+                format!("{err:?}").contains("AGENT_PUBLISHER_FORBIDDEN"),
+                "{url}: {err:?}"
+            );
+        }
+
+        // The list is a suffix match on host labels, not a substring match:
+        // a client-hosted endpoint whose name merely ends in the same text
+        // is not an agent publisher.
+        for url in [
+            "https://api.mistral.ai/v1",
+            "http://localhost:11434/v1",
+            "http://10.0.0.5:8000/v1",
+            "https://llm.interne.example/v1",
+            "https://api.anthropic.com.evil.example/v1",
+        ] {
+            let s = LlmSettings::from_env_with(env(&[
+                ("RGAA_LLM_PROVIDER", "custom"),
+                ("RGAA_LLM_BASE_URL", url),
+                ("RGAA_LLM_MODEL", "m"),
+            ]))
+            .unwrap();
+            assert_eq!(s.base_url, url, "{url} was refused in Souverain mode");
+            assert_eq!(s.mode, LlmMode::Byok);
+        }
+    }
+
+    #[test]
+    fn managed_mode_may_point_at_a_gateway_host() {
+        // Confort declares flows to agent publishers (P-1): the refusal is a
+        // Souverain guarantee only.
+        let s = LlmSettings::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "custom"),
+            (
+                "RGAA_LLM_BASE_URL",
+                "https://api.anthropic.example-gateway.net/v1",
+            ),
+            ("RGAA_LLM_MODEL", "m"),
+            ("RGAA_LLM_MODE", "managed"),
+        ]))
+        .unwrap();
+        assert_eq!(s.mode, LlmMode::Managed);
+    }
+
+    #[test]
+    fn mode_status_reports_mode_provider_host_and_reason() {
+        let status = ModeStatus::from_env_with(env(&[])).unwrap();
+        assert_eq!(status.mode, LlmMode::Off);
+        assert_eq!(status.provider, None);
+        assert_eq!(status.host, None);
+        assert!(
+            status.reason.contains("aucun fournisseur"),
+            "{}",
+            status.reason
+        );
+
+        let status = ModeStatus::from_env_with(env(&[
+            ("RGAA_LLM_PROVIDER", "mistral"),
+            ("MISTRAL_API_KEY", "k"),
+        ]))
+        .unwrap();
+        assert_eq!(status.mode, LlmMode::Byok);
+        assert_eq!(status.provider, Some("mistral"));
+        assert_eq!(status.host.as_deref(), Some("api.mistral.ai"));
     }
 }

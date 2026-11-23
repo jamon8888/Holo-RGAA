@@ -2,22 +2,29 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use rgaa_core::{
-    AuditBundle, AuditSummary, AutomatedVerdict, CriterionResult, CriterionStatus, Finding,
-    PageResult, RgaaCriteria, VerdictBasis,
+    AuditBundle, AuditSummary, AuditType, AutomatedVerdict, CriterionResult, CriterionStatus,
+    Finding, PageResult, RgaaCriteria, VerdictBasis, TRANSVERSE_PAGE_URL,
+    TRANSVERSE_REFERENCE_SOURCE,
 };
 
 pub fn generate_html_report(bundle: &AuditBundle) -> String {
     let mut html = String::new();
-    write_html_header(&mut html, &bundle.audit_id, &bundle.url);
+    write_html_header(
+        &mut html,
+        &bundle.audit_id,
+        &bundle.url,
+        bundle.config.audit_type,
+    );
     write_html_summary(&mut html, bundle);
     write_html_stats(&mut html, &bundle.summary);
     write_html_findings(&mut html, bundle);
+    crate::non_conformity::write_html_non_conformities(&mut html, bundle);
     write_html_all_criteria(&mut html, bundle);
     write_html_footer(&mut html);
     html
 }
 
-fn write_html_header(html: &mut String, audit_id: &str, url: &str) {
+fn write_html_header(html: &mut String, audit_id: &str, url: &str, audit_type: AuditType) {
     let _ = writeln!(
         html,
         r#"<!DOCTYPE html>
@@ -68,8 +75,16 @@ fn write_html_header(html: &mut String, audit_id: &str, url: &str) {
         <header>
             <h1>RGAA Audit Report</h1>
             <p class="meta">ID: {} | URL: {}</p>
+            <p class="meta">Type d'audit : {} ({} critères){}</p>
         </header>"#,
-        audit_id, audit_id, url
+        audit_id,
+        audit_id,
+        url,
+        audit_type.label(),
+        audit_type.count(),
+        audit_type
+            .partial_notice()
+            .map_or_else(String::new, |notice| format!(" — {notice}"))
     );
 }
 
@@ -248,6 +263,20 @@ fn write_html_findings(html: &mut String, bundle: &AuditBundle) {
     );
 }
 
+/// Contenu de la colonne « Éléments transverses » (ticket #429).
+///
+/// La page virtuelle porte l'unique finding ; les pages de l'échantillon
+/// renvoient à cette page plutôt que de répéter la preuve et la décision.
+fn transverse_cell(page: &rgaa_core::PageAudit, criterion: &CriterionResult) -> &'static str {
+    if page.url == TRANSVERSE_PAGE_URL {
+        "Page transverses"
+    } else if criterion.source == TRANSVERSE_REFERENCE_SOURCE {
+        "Voir page transverses"
+    } else {
+        "—"
+    }
+}
+
 /// Lists every one of the 106 RGAA criteria for every audited page — pass,
 /// fail, needs human review, not applicable, not tested, error — so the
 /// report is a complete record, not just aggregate scores.
@@ -267,6 +296,7 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <th>Statut vérifié</th>
                     <th>Détail</th>
                     <th>Évaluation et preuves</th>
+                    <th>Éléments transverses</th>
                 </tr>
             </thead>
             <tbody>"#,
@@ -299,6 +329,7 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     <td>{}</td>
                     <td>{}</td>
                     <td>{}</td>
+                    <td>{}</td>
                 </tr>"#,
                 escape_html(&criterion.criterion_id),
                 escape_html(title),
@@ -311,7 +342,8 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
                     .map(status_text)
                     .unwrap_or("Non vérifié"),
                 escape_html(&criterion_detail(criterion)),
-                assessment_cell(criterion)
+                assessment_cell(criterion),
+                transverse_cell(page, criterion)
             );
         }
 
@@ -571,8 +603,30 @@ fn escape_html(s: &str) -> String {
 mod tests {
     use super::*;
     use rgaa_core::{
-        AuditConfig, Classification, EvidenceRef, PageAudit, ReviewEvent, TestOutcome, VerdictBasis,
+        AuditConfig, Classification, EvidenceRef, NonConformity, PageAudit, ReviewEvent,
+        TestOutcome, UserImpact, VerdictBasis,
     };
+
+    /// The HTML report exposes the reviewed impact and quick win (ticket #431).
+    #[test]
+    fn html_report_contains_non_conformity_impact_and_quick_win() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        let mut item = NonConformity::new("nc-1", "12.9", "https://example.test", "Piège clavier");
+        item.record_review(
+            UserImpact::Bloquant,
+            true,
+            "auditrice",
+            "2026-11-21T10:00:00Z",
+        )
+        .expect("valid review");
+        bundle.non_conformities = vec![item];
+
+        let html = generate_html_report(&bundle);
+        assert!(html.contains("<h2>Non-conformités</h2>"));
+        assert!(html.contains("bloquant"));
+        assert!(html.contains("Piège clavier"));
+    }
 
     fn criterion(id: &str, status: CriterionStatus) -> CriterionResult {
         CriterionResult {

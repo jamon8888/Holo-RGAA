@@ -151,6 +151,18 @@ fn reviewed_mapping() -> Vec<Entry> {
         assert_eq!(before - entry.axe_rules.len(), rules.len(), "{id}");
     }
 
+    // #436 : button-name et input-button-name sont tagués RGAA-11.9.1 par
+    // axe-core ; ils relèvent de 11.9 et ne doivent plus figurer sous 11.1.
+    let entry = mapping
+        .iter_mut()
+        .find(|entry| entry.criterion_id == "11.1")
+        .expect("11.1 doit être présent dans la table gelée");
+    let before = entry.axe_rules.len();
+    entry
+        .axe_rules
+        .retain(|rule| rule != "button-name" && rule != "input-button-name");
+    assert_eq!(before - entry.axe_rules.len(), 2, "11.1");
+
     // #280 : titre de page (couverture complète) et noms des boutons (partielle).
     for (id, coverage, rules) in [
         ("8.5", "complete", &["document-title"][..]),

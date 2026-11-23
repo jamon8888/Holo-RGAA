@@ -178,9 +178,11 @@ pub fn validate_export(bundle: &AuditBundle, pack: &ExportPack) -> Result<(), Re
         }
     }
     if let Some(conservation) = &pack.conservation {
-        if vide(&conservation.debut) || conservation.duree_annees < CONSERVATION_MIN_ANS {
+        if chrono::NaiveDate::parse_from_str(&conservation.debut, "%Y-%m-%d").is_err()
+            || conservation.duree_annees < CONSERVATION_MIN_ANS
+        {
             return Err(ReportError::invalid_input(format!(
-                "conservation de la documentation technique : début et {CONSERVATION_MIN_ANS} ans minimum exigés"
+                "conservation de la documentation technique : début au format YYYY-MM-DD et {CONSERVATION_MIN_ANS} ans minimum exigés"
             )));
         }
     }
@@ -308,6 +310,17 @@ mod tests {
         assert!(validate_export(&bundle, &pack).is_err());
         pack.conservation.as_mut().unwrap().duree_annees = 5;
         assert!(validate_export(&bundle, &pack).is_ok());
+    }
+
+    #[test]
+    fn conservation_date_invalide_bloque() {
+        let mut pack = pack();
+        let bundle = bundle_with(Vec::new());
+        pack.conservation = Some(Conservation {
+            debut: "2026-13-45".into(),
+            duree_annees: CONSERVATION_MIN_ANS,
+        });
+        assert!(validate_export(&bundle, &pack).is_err());
     }
 
     #[test]

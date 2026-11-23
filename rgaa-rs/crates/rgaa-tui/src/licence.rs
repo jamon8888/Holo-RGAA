@@ -15,7 +15,8 @@ use rgaa_cli::license::messages as fr;
 use rgaa_license::cache::{LICENSE_FILE, LICENSE_KEY_ENV};
 use rgaa_license::gate::LICENSE_SERVER_ENV;
 use rgaa_license::{
-    LicenseCache, LicenseClaims, LicenseFile, LicenseGate, LicenseSnapshot, LicenseStatus,
+    LicenseCache, LicenseClaims, LicenseError, LicenseFile, LicenseGate, LicenseSnapshot,
+    LicenseStatus,
 };
 
 /// Where the licence in effect comes from.
@@ -61,7 +62,7 @@ pub fn read_token(token: Option<String>, file: Option<&Path>) -> anyhow::Result<
 }
 
 /// Verifies `token` and, only if it is usable, writes it to `path` (mode
-/// 0600) with `last_validated = now`. Nothing is written on refusal.
+/// 0600). Re-activating the same token preserves its grace-period baseline.
 pub fn activate(
     gate: &LicenseGate,
     token: &str,
@@ -80,9 +81,17 @@ pub fn activate(
             fr::date(claims.exp)
         );
     }
+    if let Some(at) = claims.nbf.filter(|at| now < *at) {
+        bail!(
+            "Clé refusée : {}. Aucun fichier n'a été écrit.",
+            fr::invalid_reason(&LicenseError::NotYetValid { at })
+        );
+    }
+    let previous = LicenseCache::load_license(path).ok().flatten();
+    let last_validated = activation_baseline(token, previous, now);
     let file = LicenseFile {
         token: token.to_string(),
-        last_validated: now,
+        last_validated,
     };
     LicenseCache::store_license(path, &file).map_err(|e| {
         anyhow!(
@@ -134,7 +143,7 @@ pub fn render_status(
     snap: &LicenseSnapshot,
     now: DateTime<Utc>,
     source: &LicenceSource,
-    online_check: bool,
+    grace_enabled: bool,
 ) -> String {
     let mut lines = vec![
         format!("Offre :      {}", fr::tier_name(snap.tier)),
@@ -172,16 +181,18 @@ pub fn render_status(
         lines.push(format!("Titulaire :  {}", claims.sub));
         lines.push(format!("Expiration : {}", fr::date(claims.exp)));
     }
-    let online = match (&snap.last_validated, source, online_check) {
-        (_, LicenceSource::Env, _) => format!("non suivie (clé fournie par {LICENSE_KEY_ENV})"),
-        (Some(at), _, true) => fr::date(*at),
-        (Some(at), _, false) => format!(
-            "{} (vérification en ligne désactivée : {LICENSE_SERVER_ENV} non défini)",
-            fr::date(*at)
-        ),
-        (None, _, _) => "jamais".to_string(),
+    let baseline = snap
+        .last_validated
+        .map(fr::date)
+        .unwrap_or_else(|| "jamais".to_string());
+    let grace_note = if grace_enabled {
+        String::new()
+    } else {
+        format!(" (grâce désactivée : {LICENSE_SERVER_ENV} non défini)")
     };
-    lines.push(format!("Dernière vérification en ligne : {online}"));
+    lines.push(format!(
+        "Référence de la période de grâce : {baseline}{grace_note}"
+    ));
 
     let rate = &snap.rate;
     let used = rate.limit.saturating_sub(rate.remaining);
@@ -227,6 +238,36 @@ fn env_token() -> Option<String> {
         .filter(|t| !t.trim().is_empty())
 }
 
+fn activation_baseline(
+    token: &str,
+    previous: Option<LicenseFile>,
+    now: DateTime<Utc>,
+) -> DateTime<Utc> {
+    previous
+        .filter(|file| file.token == token)
+        .map_or(now, |file| file.last_validated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn reactivating_the_same_token_keeps_its_grace_baseline() {
+        let saved_at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let reactivated_at = Utc.with_ymd_and_hms(2026, 1, 9, 0, 0, 0).unwrap();
+        let file = LicenseFile {
+            token: "same-token".into(),
+            last_validated: saved_at,
+        };
+        assert_eq!(
+            activation_baseline("same-token", Some(file), reactivated_at),
+            saved_at
+        );
+    }
+}
+
 fn default_path() -> anyhow::Result<PathBuf> {
     LicenseCache::default_dir()
         .map(|d| licence_path(&d))
@@ -251,10 +292,10 @@ pub fn cmd_status() -> anyhow::Result<()> {
         env_token().as_deref(),
         LicenseCache::default_dir().map(|d| licence_path(&d)),
     );
-    let online = gate.config().grace.is_some();
+    let grace_enabled = gate.config().grace.is_some();
     println!(
         "{}",
-        render_status(&gate.snapshot(), Utc::now(), &source, online)
+        render_status(&gate.snapshot(), Utc::now(), &source, grace_enabled)
     );
     Ok(())
 }

@@ -127,7 +127,7 @@ fn grace_admits_with_warning_then_expires() {
     install(&g, token.clone(), now() - Duration::days(3));
     assert_eq!(
         admit(&g, Feature::FullAudit, now()).unwrap().as_deref(),
-        Some("Licence non vérifiée en ligne depuis 3 jours — mode hors ligne, 4 jours restants.")
+        Some("Licence activée depuis 3 jours — mode hors ligne, 4 jours restants.")
     );
 
     install(&g, token, now() - Duration::days(8));

@@ -153,7 +153,7 @@ lint); full audits, guided tests (`igt`) and remediation need
 
 ```bash
 rgaa licence activate <key>   # stores ~/.config/rgaa/license.toml (0600)
-rgaa licence status           # tier, status, expiry, last online check, quota
+rgaa licence status           # tier, status, expiry, grace baseline, quota
 ```
 
 Or set `RGAA_LICENSE_KEY` in the server's environment (see

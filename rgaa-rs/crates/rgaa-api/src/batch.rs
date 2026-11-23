@@ -607,13 +607,15 @@ pub async fn create_batch(
 
     if let Err(e) = service.store.insert(&record).await {
         tracing::error!(error = %e, "batch store insert failed");
-        return (
+        let mut response = (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorBody {
                 error: "failed to persist batch".to_string(),
             }),
         )
             .into_response();
+        set_license_headers(&mut response, admission.headers());
+        return response;
     }
 
     let response = CreateBatchResponse {

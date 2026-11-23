@@ -46,19 +46,20 @@ pub mod headers {
 pub const JSONRPC_LICENSE_REQUIRED: i32 = -32002;
 pub const JSONRPC_QUOTA_EXCEEDED: i32 = -32003;
 
-/// Set to the licence service base URL to enable online revalidation and the
-/// offline grace period.
+/// A non-empty value enables the offline grace period. It is not read and no
+/// online revalidation is currently performed.
 pub const LICENSE_SERVER_ENV: &str = "RGAA_LICENSE_SERVER";
 /// Overrides the 7-day default grace period.
 pub const GRACE_DAYS_ENV: &str = "RGAA_LICENSE_GRACE_DAYS";
 pub const DEFAULT_GRACE_DAYS: i64 = 7;
+const ENV_LICENSE_BASELINE_FILE: &str = "environment-license.toml";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LicenseStatus {
     /// No licence installed: Free tier.
     Unlicensed,
     Valid,
-    /// Not confirmed online recently, still inside the grace period.
+    /// The local activation baseline is old, but still inside the grace period.
     Grace {
         until: DateTime<Utc>,
     },
@@ -66,7 +67,7 @@ pub enum LicenseStatus {
     Expired {
         at: DateTime<Utc>,
     },
-    /// Offline too long: runs as Free until the next successful online check.
+    /// The local activation baseline exceeded grace: runs as Free.
     GraceExceeded {
         since: DateTime<Utc>,
     },
@@ -89,12 +90,11 @@ impl LicenseStatus {
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
-    /// Offline grace counted from `last_validated`. `None` disables it: the
-    /// token's own `exp` is then the only expiry. Disabled by default while no
-    /// licence service exists to revalidate against, otherwise every licence
-    /// would decay to Free a week after activation.
+    /// Offline grace counted from the local activation baseline. `None`
+    /// disables it, leaving the token's own `exp` as the only expiry. Disabled
+    /// by default because no online revalidation is currently performed.
     pub grace: Option<Duration>,
-    /// Past this age without an online check the status reports `grace`.
+    /// Past this age the status reports `grace`; no online check is performed.
     pub revalidate_after: Duration,
     /// Off for local stdio/CLI use, where a counter in a user-writable file is
     /// not enforceable; tier gating still applies.
@@ -181,8 +181,8 @@ impl LicenseGate {
     /// Production wiring from the environment and `~/.config/rgaa/`:
     /// - token from `RGAA_LICENSE_KEY`, else `license.toml`;
     /// - verification keys from the built-in list plus `RGAA_LICENSE_PUBLIC_KEYS`;
-    /// - grace enabled only when `RGAA_LICENSE_SERVER` is set
-    ///   (`RGAA_LICENSE_GRACE_DAYS`, default 7);
+    /// - grace enabled only when `RGAA_LICENSE_SERVER` is non-empty
+    ///   (`RGAA_LICENSE_GRACE_DAYS`, default 7); this does not perform online checks;
     /// - usage persisted to `usage.toml` when a config dir exists.
     ///
     /// Never fails: an unusable licence becomes [`LicenseStatus::Invalid`]
@@ -221,13 +221,42 @@ impl LicenseGate {
         let env_token = std::env::var(LICENSE_KEY_ENV)
             .ok()
             .filter(|t| !t.trim().is_empty());
-        let file = match (env_token, &dir) {
-            (Some(token), _) => Ok(Some(LicenseFile {
-                token,
-                last_validated: now,
-            })),
-            (None, Some(d)) => LicenseCache::load_license(&d.join(LICENSE_FILE)),
-            (None, None) => Ok(None),
+        let file = match env_token {
+            Some(token) => {
+                let cached = dir.as_ref().and_then(|d| {
+                    match LicenseCache::load_license(&d.join(ENV_LICENSE_BASELINE_FILE)) {
+                        Ok(file) => file,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "ignoring unreadable environment licence baseline");
+                            None
+                        }
+                    }
+                });
+                let has_env_baseline = cached.as_ref().is_some_and(|f| f.token == token);
+                let cached = cached.filter(|file| file.token == token).or_else(|| {
+                    dir.as_ref().and_then(|d| {
+                        LicenseCache::load_license(&d.join(LICENSE_FILE))
+                            .ok()
+                            .flatten()
+                            .filter(|file| file.token == token)
+                    })
+                });
+                let file = environment_license_file(token, cached, now);
+                if !has_env_baseline {
+                    if let Some(d) = &dir {
+                        if let Err(e) =
+                            LicenseCache::store_license(&d.join(ENV_LICENSE_BASELINE_FILE), &file)
+                        {
+                            tracing::warn!(error = %e, "failed to persist licence baseline");
+                        }
+                    }
+                }
+                Ok(Some(file))
+            }
+            None => match &dir {
+                Some(d) => LicenseCache::load_license(&d.join(LICENSE_FILE)),
+                None => Ok(None),
+            },
         };
         match (key_error, file) {
             (_, Ok(None)) => {}
@@ -431,6 +460,40 @@ impl LicenseGate {
             rate: Some(rate),
             now,
         })
+    }
+}
+
+fn environment_license_file(
+    token: String,
+    cached: Option<LicenseFile>,
+    now: DateTime<Utc>,
+) -> LicenseFile {
+    cached
+        .filter(|file| file.token == token)
+        .unwrap_or(LicenseFile {
+            token,
+            last_validated: now,
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn environment_token_keeps_its_saved_grace_baseline() {
+        let saved_at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let started_at = Utc.with_ymd_and_hms(2026, 1, 9, 0, 0, 0).unwrap();
+        let file = environment_license_file(
+            "same-token".into(),
+            Some(LicenseFile {
+                token: "same-token".into(),
+                last_validated: saved_at,
+            }),
+            started_at,
+        );
+        assert_eq!(file.last_validated, saved_at);
     }
 }
 

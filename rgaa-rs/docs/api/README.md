@@ -31,7 +31,7 @@ DATABASE_URL=postgres://user:pass@localhost/rgaa rgaa-api
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://localhost/rgaa` |
 | `RGAA_LICENSE_KEY` | Licence token (overrides `~/.config/rgaa/license.toml`) | none: Free tier |
 | `RGAA_LICENSE_PUBLIC_KEYS` | Extra `k4.public.…` keys trusted to sign licences | none |
-| `RGAA_LICENSE_SERVER` | Licence service URL; enables online revalidation and the offline grace period | unset (grace disabled) |
+| `RGAA_LICENSE_SERVER` | Non-empty toggle for the offline grace period; its value is not read and no revalidation request is made | unset (grace disabled) |
 | `RGAA_LICENSE_GRACE_DAYS` | Offline grace period, in days | `7` |
 
 ## Licensing (#87)
@@ -58,7 +58,7 @@ send nothing extra; activate the licence on the server host with
 |--------|--------|---------|--------|
 | `401` | `license_invalid` | Licence present but unusable (signature, format, not yet valid) | No: fix the licence |
 | `402` | `feature_not_in_tier` | Route needs a higher tier (`required_tier`) | No: upgrade (`upgrade_url`) |
-| `402` | `license_expired` | Licence expired, or offline grace exceeded | No: renew / reconnect |
+| `402` | `license_expired` | Licence expired, or offline grace exceeded | Renew the licence |
 | `429` | `quota_exceeded` | Daily quota used up | After `Retry-After` |
 
 ```json

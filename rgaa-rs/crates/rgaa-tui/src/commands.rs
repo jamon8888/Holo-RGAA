@@ -6,7 +6,7 @@ pub async fn audit(url: Option<String>, output: Option<PathBuf>) -> anyhow::Resu
     let gate = rgaa_cli::license::gate_from_env();
     if let Some(warning) =
         rgaa_cli::license::admit(&gate, rgaa_license::Feature::FullAudit, chrono::Utc::now())
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?
+            .map_err(anyhow::Error::new)?
     {
         eprintln!("{warning}");
     }

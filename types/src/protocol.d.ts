@@ -59,7 +59,7 @@ export interface JsonRpcResponse<R = unknown> {
   jsonrpc: "2.0";
   id: number | string | null;
   result?: R;
-  error?: JsonRpcError;
+  error?: JsonRpcError | JsonRpcLicenseError;
 }
 
 /**

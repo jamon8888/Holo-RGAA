@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
+use axum::extract::State;
 use axum::http::{header, Method, Request, StatusCode};
 use axum::response::Response;
 use axum::routing::post;
@@ -423,7 +424,8 @@ async fn cors_exposes_licence_headers_even_on_refusals() {
 
 // ---- resilience ----------------------------------------------------------
 
-async fn slow() -> &'static str {
+async fn slow(State(started): State<Arc<tokio::sync::Notify>>) -> &'static str {
+    started.notify_one();
     tokio::time::sleep(Duration::from_millis(400)).await;
     "ok"
 }
@@ -435,7 +437,10 @@ async fn slow() -> &'static str {
 #[tokio::test(flavor = "multi_thread")]
 async fn quota_refusal_is_429_not_503_under_the_resilience_stack() {
     let gate = gate(Licence::Tier(Tier::Professional, Some(1)));
-    let router = Router::new().route("/v1/audit-bundles", post(slow));
+    let started = Arc::new(tokio::sync::Notify::new());
+    let router = Router::new()
+        .route("/v1/audit-bundles", post(slow))
+        .with_state(started.clone());
     let router = apply_resilience(router, 1, Duration::from_secs(5)).route_layer(
         axum::middleware::from_fn_with_state(LicenseLayerState::new(gate, classify_route), enforce),
     );
@@ -454,8 +459,7 @@ async fn quota_refusal_is_429_not_503_under_the_resilience_stack() {
         let (client, url) = (client.clone(), url.clone());
         async move { client.post(url).send().await.expect("first").status() }
     });
-    // Let the first request take the only slot.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    started.notified().await;
 
     let second = client.post(&url).send().await.expect("second");
     assert_eq!(second.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);

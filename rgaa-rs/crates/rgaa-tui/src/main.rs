@@ -65,7 +65,7 @@ enum LicenceCommand {
         #[arg(long)]
         file: Option<PathBuf>,
     },
-    /// Show tier, status, expiry, last online check and quota
+    /// Show tier, status, expiry, grace baseline and quota
     Status,
     /// Remove the stored licence (back to the Free tier)
     Deactivate,
@@ -103,8 +103,11 @@ async fn main() {
         }
         Some(TopCommand::Audit { url, export }) => {
             if let Err(e) = rgaa_tui::commands::audit(url, export).await {
+                let code = e
+                    .downcast_ref::<rgaa_cli::CliError>()
+                    .map_or(1, rgaa_cli::CliError::exit_code);
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                std::process::exit(code);
             }
         }
         Some(TopCommand::History { limit }) => {

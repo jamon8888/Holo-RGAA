@@ -115,7 +115,11 @@ a per-caller identity. Per-caller auth is not implemented.
 The licence belongs to the **installation running the server**, not to the
 caller: clients send nothing extra. Install it once on that machine:
 
+Set `RGAA_LICENSE_PUBLIC_KEYS` to the trusted signing key before activation;
+there is no built-in key yet.
+
 ```bash
+export RGAA_LICENSE_PUBLIC_KEYS='k4.public.…'
 rgaa licence activate <key>        # or: rgaa licence activate --file key.txt
 rgaa licence status
 ```
@@ -123,6 +127,9 @@ rgaa licence status
 or set `RGAA_LICENSE_KEY` (containers, CI; it overrides `license.toml`). The
 key is a signed PASETO token verified offline against
 `RGAA_LICENSE_PUBLIC_KEYS`. Without a licence the server runs as **Free**.
+The grace baseline is set at activation and re-activating the same token does
+not extend it. `RGAA_LICENSE_SERVER` only enables grace; this code does not
+perform online revalidation.
 
 | Tier | Features | Daily quota (HTTP servers) |
 |---|---|---|
@@ -132,6 +139,8 @@ key is a signed PASETO token verified offline against
 
 Quotas are counted per UTC day and enforced only by the HTTP servers
 (`rgaa-api`, `rgaa-mcp-http`). Local CLI and stdio runs check the tier only.
+Each URL in `POST /v1/batches` consumes one unit; the whole batch is refused
+without consuming units if the remaining quota cannot cover every URL.
 
 Every gated response carries `X-License-Tier`, `X-License-Status`
 (`unlicensed`, `valid`, `grace`, `expired`, `grace_exceeded`, `invalid`),

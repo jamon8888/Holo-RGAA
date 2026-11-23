@@ -91,7 +91,7 @@ impl UsageCounter {
     }
 
     fn roll(state: &mut UsageFile, today: NaiveDate) {
-        if state.day != today {
+        if today > state.day {
             *state = UsageFile {
                 day: today,
                 count: 0,
@@ -107,7 +107,7 @@ impl UsageCounter {
         RateInfo {
             limit,
             remaining: limit.saturating_sub(state.count),
-            reset_at: next_midnight(today),
+            reset_at: next_midnight(state.day),
         }
     }
 
@@ -120,10 +120,10 @@ impl UsageCounter {
         now: DateTime<Utc>,
     ) -> Result<RateInfo, RateInfo> {
         let today = now.date_naive();
-        let reset_at = next_midnight(today);
-        let after = {
+        let (after, reset_at) = {
             let mut state = self.lock();
             Self::roll(&mut state, today);
+            let reset_at = next_midnight(state.day);
             let remaining = limit.saturating_sub(state.count);
             if cost > remaining {
                 return Err(RateInfo {
@@ -133,7 +133,7 @@ impl UsageCounter {
                 });
             }
             state.count += cost;
-            limit.saturating_sub(state.count)
+            (limit.saturating_sub(state.count), reset_at)
         };
         self.persist();
         Ok(RateInfo {
@@ -311,6 +311,21 @@ mod tests {
         assert!(c.try_consume(3, 10, at(9, 0, 0)).is_err());
         assert_eq!(c.peek(10, at(9, 0, 0)).remaining, 2);
         assert_eq!(c.try_consume(2, 10, at(9, 0, 0)).unwrap().remaining, 0);
+    }
+
+    #[test]
+    fn earlier_clock_date_does_not_reset_a_newer_day() {
+        let c = UsageCounter::in_memory();
+        let later = at(12, 0, 0) + chrono::Duration::days(1);
+        c.try_consume(4, 10, later).unwrap();
+
+        let stale = c.try_consume(1, 10, at(12, 0, 0)).unwrap();
+        assert_eq!(stale.remaining, 5);
+        assert_eq!(
+            stale.reset_at,
+            Utc.with_ymd_and_hms(2026, 11, 21, 0, 0, 0).unwrap()
+        );
+        assert_eq!(c.peek(10, later).remaining, 5);
     }
 
     #[test]

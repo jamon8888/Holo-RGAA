@@ -23,6 +23,8 @@ Two consequences worth acting on:
 Tokens are what the *LLM provider* bills. The RGAA licence meters something
 else: **units per UTC day** on the HTTP servers (Free 10, Professional 500,
 Team 5000), one unit per metered call regardless of how many tokens it spends.
+`POST /v1/batches` consumes one unit per URL and is refused as a whole if the
+remaining quota cannot cover every URL.
 Local stdio and CLI runs are **not** metered — only the tier is checked.
 
 - A quota refusal is HTTP `429` / JSON-RPC `-32003` with `retry_after`

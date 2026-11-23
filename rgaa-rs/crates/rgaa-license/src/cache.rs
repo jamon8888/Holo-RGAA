@@ -2,7 +2,7 @@
 //! (falling back to `$HOME/.config/rgaa/`).
 //!
 //! Two files, so that the per-request usage write never rewrites the token:
-//! - `license.toml`: the token and the time of the last successful online check;
+//! - `license.toml`: the token and local activation baseline for offline grace;
 //! - `usage.toml`: the current UTC day and the units consumed on it.
 //!
 //! Every function takes an explicit path. Only [`LicenseCache::default_dir`]
@@ -28,8 +28,7 @@ pub const LICENSE_KEY_ENV: &str = "RGAA_LICENSE_KEY";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LicenseFile {
     pub token: String,
-    /// Last time the licence service confirmed this token. The offline grace
-    /// period is counted from here.
+    /// Activation baseline for offline grace; local reactivation does not renew it.
     pub last_validated: DateTime<Utc>,
 }
 
@@ -105,25 +104,26 @@ fn load_toml<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, LicenseError
 fn store_toml<T: Serialize>(path: &Path, value: &T) -> Result<(), LicenseError> {
     let err = |e: &dyn std::fmt::Display| LicenseError::Cache(format!("{}: {e}", path.display()));
     let text = toml::to_string(value).map_err(|e| err(&e))?;
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent).map_err(|e| err(&e))?;
     }
-    let mut tmp_name = path.as_os_str().to_owned();
-    tmp_name.push(".tmp");
-    let tmp = PathBuf::from(tmp_name);
-
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| err(&e))?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|e| err(&e))?;
     }
-    let mut f = options.open(&tmp).map_err(|e| err(&e))?;
+    let f = tmp.as_file_mut();
     f.write_all(text.as_bytes()).map_err(|e| err(&e))?;
     f.sync_all().map_err(|e| err(&e))?;
-    drop(f);
-    fs::rename(&tmp, path).map_err(|e| err(&e))
+    tmp.persist(path).map_err(|e| err(&e.error))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -186,7 +186,7 @@ mod tests {
         LicenseCache::store_license(&path, &file).unwrap();
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
-        assert!(!dir.path().join("license.toml.tmp").exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

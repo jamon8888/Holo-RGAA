@@ -25,7 +25,7 @@ pub enum LicenseError {
     #[error("licence expired at {at}")]
     Expired { at: DateTime<Utc> },
 
-    #[error("offline grace period exceeded: last online check was {since}")]
+    #[error("offline grace period exceeded: activation baseline was {since}")]
     GraceExceeded { since: DateTime<Utc> },
 
     #[error("`{feature}` requires the {required} tier (current tier: {tier})")]

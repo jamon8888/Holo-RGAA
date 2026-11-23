@@ -79,10 +79,9 @@ pub fn invalid_reason(error: &LicenseError) -> String {
             format!("la licence n'est pas encore valide (début : {})", date(*at))
         }
         LicenseError::Expired { at } => format!("la licence a expiré le {}", date(*at)),
-        LicenseError::GraceExceeded { since } => format!(
-            "la licence n'a pas été vérifiée en ligne depuis le {}",
-            date(*since)
-        ),
+        LicenseError::GraceExceeded { since } => {
+            format!("la période de grâce a commencé le {}", date(*since))
+        }
         LicenseError::FeatureNotInTier { required, .. } => {
             format!("offre {} requise", tier_name(*required))
         }
@@ -152,7 +151,7 @@ pub fn grace_warning(
         n => format!("{n} jours restants"),
     };
     format!(
-        "Licence non vérifiée en ligne depuis {} — mode hors ligne, {left}.",
+        "Licence activée depuis {} — mode hors ligne, {left}.",
         days(offline)
     )
 }
@@ -185,7 +184,7 @@ mod tests {
         let until = t0 + chrono::Duration::days(7);
         assert_eq!(
             grace_warning(t0, until, now),
-            "Licence non vérifiée en ligne depuis 3 jours — mode hors ligne, 4 jours restants."
+            "Licence activée depuis 3 jours — mode hors ligne, 4 jours restants."
         );
     }
 }

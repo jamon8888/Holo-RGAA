@@ -89,6 +89,14 @@ fn invalid_tokens_are_refused_and_nothing_is_written() {
                 .unwrap(),
             "la licence a expiré le 2026-11-18",
         ),
+        (
+            {
+                let mut future = claims(Tier::Team, exp());
+                future.nbf = Some(now() + Duration::days(1));
+                issuer.sign(&future).unwrap()
+            },
+            "la licence n'est pas encore valide",
+        ),
     ];
     for (token, why) in cases {
         let err = activate(&g, &token, &path, now()).unwrap_err().to_string();
@@ -208,7 +216,10 @@ fn status_renders_every_state() {
     assert!(s.contains("Offre :      Free"), "{s}");
     assert!(s.contains("aucune licence (offre Free)"), "{s}");
     assert!(s.contains("rgaa licence activate"), "{s}");
-    assert!(s.contains("Dernière vérification en ligne : jamais"), "{s}");
+    assert!(
+        s.contains("Référence de la période de grâce : jamais"),
+        "{s}"
+    );
     assert!(s.contains("Quota :      0/10 unités"), "{s}");
     assert!(s.contains("(dans 3 h 12 min)"), "{s}");
     assert!(s.contains("Source :     /cfg/rgaa/license.toml"), "{s}");
@@ -220,7 +231,7 @@ fn status_renders_every_state() {
     assert!(s.contains("Titulaire :  org-test"), "{s}");
     assert!(s.contains("Expiration : 2027-11-19 00:00 UTC"), "{s}");
     assert!(
-        s.contains("Dernière vérification en ligne : 2026-11-19 19:48 UTC"),
+        s.contains("Référence de la période de grâce : 2026-11-19 19:48 UTC"),
         "{s}"
     );
     assert!(s.contains("0/500 unités"), "{s}");
@@ -254,7 +265,7 @@ fn status_renders_every_state() {
 }
 
 #[test]
-fn env_source_and_disabled_online_check_are_explained() {
+fn env_source_and_disabled_grace_are_explained() {
     let issuer = LicenseIssuer::generate().unwrap();
     let g = gate(&issuer, None);
     g.install(Some(&LicenseFile {
@@ -263,11 +274,12 @@ fn env_source_and_disabled_online_check_are_explained() {
     }));
     let snap = g.snapshot();
     let s = render_status(&snap, now(), &LicenceSource::Env, false);
-    assert!(
-        s.contains("non suivie (clé fournie par RGAA_LICENSE_KEY)"),
-        "{s}"
-    );
+    assert!(s.contains("Référence de la période de grâce"), "{s}");
+    assert!(s.contains("2026-11-19 20:48 UTC"), "{s}");
     assert!(s.contains("Source :     variable RGAA_LICENSE_KEY"), "{s}");
     let s = render_status(&snap, now(), &LicenceSource::File("/f".into()), false);
-    assert!(s.contains("RGAA_LICENSE_SERVER non défini"), "{s}");
+    assert!(
+        s.contains("grâce désactivée : RGAA_LICENSE_SERVER non défini"),
+        "{s}"
+    );
 }

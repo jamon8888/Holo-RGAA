@@ -88,6 +88,13 @@ export function preview(sel, p) {
   if (p?.html) {
     const t = document.createElement('template');
     t.innerHTML = p.html.trim();
+    // Une proposition est une donnée, jamais du code : on retire scripts, gestionnaires on* et URL javascript:.
+    t.content.querySelectorAll('script,iframe,object,embed').forEach((n) => n.remove());
+    for (const n of t.content.querySelectorAll('*')) {
+      for (const a of [...n.attributes]) {
+        if (/^on/i.test(a.name) || (/^(href|src|action|formaction|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+      }
+    }
     const r = t.content.firstElementChild;
     if (!r) { revert(); return { ok: false, error: 'html de la proposition vide' }; }
     el.replaceWith(r);

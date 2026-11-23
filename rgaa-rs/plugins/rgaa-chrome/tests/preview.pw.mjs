@@ -23,6 +23,14 @@ try {
       assert.equal(await page.content(), before, `${f.id}: l'annulation n'a pas restauré la page`);
     }
   }
+  // Une proposition hostile ne doit exécuter ni script ni gestionnaire d'événement.
+  const evil = { html: '<img class="hero" src="x" onerror="window.__pwn=1" alt="a"><script>window.__pwn=2</script>' };
+  assert.equal((await run('img.hero', evil)).ok, true);
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.__pwn), undefined, 'code de la proposition exécuté');
+  assert.ok(!(await page.content()).includes('onerror'), 'gestionnaire on* conservé');
+  await page.evaluate(clearPreview);
+  assert.equal(await page.content(), before);
   const miss = await run("#absent", null);
   assert.equal(miss.ok, false);
   console.log('preview ok');

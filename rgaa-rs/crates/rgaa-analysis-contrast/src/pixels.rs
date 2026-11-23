@@ -13,6 +13,7 @@ use rgaa_analysis::color::{
 use rgaa_analysis::{Artefact, PageCapture, Portee, Rect, RgbaImage as CaptureImage};
 use std::io::Cursor;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 /// Crops a capture to a CSS-pixel bounding box scaled by the device pixel ratio.
 /// Returns `None` when the box has no area inside the image.
 #[must_use]
@@ -208,6 +209,7 @@ fn artefact(crop: &RgbaImage, mask: &[bool]) -> Option<Artefact> {
         media_type: "image/png".to_owned(),
         chemin_bundle: format!("analysis/contrast/{sha256}.png"),
         sha256,
+        contenu_base64: Some(STANDARD.encode(data)),
     })
 }
 

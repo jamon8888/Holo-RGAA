@@ -11,7 +11,7 @@ use rgaa_orchestrator::assemble_site_audit;
 use rgaa_orchestrator::transverse::{
     apply_transverse_pages, detect_transverse_landmarks, normalized_subtree_hash,
     transverse_page_from, LandmarkNode, LandmarkSubtree, PageLandmarks, TransverseSignature,
-    TRANSVERSE_PAGE_URL, TRANSVERSE_REFERENCE_SOURCE, TRANSVERSE_THRESHOLD,
+    TRANSVERSE_PAGE_URL, TRANSVERSE_THRESHOLD,
 };
 
 fn node(tag: &str, role: &str, label: &str, text: &str) -> LandmarkNode {
@@ -194,7 +194,7 @@ fn page_with_fail(url: &str, rule: &str) -> PageResult {
 }
 
 #[test]
-fn a_repeated_finding_is_moved_once_to_the_transverse_page() {
+fn repeated_rule_findings_stay_page_local_without_target_identity() {
     let mut pages = vec![
         page_with_fail("https://example.test/a", "image-alt"),
         page_with_fail("https://example.test/b", "image-alt"),
@@ -205,23 +205,11 @@ fn a_repeated_finding_is_moved_once_to_the_transverse_page() {
 
     apply_transverse_pages(&mut pages, &signatures, AuditType::Complet);
 
-    assert_eq!(pages.len(), 4);
-    let transverse = pages
-        .iter()
-        .find(|page| page.url == TRANSVERSE_PAGE_URL)
-        .expect("transverse page was created");
-    let transverse_criterion = &transverse.criteria[0];
-    assert_eq!(transverse_criterion.violations.len(), 1);
-    assert_eq!(transverse_criterion.violations[0].rule_id, "image-alt");
-    assert!(transverse_criterion.review_required);
-
-    for page in pages.iter().filter(|page| page.url != TRANSVERSE_PAGE_URL) {
-        let criterion = &page.criteria[0];
-        assert!(criterion.violations.is_empty());
-        assert_eq!(criterion.source, TRANSVERSE_REFERENCE_SOURCE);
-        assert!(criterion.verified_status.is_none());
-        assert!(!criterion.review_required);
-    }
+    assert_eq!(pages.len(), 3);
+    assert!(pages.iter().all(|page| {
+        page.criteria[0].violations.len() == 1
+            && page.criteria[0].violations[0].rule_id == "image-alt"
+    }));
 }
 
 #[test]
@@ -237,14 +225,12 @@ fn the_transverse_page_takes_its_finding_from_any_page_not_only_the_first() {
     let signatures = detect_transverse_landmarks(&sample_pages(6, &["accueil"]));
     apply_transverse_pages(&mut pages, &signatures, AuditType::Complet);
 
-    let transverse = pages
-        .iter()
-        .find(|page| page.url == TRANSVERSE_PAGE_URL)
-        .expect("transverse page was created");
-    assert_eq!(transverse.criteria[0].violations.len(), 1);
-    assert_eq!(transverse.criteria[0].violations[0].rule_id, "image-alt");
-    // The non-repeated finding stays where it was found.
+    assert_eq!(pages.len(), 6);
+    // Both page-local and repeated-rule findings stay where they were found.
     assert_eq!(pages[0].criteria[0].violations[0].rule_id, "local-only");
+    assert!(pages[1..]
+        .iter()
+        .all(|page| { page.criteria[0].violations[0].rule_id == "image-alt" }));
 }
 
 #[test]

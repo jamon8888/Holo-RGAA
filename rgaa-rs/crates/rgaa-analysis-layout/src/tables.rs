@@ -89,7 +89,7 @@ pub fn linearisation_measurements(snapshot: &Snapshot, rtl: bool) -> Vec<Measure
                 snapshot
                     .nodes
                     .get(*index)
-                    .is_some_and(|node| node.bbox.is_some() && node.has_text())
+                    .is_some_and(|node| node.bbox.is_some() && node.has_text() && node.is_visible())
             })
             .collect::<Vec<_>>();
         let visuel = visual

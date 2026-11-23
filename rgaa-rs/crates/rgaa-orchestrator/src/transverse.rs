@@ -8,10 +8,9 @@
 //!    `navigation` et `contentinfo` par la structure normalisée de leur sous-arbre ;
 //! 2. [`detect_transverse_landmarks`] retient les signatures présentes sur
 //!    **plus de 80 %** des pages (le seuil est strict, et il faut au moins deux pages) ;
-//! 3. [`apply_transverse_pages`] ne laisse qu'un exemplaire de chaque finding
-//!    répété sur la page `transverses`. Les pages de l'échantillon conservent
-//!    leur statut de critère (le sites en reste NC), mais plus aucune preuve ni
-//!    décision locale : une seule décision nominative vaut pour toutes.
+//! 3. le déplacement des findings reste désactivé tant que leurs cibles DOM ne
+//!    sont pas conservées avec les résultats : une règle répétée ne prouve pas
+//!    que les erreurs appartiennent au landmark détecté.
 //!
 //! La normalisation ignore les attributs volatils (`id`, classes générées,
 //! états d'interface) : elle ne retient que les balises, rôles, libellés et
@@ -20,7 +19,7 @@
 //! évite de masquer un défaut propre à une page.
 
 use indexmap::IndexMap;
-use rgaa_core::{AuditType, CriterionResult, PageResult};
+use rgaa_core::{AuditType, PageResult};
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
@@ -200,128 +199,18 @@ pub fn transverse_page_from(pages: &[PageResult], criterion_id: &str) -> Option<
     })
 }
 
-fn repeated_pairs(pages: &[PageResult]) -> IndexMap<(String, String), usize> {
-    let mut counts: IndexMap<(String, String), usize> = IndexMap::new();
-    for page in pages {
-        let on_this_page: BTreeSet<(String, String)> = page
-            .criteria
-            .iter()
-            .flat_map(|criterion| {
-                criterion.violations.iter().map(move |violation| {
-                    (criterion.criterion_id.clone(), violation.rule_id.clone())
-                })
-            })
-            .collect();
-        for pair in on_this_page {
-            *counts.entry(pair).or_insert(0) += 1;
-        }
-    }
-    counts
-}
-
-fn prepare_transverse_criterion(criterion: &mut CriterionResult, pairs: &[(String, String)]) {
-    criterion.violations.retain(|violation| {
-        !pairs.iter().any(|(criterion_id, rule_id)| {
-            *criterion_id == criterion.criterion_id && *rule_id == violation.rule_id
-        })
-    });
-    if criterion.violations.is_empty() {
-        // Plus de preuve locale : la page renvoie à la page transverses, qui
-        // porte l'unique finding et l'unique décision (R5).
-        criterion.source = TRANSVERSE_REFERENCE_SOURCE.to_string();
-        criterion.review_required = false;
-        criterion.review_reason = None;
-        criterion.verified_status = None;
-        criterion.review_events.clear();
-    }
-}
-
-/// Déplace les findings répétés sur une page `transverses` unique.
+/// Déplace les findings sur une page `transverses` lorsque leur cible est prouvée.
 ///
-/// Les signatures de points de repère sont le préalable : sans élément transverse
-/// détecté, aucun finding n'est déplacé. Seuls les findings eux-mêmes répétés
-/// sur plus de 80 % des pages le sont, ce qui évite de masquer un défaut local.
+/// `Violation` ne conserve pas les sélecteurs de nœuds d'axe-core : un finding
+/// ne peut donc pas être relié au sous-arbre transverse sans risquer d'effacer
+/// des défauts locaux. L'échantillon reste inchangé jusqu'à ce que ces cibles
+/// soient transportées dans le modèle de résultat.
 pub fn apply_transverse_pages(
-    pages: &mut Vec<PageResult>,
-    signatures: &[TransverseSignature],
-    audit_type: AuditType,
+    _pages: &mut Vec<PageResult>,
+    _signatures: &[TransverseSignature],
+    _audit_type: AuditType,
 ) {
-    if signatures.is_empty() || pages.len() < 2 {
-        return;
-    }
-
-    let repeated: Vec<(String, String)> = repeated_pairs(pages)
-        .into_iter()
-        .filter(|(_, count)| above_threshold(*count, pages.len()))
-        .map(|(pair, _)| pair)
-        .collect();
-    if repeated.is_empty() {
-        return;
-    }
-
-    // La page transverses hérite de tous les critères d'une page témoin, pour
-    // que le garde-fou de couverture automatique reste satisfait, mais ne porte
-    // comme preuves que les findings transverses.
-    let mut transverse = pages[0].clone();
-    transverse.url = TRANSVERSE_PAGE_URL.to_string();
-    transverse.title = Some(TRANSVERSE_TITLE.to_string());
-    transverse.crawl_depth = 0;
-    for criterion in &mut transverse.criteria {
-        if !audit_type.contains(&criterion.criterion_id) {
-            continue;
-        }
-        let matching: Vec<&str> = repeated
-            .iter()
-            .filter(|(id, _)| id == &criterion.criterion_id)
-            .map(|(_, rule)| rule.as_str())
-            .collect();
-        if matching.is_empty() {
-            criterion.violations.clear();
-            continue;
-        }
-        // La page témoin ne porte pas forcément le finding (il suffit qu'il
-        // soit présent sur plus de 80 % des pages) : le reprendre à la première
-        // page qui l'a observé, une seule fois par règle.
-        let mut kept = Vec::with_capacity(matching.len());
-        for rule in matching {
-            if let Some(violation) = criterion
-                .violations
-                .iter()
-                .find(|violation| violation.rule_id == rule)
-                .cloned()
-                .or_else(|| {
-                    pages
-                        .iter()
-                        .flat_map(|page| page.criteria.iter())
-                        .filter(|candidate| candidate.criterion_id == criterion.criterion_id)
-                        .find_map(|candidate| {
-                            candidate
-                                .violations
-                                .iter()
-                                .find(|violation| violation.rule_id == rule)
-                        })
-                        .cloned()
-                })
-            {
-                kept.push(violation);
-            }
-        }
-        criterion.violations = kept;
-        criterion.review_required = true;
-        criterion.review_reason = Some(TRANSVERSE_DECISION_REASON.to_string());
-        criterion.verified_status = None;
-        criterion.review_events.clear();
-    }
-    transverse
-        .criteria
-        .retain(|criterion| audit_type.contains(&criterion.criterion_id));
-    transverse.compliance_rate = rgaa_report::compliance_rate(&transverse.criteria);
-
-    for page in pages.iter_mut() {
-        for criterion in &mut page.criteria {
-            prepare_transverse_criterion(criterion, &repeated);
-        }
-        page.compliance_rate = rgaa_report::compliance_rate(&page.criteria);
-    }
-    pages.push(transverse);
+    // Violation drops axe's target selectors, so a repeated rule cannot prove
+    // that its nodes belong to a detected landmark. Keep findings page-local
+    // until that provenance is carried through the result model.
 }

@@ -13,6 +13,7 @@ plugin-colorvision = []
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 image = "0.25.10"
 image_hasher = "3.1.1"
 indexmap = { workspace = true }

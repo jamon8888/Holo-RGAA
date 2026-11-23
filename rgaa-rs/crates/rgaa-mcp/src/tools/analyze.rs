@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::tools::igt::IgtResultsDto;
-use rgaa_core::CrawlConfig;
+use rgaa_core::{AuditType, CrawlConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditUrlInput {
@@ -21,6 +21,8 @@ pub struct CrawlConfigInput {
     pub respect_robots: bool,
     #[serde(default = "default_sample_mode")]
     pub sample_mode: bool,
+    #[serde(default = "default_audit_type")]
+    pub audit_type: AuditType,
 }
 
 impl Default for CrawlConfigInput {
@@ -30,6 +32,7 @@ impl Default for CrawlConfigInput {
             max_depth: 5,
             respect_robots: true,
             sample_mode: true,
+            audit_type: AuditType::Complet,
         }
     }
 }
@@ -41,7 +44,27 @@ impl From<CrawlConfigInput> for CrawlConfig {
             max_depth: input.max_depth,
             respect_robots: input.respect_robots,
             sample_mode: input.sample_mode,
+            audit_type: input.audit_type,
         }
+    }
+}
+
+fn default_audit_type() -> AuditType {
+    AuditType::Complet
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn la_configuration_audit_preserve_le_perimetre_demande() {
+        let complete: CrawlConfigInput = serde_json::from_str("{}").expect("configuration");
+        assert_eq!(complete.audit_type, AuditType::Complet);
+
+        let rapide: CrawlConfigInput =
+            serde_json::from_str(r#"{"audit_type":"rapide"}"#).expect("configuration");
+        assert_eq!(CrawlConfig::from(rapide).audit_type, AuditType::Rapide);
     }
 }
 

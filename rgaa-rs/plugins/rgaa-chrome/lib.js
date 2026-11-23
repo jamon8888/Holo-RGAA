@@ -79,7 +79,10 @@ export function preview(sel, p) {
     document.head.append(s);
     undo.push(() => s.remove());
   }
+  // Même règle que pour le html : une proposition est une donnée, jamais du code.
+  const unsafe = (k, v) => /^on/i.test(k) || /^srcdoc$/i.test(k) || (/^(href|src|action|formaction|xlink:href)$/i.test(k) && /^\s*javascript:/i.test(String(v)));
   for (const [k, v] of Object.entries(p?.attributes ?? {})) {
+    if (unsafe(k, v)) { revert(); return { ok: false, error: `attribut refusé : ${k}` }; }
     const old = el.getAttribute(k);
     v === null ? el.removeAttribute(k) : el.setAttribute(k, String(v));
     undo.push(() => (old === null ? el.removeAttribute(k) : el.setAttribute(k, old)));
@@ -97,8 +100,9 @@ export function preview(sel, p) {
     }
     const r = t.content.firstElementChild;
     if (!r) { revert(); return { ok: false, error: 'html de la proposition vide' }; }
-    el.replaceWith(r);
-    undo.push(() => r.replaceWith(el));
+    const nodes = [...t.content.childNodes]; // tout le fragment, comme capture.mjs
+    el.replaceWith(...nodes);
+    undo.push(() => { nodes[0].replaceWith(el); nodes.slice(1).forEach((n) => n.remove()); });
     shown = r;
   }
   const oldStyle = shown.getAttribute('style');

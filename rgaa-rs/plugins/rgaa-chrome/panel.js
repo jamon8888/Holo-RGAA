@@ -3,6 +3,7 @@ import { TIERS, analyzeUrl, byCriterion, parseContract, preview, clearPreview } 
 const $ = (id) => document.getElementById(id);
 const say = (t) => { $('status').textContent = t; };
 let criteria = [];
+let auditTabId = null; // l'onglet audité est fixé au chargement : changer d'onglet ne déplace pas l'aperçu
 let i = 0;
 
 function h(tag, props, ...kids) {
@@ -19,10 +20,10 @@ async function targetTab() {
 }
 
 async function run(func, args) {
-  const tab = await targetTab();
-  if (!tab?.id) return { ok: false, error: 'aucun onglet actif' };
+  const id = auditTabId ?? (await targetTab())?.id;
+  if (!id) return { ok: false, error: 'aucun onglet actif' };
   try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
+    const [r] = await chrome.scripting.executeScript({ target: { tabId: id }, func, args });
     return r.result;
   } catch (e) {
     return { ok: false, error: `page non accessible (${e.message})` };
@@ -30,8 +31,9 @@ async function run(func, args) {
 }
 
 async function capture(img, link) {
-  const tab = await targetTab();
   try {
+    const tab = await chrome.tabs.get(auditTabId ?? (await targetTab()).id);
+    await chrome.tabs.update(tab.id, { active: true }); // captureVisibleTab ne voit que l'onglet visible
     const url = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     img.src = url; img.hidden = false;
     link.href = url; link.hidden = false;
@@ -72,16 +74,18 @@ async function show() {
   $('crit').focus();
 }
 
-function load(spec) {
+async function load(spec) {
+    await run(clearPreview, []); // annule l'aperçu de l'audit précédent, dans son onglet
+    auditTabId = (await targetTab())?.id ?? null;
     criteria = byCriterion(spec.findings);
-    if (!criteria.length) return say('Aucun finding dans ce fichier.');
+    if (!criteria.length) { $('review').hidden = true; $('findings').replaceChildren(); return say('Aucun finding.'); }
     i = 0; $('review').hidden = false;
     say(`${spec.findings.length} finding(s), ${criteria.length} critère(s) — ${spec.url ?? ''}`);
     show();
 }
 
 $('file').onchange = async (e) => {
-  try { load(parseContract(await e.target.files[0].text())); }
+  try { await load(parseContract(await e.target.files[0].text())); }
   catch (err) { say(`Fichier invalide : ${err.message}`); }
 };
 
@@ -93,7 +97,7 @@ $('analyze').onclick = async () => {
   localStorage.setItem('server', $('server').value);
   chrome.storage.session.set({ token: $('token').value });
   say('Analyse en cours…');
-  try { load(await analyzeUrl($('server').value, $('token').value, tab.url)); }
+  try { await load(await analyzeUrl($('server').value, $('token').value, tab.url)); }
   catch (err) { say(`Analyse impossible : ${err.message}`); }
 };
 $('prev').onclick = () => { i--; show(); };

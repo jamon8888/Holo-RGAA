@@ -56,10 +56,21 @@ try {
   const before = await page.content();
   await panel.getByRole('button', { name: /Aperçu 1 : Alternative descriptive/ }).first().click();
   await page.waitForFunction(() => document.querySelector('img.hero')?.getAttribute('alt') === 'Bandeau gris');
+  // L'utilisateur passe sur un autre onglet : l'annulation doit quand même viser l'onglet audité.
+  const other = await ctx.newPage();
+  await other.goto(siteUrl);
+  await other.bringToFront();
   await panel.getByRole('button', { name: 'Critère suivant →' }).click();
   await panel.getByRole('heading', { name: 'Critère 3.2' }).waitFor();
   await page.waitForFunction(() => !document.querySelector('img.hero').hasAttribute('alt'));
+  await page.bringToFront();
   assert.equal(await page.content(), before, 'la page doit être restaurée');
+
+  // 2b. Un résultat vide efface la revue précédente.
+  writeFileSync(join(dir, 'empty.json'), JSON.stringify({ findings: [] }));
+  await panel.setInputFiles('#file', join(dir, 'empty.json'));
+  await panel.getByText('Aucun finding.').waitFor();
+  assert.equal(await panel.locator('#review').isHidden(), true, 'ancienne revue encore affichée');
 
   // 3. Analyse via le serveur : jeton exigé, puis findings affichés avec leur niveau.
   //    RGAA_MCP_BIN=<rgaa-mcp-http> (+ obscura sur le PATH) : contre le vrai serveur, sinon le faux.

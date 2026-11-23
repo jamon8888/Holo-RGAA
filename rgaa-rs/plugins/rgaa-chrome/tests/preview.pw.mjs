@@ -31,6 +31,16 @@ try {
   assert.ok(!(await page.content()).includes('onerror'), 'gestionnaire on* conservé');
   await page.evaluate(clearPreview);
   assert.equal(await page.content(), before);
+  // Attributs : mêmes règles que le html.
+  for (const attributes of [{ onerror: 'window.__pwn=3' }, { src: 'javascript:window.__pwn=4' }, { srcdoc: '<script>1</script>' }]) {
+    assert.equal((await run('img.hero', { attributes })).ok, false, `attribut dangereux accepté : ${JSON.stringify(attributes)}`);
+    assert.equal(await page.content(), before, 'un refus ne doit rien laisser');
+  }
+  // Un html à plusieurs nœuds est inséré en entier, puis restauré à l'identique.
+  assert.equal((await run('p.pale', { html: '<h2 id="n1">a</h2><p id="n2">b</p>' })).ok, true);
+  assert.ok(await page.evaluate(() => document.querySelector('#n1') && document.querySelector('#n2')), 'fragment tronqué');
+  await page.evaluate(clearPreview);
+  assert.equal(await page.content(), before);
   const miss = await run("#absent", null);
   assert.equal(miss.ok, false);
   console.log('preview ok');

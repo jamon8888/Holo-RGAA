@@ -83,5 +83,5 @@ Durée pendant laquelle la documentation technique et la déclaration restent di
 _Avoid_ : archivage, péremption (réservé à la revue des packs)
 
 **Présomption de conformité** :
-Un service conforme à une norme harmonisée (par exemple EN 301 549) ou à ses parties pertinentes est présumé conforme aux exigences couvertes (art. 15). Champ `presomption` (`norme` + `reference`), à renseigner seulement si la déclaration s'appuie sur cette norme. C'est une présomption, pas une preuve : elle ne change jamais le statut de conformité calculé.
+Un service conforme à une norme harmonisée (par exemple EN 301 549) ou à ses parties pertinentes, dont la référence a été publiée au *Journal officiel de l’Union européenne*, est présumé conforme aux exigences couvertes par cette norme (art. 15, § 1). Champ `presomption` (`norme` + `reference`), à renseigner seulement si la déclaration s'appuie sur cette norme. C'est une présomption, pas une preuve : elle ne change jamais le statut de conformité calculé.
 _Avoid_ : certification, garantie de conformité

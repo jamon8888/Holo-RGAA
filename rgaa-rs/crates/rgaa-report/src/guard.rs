@@ -42,7 +42,7 @@ pub struct Derogation {
 /// the 12-month review cycle of the national packs.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct Conservation {
-    /// Start of the retention period (ISO date).
+    /// Start of the retention period, as a calendar date `YYYY-MM-DD`.
     pub debut: String,
     /// Retention length in years; below [`CONSERVATION_MIN_ANS`] is blocked.
     pub duree_annees: u8,

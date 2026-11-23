@@ -47,10 +47,11 @@ const NO_LONGER_COMPLETE: &[&str] = &[
     "13.3", "13.4", "13.5", // #280
 ];
 
-/// Associations retirées par #280.
+/// Associations retirées par #280 et #395.
 const REMOVED_RULES: &[(&str, &[&str])] = &[
     ("1.5", &["image-alt"]),
     ("1.6", &["image-alt"]),
+    ("7.3", &["focus-order-semantics"]),
     ("10.2", &["color-contrast", "image-alt"]),
     ("10.5", &["color-contrast"]),
     ("10.9", &["color-contrast", "image-alt"]),

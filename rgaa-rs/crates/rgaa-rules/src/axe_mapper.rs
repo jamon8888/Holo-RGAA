@@ -105,15 +105,21 @@ impl AxeMapper {
                         review_events: Vec::new(),
                     });
                 if mechanism.review_only {
-                    // Une entrée neuve naît en `Fail` : seule une violation déjà enregistrée
-                    // prouve un échec qu'on ne dégrade pas.
-                    if result.violations.is_empty() {
-                        result.status = CriterionStatus::NeedsReview;
-                        result.review_required = true;
-                        result.review_reason = Some(format!(
+                    result.status = CriterionStatus::NeedsReview;
+                    result.review_required = true;
+                    if !result
+                        .violations
+                        .iter()
+                        .any(|existing| existing.rule_id == violation.id)
+                    {
+                        let reason = format!(
                             "{} : indice suspect, non concluant à lui seul (plafond review)",
                             violation.id
-                        ));
+                        );
+                        result.review_reason = Some(match result.review_reason.take() {
+                            Some(previous) => format!("{previous} ; {reason}"),
+                            None => reason,
+                        });
                     }
                 } else {
                     result.status = CriterionStatus::Fail;
@@ -123,6 +129,14 @@ impl AxeMapper {
                     impact: violation.impact.clone(),
                     description: violation.description.clone(),
                     nodes_affected: violation.nodes.len(),
+                    // A capped finding is sent to human review, so it must keep the
+                    // affected nodes as evidence. Uncapped findings keep their
+                    // historical payload unchanged (#279).
+                    nodes: if mechanism.review_only {
+                        violation.nodes.clone()
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
         }
@@ -586,7 +600,6 @@ mod tests {
         ("label-content-name-mismatch", "11.2"),
         ("scrollable-region-focusable", "7.3"),
         ("server-side-image-map", "7.3"),
-        ("focus-order-semantics", "7.3"),
         ("blink", "13.8"),
         ("marquee", "13.8"),
         ("meta-refresh", "13.1"),
@@ -790,9 +803,10 @@ mod tests {
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 89,
-            "expected 89 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8)"
+            rule_refs, 88,
+            "expected 88 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
+             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
+             while focus-order-semantics was removed from its former 7.3 attribution)"
         );
     }
 
@@ -806,6 +820,40 @@ mod tests {
         assert_eq!(r.violations.len(), 1);
         assert_eq!(r.violations[0].nodes_affected, 2);
         assert!(r.review_reason.as_deref().unwrap().contains("tabindex"));
+    }
+
+    #[test]
+    fn a_review_capped_mechanism_keeps_every_violation_and_its_nodes() {
+        let json = r#"[
+            {"id":"tabindex","impact":"serious","description":"positive tabindex",
+             "nodes":[{"html":"<button tabindex='3'>"}]},
+            {"id":"focus-order-semantics","impact":"minor","description":"focus semantics",
+             "nodes":[{"html":"<div role='button'>"}]}
+        ]"#;
+        let results = AxeMapper::map(json).unwrap();
+        let r = &results["12.8"];
+
+        assert_eq!(r.status, CriterionStatus::NeedsReview);
+        assert!(r.review_required);
+        assert_eq!(r.violations.len(), 2);
+        assert!(!results.contains_key("7.3"));
+
+        for (rule_id, html) in [
+            ("tabindex", "<button tabindex='3'>"),
+            ("focus-order-semantics", "<div role='button'>"),
+        ] {
+            let violation = r
+                .violations
+                .iter()
+                .find(|violation| violation.rule_id == rule_id)
+                .unwrap_or_else(|| panic!("12.8 must retain {rule_id}"));
+            assert_eq!(violation.nodes.len(), 1);
+            assert_eq!(violation.nodes[0]["html"], html);
+        }
+
+        let reason = r.review_reason.as_deref().unwrap();
+        assert!(reason.contains("tabindex"));
+        assert!(reason.contains("focus-order-semantics"));
     }
 
     #[test]

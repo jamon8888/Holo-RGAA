@@ -13,8 +13,8 @@ use rgaa_cli::commands::review::apply_review;
 use rgaa_cli::commands::CommonArgs;
 use rgaa_core::test_plan::{CoverageLevel, TestRoutePlan};
 use rgaa_core::{
-    AuditBundle, AuditResult, AuditType, Classification, CriterionResult, CriterionStatus, RgaaCatalog,
-    RgaaCriteria, TestOutcome, VerdictBasis, Violation,
+    AuditBundle, AuditResult, AuditType, Classification, CriterionResult, CriterionStatus,
+    RgaaCatalog, RgaaCriteria, TestOutcome, VerdictBasis, Violation,
 };
 use rgaa_orchestrator::pipeline::{
     assemble_page_audit, assemble_site_audit, validate_automatic_verdict_coverage,
@@ -422,7 +422,12 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         provider.request_count() >= 4 * 20,
         "expected batched local calls"
     );
-    let audit = assemble_site_audit("https://example.test".to_owned(), pages, 4, AuditType::Complet);
+    let audit = assemble_site_audit(
+        "https://example.test".to_owned(),
+        pages,
+        4,
+        AuditType::Complet,
+    );
     let row_count: usize = audit.pages.iter().map(|page| page.criteria.len()).sum();
     let verdict_count: usize = audit
         .pages
@@ -552,6 +557,9 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
     );
     assert!(!incomplete.audit_complete);
     assert!(incomplete.automatic_verdict_coverage_percent < 100.0);
-    assert!(validate_automatic_verdict_coverage(&incomplete.pages[0].criteria, AuditType::Complet).is_err());
+    assert!(
+        validate_automatic_verdict_coverage(&incomplete.pages[0].criteria, AuditType::Complet)
+            .is_err()
+    );
     assert_cli_report_does_not_claim_conformance(&incomplete);
 }

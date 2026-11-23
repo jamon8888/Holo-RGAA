@@ -41,6 +41,7 @@ impl From<CrawlConfigInput> for CrawlConfig {
             max_depth: input.max_depth,
             respect_robots: input.respect_robots,
             sample_mode: input.sample_mode,
+            audit_type: rgaa_core::AuditType::Complet,
         }
     }
 }

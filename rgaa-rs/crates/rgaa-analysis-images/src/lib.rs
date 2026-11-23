@@ -165,8 +165,7 @@ impl AnalysisPlugin for ImagesPlugin {
                 .map(phash::calculer)
                 .transpose()?
                 .unwrap_or_default();
-            let deja_analyse = self
-                .cache
+            self.cache
                 .lock()
                 .map_err(|_| analysis_error("images", "verrou du cache de décision empoisonné"))?
                 .enregistrer(p_hash, alt_de(noeud), &contexte, page.url);
@@ -184,23 +183,8 @@ impl AnalysisPlugin for ImagesPlugin {
                 continue;
             }
 
-            if deja_analyse {
-                // Une même image avec le même alt n'est analysée qu'une fois
-                // par audit (spec §5). La preuve garde la clé de réutilisation.
-                let mesures = Mesures {
-                    reutilisation_cache: Some("déjà analysée dans cet audit".to_owned()),
-                    ..Mesures::default()
-                };
-                preuves.push(preuve(
-                    mesures,
-                    &["1.3.1"],
-                    Portee::Estimee,
-                    None,
-                    &empreinte,
-                    None,
-                )?);
-                continue;
-            }
+            // Until the cache stores and replays model measurements, repeated
+            // images must be analysed again so OCR/CLIP findings are not lost.
 
             let Some(image) = image else {
                 preuves.push(preuve_manquante("ocr", "image indisponible", &empreinte)?);

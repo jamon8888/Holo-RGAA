@@ -65,10 +65,9 @@ struct NodeJson {
 /// # Errors
 /// Returns [`rgaa_analysis::RgaaError::Analysis`] when the snapshot is not the
 /// documented JSON shape.
-pub fn parse_dom(json: &str, ax_tree: Option<&AxTree>) -> Result<Inventory> {
+pub fn parse_dom(json: &str, _ax_tree: Option<&AxTree>) -> Result<Inventory> {
     let dom: DomJson = serde_json::from_str(json)
         .map_err(|error| analysis_error("media", format!("DOM snapshot illisible : {error}")))?;
-    let ax_controls = has_accessible_controls(ax_tree);
     // "À moins de 2 blocs" counts text blocks, not <track>/<source> children.
     let mut block_index = 0usize;
     let blocks: Vec<Option<usize>> = dom
@@ -90,17 +89,18 @@ pub fn parse_dom(json: &str, ax_tree: Option<&AxTree>) -> Result<Inventory> {
         let tag = node.tag.to_ascii_lowercase();
         match tag.as_str() {
             "video" | "audio" => {
+                let children = dom.nodes.iter().skip(index + 1).take_while(|next| {
+                    next.tag.eq_ignore_ascii_case("source")
+                        || next.tag.eq_ignore_ascii_case("track")
+                });
                 let src = node.attrs.get("src").cloned().or_else(|| {
-                    dom.nodes
-                        .get(index + 1)
-                        .filter(|next| next.tag.eq_ignore_ascii_case("source"))
+                    children
+                        .clone()
+                        .find(|next| next.tag.eq_ignore_ascii_case("source"))
                         .and_then(|next| next.attrs.get("src").cloned())
                 });
-                let tracks = dom
-                    .nodes
-                    .iter()
-                    .skip(index + 1)
-                    .take_while(|next| next.tag.eq_ignore_ascii_case("track"))
+                let tracks = children
+                    .filter(|next| next.tag.eq_ignore_ascii_case("track"))
                     .filter_map(|next| {
                         let kind = next.attrs.get("kind")?.clone();
                         let src = next.attrs.get("src")?.clone();
@@ -131,7 +131,9 @@ pub fn parse_dom(json: &str, ax_tree: Option<&AxTree>) -> Result<Inventory> {
                     src,
                     autoplay: node.attrs.contains_key("autoplay"),
                     muted: node.attrs.contains_key("muted"),
-                    controls: node.attrs.contains_key("controls") || ax_controls,
+                    // AX snapshots here have no DOM-node relationship, so a page-wide
+                    // control match cannot establish controls for this media element.
+                    controls: node.attrs.contains_key("controls"),
                     tracks,
                     transcript_url,
                 });
@@ -199,24 +201,6 @@ fn third_party_platform(url: &str) -> Option<String> {
     None
 }
 
-fn has_accessible_controls(ax_tree: Option<&AxTree>) -> bool {
-    let Some(tree) = ax_tree else {
-        return false;
-    };
-    tree.nodes.iter().any(|node| {
-        let role = node.role.to_ascii_lowercase();
-        let name = node.name.to_ascii_lowercase();
-        let is_control = matches!(role.as_str(), "button" | "slider" | "switch" | "checkbox");
-        is_control
-            && name.len() > 1
-            && [
-                "play", "pause", "lecture", "volume", "son", "mute", "player", "lire",
-            ]
-            .iter()
-            .any(|word| name.contains(word))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn an_accessible_control_in_the_ax_tree_counts_as_a_control() {
+    fn page_wide_ax_controls_are_not_assigned_to_media_elements() {
         let tree = AxTree {
             nodes: vec![AxNode {
                 role: "button".into(),
@@ -271,7 +255,21 @@ mod tests {
             }],
         };
         let inventory = parse_dom(DOM, Some(&tree)).expect("inventory");
-        assert!(inventory.media[0].controls);
+        assert!(!inventory.media[0].controls);
+    }
+
+    #[test]
+    fn tracks_after_source_elements_are_inventoried() {
+        let dom = r#"{"nodes":[
+            {"tag":"video"},
+            {"tag":"source","attrs":{"src":"/video.mp4"}},
+            {"tag":"track","attrs":{"kind":"captions","src":"/captions.vtt"}},
+            {"tag":"track","attrs":{"kind":"descriptions","src":"/descriptions.vtt"}},
+            {"tag":"p"}
+        ]}"#;
+        let inventory = parse_dom(dom, None).expect("inventory");
+        assert_eq!(inventory.media[0].src.as_deref(), Some("/video.mp4"));
+        assert_eq!(inventory.media[0].tracks.len(), 2);
     }
 
     #[test]

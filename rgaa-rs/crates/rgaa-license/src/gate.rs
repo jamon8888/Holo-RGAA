@@ -330,8 +330,8 @@ impl LicenseGate {
         &self.config
     }
 
-    fn evaluate(&self, now: DateTime<Utc>) -> (LicenseStatus, Tier, u32) {
-        match &*self.read() {
+    fn evaluate(&self, loaded: &Loaded, now: DateTime<Utc>) -> (LicenseStatus, Tier, u32) {
+        match loaded {
             Loaded::None => (
                 LicenseStatus::Unlicensed,
                 Tier::Free,
@@ -380,8 +380,9 @@ impl LicenseGate {
 
     pub fn snapshot(&self) -> LicenseSnapshot {
         let now = self.clock.now();
-        let (status, tier, limit) = self.evaluate(now);
-        let (claims, last_validated) = match &*self.read() {
+        let loaded = self.read().clone();
+        let (status, tier, limit) = self.evaluate(&loaded, now);
+        let (claims, last_validated) = match &loaded {
             Loaded::Licensed {
                 claims,
                 last_validated,
@@ -401,7 +402,8 @@ impl LicenseGate {
     /// polls, reads of past results).
     pub fn check(&self, feature: Feature, cost: u32) -> Result<Admission, Box<Denial>> {
         let now = self.clock.now();
-        if matches!(&*self.read(), Loaded::Unrestricted) {
+        let loaded = self.read().clone();
+        if matches!(&loaded, Loaded::Unrestricted) {
             return Ok(Admission {
                 tier: Tier::Team,
                 status: LicenseStatus::Valid,
@@ -409,7 +411,7 @@ impl LicenseGate {
                 now,
             });
         }
-        let (status, tier, limit) = self.evaluate(now);
+        let (status, tier, limit) = self.evaluate(&loaded, now);
         let deny = |error: LicenseError, rate: Option<RateInfo>| {
             Box::new(Denial {
                 error,
@@ -463,7 +465,7 @@ impl LicenseGate {
         };
         if cost > 0 {
             if let Some(reporter) = &self.reporter {
-                let subject = match &*self.read() {
+                let subject = match &loaded {
                     Loaded::Licensed { claims, .. } => Some(claims.sub.clone()),
                     _ => None,
                 };

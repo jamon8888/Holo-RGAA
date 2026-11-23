@@ -19,7 +19,7 @@
 //! évite de masquer un défaut propre à une page.
 
 use indexmap::IndexMap;
-use rgaa_core::{AuditType, CriterionResult, PageResult};
+use rgaa_core::{AuditType, PageResult};
 use serde::Deserialize;
 use std::collections::BTreeSet;
 

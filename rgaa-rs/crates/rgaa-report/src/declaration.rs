@@ -91,20 +91,21 @@ fn cle_environnement(environnement: &TestEnvironment) -> String {
 /// `mesures.environnement` (recherche P-10 §4.2). Le système est déduit de la
 /// technologie d'assistance quand elle est connue ; rien d'autre n'est inventé.
 fn environnement_depuis_texte(texte: &str) -> Option<TestEnvironment> {
-    let (assistance, navigateur) = texte.split_once(" + ")?;
-    let (nom_assistance, version_assistance) = assistance.trim().split_once(' ')?;
-    let (nom_navigateur, version_navigateur) = navigateur.trim().split_once(' ')?;
-    if [
-        nom_assistance,
-        version_assistance,
-        nom_navigateur,
-        version_navigateur,
-    ]
-    .iter()
-    .any(|morceau| morceau.trim().is_empty())
-    {
-        return None;
+    let (assistance, navigateur) = texte.split_once('+')?;
+
+    /// Sépare « Nom version » en nom et version, en normalisant les espaces.
+    /// L'en-tête du journal étant saisi à la main dans la VM, la mise en
+    /// espaces autour de `+` et entre nom/version peut varier : un écart ne
+    /// doit pas faire disparaître l'environnement de la déclaration.
+    fn nom_et_version(partie: &str) -> Option<(&str, String)> {
+        let mut morceaux = partie.split_whitespace();
+        let nom = morceaux.next()?;
+        let version = morceaux.collect::<Vec<_>>().join(" ");
+        (!version.is_empty()).then_some((nom, version))
     }
+
+    let (nom_assistance, version_assistance) = nom_et_version(assistance.trim())?;
+    let (nom_navigateur, version_navigateur) = nom_et_version(navigateur.trim())?;
     let systeme = match nom_assistance.to_ascii_lowercase().as_str() {
         "nvda" => "Windows",
         "voiceover" => "macOS",
@@ -114,8 +115,8 @@ fn environnement_depuis_texte(texte: &str) -> Option<TestEnvironment> {
     Some(TestEnvironment {
         plateforme: Some("ordinateur".into()),
         systeme: Some(systeme.into()),
-        technologie_assistance: Some(format!("{} {}", nom_assistance, version_assistance)),
-        navigateur: Some(format!("{} {}", nom_navigateur, version_navigateur)),
+        technologie_assistance: Some(format!("{nom_assistance} {version_assistance}")),
+        navigateur: Some(format!("{nom_navigateur} {version_navigateur}")),
     })
 }
 
@@ -937,6 +938,28 @@ mod tests {
         let envs = super::environnements_utilises_avec_preuves(None, &[], &preuves);
         assert_eq!(envs.len(), 1, "seul l'environnement bien formé est déclaré");
         assert_eq!(envs[0].navigateur.as_deref(), Some("Firefox 141.0"));
+    }
+
+    #[test]
+    fn un_environnement_avec_espaces_irreguliers_est_quand_meme_reconnu() {
+        // L'en-tête `# environnement:` du journal est saisi à la main : un
+        // écart de mise en espaces ne doit pas taire une technologie utilisée.
+        let preuves = [
+            preuve_screenreader(Some("NVDA   2026.3.1 +  Firefox   141.0")),
+            preuve_screenreader(Some("VoiceOver 26.2+Safari 26.2")),
+        ];
+        let envs = super::environnements_utilises_avec_preuves(None, &[], &preuves);
+        assert_eq!(envs.len(), 2);
+        assert_eq!(
+            envs[0].technologie_assistance.as_deref(),
+            Some("NVDA 2026.3.1")
+        );
+        assert_eq!(envs[0].navigateur.as_deref(), Some("Firefox 141.0"));
+        assert_eq!(
+            envs[1].technologie_assistance.as_deref(),
+            Some("VoiceOver 26.2")
+        );
+        assert_eq!(envs[1].navigateur.as_deref(), Some("Safari 26.2"));
     }
 
     #[test]

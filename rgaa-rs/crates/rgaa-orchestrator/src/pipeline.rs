@@ -119,6 +119,18 @@ fn validate_coverage(
     results: &[CriterionResult],
     skip_site_level: bool,
 ) -> Result<(), CoverageError> {
+    validate_coverage_scope(results, skip_site_level, false)
+}
+
+fn validate_site_coverage(results: &[CriterionResult]) -> Result<(), CoverageError> {
+    validate_coverage_scope(results, false, true)
+}
+
+fn validate_coverage_scope(
+    results: &[CriterionResult],
+    skip_site_level: bool,
+    only_site_level: bool,
+) -> Result<(), CoverageError> {
     let mut by_id = HashMap::with_capacity(results.len());
     let mut duplicate_ids = std::collections::HashSet::new();
     for result in results {
@@ -130,7 +142,8 @@ fn validate_coverage(
     let mut missing = Vec::new();
     for criterion in RgaaCriteria::all() {
         let id = criterion.id;
-        if skip_site_level && rgaa_core::is_site_level_criterion(id) {
+        let site_level = rgaa_core::is_site_level_criterion(id);
+        if (skip_site_level && site_level) || (only_site_level && !site_level) {
             continue;
         }
         let Some(result) = by_id.get(id).copied() else {
@@ -147,7 +160,9 @@ fn validate_coverage(
                 };
                 has_complete_route |= route.coverage == CoverageLevel::Complete;
                 let outcome_present = result.tests.iter().any(|outcome| {
-                    outcome.test_key == *test_key && outcome_is_allowed(outcome, route.coverage)
+                    outcome.test_key == *test_key
+                        && (!only_site_level || outcome.source == "site-comparison")
+                        && outcome_is_allowed(outcome, route.coverage)
                 });
                 complete &= outcome_present;
             }
@@ -317,14 +332,9 @@ pub fn assemble_page_audit(
 ///
 /// The template for a site result is the first page's own result for that criterion,
 /// which keeps title, classification and catalog metadata without duplicating them here.
-/// A site-comparison mechanism produced (or confirmed) this result, as opposed to a
-/// page-level verdict that merely happens to concern a site-level criterion.
+/// A site-comparison mechanism produced a verdict, not merely evidence, for this result.
 fn decided_by_site_comparison(criterion: &CriterionResult) -> bool {
     criterion.source == "site-comparison"
-        || criterion
-            .considered_sources
-            .iter()
-            .any(|source| source == "site-comparison")
 }
 
 fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
@@ -360,8 +370,8 @@ fn split_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
         // level, whatever a single page said.
         criterion.status = CriterionStatus::NeedsReview;
         criterion.verified_status = None;
-        // `tests` and `automated_verdict` stay as the evidence of the page the result was
-        // taken from; only the verdict and its explanation are the site's.
+        criterion.automated_verdict = None;
+        // Keep page tests as evidence, but do not reuse their automatic verdict at site level.
         criterion.violations.clear();
         criterion.justification = Some(rgaa_core::SITE_LEVEL_NOT_EVALUATED.to_string());
         criterion.source = "site".to_string();
@@ -384,9 +394,10 @@ pub fn assemble_site_audit(
 ) -> AuditResult {
     // The completion gate and the coverage metrics look at every catalog criterion, so
     // they run before the site-level criteria leave the pages.
-    let audit_complete = pages_have_complete_automatic_coverage(&all_pages);
     let audit_metrics = rgaa_report::compute_audit_metrics(&all_pages);
     let site_criteria = split_site_criteria(&mut all_pages);
+    let audit_complete = pages_have_complete_automatic_coverage(&all_pages)
+        && validate_site_coverage(&site_criteria).is_ok();
     for page in &mut all_pages {
         page.compliance_rate = calculate_compliance(&page.criteria);
     }
@@ -526,20 +537,30 @@ fn record_site_comparison_evidence(
         site_result.sampled_pages,
         site_result.failed_pages
     );
-    let existing_failure = result.status == CriterionStatus::Fail;
     let site_finding = format!(
         "Site-level comparison returned {:?}: {details}",
         site_result.status
     );
-    if existing_failure {
+    let decided = matches!(
+        site_result.status,
+        CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+    );
+    if decided {
+        result.status = site_result.status.clone();
+        result.source = "site-comparison".to_string();
+        result.justification = Some(site_finding);
+        result.automated_verdict = match site_result.status {
+            CriterionStatus::Pass => Some(rgaa_core::AutomatedVerdict::Pass),
+            CriterionStatus::Fail => Some(rgaa_core::AutomatedVerdict::Fail),
+            CriterionStatus::NotApplicable => Some(rgaa_core::AutomatedVerdict::NotApplicable),
+            _ => None,
+        };
+    } else {
         result
             .justification
             .get_or_insert_with(String::new)
             .push_str(&format!("; {site_finding}"));
-    } else {
-        result.status = site_result.status.clone();
-        result.source = "site-comparison".to_string();
-        result.justification = Some(site_finding);
+        result.automated_verdict = None;
     }
 
     if !result
@@ -555,10 +576,7 @@ fn record_site_comparison_evidence(
     if !result.verdict_basis.contains(&VerdictBasis::Deterministic) {
         result.verdict_basis.push(VerdictBasis::Deterministic);
     }
-    if matches!(
-        site_result.status,
-        CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
-    ) {
+    if decided {
         result.verified_status = Some(site_result.status.clone());
 
         // The site comparison can identify a test outcome only when the
@@ -1073,8 +1091,12 @@ async fn audit_discovered_urls(
     );
     for criterion_id in ["12.2", "12.5"] {
         if let (Some(current), Some(comparable)) = (
-            site_results.iter_mut().find(|r| r.criterion_id == criterion_id),
-            comparable_results.iter().find(|r| r.criterion_id == criterion_id),
+            site_results
+                .iter_mut()
+                .find(|r| r.criterion_id == criterion_id),
+            comparable_results
+                .iter()
+                .find(|r| r.criterion_id == criterion_id),
         ) {
             *current = comparable.clone();
         }
@@ -1155,24 +1177,17 @@ async fn check_sitemap_links(
     binary: &str,
 ) -> Option<crate::sitemap_links::LinkCheck> {
     let base = reqwest::Url::parse(home_url).ok()?;
-    // Signals are "path:region:text"; the path is everything before the first ':'.
-    let sitemap_url = sampled
-        .iter()
-        .filter_map(|(_, observation)| observation.as_ref())
-        .flat_map(|observation| observation.sitemap_access.iter())
-        .filter_map(|signal| signal.split(':').next())
-        .filter(|path| path.starts_with('/'))
-        .find_map(|path| base.join(path).ok())?
-        .to_string();
+    let sitemap_url = site_comparison::sitemap_url(sampled, home_url)?;
     let client = crate::sitemap_links::link_client().ok()?;
     let robots = match client.get(base.join("/robots.txt").ok()?).send().await {
         Ok(response) if response.status().is_success() => response.text().await.ok(),
         _ => None,
     };
     let sitemap = reqwest::Url::parse(&sitemap_url).ok()?;
-    if robots.as_deref().is_some_and(|rules| {
-        crate::sitemap_links::robots_disallows(rules, sitemap.path())
-    }) {
+    if robots
+        .as_deref()
+        .is_some_and(|rules| crate::sitemap_links::robots_disallows(rules, sitemap.path()))
+    {
         return None;
     }
     let contexts =
@@ -2115,6 +2130,7 @@ mod routing_tests {
         record_site_comparison_evidence(result, &site_review);
 
         assert_eq!(result.status, CriterionStatus::Fail);
+        assert_eq!(result.automated_verdict, None);
         assert!(result
             .considered_sources
             .contains(&"site-comparison".into()));
@@ -2123,6 +2139,75 @@ mod routing_tests {
             .as_deref()
             .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
         assert!(validate_automatic_verdict_coverage(&results).is_ok());
+    }
+
+    #[test]
+    fn splitting_unresolved_site_criteria_drops_page_verdict_but_keeps_evidence() {
+        let mut result = deterministic_result("12.2", CriterionStatus::Pass, "human-review");
+        result.verified_status = Some(CriterionStatus::Pass);
+        result.automated_verdict = Some(rgaa_core::AutomatedVerdict::Pass);
+        result.tests.push(TestOutcome {
+            test_key: "1".into(),
+            status: CriterionStatus::Pass,
+            source: "human-review".into(),
+            evidence: Some("page-only observation".into()),
+        });
+        let mut pages = vec![PageResult {
+            url: "https://example.test".into(),
+            title: None,
+            criteria: vec![result],
+            compliance_rate: 100.0,
+            crawl_depth: 0,
+        }];
+
+        let site = split_site_criteria(&mut pages);
+
+        assert!(pages[0].criteria.is_empty());
+        assert_eq!(site.len(), 1);
+        assert_eq!(site[0].status, CriterionStatus::NeedsReview);
+        assert_eq!(site[0].verified_status, None);
+        assert_eq!(site[0].automated_verdict, None);
+        assert_eq!(
+            site[0].tests[0].evidence.as_deref(),
+            Some("page-only observation")
+        );
+    }
+
+    #[test]
+    fn site_failures_are_counted_once_in_the_audit_totals() {
+        let mut criteria = complete_prediction_set();
+        let site_failure = criteria
+            .iter_mut()
+            .find(|result| result.criterion_id == "12.2")
+            .expect("criterion 12.2 exists");
+        site_failure.status = CriterionStatus::Fail;
+        site_failure.source = "site-comparison".into();
+        site_failure.verified_status = Some(CriterionStatus::Fail);
+        site_failure.automated_verdict = Some(rgaa_core::AutomatedVerdict::Fail);
+        let page = PageResult {
+            url: "https://example.test".into(),
+            title: None,
+            criteria,
+            compliance_rate: 0.0,
+            crawl_depth: 0,
+        };
+
+        let audit = assemble_site_audit("https://example.test".into(), vec![page], 0);
+
+        assert_eq!(audit.failed, 1);
+        assert_eq!(audit.overall_compliance, 0.0);
+        assert_eq!(
+            audit
+                .site_criteria
+                .iter()
+                .filter(|criterion| criterion.criterion_id == "12.2")
+                .count(),
+            1
+        );
+        assert!(audit.pages[0]
+            .criteria
+            .iter()
+            .all(|criterion| criterion.criterion_id != "12.2"));
     }
 
     #[test]

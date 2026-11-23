@@ -72,7 +72,7 @@ async fn listener_inventory_hints_on_fail_fixtures_and_stays_silent_on_pass_fixt
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rgaa-test-corpus/criteria");
     let port = serve(dir).expect("fixture server");
 
-    let mut bridge = ObscuraBridge::new()
+    let mut bridge = ObscuraBridge::from_env()
         .with_ephemeral_port()
         .expect("port CDP libre");
     bridge

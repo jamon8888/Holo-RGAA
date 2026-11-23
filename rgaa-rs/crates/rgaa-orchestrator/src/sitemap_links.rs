@@ -36,12 +36,12 @@ pub(crate) struct LinkCheck {
     pub broken: Vec<(String, u16)>,
 }
 
-/// `true` when `robots_txt` forbids `path` for every user agent (`User-agent: *`).
-/// Longest matching rule wins; `Allow` beats `Disallow` on a tie, as in the RFC 9309.
+/// Whether the link-checker user agent is disallowed from requesting `path`.
+/// Specific user-agent groups take precedence over `*`; the longest matching path rule wins.
 pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
-    let mut in_matching_group = false;
-    let mut group_has_rules = false;
-    let mut best: Option<(usize, bool)> = None; // (length, allowed)
+    let mut groups: Vec<(Vec<String>, Vec<(String, bool)>)> = Vec::new();
+    let mut agents = Vec::new();
+    let mut rules = Vec::new();
     for raw in robots_txt.lines() {
         let line = raw.split('#').next().unwrap_or("").trim();
         let Some((key, value)) = line.split_once(':') else {
@@ -50,39 +50,68 @@ pub(crate) fn robots_disallows(robots_txt: &str, path: &str) -> bool {
         let (key, value) = (key.trim().to_ascii_lowercase(), value.trim());
         match key.as_str() {
             "user-agent" => {
-                if group_has_rules {
-                    in_matching_group = false;
-                    group_has_rules = false;
+                if !rules.is_empty() {
+                    groups.push((std::mem::take(&mut agents), std::mem::take(&mut rules)));
                 }
-                if value == "*" || "rgaa-rs-linkcheck".contains(&value.to_ascii_lowercase()) {
-                    in_matching_group = true;
+                if !value.is_empty() {
+                    agents.push(value.to_ascii_lowercase());
                 }
             }
-            "allow" | "disallow" if in_matching_group => {
-                group_has_rules = true;
-                if value.is_empty() || !robots_pattern_matches(value, path) {
-                    continue;
-                }
-                let allowed = key == "allow";
-                let better = match best {
-                    None => true,
-                    Some((len, was_allowed)) => {
-                        let specificity = value.bytes().filter(|byte| !matches!(byte, b'*' | b'$')).count();
-                        specificity > len || (specificity == len && allowed && !was_allowed)
-                    }
-                };
-                if better {
-                    best = Some((value.bytes().filter(|byte| !matches!(byte, b'*' | b'$')).count(), allowed));
+            "allow" | "disallow" if !agents.is_empty() => {
+                if !value.is_empty() {
+                    rules.push((value.to_string(), key == "allow"));
                 }
             }
             _ => {}
+        }
+    }
+    if !agents.is_empty() {
+        groups.push((agents, rules));
+    }
+    let agent = "rgaa-rs-linkcheck";
+    let specificity = groups
+        .iter()
+        .flat_map(|(agents, _)| agents)
+        .filter_map(|candidate| {
+            (candidate == "*" || agent.contains(candidate.as_str()))
+                .then_some((candidate.len(), candidate))
+        })
+        .map(|(specificity, _)| specificity)
+        .max();
+    let Some(specificity) = specificity else {
+        return false;
+    };
+    let mut best: Option<(usize, bool)> = None; // (length, allowed)
+    for (agents, rules) in groups {
+        let matches = agents.iter().any(|candidate| {
+            candidate.len() == specificity
+                && (candidate == "*" || agent.contains(candidate.as_str()))
+        });
+        if !matches {
+            continue;
+        }
+        for (value, allowed) in rules {
+            if !robots_pattern_matches(&value, path) {
+                continue;
+            }
+            let length = value
+                .bytes()
+                .filter(|byte| !matches!(byte, b'*' | b'$'))
+                .count();
+            if best.map_or(true, |(best_len, was_allowed)| {
+                length > best_len || (length == best_len && allowed && !was_allowed)
+            }) {
+                best = Some((length, allowed));
+            }
         }
     }
     matches!(best, Some((_, false)))
 }
 
 fn robots_pattern_matches(pattern: &str, path: &str) -> bool {
-    let (pattern, anchored) = pattern.strip_suffix('$').map_or((pattern, false), |p| (p, true));
+    let (pattern, anchored) = pattern
+        .strip_suffix('$')
+        .map_or((pattern, false), |p| (p, true));
     let mut rest = path;
     for part in pattern.split('*') {
         if part.is_empty() {
@@ -232,8 +261,18 @@ mod tests {
         assert!(!robots_disallows(robots, "/public"));
         assert!(!robots_disallows("User-agent: bot\nDisallow: /\n", "/x"));
         assert!(!robots_disallows("User-agent: *\nDisallow:\n", "/x"));
-        assert!(robots_disallows("User-agent: *\nDisallow: /*.pdf$", "/guide.pdf"));
-        assert!(!robots_disallows("User-agent: *\nDisallow: /*.pdf$", "/guide.pdf/extra"));
+        assert!(robots_disallows(
+            "User-agent: *\nDisallow: /*.pdf$",
+            "/guide.pdf"
+        ));
+        assert!(!robots_disallows(
+            "User-agent: *\nDisallow: /*.pdf$",
+            "/guide.pdf/extra"
+        ));
+        assert!(robots_disallows(
+            "User-agent: *\nAllow: /private/open/long\nUser-agent: rgaa-rs-linkcheck\nDisallow: /private",
+            "/private/open/long"
+        ));
     }
 
     #[test]

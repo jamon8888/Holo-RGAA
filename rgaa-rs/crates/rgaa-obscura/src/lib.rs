@@ -2082,6 +2082,9 @@ impl ObscuraBridge {
     const sitemap_access = Array.from(document.querySelectorAll('a[href]'))
       .filter(a => /sitemap|plan[-_ ]?(du[-_ ]?)?site/i.test(`${a.href} ${a.textContent}`))
       .map(a => `${new URL(a.href, location.href).pathname}:${regionOf(a)}:${(a.textContent || '').trim().toLowerCase()}`);
+    const sitemap_urls = Array.from(new Set(Array.from(document.querySelectorAll('a[href]'))
+      .filter(a => /sitemap|plan[-_ ]?(du[-_ ]?)?site/i.test(`${a.href} ${a.textContent}`))
+      .map(a => a.href))).slice(0, 500);
     const search_access = Array.from(document.querySelectorAll('input[type="search"], [role="search"], form[action*="search"], form[action*="recherche"]'))
       .map(el => {
         const form = el.closest('form');
@@ -2100,7 +2103,7 @@ impl ObscuraBridge {
           placeholder: el.placeholder || null
         }))
       }));
-    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access, has_password_input: document.querySelector('input[type=password]') !== null, page_links: Array.from(new Set(Array.from(document.querySelectorAll('a[href]')).map(a => a.href).filter(h => /^https?:/i.test(h)))).slice(0, 500) });
+    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, sitemap_urls, search_access, has_password_input: document.querySelector('input[type=password]') !== null, page_links: Array.from(new Set(Array.from(document.querySelectorAll('a[href]')).map(a => a.href).filter(h => /^https?:/i.test(h)))).slice(0, 500) });
   })()
   "#
     }

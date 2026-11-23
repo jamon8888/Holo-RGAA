@@ -245,19 +245,27 @@ impl From<AuditResult> for AuditBundle {
         let total_findings =
             findings.len() + page_audits.iter().map(|p| p.findings.len()).sum::<usize>();
 
-        let needs_review = page_audits
+        let all_criteria: Vec<_> = page_audits
             .iter()
             .flat_map(|p| &p.criteria)
+            .filter(|criterion| {
+                !result
+                    .site_criteria
+                    .iter()
+                    .any(|site| site.criterion_id == criterion.criterion_id)
+            })
+            .chain(result.site_criteria.iter())
+            .collect();
+        let needs_review = all_criteria
+            .iter()
             .filter(|c| c.status == CriterionStatus::NeedsReview)
             .count();
-        let na = page_audits
+        let na = all_criteria
             .iter()
-            .flat_map(|p| &p.criteria)
             .filter(|c| c.status == CriterionStatus::NotApplicable)
             .count();
-        let errors = page_audits
+        let errors = all_criteria
             .iter()
-            .flat_map(|p| &p.criteria)
             .filter(|c| c.status == CriterionStatus::Error)
             .count();
 
@@ -506,6 +514,21 @@ mod tests {
         assert_eq!(bundle.audit_complete, Some(true));
         assert!(bundle.pages[0].completed);
         assert_eq!(bundle.summary.completed_pages, 1);
+    }
+
+    #[test]
+    fn site_criteria_are_counted_once_in_bundle_status_totals() {
+        let mut result = sample_audit_result();
+        let mut site = result.pages[0].criteria[0].clone();
+        site.criterion_id = "12.2".into();
+        site.status = CriterionStatus::NeedsReview;
+        result.site_criteria.push(site);
+
+        let bundle = AuditBundle::from(result);
+
+        assert_eq!(bundle.summary.needs_review, 1);
+        assert_eq!(bundle.summary.na, 0);
+        assert_eq!(bundle.summary.errors, 0);
     }
 
     #[test]

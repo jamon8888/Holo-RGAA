@@ -276,6 +276,27 @@ fn command_targets_exact_page_and_rejects_duplicate_criterion_entries() {
 }
 
 #[test]
+fn command_can_review_a_site_criterion_and_recomputes_site_totals_once() {
+    let directory = TestDirectory::new();
+    let input = directory.path("site.json");
+    let mut original = audit(&["https://a.test"], &["1.1"]);
+    original.site_criteria.push(criterion("12.2"));
+    fs::write(&input, serde_json::to_vec(&original).unwrap()).unwrap();
+
+    let mut review = args(&input, "12.2", ReviewStatus::Fail);
+    review.url = Some("https://a.test".to_owned());
+    run(review).unwrap();
+
+    let reviewed: AuditResult = serde_json::from_slice(&fs::read(&input).unwrap()).unwrap();
+    assert_eq!(
+        reviewed.site_criteria[0].verified_status,
+        Some(CriterionStatus::Fail)
+    );
+    assert_eq!(reviewed.failed, 1);
+    assert_eq!(reviewed.overall_compliance, 0.0);
+}
+
+#[test]
 fn command_writes_output_or_atomically_replaces_input() {
     let directory = TestDirectory::new();
     let input = directory.path("input.json");

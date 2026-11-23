@@ -330,6 +330,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
         if case.mechanism == "probe-13-1-script-redirect"
             || case.mechanism == "probe-13-2-popup-hook"
         {
+            own_status = None;
             let popup = case.mechanism == "probe-13-2-popup-hook";
             // Hook probe: installed before the page's scripts, ~6 s without interaction.
             match bridge
@@ -357,14 +358,21 @@ async fn registry_fixtures_are_classified_under_obscura() {
                     if let Some(finding) = finding {
                         // The dedicated observation is this mechanism's own verdict;
                         // it supersedes the generic gap-fix answer on the criterion.
-                        own_status = Some(finding.status.clone());
-                        statuses.push(finding.status);
+                        own_status = Some(finding.status.into());
+                        statuses.push(finding.status.into());
                     }
                 }
-                Err(error) => evidence.push(format!("script-hook error: {error}")),
+                Err(error) => {
+                    evidence.push(format!("script-hook error: {error}"));
+                    wrong.push(format!(
+                        "{} / {}: script hook observation failed: {error}",
+                        case.mechanism, case.fixture
+                    ));
+                }
             }
         }
         if case.mechanism == "probe-13-9-orientation-render" {
+            own_status = None;
             match bridge
                 .observe_viewports(
                     &url,
@@ -381,14 +389,21 @@ async fn registry_fixtures_are_classified_under_obscura() {
                     if let Some(finding) = finding {
                         // The dedicated observation is this mechanism's own verdict;
                         // it supersedes the generic gap-fix answer on the criterion.
-                        own_status = Some(finding.status.clone());
-                        statuses.push(finding.status);
+                        own_status = Some(finding.status.into());
+                        statuses.push(finding.status.into());
                     }
                 }
-                Err(error) => evidence.push(format!("orientation error: {error}")),
+                Err(error) => {
+                    evidence.push(format!("orientation error: {error}"));
+                    wrong.push(format!(
+                        "{} / {}: orientation observation failed: {error}",
+                        case.mechanism, case.fixture
+                    ));
+                }
             }
         }
         if case.mechanism == "probe-13-8-script-motion" {
+            own_status = None;
             match bridge
                 .observe_with_hook(
                     &url,
@@ -406,11 +421,53 @@ async fn registry_fixtures_are_classified_under_obscura() {
                     if let Some(finding) = finding {
                         // The dedicated observation is this mechanism's own verdict;
                         // it supersedes the generic gap-fix answer on the criterion.
-                        own_status = Some(finding.status.clone());
-                        statuses.push(finding.status);
+                        own_status = Some(finding.status.into());
+                        statuses.push(finding.status.into());
                     }
                 }
-                Err(error) => evidence.push(format!("motion error: {error}")),
+                Err(error) => {
+                    evidence.push(format!("motion error: {error}"));
+                    wrong.push(format!(
+                        "{} / {}: motion observation failed: {error}",
+                        case.mechanism, case.fixture
+                    ));
+                }
+            }
+        }
+        if matches!(
+            case.mechanism.as_str(),
+            "probe-12-10-listener-inventory"
+                | "probe-13-10-listener-inventory"
+                | "probe-13-11-listener-inventory"
+                | "probe-13-12-listener-inventory"
+        ) {
+            own_status = None;
+            match bridge
+                .observe_with_hook(
+                    &url,
+                    rgaa_rules::script_hooks::LISTENER_HOOK,
+                    rgaa_rules::script_hooks::LISTENER_READ,
+                    std::time::Duration::from_millis(
+                        rgaa_rules::script_hooks::LISTENER_OBSERVATION_MS,
+                    ),
+                )
+                .await
+            {
+                Ok(observation) => {
+                    let result = rgaa_rules::script_hooks::listener_results(&observation);
+                    if let Some(result) = result.get(&case.criterion) {
+                        own_status = Some(result.status.clone());
+                        statuses.push(result.status.clone());
+                        evidence.push(format!("listener-hook: {:?}", result.justification));
+                    }
+                }
+                Err(error) => {
+                    evidence.push(format!("listener-hook error: {error}"));
+                    wrong.push(format!(
+                        "{} / {}: listener observation failed: {error}",
+                        case.mechanism, case.fixture
+                    ));
+                }
             }
         }
         let failed = statuses.iter().any(|s| matches!(s, CriterionStatus::Fail));
@@ -427,11 +484,18 @@ async fn registry_fixtures_are_classified_under_obscura() {
                 ));
             }
         }
+        let silent_review_fixture = !case.expect_fail
+            && !case.expect_pass
+            && case
+                .expected_statuses
+                .contains(&CriterionStatus::NeedsReview)
+            && own_status.is_none();
         if !case.expected_statuses.is_empty()
             && !case
                 .expected_statuses
                 .iter()
                 .any(|expected| own_status.as_ref() == Some(expected))
+            && !silent_review_fixture
         {
             wrong.push(format!(
                 "{} / {}: expected its own mechanism to report one of {:?}, it said {own_status:?} ({})",

@@ -120,15 +120,22 @@ pub fn run(args: ReviewArgs) -> Result<i32, CliError> {
     let mut audit: AuditResult = serde_json::from_str(&raw)
         .map_err(|error| CliError::invalid_input(format!("invalid audit JSON: {error}")))?;
 
-    let (page_index, criterion_index) =
-        locate_criterion(&audit, &args.criterion, args.url.as_deref())?;
-    apply_review(
-        &mut audit.pages[page_index].criteria[criterion_index],
-        args.status.into(),
-        &args.author,
-        Utc::now(),
-        &args.reason,
-    )
+    match locate_criterion(&audit, &args.criterion, args.url.as_deref())? {
+        ReviewTarget::Page(page_index, criterion_index) => apply_review(
+            &mut audit.pages[page_index].criteria[criterion_index],
+            args.status.into(),
+            &args.author,
+            Utc::now(),
+            &args.reason,
+        ),
+        ReviewTarget::Site(criterion_index) => apply_review(
+            &mut audit.site_criteria[criterion_index],
+            args.status.into(),
+            &args.author,
+            Utc::now(),
+            &args.reason,
+        ),
+    }
     .map_err(|error| CliError::invalid_input(error.to_string()))?;
     refresh_status_aggregates(&mut audit);
 
@@ -151,6 +158,13 @@ fn refresh_status_aggregates(audit: &mut AuditResult) {
         page.compliance_rate = rgaa_report::compliance_rate(&page.criteria);
         all_criteria.extend(page.criteria.iter().cloned());
     }
+    all_criteria.retain(|criterion| {
+        !audit
+            .site_criteria
+            .iter()
+            .any(|site| site.criterion_id == criterion.criterion_id)
+    });
+    all_criteria.extend(audit.site_criteria.iter().cloned());
 
     audit.passed = all_criteria
         .iter()
@@ -176,11 +190,16 @@ fn refresh_status_aggregates(audit: &mut AuditResult) {
     .verified_compliance_percent;
 }
 
+enum ReviewTarget {
+    Page(usize, usize),
+    Site(usize),
+}
+
 fn locate_criterion(
     audit: &AuditResult,
     criterion_id: &str,
     url: Option<&str>,
-) -> Result<(usize, usize), CliError> {
+) -> Result<ReviewTarget, CliError> {
     let mut matches = Vec::new();
     for (page_index, page) in audit.pages.iter().enumerate() {
         if url.is_some_and(|expected_url| page.url != expected_url) {
@@ -194,6 +213,13 @@ fn locate_criterion(
     }
 
     match matches.as_slice() {
+        [] if let Some(index) = audit
+            .site_criteria
+            .iter()
+            .position(|c| c.criterion_id == criterion_id) =>
+        {
+            Ok(ReviewTarget::Site(index))
+        }
         [] if url.is_some() => Err(CliError::invalid_input(format!(
             "criterion '{}' was not found on page '{}'",
             criterion_id,
@@ -203,7 +229,7 @@ fn locate_criterion(
             "criterion '{}' was not found in the audit",
             criterion_id
         ))),
-        [target] => Ok(*target),
+        [target] => Ok(ReviewTarget::Page(target.0, target.1)),
         _ if url.is_none() => Err(CliError::invalid_input(format!(
             "criterion '{}' appears on multiple pages; provide --url",
             criterion_id

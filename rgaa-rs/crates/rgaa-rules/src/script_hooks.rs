@@ -7,8 +7,8 @@
 //! `location.replace`, and flags real user interaction. Obscura exposes no global
 //! `Location` and `href` cannot be intercepted, and a script navigation discards the
 //! hooked document, so the verdict compares two snapshots: the page URL once loaded and
-//! the URL after ~6 s **without any interaction**. A page that moved on its own is the
-//! `fail`; the timer recorded in the first snapshot is the trace (call, delay).
+//! the URL after ~6 s **without any interaction**. A page that moved on its own is sent
+//! for review because the probe cannot establish whether the user can stop it.
 //!
 //! Partial mechanism: it can `fail` or ask for `review`, never `pass`. Carousel timers are
 //! not redirections and stay silent.
@@ -49,6 +49,8 @@ pub const REDIRECT_HOOK: &str = r#"
 pub const REDIRECT_READ: &str = r#"
 JSON.stringify({
   href: location.href,
+  time_origin: performance.timeOrigin,
+  title: document.title,
   interacted: !!(window.__rgaa && window.__rgaa.interacted),
   log: (window.__rgaa && window.__rgaa.log) || [],
   embedded: Array.from(document.querySelectorAll('object[data], embed[src], svg animate, svg script, canvas'))
@@ -67,9 +69,24 @@ fn looks_like_navigation(source: &str) -> bool {
 }
 
 /// Outcome of the redirect probe for 13.1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartialProbeStatus {
+    Fail,
+    NeedsReview,
+}
+
+impl From<PartialProbeStatus> for CriterionStatus {
+    fn from(status: PartialProbeStatus) -> Self {
+        match status {
+            PartialProbeStatus::Fail => Self::Fail,
+            PartialProbeStatus::NeedsReview => Self::NeedsReview,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedirectFinding {
-    pub status: CriterionStatus,
+    pub status: PartialProbeStatus,
     pub details: String,
 }
 
@@ -131,7 +148,11 @@ pub fn parse_redirect_observation(observation: &serde_json::Value) -> Option<Red
         })
         .unwrap_or_default();
 
-    let moved = without_fragment(href_at_load) != without_fragment(href_after);
+    let moved = without_fragment(href_at_load) != without_fragment(href_after)
+        || at_load
+            .get("time_origin")
+            .and_then(serde_json::Value::as_f64)
+            != after.get("time_origin").and_then(serde_json::Value::as_f64);
     if moved && !interacted {
         let trace = direct
             .iter()
@@ -144,7 +165,7 @@ pub fn parse_redirect_observation(observation: &serde_json::Value) -> Option<Red
             trace.join(", ")
         };
         return Some(RedirectFinding {
-            status: CriterionStatus::Fail,
+            status: PartialProbeStatus::NeedsReview,
             details: format!(
                 "navigation sans action de l'utilisateur: {href_at_load} → {href_after} en moins de {} s ({trace})",
                 REDIRECT_OBSERVATION_MS / 1000
@@ -173,7 +194,7 @@ pub fn parse_redirect_observation(observation: &serde_json::Value) -> Option<Red
             .collect::<Vec<_>>()
             .join(", ");
         return Some(RedirectFinding {
-            status: CriterionStatus::NeedsReview,
+            status: PartialProbeStatus::NeedsReview,
             details: format!(
                 "contenu intégré pouvant se rafraîchir seul, non observable ici: {list}"
             ),
@@ -186,7 +207,7 @@ pub fn parse_redirect_observation(observation: &serde_json::Value) -> Option<Red
             .cloned()
             .collect::<Vec<_>>();
         return Some(RedirectFinding {
-            status: CriterionStatus::NeedsReview,
+            status: PartialProbeStatus::NeedsReview,
             details: format!(
                 "minuteur ou appel de navigation suspect sans redirection observée dans la fenêtre de {} s: {}",
                 REDIRECT_OBSERVATION_MS / 1000,
@@ -207,7 +228,7 @@ pub fn redirect_results(finding: Option<&RedirectFinding>) -> HashMap<String, Cr
         criterion_id: "13.1".to_string(),
         title: String::new(),
         classification: Classification::Deterministe,
-        status: finding.status.clone(),
+        status: finding.status.into(),
         violations: vec![],
         confidence: None,
         raw_confidence: None,
@@ -220,7 +241,7 @@ pub fn redirect_results(finding: Option<&RedirectFinding>) -> HashMap<String, Cr
         verdict_basis: Vec::new(),
         evidence: Vec::new(),
         confidence_calibration_version: None,
-        review_required: finding.status == CriterionStatus::NeedsReview,
+        review_required: finding.status == PartialProbeStatus::NeedsReview,
         review_reason: None,
         verified_status: None,
         review_events: Vec::new(),
@@ -245,7 +266,13 @@ pub const POPUP_HOOK: &str = r#"
     ? Function.prototype.toString.call(fn).slice(0, 300)
     : String(fn).slice(0, 300);
   try {
-    window.open = function (url, ...rest) { rec('window.open', { url: String(url) }); return null; };
+    const originalOpen = window.open;
+    window.open = function (url, target, ...rest) {
+      const name = target == null || target === '' ? '_blank' : String(target);
+      rec('window.open', { url: String(url), target: name });
+      if (['_self', '_parent', '_top'].includes(name)) return originalOpen.call(this, url, target, ...rest);
+      return null;
+    };
   } catch (e) {}
   const wt = window.setTimeout;
   window.setTimeout = function (fn, ms, ...rest) { rec('setTimeout', { ms: Number(ms) || 0, src: src(fn) }); return wt.call(this, fn, ms, ...rest); };
@@ -261,6 +288,12 @@ pub fn parse_popup_observation(observation: &serde_json::Value) -> Option<Redire
         .iter()
         .filter(|e| e.get("kind").and_then(serde_json::Value::as_str) == Some("window.open"))
         .filter(|e| e.get("interacted").and_then(serde_json::Value::as_bool) == Some(false))
+        .filter(|e| {
+            !matches!(
+                e.get("target").and_then(serde_json::Value::as_str),
+                Some("_self" | "_parent" | "_top")
+            )
+        })
         .map(|e| {
             format!(
                 "window.open({})",
@@ -272,7 +305,7 @@ pub fn parse_popup_observation(observation: &serde_json::Value) -> Option<Redire
         .collect();
     if !opened.is_empty() {
         return Some(RedirectFinding {
-            status: CriterionStatus::Fail,
+            status: PartialProbeStatus::Fail,
             details: format!(
                 "fenêtre ouverte sans action de l'utilisateur en moins de {} s: {}",
                 REDIRECT_OBSERVATION_MS / 1000,
@@ -297,7 +330,7 @@ pub fn parse_popup_observation(observation: &serde_json::Value) -> Option<Redire
         })
         .collect();
     (!deferred.is_empty()).then(|| RedirectFinding {
-        status: CriterionStatus::NeedsReview,
+        status: PartialProbeStatus::NeedsReview,
         details: format!(
             "ouverture de fenêtre différée suspecte, non survenue dans la fenêtre de {} s: {}",
             REDIRECT_OBSERVATION_MS / 1000,
@@ -473,7 +506,7 @@ pub fn listener_results(observation: &serde_json::Value) -> HashMap<String, Crit
         .into_iter()
         .map(|(criterion, details)| {
             let finding = RedirectFinding {
-                status: CriterionStatus::NeedsReview,
+                status: PartialProbeStatus::NeedsReview,
                 details,
             };
             let mut map = redirect_results(Some(&finding));
@@ -495,16 +528,20 @@ pub const ORIENTATION_HOOK: &str = r#"
 (() => {
   const lock = [];
   window.__rgaa = { lock };
-  const record = type => { lock.push(String(type)); return Promise.resolve(); };
+  const unsupported = type => {
+    lock.push(String(type));
+    return Promise.reject(Object.assign(new Error('orientation lock unavailable'), { name: 'NotSupportedError' }));
+  };
   try {
     const o = screen.orientation;
     if (o && typeof o.lock === 'function') {
-      o.lock = function (type) { lock.push(String(type)); return Promise.resolve(); };
+      const originalLock = o.lock.bind(o);
+      o.lock = function (type) { lock.push(String(type)); return originalLock(type); };
     } else {
-      Object.defineProperty(screen, 'orientation', { configurable: true, value: { lock: record, unlock() {}, type: 'portrait-primary', angle: 0 } });
+      Object.defineProperty(screen, 'orientation', { configurable: true, value: { lock: unsupported, unlock() {}, type: 'portrait-primary', angle: 0 } });
     }
   } catch (e) {
-    try { Object.defineProperty(screen, 'orientation', { configurable: true, value: { lock: record, unlock() {} } }); } catch (e2) {}
+    try { Object.defineProperty(screen, 'orientation', { configurable: true, value: { lock: unsupported, unlock() {} } }); } catch (e2) {}
   }
 })();
 "#;
@@ -574,9 +611,9 @@ fn string_set(snapshot: &serde_json::Value, key: &str) -> Vec<String> {
 
 /// Verdict for 13.9 from the snapshots taken at `ORIENTATION_VIEWPORTS` (portrait, landscape).
 /// `fail`: an orientation lock, a "rotate your device" message shown in only one orientation,
-/// or at least half of the visible text lost in one orientation. A smaller difference is
-/// `review` (it may be presentation). Never `pass`; `None` when the two renders carry the same
-/// content.
+/// or a text difference in one orientation. Text differences are `review`: extracted nodes
+/// can split the same content differently across layouts. Never `pass`; `None` when snapshots
+/// show no restriction or text difference.
 #[must_use]
 pub fn parse_orientation_observation(snapshots: &[serde_json::Value]) -> Option<RedirectFinding> {
     let [portrait, landscape] = snapshots else {
@@ -584,11 +621,15 @@ pub fn parse_orientation_observation(snapshots: &[serde_json::Value]) -> Option<
     };
     let locks: Vec<String> = string_set(landscape, "lock")
         .into_iter()
-        .filter(|t| !matches!(t.as_str(), "any" | "natural"))
+        .filter(|t| t != "any")
         .collect();
     if !locks.is_empty() {
         return Some(RedirectFinding {
-            status: CriterionStatus::Fail,
+            status: if locks.iter().any(|lock| lock == "natural") {
+                PartialProbeStatus::NeedsReview
+            } else {
+                PartialProbeStatus::Fail
+            },
             details: format!(
                 "verrouillage de l'orientation: screen.orientation.lock({})",
                 locks.join(", ")
@@ -606,7 +647,7 @@ pub fn parse_orientation_observation(snapshots: &[serde_json::Value]) -> Option<
         if let Some(message) = rotate_message(shown) {
             if rotate_message(other).is_none() {
                 return Some(RedirectFinding {
-                    status: CriterionStatus::Fail,
+                    status: PartialProbeStatus::Fail,
                     details: format!("message de rotation affiché en {label}: « {message} »"),
                 });
             }
@@ -630,14 +671,14 @@ pub fn parse_orientation_observation(snapshots: &[serde_json::Value]) -> Option<
         );
         if lost.len() * 2 >= from.len() {
             return Some(RedirectFinding {
-                status: CriterionStatus::Fail,
+                status: PartialProbeStatus::NeedsReview,
                 details: format!("contenu masqué: {detail}"),
             });
         }
         review.push(detail);
     }
     (!review.is_empty()).then(|| RedirectFinding {
-        status: CriterionStatus::NeedsReview,
+        status: PartialProbeStatus::NeedsReview,
         details: format!(
             "différence de contenu entre orientations (présentation ?): {}",
             review.join("; ")
@@ -682,7 +723,10 @@ pub const MOTION_HOOK: &str = r#"
         for (const m of list) {
           state.n++;
           const k = label(m.target);
-          state.targets[k] = (state.targets[k] || 0) + 1;
+          const now = Date.now();
+          const target = state.targets[k] || (state.targets[k] = { n: 0, first: now, last: now });
+          target.n++;
+          target.last = now;
         }
       });
       mo.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
@@ -701,7 +745,7 @@ pub const MOTION_READ: &str = r#"
     .map(name).filter(n => /\b(pause|stop|arr[êe]t|arr[êe]ter|suspendre|freeze|mettre en pause)\b/i.test(n));
   const loaders = Array.from(document.querySelectorAll('[role=progressbar], [role=status], [aria-busy=true], [class*=spin], [class*=load], [id*=spin], [id*=load]'))
     .map(e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : ''));
-  return JSON.stringify({ n: st.n, targets: st.targets, interacted: !!st.interacted, controls, loaders });
+  return JSON.stringify({ n: st.n, targets: st.targets, snapshot: Date.now(), interacted: !!st.interacted, controls, loaders });
 })()
 "#;
 
@@ -709,10 +753,8 @@ pub const MOTION_READ: &str = r#"
 /// a late-loaded widget — are not).
 const MOTION_MIN_MUTATIONS: u64 = 3;
 
-/// Verdict for 13.8 from the `{at_load, after}` snapshots. `fail`: repeated DOM changes with
-/// no pause/stop control. `review`: the same with a control, or when the moving element looks
-/// like a spinner/loader (movement that may be essential). Never `pass`; `None` when the page
-/// is static.
+/// A failure needs more than five seconds of observed motion on a target without a control.
+/// Missing timing data stays `review`, never a fail or pass; `None` means no motion was seen.
 #[must_use]
 pub fn parse_motion_observation(observation: &serde_json::Value) -> Option<RedirectFinding> {
     let at_load = observation.get("at_load")?;
@@ -722,12 +764,18 @@ pub fn parse_motion_observation(observation: &serde_json::Value) -> Option<Redir
     if delta < MOTION_MIN_MUTATIONS {
         return None;
     }
-    let targets = |v: &serde_json::Value| -> std::collections::BTreeMap<String, u64> {
+    let targets = |v: &serde_json::Value|
+        -> std::collections::BTreeMap<String, (u64, Option<u64>, Option<u64>)> {
         v.get("targets")
             .and_then(serde_json::Value::as_object)
             .map(|o| {
                 o.iter()
-                    .filter_map(|(k, n)| Some((k.clone(), n.as_u64()?)))
+                    .filter_map(|(k, target)| {
+                        let count = target.get("n").and_then(serde_json::Value::as_u64)?;
+                        let first = target.get("first").and_then(serde_json::Value::as_u64);
+                        let last = target.get("last").and_then(serde_json::Value::as_u64);
+                        Some((k.clone(), (count, first, last)))
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -735,7 +783,12 @@ pub fn parse_motion_observation(observation: &serde_json::Value) -> Option<Redir
     let (before_t, after_t) = (targets(at_load), targets(after));
     let mut moving: Vec<(String, u64)> = after_t
         .iter()
-        .map(|(k, n)| (k.clone(), n.saturating_sub(*before_t.get(k).unwrap_or(&0))))
+        .map(|(k, (n, _, _))| {
+            (
+                k.clone(),
+                n.saturating_sub(before_t.get(k).map_or(0, |(count, _, _)| *count)),
+            )
+        })
         .filter(|(_, n)| *n >= 2)
         .collect();
     moving.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -761,26 +814,36 @@ pub fn parse_motion_observation(observation: &serde_json::Value) -> Option<Redir
                 .collect()
         })
         .unwrap_or_default();
-    let on_loader = moving.iter().any(|(k, _)| loaders.contains(k));
+    let all_on_loaders = moving.iter().all(|(k, _)| loaders.contains(k));
+    let started = at_load.get("snapshot").and_then(serde_json::Value::as_u64);
+    let sustained = started.is_some_and(|started| {
+        moving.iter().any(|(key, _)| {
+            after_t.get(key).is_some_and(|(_, first, last)| {
+                (*first)
+                    .zip(*last)
+                    .is_some_and(|(first, last)| last.saturating_sub(first.max(started)) > 5_000)
+            })
+        })
+    });
     let window = format!(
         "{} mutations en {} s sans interaction",
         delta,
         REDIRECT_OBSERVATION_MS / 1000
     );
-    if on_loader {
+    if all_on_loaders {
         return Some(RedirectFinding {
-            status: CriterionStatus::NeedsReview,
+            status: PartialProbeStatus::NeedsReview,
             details: format!("mouvement sur un indicateur de chargement (caractère essentiel à confirmer): {trace}; {window}"),
         });
     }
-    if controls > 0 {
+    if controls > 0 || !sustained {
         return Some(RedirectFinding {
-            status: CriterionStatus::NeedsReview,
+            status: PartialProbeStatus::NeedsReview,
             details: format!("mouvement automatique avec {controls} contrôle(s) pause/stop repéré(s) (efficacité à vérifier): {trace}; {window}"),
         });
     }
     Some(RedirectFinding {
-        status: CriterionStatus::Fail,
+        status: PartialProbeStatus::Fail,
         details: format!("mouvement automatique sans contrôle pause/stop: {trace}; {window}"),
     })
 }
@@ -806,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    fn a_page_that_moves_on_its_own_fails_with_the_timer_trace() {
+    fn an_uncontrolled_redirect_is_review_when_stop_controls_are_unobserved() {
         let observation = json!({
             "at_load": snapshot("http://x/r1.html", json!([
                 {"kind": "setTimeout", "ms": 1500, "src": "function(){ location.replace('/t.html'); }"}
@@ -814,7 +877,7 @@ mod tests {
             "after": snapshot("http://x/t.html", json!([])),
         });
         let finding = parse_redirect_observation(&observation).expect("finding");
-        assert_eq!(finding.status, CriterionStatus::Fail);
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
         assert!(
             finding.details.contains("setTimeout(1500 ms)"),
             "{}",
@@ -843,7 +906,7 @@ mod tests {
             "after": snapshot("http://x/slow.html", json!([])),
         });
         let finding = parse_redirect_observation(&observation).expect("finding");
-        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
     }
 
     #[test]
@@ -857,8 +920,19 @@ mod tests {
     }
 
     #[test]
+    fn same_url_reload_changes_time_origin_and_is_reported_for_review() {
+        let mut before = snapshot("http://x/reload.html", json!([]));
+        before["time_origin"] = json!(1_000.0);
+        let mut after = snapshot("http://x/reload.html", json!([]));
+        after["time_origin"] = json!(7_000.0);
+        let finding = parse_redirect_observation(&json!({"at_load": before, "after": after}))
+            .expect("reload finding");
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
+    }
+
+    #[test]
     fn the_probe_never_emits_pass() {
-        for status in [CriterionStatus::Fail, CriterionStatus::NeedsReview] {
+        for status in [PartialProbeStatus::Fail, PartialProbeStatus::NeedsReview] {
             let map = redirect_results(Some(&RedirectFinding {
                 status,
                 details: "x".into(),
@@ -872,13 +946,16 @@ mod tests {
         let fail = json!({"after": {"log": [
             {"kind": "window.open", "interacted": false, "url": "http://x/ad"}]}});
         let finding = parse_popup_observation(&fail).expect("finding");
-        assert_eq!(finding.status, CriterionStatus::Fail);
+        assert_eq!(finding.status, PartialProbeStatus::Fail);
         assert!(finding.details.contains("window.open(http://x/ad)"));
         let clicked = json!({"after": {"log": [
             {"kind": "window.open", "interacted": true, "url": "http://x/ad"}]}});
         assert_eq!(parse_popup_observation(&clicked), None);
         let quiet = json!({"after": {"log": []}});
         assert_eq!(parse_popup_observation(&quiet), None);
+        let same_context = json!({"after": {"log": [
+            {"kind": "window.open", "interacted": false, "target": "_self", "url": "/next"}]}});
+        assert_eq!(parse_popup_observation(&same_context), None);
     }
 
     #[test]
@@ -886,7 +963,7 @@ mod tests {
         let pending = json!({"after": {"log": [
             {"kind": "setTimeout", "ms": 30000, "src": "() => window.open('/x')"}]}});
         let finding = parse_popup_observation(&pending).expect("finding");
-        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
         let map = popup_results(Some(&finding));
         assert!(map.contains_key("13.2") && !map.contains_key("13.1"));
         assert_ne!(map["13.2"].status, CriterionStatus::Pass);
@@ -925,27 +1002,32 @@ mod tests {
     }
 
     #[test]
-    fn orientation_lock_message_and_hidden_content_fail_but_reflow_does_not() {
+    fn orientation_lock_fails_but_text_differences_are_reviewed() {
         let all = ["titre", "contenu important"];
         let locked = [view(false, &all, &[]), view(true, &all, &["portrait"])];
         assert_eq!(
             parse_orientation_observation(&locked).unwrap().status,
-            CriterionStatus::Fail
+            PartialProbeStatus::Fail
         );
         let any = [view(false, &all, &[]), view(true, &all, &["any"])];
         assert_eq!(parse_orientation_observation(&any), None);
+        let natural = [view(false, &all, &[]), view(true, &all, &["natural"])];
+        assert_eq!(
+            parse_orientation_observation(&natural).unwrap().status,
+            PartialProbeStatus::NeedsReview
+        );
         let hidden = [view(false, &all, &[]), view(true, &[], &[])];
         let finding = parse_orientation_observation(&hidden).unwrap();
-        assert_eq!(finding.status, CriterionStatus::Fail);
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
         assert!(finding.details.contains("paysage"), "{}", finding.details);
         let message = [
             view(false, &all, &[]),
             view(true, &["veuillez tourner votre appareil", "titre"], &[]),
         ];
-        // "tourner" is not in the keyword list; the hidden content still fails.
+        // "tourner" is not in the keyword list; the content difference stays review.
         assert_eq!(
             parse_orientation_observation(&message).unwrap().status,
-            CriterionStatus::Fail
+            PartialProbeStatus::NeedsReview
         );
         let rotate = [
             view(false, &all, &[]),
@@ -972,10 +1054,22 @@ mod tests {
         let portrait = view(false, &["a", "b", "c", "d", "menu"], &[]);
         let landscape = view(true, &["a", "b", "c", "d"], &[]);
         let finding = parse_orientation_observation(&[portrait, landscape]).unwrap();
-        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
         assert_ne!(
             orientation_results(Some(&finding))["13.9"].status,
             CriterionStatus::Pass
+        );
+    }
+
+    #[test]
+    fn regrouped_text_across_elements_is_not_a_failure() {
+        let portrait = view(false, &["Account settings"], &[]);
+        let landscape = view(true, &["Account", "settings"], &[]);
+        assert_eq!(
+            parse_orientation_observation(&[portrait, landscape])
+                .unwrap()
+                .status,
+            PartialProbeStatus::NeedsReview
         );
     }
 
@@ -987,25 +1081,29 @@ mod tests {
         loaders: &[&str],
     ) -> serde_json::Value {
         json!({
-            "at_load": {"n": n_load, "targets": {target: n_load}, "controls": [], "loaders": []},
-            "after": {"n": n_after, "targets": {target: n_after}, "controls": controls, "loaders": loaders},
+            "at_load": {"n": n_load, "snapshot": 0, "targets": {target: {"n": n_load, "first": 0, "last": 0}}, "controls": [], "loaders": []},
+            "after": {"n": n_after, "snapshot": 6000, "targets": {target: {"n": n_after, "first": 0, "last": 6000}}, "controls": controls, "loaders": loaders},
         })
     }
 
     #[test]
-    fn automatic_motion_without_control_fails_with_a_control_or_a_loader_it_is_review() {
+    fn motion_fails_only_when_timing_shows_over_five_seconds() {
         let fail = parse_motion_observation(&motion(0, 6, "div#c", &[], &[])).unwrap();
-        assert_eq!(fail.status, CriterionStatus::Fail);
+        assert_eq!(fail.status, PartialProbeStatus::Fail);
         assert!(
             fail.details.contains("div#c (6 mutations)"),
             "{}",
             fail.details
         );
         let paused = parse_motion_observation(&motion(0, 6, "div#c", &["Pause"], &[])).unwrap();
-        assert_eq!(paused.status, CriterionStatus::NeedsReview);
+        assert_eq!(paused.status, PartialProbeStatus::NeedsReview);
         let loader =
             parse_motion_observation(&motion(0, 6, "div#spin", &[], &["div#spin"])).unwrap();
-        assert_eq!(loader.status, CriterionStatus::NeedsReview);
+        assert_eq!(loader.status, PartialProbeStatus::NeedsReview);
+        let mut short = motion(0, 6, "div#c", &[], &[]);
+        short["after"]["targets"]["div#c"]["last"] = serde_json::json!(1_000);
+        let uncertain = parse_motion_observation(&short).unwrap();
+        assert_eq!(uncertain.status, PartialProbeStatus::NeedsReview);
         assert_ne!(
             motion_results(Some(&fail))["13.8"].status,
             CriterionStatus::Pass
@@ -1035,7 +1133,7 @@ mod tests {
             "after": snapshot("http://x/p", json!([])),
         });
         let finding = parse_redirect_observation(&embedded).unwrap();
-        assert_eq!(finding.status, CriterionStatus::NeedsReview);
+        assert_eq!(finding.status, PartialProbeStatus::NeedsReview);
         assert!(finding.details.contains("canvas ×2") && finding.details.contains("object ×1"));
         let moved = json!({
             "at_load": {"href": "http://x/p", "interacted": false, "log": [], "embedded": ["canvas"]},
@@ -1043,7 +1141,7 @@ mod tests {
         });
         assert_eq!(
             parse_redirect_observation(&moved).unwrap().status,
-            CriterionStatus::Fail
+            PartialProbeStatus::NeedsReview
         );
     }
 }

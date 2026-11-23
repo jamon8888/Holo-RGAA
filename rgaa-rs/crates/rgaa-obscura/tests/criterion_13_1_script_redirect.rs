@@ -12,10 +12,10 @@ use std::net::TcpListener;
 use std::path::Path;
 use std::time::Duration;
 
-use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::script_hooks::{
-    parse_redirect_observation, REDIRECT_HOOK, REDIRECT_OBSERVATION_MS, REDIRECT_READ,
+    parse_redirect_observation, PartialProbeStatus, REDIRECT_HOOK, REDIRECT_OBSERVATION_MS,
+    REDIRECT_READ,
 };
 
 /// Serveur de fixtures : un fil par connexion, pour qu'une connexion ouverte et muette
@@ -72,7 +72,7 @@ async fn script_redirects_fail_and_carousels_do_not() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rgaa-test-corpus/criteria");
     let port = serve(dir).expect("fixture server");
 
-    let mut bridge = ObscuraBridge::new()
+    let mut bridge = ObscuraBridge::from_env()
         .with_ephemeral_port()
         .expect("port CDP libre");
     bridge
@@ -96,14 +96,31 @@ async fn script_redirects_fail_and_carousels_do_not() {
             )
             .await
             .unwrap_or_else(|e| panic!("{name}: {e}"));
+        if name == "13.1-script-redirect-pass" {
+            assert!(
+                observation["at_load"]["title"]
+                    .as_str()
+                    .is_some_and(|title| title.contains("Carrousel automatique")),
+                "carousel document was not observed: {observation}"
+            );
+        }
         let finding = parse_redirect_observation(&observation);
         eprintln!("{name}: {finding:?}");
         verdicts.push((name, finding.map(|f| f.status)));
     }
     bridge.stop_server().await;
 
-    assert_eq!(verdicts[0].1, Some(CriterionStatus::Fail), "{verdicts:?}");
-    assert_eq!(verdicts[1].1, Some(CriterionStatus::Fail), "{verdicts:?}");
+    assert_eq!(
+        verdicts[0].1,
+        Some(PartialProbeStatus::NeedsReview),
+        "{verdicts:?}"
+    );
+    assert_eq!(
+        verdicts[1].1,
+        Some(PartialProbeStatus::NeedsReview),
+        "{verdicts:?}"
+    );
+    assert!(verdicts[2].1.is_none(), "{verdicts:?}");
     assert_ne!(
         verdicts[2].1,
         Some(CriterionStatus::Fail),

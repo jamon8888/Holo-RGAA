@@ -36,6 +36,29 @@ fn echappe(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+fn push_criterion_row(rows: &mut String, result: &rgaa_core::CriterionResult) {
+    let status_str = match result.status {
+        rgaa_core::CriterionStatus::Pass => "PASS",
+        rgaa_core::CriterionStatus::Fail => "FAIL",
+        rgaa_core::CriterionStatus::NotTested => "N/A",
+        rgaa_core::CriterionStatus::NeedsReview => "REVIEW",
+        rgaa_core::CriterionStatus::NotApplicable => "N/A",
+        rgaa_core::CriterionStatus::Error => "ERROR",
+    };
+    let row_color = match result.status {
+        rgaa_core::CriterionStatus::Pass => "#22c55e",
+        rgaa_core::CriterionStatus::Fail | rgaa_core::CriterionStatus::Error => "#ef4444",
+        rgaa_core::CriterionStatus::NeedsReview => "#eab308",
+        _ => "transparent",
+    };
+    rows.push_str(&format!(
+        r#"<tr style="background:{row_color}20"><td>{}</td><td>{}</td><td>{}</td></tr>"#,
+        echappe(&result.criterion_id),
+        status_str,
+        echappe(&result.title)
+    ));
+}
+
 pub fn export_json(audit: &rgaa_core::AuditResult, path: &Path) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(audit)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
@@ -59,28 +82,13 @@ pub fn export_html(audit: &rgaa_core::AuditResult, path: &Path) -> std::io::Resu
             echappe(&page.url)
         ));
         for result in &page.criteria {
-            let status_str = match result.status {
-                rgaa_core::CriterionStatus::Pass => "PASS",
-                rgaa_core::CriterionStatus::Fail => "FAIL",
-                rgaa_core::CriterionStatus::NotTested => "N/A",
-                rgaa_core::CriterionStatus::NeedsReview => "REVIEW",
-                rgaa_core::CriterionStatus::NotApplicable => "N/A",
-                rgaa_core::CriterionStatus::Error => "ERROR",
-            };
-            let row_color = match result.status {
-                rgaa_core::CriterionStatus::Pass => "#22c55e",
-                rgaa_core::CriterionStatus::Fail | rgaa_core::CriterionStatus::Error => "#ef4444",
-                rgaa_core::CriterionStatus::NeedsReview => "#eab308",
-                _ => "transparent",
-            };
-            rows.push_str(&format!(
-                r#"<tr style="background:{row_color}20">
-                    <td>{}</td><td>{}</td><td>{}</td>
-                </tr>"#,
-                echappe(&result.criterion_id),
-                status_str,
-                echappe(&result.title)
-            ));
+            push_criterion_row(&mut rows, result);
+        }
+    }
+    if !audit.site_criteria.is_empty() {
+        rows.push_str(r#"<tr><td colspan="3"><strong>Critères de niveau site</strong></td></tr>"#);
+        for result in &audit.site_criteria {
+            push_criterion_row(&mut rows, result);
         }
     }
 
@@ -160,4 +168,61 @@ pub fn export(audit: &rgaa_core::AuditResult, path: &Path) -> Result<ExportForma
     }
 
     Ok(format)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rgaa_core::{Classification, CriterionResult, CriterionStatus};
+
+    #[test]
+    fn html_export_includes_site_level_criteria() {
+        let path = std::env::temp_dir().join(format!("rgaa-export-{}.html", std::process::id()));
+        let audit = rgaa_core::AuditResult {
+            audit_id: "test".into(),
+            url: "https://example.test".into(),
+            pages: vec![],
+            site_criteria: vec![CriterionResult {
+                criterion_id: "12.2".into(),
+                title: "Plan du site".into(),
+                classification: Classification::Deterministe,
+                status: CriterionStatus::Fail,
+                violations: vec![],
+                raw_confidence: None,
+                confidence: None,
+                justification: None,
+                source: "site-comparison".into(),
+                citations: vec![],
+                considered_sources: vec![],
+                tests: vec![],
+                automated_verdict: None,
+                verdict_basis: vec![],
+                evidence: vec![],
+                confidence_calibration_version: None,
+                review_required: false,
+                review_reason: None,
+                verified_status: None,
+                review_events: vec![],
+            }],
+            total_criteria: 1,
+            passed: 0,
+            failed: 1,
+            na: 0,
+            overall_compliance: 0.0,
+            taux_global: 0.0,
+            coverage_percent: 0.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
+            etat_conformite: "non conforme".into(),
+            duration_ms: 0,
+            audit_complete: false,
+        };
+
+        export_html(&audit, &path).expect("HTML export");
+        let html = std::fs::read_to_string(&path).expect("exported HTML");
+        let _ = std::fs::remove_file(path);
+        assert!(html.contains("Critères de niveau site"));
+        assert!(html.contains("12.2</td><td>FAIL</td><td>Plan du site"));
+    }
 }

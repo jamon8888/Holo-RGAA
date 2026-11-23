@@ -147,9 +147,7 @@ fn audit_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<()> {
                                 let selected = wizard
                                     .table_state
                                     .selected()
-                                    .and_then(|idx| {
-                                        audit.pages.first().and_then(|p| p.criteria.get(idx))
-                                    })
+                                    .and_then(|idx| visible_criteria(audit).get(idx).copied())
                                     .map(|r| r.criterion_id.clone());
                                 if let Some(criterion_id) = selected {
                                     wizard.step = AuditStep::DrillDown {
@@ -225,13 +223,26 @@ fn audit_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<()> {
 /// Number of rows the results table renders, which bounds the selection.
 fn visible_criteria_count(step: &AuditStep) -> usize {
     match step {
-        AuditStep::ResultsSummary { audit } | AuditStep::DrillDown { audit, .. } => audit
-            .pages
-            .first()
-            .map(|p| p.criteria.len())
-            .unwrap_or_default(),
+        AuditStep::ResultsSummary { audit } | AuditStep::DrillDown { audit, .. } => {
+            visible_criteria(audit).len()
+        }
         _ => 0,
     }
+}
+
+fn visible_criteria(audit: &rgaa_core::AuditResult) -> Vec<&rgaa_core::CriterionResult> {
+    let mut rows: Vec<_> = audit
+        .pages
+        .first()
+        .into_iter()
+        .flat_map(|page| &page.criteria)
+        .collect();
+    for site in &audit.site_criteria {
+        if !rows.iter().any(|row| row.criterion_id == site.criterion_id) {
+            rows.push(site);
+        }
+    }
+    rows
 }
 
 /// Body of the worker thread that runs one audit.
@@ -383,10 +394,9 @@ fn render_audit(wizard: &mut AuditWizard, frame: &mut Frame, input: &str) {
             ];
             frame.render_widget(Paragraph::new(Text::from(lines)).fg(color), chunks[0]);
 
-            if let Some(page) = audit.pages.first() {
+            if audit.pages.first().is_some() || !audit.site_criteria.is_empty() {
                 let criteria = rgaa_core::RgaaCriteria::all();
-                let rows: Vec<Row> = page
-                    .criteria
+                let rows: Vec<Row> = visible_criteria(audit)
                     .iter()
                     .map(|result| {
                         let criterion = criteria
@@ -437,7 +447,13 @@ fn render_audit(wizard: &mut AuditWizard, frame: &mut Frame, input: &str) {
             let result = audit
                 .pages
                 .first()
-                .and_then(|p| p.criteria.iter().find(|r| r.criterion_id == *criterion_id));
+                .and_then(|p| p.criteria.iter().find(|r| r.criterion_id == *criterion_id))
+                .or_else(|| {
+                    audit
+                        .site_criteria
+                        .iter()
+                        .find(|r| r.criterion_id == *criterion_id)
+                });
 
             let mut lines: Vec<Line> = vec![];
 

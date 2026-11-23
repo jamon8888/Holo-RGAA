@@ -17,6 +17,8 @@ pub(crate) struct PageObservation {
     #[serde(default)]
     pub sitemap_access: Vec<String>,
     #[serde(default)]
+    pub sitemap_urls: Vec<String>,
+    #[serde(default)]
     pub search_access: Vec<String>,
     /// The page holds an `input[type=password]` (authentication page).
     /// Page URL, filled in by [`select_comparable_pages`] so evidence can name pages.
@@ -54,7 +56,7 @@ pub(crate) fn select_comparable_pages(
         let Some(observation) = observation else {
             continue;
         };
-        if url == home_url {
+        if same_url(url, home_url) {
             exclusions.push(PageExclusion {
                 url: url.clone(),
                 reason: EXCLUDED_HOME,
@@ -71,6 +73,33 @@ pub(crate) fn select_comparable_pages(
         }
     }
     (comparable, exclusions)
+}
+
+fn same_url(left: &str, right: &str) -> bool {
+    match (reqwest::Url::parse(left), reqwest::Url::parse(right)) {
+        (Ok(mut left), Ok(mut right)) => {
+            left.set_fragment(None);
+            right.set_fragment(None);
+            left == right
+        }
+        _ => left == right,
+    }
+}
+
+pub(crate) fn sitemap_url(
+    sampled: &[(String, Option<PageObservation>)],
+    home_url: &str,
+) -> Option<String> {
+    let base = reqwest::Url::parse(home_url).ok()?;
+    sampled
+        .iter()
+        .filter_map(|(_, observation)| observation.as_ref())
+        .flat_map(|observation| &observation.sitemap_urls)
+        .find_map(|raw| {
+            let url = reqwest::Url::parse(raw).ok()?;
+            (matches!(url.scheme(), "http" | "https") && url.host_str() == base.host_str())
+                .then(|| url.to_string())
+        })
 }
 
 /// Keeps the comparison criteria (12.2, 12.5) at `review` when fewer than two pages can
@@ -454,6 +483,7 @@ mod tests {
             navigation_systems: nav.iter().map(|s| (*s).into()).collect(),
             navigation_positions: positions.iter().map(|s| (*s).into()).collect(),
             sitemap_access: sitemap.iter().map(|s| (*s).into()).collect(),
+            sitemap_urls: Vec::new(),
             search_access: search.iter().map(|s| (*s).into()).collect(),
             has_password_input: false,
             page_links: Vec::new(),
@@ -543,7 +573,7 @@ mod tests {
     #[test]
     fn home_and_password_pages_are_excluded_by_name() {
         let sampled = vec![
-            ("https://x.test/".to_string(), obs(false)),
+            ("https://x.test".to_string(), obs(false)),
             ("https://x.test/a".to_string(), obs(false)),
             ("https://x.test/login".to_string(), obs(true)),
             ("https://x.test/b".to_string(), obs(false)),
@@ -555,7 +585,7 @@ mod tests {
             exclusions,
             vec![
                 PageExclusion {
-                    url: "https://x.test/".into(),
+                    url: "https://x.test".into(),
                     reason: EXCLUDED_HOME
                 },
                 PageExclusion {
@@ -563,6 +593,24 @@ mod tests {
                     reason: EXCLUDED_PASSWORD
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn sitemap_selection_keeps_query_and_rejects_other_hosts() {
+        let sampled = vec![(
+            "https://x.test/".into(),
+            Some(PageObservation {
+                sitemap_urls: vec![
+                    "https://outside.test/plan?view=full".into(),
+                    "https://x.test/index.php?page=plan-du-site".into(),
+                ],
+                ..PageObservation::default()
+            }),
+        )];
+        assert_eq!(
+            sitemap_url(&sampled, "https://x.test/").as_deref(),
+            Some("https://x.test/index.php?page=plan-du-site")
         );
     }
 

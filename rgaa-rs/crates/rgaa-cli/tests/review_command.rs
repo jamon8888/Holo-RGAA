@@ -82,6 +82,7 @@ fn audit(page_urls: &[&str], criterion_ids: &[&str]) -> AuditResult {
             .to_owned(),
         pages,
         total_criteria: criterion_ids.len() * page_urls.len(),
+        audit_type: AuditType::Complet,
         passed: 0,
         failed: 0,
         na: 0,

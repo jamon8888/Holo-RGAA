@@ -12,7 +12,6 @@ use std::net::TcpListener;
 use std::path::Path;
 use std::time::Duration;
 
-use rgaa_core::CriterionStatus;
 use rgaa_obscura::ObscuraBridge;
 use rgaa_rules::script_hooks::{
     parse_redirect_observation, PartialProbeStatus, REDIRECT_HOOK, REDIRECT_OBSERVATION_MS,
@@ -124,7 +123,7 @@ async fn script_redirects_fail_and_carousels_do_not() {
     assert!(verdicts[2].1.is_none(), "{verdicts:?}");
     assert_ne!(
         verdicts[2].1,
-        Some(CriterionStatus::Fail),
+        Some(PartialProbeStatus::Fail),
         "un carrousel n'est pas une redirection: {verdicts:?}"
     );
 }

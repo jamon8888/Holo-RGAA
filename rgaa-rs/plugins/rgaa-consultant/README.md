@@ -84,6 +84,7 @@ Claude will ask for a URL, run the full RGAA audit, and present findings with se
 | `/audit-site` | Audit a live URL for RGAA compliance |
 | `/audit-project` | Audit a local project (requires rgaa-cli) |
 | `/generate-report` | Produce a formatted compliance report |
+| `/remediate-visual` | Per-criterion screenshots and live-rendered AI remediation proposals (Playwright), exportable to the `rgaa-chrome` extension |
 
 ## Skills
 

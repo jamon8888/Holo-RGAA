@@ -55,6 +55,10 @@ son approbation.
    }
    ```
 
+   Champ optionnel `tier` d'un finding (`automatique` | `assiste` | `irreductible`,
+   les niveaux d'automatisation de `CONTEXT.md`) : l'extension Chrome l'affiche pour
+   rappeler qu'un test Assisté reste `review` et un test Irréductible un contrôle humain.
+
    Champs d'une proposition (combinables) : `attributes` (valeur `null` =
    suppression), `css` (feuille injectée), `html` (remplace l'élément cible).
 4. **Capturer** :
@@ -75,6 +79,13 @@ son approbation.
 6. **Choix et suite** — demander quelle proposition retenir par finding, puis
    passer la proposition choisie à la skill `remediate` (patch source avec
    approbation) et à `verify` après application.
+
+## Extension Chrome
+
+`input.json` est le contrat partagé avec l'extension `rgaa-chrome` (`rgaa-rs/plugins/rgaa-chrome`) :
+l'utilisateur l'ouvre dans le panneau latéral et parcourt les critères un par un, avec aperçu
+en direct des propositions dans son propre onglet (annulable, jamais d'écriture dans la source).
+Le Playwright de cette skill reste le producteur de captures pour la CI et les lots.
 
 ## Sorties
 

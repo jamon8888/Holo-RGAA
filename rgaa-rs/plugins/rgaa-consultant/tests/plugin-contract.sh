@@ -55,7 +55,7 @@ done
 
 # Commands — only the canonical tree has them, and a missing command file is a
 # slash command that silently does not exist.
-for command in audit-site audit-project generate-report; do
+for command in audit-site audit-project generate-report remediate-visual; do
   check_file "commands/$command.md" "Command: $command"
 done
 
@@ -103,7 +103,7 @@ done
 # Command and agent files have front matter too: a command with no
 # `description` shows up unlabelled in `/plugin`, and an agent with no `name`
 # cannot be addressed.
-for command in audit-site audit-project generate-report; do
+for command in audit-site audit-project generate-report remediate-visual; do
   if ! grep -q "^description:" "$PLUGIN_ROOT/commands/$command.md" 2>/dev/null; then
     echo "❌ MISSING FRONT MATTER 'description' in commands/$command.md"
     FAILURES=$((FAILURES + 1))

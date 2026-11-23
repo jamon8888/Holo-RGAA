@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remédiation RGAA</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 0; padding: 12px; color: #1a1a1a; background: #fff; }
+  h1 { font-size: 1.2em; margin: 0 0 .5em; }
+  h2 { font-size: 1.05em; margin: 1em 0 .3em; }
+  button, input[type=file] { font: inherit; }
+  button { padding: .35em .7em; border: 1px solid #1a1a1a; background: #fff; border-radius: 4px; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 3px solid #0b57d0; outline-offset: 2px; }
+  nav { display: flex; gap: .5em; align-items: center; margin: .5em 0; }
+  article { border: 1px solid #767676; border-radius: 6px; padding: 8px; margin: .6em 0; }
+  .tier { font-style: italic; margin: .3em 0; }
+  img { max-width: 100%; border: 1px solid #767676; }
+  code { background: #f2f2f2; padding: 0 .25em; }
+  [role=status] { min-height: 1.4em; }
+  @media (prefers-color-scheme: dark) { body { color: #eee; background: #1b1b1b; } button { color: #eee; background: #1b1b1b; border-color: #eee; } code { background: #333; } }
+</style>
+</head>
+<body>
+<h1>Remédiation RGAA</h1>
+<details>
+  <summary>Serveur d'audit (rgaa-mcp-http)</summary>
+  <p><label>URL du serveur <input id="server" type="url" placeholder="http://127.0.0.1:8080" size="30"></label></p>
+  <p><label>Jeton (<code>RGAA_MCP_TOKEN</code>, gardé le temps de la session) <input id="token" type="password" autocomplete="off"></label></p>
+  <p><button id="analyze">Analyser l'onglet courant</button></p>
+</details>
+<p><label>Ou fichier de findings (<code>input.json</code>) <input id="file" type="file" accept="application/json,.json"></label></p>
+<p role="status" id="status"></p>
+<div id="review" hidden>
+  <nav aria-label="Navigation entre critères">
+    <button id="prev">← Critère précédent</button>
+    <span id="pos" aria-live="polite"></span>
+    <button id="next">Critère suivant →</button>
+  </nav>
+  <h2 id="crit" tabindex="-1"></h2>
+  <div id="findings"></div>
+</div>
+<script type="module" src="panel.js"></script>
+</body>
+</html>

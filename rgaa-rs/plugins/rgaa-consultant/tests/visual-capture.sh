@@ -19,6 +19,8 @@ for f in index.html manifest.json criteres/1.1.png criteres/3.2.png \
 done
 jq -e '.findings[] | select(.id=="fng_missing") | .error' "$TMP/out/manifest.json" >/dev/null \
   && echo "✅ cible absente signalée" || { echo "❌ cible absente non signalée"; fail=1; }
+jq -e 'all(.criteria[].targets[]; length > 0)' "$TMP/out/manifest.json" >/dev/null \
+  && echo "✅ sélecteurs vides exclus du manifeste" || { echo "❌ sélecteur vide dans le manifeste"; fail=1; }
 jq -e '[.findings[].proposals[] | select(.error)] | length == 0' "$TMP/out/manifest.json" >/dev/null \
   && echo "✅ toutes les propositions appliquées" || { echo "❌ proposition en erreur"; fail=1; }
 exit $fail

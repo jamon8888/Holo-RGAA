@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { apply, highlight, selectorOf } from './capture-dom.mjs';
 
@@ -7,6 +12,24 @@ test('selectorOf normalise les cibles Axe', () => {
   assert.equal(selectorOf([]), '');
   assert.equal(selectorOf(['iframe', '#target']), '#target');
   assert.equal(selectorOf(42), '');
+});
+
+test('capture refuse une URL javascript:', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'rgaa-visual-'));
+  try {
+    const input = join(directory, 'input.json');
+    writeFileSync(input, JSON.stringify({ url: 'javascript:window.__rgaaXss = true', findings: [] }));
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./capture.mjs', import.meta.url)), input],
+      { encoding: 'utf8' },
+    );
+
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /file:, http: ou https:/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('apply modifie tous les éléments correspondants et renvoie un sélecteur stable', async (t) => {
@@ -49,9 +72,15 @@ test('apply marque toutes les racines d’un remplacement HTML', async (t) => {
 
   await apply(page, 'div', {
     html: '<label>Nom</label><input name="nom">',
+    attributes: { 'data-field': 'nom' },
   });
 
-  assert.equal(await page.locator('[data-rgaa-applied]').count(), 2);
+  const replacements = page.locator('[data-rgaa-applied]');
+  assert.equal(await replacements.count(), 2);
+  assert.deepEqual(
+    await replacements.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-field'))),
+    ['nom', 'nom'],
+  );
 });
 
 test('apply retire le contenu actif des propositions HTML', async (t) => {
@@ -83,6 +112,8 @@ test('apply retire le contenu actif des propositions HTML', async (t) => {
   });
   assert.equal(await page.locator('[onclick]').count(), 0);
   assert.equal(await page.locator('button').getAttribute('href'), null);
+  await page.locator('button').click();
+  assert.equal(await page.evaluate(() => window.__rgaaXss), undefined);
 });
 
 test('highlight ignore une cible non visible', async (t) => {

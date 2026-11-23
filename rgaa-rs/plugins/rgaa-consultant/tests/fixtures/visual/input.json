@@ -11,6 +11,7 @@
         { "label": "Gris foncé", "rationale": "Ratio 7:1", "css": ".pale{color:#595959 !important}" },
         { "label": "Balise forte", "rationale": "Texte remplacé", "html": "<p class=\"pale\" style=\"color:#1a1a1a\"><strong>Texte contrasté</strong></p>" }
       ] },
-    { "id": "fng_missing", "criterion_id": "1.1", "target": "#absent", "description": "Cible disparue", "proposals": [] }
+    { "id": "fng_missing", "criterion_id": "1.1", "target": "#absent", "description": "Cible disparue", "proposals": [] },
+    { "id": "fng_invalid", "criterion_id": "1.1", "target": [], "description": "Cible absente du finding", "proposals": [] }
   ]
 }

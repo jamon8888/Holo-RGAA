@@ -107,8 +107,10 @@ export async function apply(page, sel, proposal) {
       for (const element of elements) {
         const fragment = template.content.cloneNode(true);
         const replacements = Array.from(fragment.children);
-        applyAttributes(replacements[0]);
-        for (const replacement of replacements) replacement.setAttribute('data-rgaa-applied', '');
+        for (const replacement of replacements) {
+          applyAttributes(replacement);
+          replacement.setAttribute('data-rgaa-applied', '');
+        }
         element.replaceWith(fragment);
       }
     } else {

@@ -37,6 +37,16 @@ if (!spec.url || !Array.isArray(spec.findings)) {
   console.error('entrée invalide : "url" et "findings" sont requis');
   process.exit(2);
 }
+const isSafePageUrl = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().replace(/[\u0000-\u0020\u007f]+/g, '').toLowerCase();
+  const scheme = normalized.match(/^([a-z][a-z0-9+.-]*):/);
+  return Boolean(scheme && ['file', 'http', 'https'].includes(scheme[1]));
+};
+if (!isSafePageUrl(spec.url)) {
+  console.error('entrée invalide : "url" doit utiliser file:, http: ou https:');
+  process.exit(2);
+}
 const out = outArg ?? '.rgaa/visual';
 const safe = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
 
@@ -66,8 +76,10 @@ try {
   // 1. Une vue d'ensemble par critère : toutes ses cibles surlignées.
   const byCriterion = new Map();
   for (const f of spec.findings) {
+    const selector = selectorOf(f.target);
+    if (!selector) continue;
     const c = f.criterion_id ?? 'non-mappe';
-    byCriterion.set(c, [...(byCriterion.get(c) ?? []), selectorOf(f.target)]);
+    byCriterion.set(c, [...(byCriterion.get(c) ?? []), selector]);
   }
   await mkdir(join(out, 'criteres'), { recursive: true });
   for (const [criterion, selectors] of byCriterion) {
@@ -113,6 +125,7 @@ console.log(JSON.stringify({ out, criteria: manifest.criteria.length, findings: 
 
 function gallery(m) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const auditedUrl = isSafePageUrl(m.url) ? m.url : '#';
   const fig = (src, cap, alt) => `<figure><img src="${esc(src)}" alt="${esc(alt)}"><figcaption>${cap}</figcaption></figure>`;
   const findings = m.findings.map((f) => `
 <section aria-labelledby="f-${esc(f.id)}">
@@ -140,7 +153,7 @@ code{background:#f2f2f2;padding:0 .25rem}
 </style></head><body>
 <main>
 <h1>Preuves visuelles RGAA 4.1.2</h1>
-<p>Page auditée : <a href="${esc(m.url)}">${esc(m.url)}</a> — générée le ${esc(m.generated_at)}.
+<p>Page auditée : <a href="${esc(auditedUrl)}">${esc(m.url)}</a> — générée le ${esc(m.generated_at)}.
 Rouge : existant non conforme. Vert : rendu de la proposition, appliquée en direct dans Chromium (aucune modification du code source).</p>
 <h2>Existant par critère</h2>
 <div class="row">${criteria}</div>

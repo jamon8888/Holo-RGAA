@@ -64,6 +64,10 @@ const REMOVED_RULES: &[(&str, &[&str])] = &[
 /// ne décidaient rien. `aria-tab-name` a quitté 7.1 avec #261 pour cette raison.
 const NOT_INJECTED: &[&str] = &["aria-tab-name"];
 
+/// Critères plafonnés à la revue (`outcome_cap = "review"`) : une violation de leurs
+/// règles donne `NeedsReview`, jamais `Fail`. 12.8 et `tabindex` arrivent avec #279.
+const CAPPED_AT_REVIEW: &[&str] = &["12.8"];
+
 #[derive(serde::Deserialize)]
 struct Frozen {
     mapping: Vec<Entry>,
@@ -101,12 +105,18 @@ fn injected_rules() -> Vec<String> {
 }
 
 /// Le verdict que la table d'avant donnait : `Pass` pour une couverture complète sans
-/// violation, `Fail` dès qu'une règle du critère a tiré, rien sinon.
+/// violation, `Fail` dès qu'une règle du critère a tiré (`NeedsReview` s'il est
+/// plafonné, voir [`CAPPED_AT_REVIEW`]), rien sinon.
 fn legacy_verdicts(frozen: &[Entry], fired: Option<&str>) -> Verdicts {
     let mut out = Verdicts::new();
     for entry in frozen {
         if fired.is_some_and(|rule| entry.axe_rules.iter().any(|r| r == rule)) {
-            out.insert(entry.criterion_id.clone(), CriterionStatus::Fail);
+            let status = if CAPPED_AT_REVIEW.contains(&entry.criterion_id.as_str()) {
+                CriterionStatus::NeedsReview
+            } else {
+                CriterionStatus::Fail
+            };
+            out.insert(entry.criterion_id.clone(), status);
         } else if entry.coverage == "complete" {
             out.insert(entry.criterion_id.clone(), CriterionStatus::Pass);
         }
@@ -151,10 +161,12 @@ fn reviewed_mapping() -> Vec<Entry> {
         assert_eq!(before - entry.axe_rules.len(), rules.len(), "{id}");
     }
 
-    // #280 : titre de page (couverture complète) et noms des boutons (partielle).
+    // #280 : titre de page (couverture complète) et noms des boutons (partielle) ;
+    // #279 : tabindex positif sur 12.8, plafonné à la revue.
     for (id, coverage, rules) in [
         ("8.5", "complete", &["document-title"][..]),
         ("11.9", "partial", &["button-name", "input-button-name"][..]),
+        ("12.8", "partial", &["tabindex"][..]),
     ] {
         assert!(mapping.iter().all(|entry| entry.criterion_id != id), "{id}");
         mapping.push(Entry {

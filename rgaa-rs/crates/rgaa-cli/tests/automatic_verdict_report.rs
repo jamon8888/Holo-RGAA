@@ -557,6 +557,6 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
     );
     assert!(!incomplete.audit_complete);
     assert!(incomplete.automatic_verdict_coverage_percent < 100.0);
-    assert!(validate_automatic_verdict_coverage(&incomplete.pages[0].criteria).is_err());
+    assert!(validate_automatic_verdict_coverage(&incomplete.pages[0].criteria, AuditType::Complet).is_err());
     assert_cli_report_does_not_claim_conformance(&incomplete);
 }

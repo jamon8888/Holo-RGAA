@@ -106,15 +106,17 @@ fn environnement_depuis_texte(texte: &str) -> Option<TestEnvironment> {
 
     let (nom_assistance, version_assistance) = nom_et_version(assistance.trim())?;
     let (nom_navigateur, version_navigateur) = nom_et_version(navigateur.trim())?;
+    // Une technologie inconnue (JAWS, Narrateur…) reste déclarée, sans système
+    // deviné : l'écarter ferait écrire « aucune technologie d'assistance ».
     let systeme = match nom_assistance.to_ascii_lowercase().as_str() {
-        "nvda" => "Windows",
-        "voiceover" => "macOS",
-        "orca" => "Linux",
-        _ => return None,
+        "nvda" => Some("Windows"),
+        "voiceover" => Some("macOS"),
+        "orca" => Some("Linux"),
+        _ => None,
     };
     Some(TestEnvironment {
         plateforme: Some("ordinateur".into()),
-        systeme: Some(systeme.into()),
+        systeme: systeme.map(Into::into),
         technologie_assistance: Some(format!("{nom_assistance} {version_assistance}")),
         navigateur: Some(format!("{nom_navigateur} {version_navigateur}")),
     })
@@ -913,6 +915,15 @@ mod tests {
             !html.contains("aucune technologie d'assistance utilisée"),
             "{html}"
         );
+    }
+
+    #[test]
+    fn une_technologie_inconnue_est_declaree_sans_systeme_devine() {
+        let envs =
+            environnements_depuis_preuves(&[preuve_screenreader(Some("JAWS 2025 + Chrome 141.0"))]);
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].technologie_assistance.as_deref(), Some("JAWS 2025"));
+        assert_eq!(envs[0].systeme, None);
     }
 
     #[test]

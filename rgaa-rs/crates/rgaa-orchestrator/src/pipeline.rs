@@ -1358,6 +1358,15 @@ async fn audit_one(
     on_phase: Arc<dyn Fn(AuditPhase) + Send + Sync>,
 ) -> Result<AuditResult, String> {
     let audit_type = config.audit_type;
+    // Vérifier le mode LLM avant d'appeler run_automatic_estimates :
+    // si RGAA_LLM_MODE=off, aucune appel modèle ne doit être émis.
+    use rgaa_core::provider::LlmMode;
+    let mode_str = std::env::var("RGAA_LLM_MODE").unwrap_or_else(|_| "managed".to_string());
+    let mode = LlmMode::parse(&mode_str.to_lowercase())
+        .unwrap_or(LlmMode::Managed);
+    if mode == LlmMode::Off {
+        info!(url, "RGAA_LLM_MODE=off: skip model estimates");
+    }
     let start = std::time::Instant::now();
     info!(url, audit_type = audit_type.as_str(), "Starting audit");
 

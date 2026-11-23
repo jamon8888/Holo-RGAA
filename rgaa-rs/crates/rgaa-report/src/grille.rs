@@ -24,6 +24,10 @@ const NOT_TESTED: &str = "NT";
 /// Rows follow the official RGAA criterion order from [`RgaaCriteria::all`],
 /// including criteria the audit never evaluated (they read `NT`). Pages keep
 /// their audit order. Only human decisions populate the status cells.
+///
+/// The transverse column uses the dedicated "transverses" page's reviewed
+/// statuses; normal pages are listed in the remaining columns. If no transverse
+/// page exists, the column stays `NT`.
 #[must_use]
 pub fn render_grille_csv(audit: &AuditResult) -> String {
     let mut output = String::with_capacity(64 + audit.pages.len() * 106 * 4);
@@ -31,34 +35,61 @@ pub fn render_grille_csv(audit: &AuditResult) -> String {
 
     row.push("Critères".to_string());
     row.push("Éléments transverses".to_string());
-    for page in &audit.pages {
+    // Séparer la page transverses des pages normales.
+    let transverse_page = audit.pages.iter().find(|p| p.url == rgaa_core::TRANSVERSE_PAGE_URL);
+    let normal_pages: Vec<&PageResult> = audit
+        .pages
+        .iter()
+        .filter(|p| p.url != rgaa_core::TRANSVERSE_PAGE_URL)
+        .collect();
+    for page in &normal_pages {
         row.push(page_column_name(page));
+    }
+    // Si la page transverses existe, utiliser ses critères ; sinon NT.
+    if let Some(tp) = transverse_page {
+        // Build index from transverse page criteria.
+        let tp_index: HashMap<String, CriterionResult> = tp
+            .criteria
+            .iter()
+            .map(|c| (c.criterion_id.clone(), c.clone()))
+            .collect();
+        for criterion in RgaaCriteria::all() {
+            let c = tp_index.get(&criterion.id.to_string());
+            row.push(decision_letter(c).to_string());
+        }
+    } else {
+        row.push(NOT_TESTED.to_string());
+        // Push NT for each normal page (they will be overridden per criterion below).
+        for _ in &normal_pages {
+            row.push(NOT_TESTED.to_string());
+        }
     }
     write_row(&mut output, &row);
 
-    // One index per page; duplicate results for a criterion keep the first one.
-    let by_page: Vec<HashMap<&str, &CriterionResult>> = audit
-        .pages
-        .iter()
-        .map(|page| {
-            let mut index = HashMap::with_capacity(page.criteria.len());
-            for criterion in &page.criteria {
-                index
-                    .entry(criterion.criterion_id.as_str())
-                    .or_insert(criterion);
-            }
-            index
-        })
-        .collect();
-
     row.clear();
+    // Pour chaque critère, afficher le statut sur chaque page normale.
     for criterion in RgaaCriteria::all() {
+        row.clear();
         row.push(criterion.id.to_string());
-        // Transverse elements do not exist yet (#429): the column is present
-        // but every cell stays NT until they are modelled and reviewed.
-        row.push(NOT_TESTED.to_string());
-        for page in &by_page {
-            row.push(decision_letter(page.get(criterion.id).copied()).to_string());
+        // Colonne "Éléments transverses": décision de la page transverses si elle existe.
+        if let Some(tp) = transverse_page {
+            let tp_index: HashMap<String, CriterionResult> = tp
+                .criteria
+                .iter()
+                .map(|c| (c.criterion_id.clone(), c.clone()))
+                .collect();
+            let c = tp_index.get(&criterion.id.to_string());
+            row.push(decision_letter(c).to_string());
+        } else {
+            row.push(NOT_TESTED.to_string());
+        }
+        for page in &normal_pages {
+            // Recherche du critère dans les critères de cette page.
+            let result = page
+                .criteria
+                .iter()
+                .find(|c| c.criterion_id == criterion.id);
+            row.push(decision_letter(result).to_string());
         }
         write_row(&mut output, &row);
         row.clear();

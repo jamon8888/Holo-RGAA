@@ -220,14 +220,17 @@ fn repeated_pairs(pages: &[PageResult]) -> IndexMap<(String, String), usize> {
 }
 
 fn prepare_transverse_criterion(criterion: &mut CriterionResult, pairs: &[(String, String)]) {
+    let had_violations = !criterion.violations.is_empty();
     criterion.violations.retain(|violation| {
         !pairs.iter().any(|(criterion_id, rule_id)| {
             *criterion_id == criterion.criterion_id && *rule_id == violation.rule_id
         })
     });
-    if criterion.violations.is_empty() {
-        // Plus de preuve locale : la page renvoie à la page transverses, qui
-        // porte l'unique finding et l'unique décision (R5).
+    // Plus de preuve locale : la page renvoie à la page transverses, qui
+    // porte l'unique finding et l'unique décision (R5).
+    // On ne clear le review state que si des violations existaient avant et
+    // ont été retirées parce qu'elles correspondaient aux paires répétées.
+    if criterion.violations.is_empty() && had_violations {
         criterion.source = TRANSVERSE_REFERENCE_SOURCE.to_string();
         criterion.review_required = false;
         criterion.review_reason = None;
@@ -268,6 +271,15 @@ pub fn apply_transverse_pages(
     transverse.crawl_depth = 0;
     for criterion in &mut transverse.criteria {
         if !audit_type.contains(&criterion.criterion_id) {
+            continue;
+        }
+        // Ne traiter ce critère que s'il apparaît dans les paires répétées.
+        let has_matching_rule = repeated
+            .iter()
+            .any(|(id, _)| id == &criterion.criterion_id);
+        if !has_matching_rule {
+            // Ce critère n'a pas de finding répétée : rien à faire, on le laisse
+            // en l'état (on ne touche pas à review_required, verified_status, etc.).
             continue;
         }
         let matching: Vec<&str> = repeated

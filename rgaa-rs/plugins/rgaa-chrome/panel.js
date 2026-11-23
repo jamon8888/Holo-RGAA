@@ -49,7 +49,7 @@ function renderFinding(f) {
   const props = (f.proposals ?? []).map((p, n) => {
     const b = h('button', { textContent: `Aperçu ${n + 1} : ${p.label}` });
     b.onclick = async () => say((await run(preview, [f.target, p])).error ?? `Proposition ${n + 1} appliquée en aperçu (vert).`);
-    return h('li', {}, b, ' ', h('span', { textContent: p.rationale ?? '' }));
+    return h('li', {}, b, ' ', h('span', { textContent: (p.needs_human_review ? '⚠ à valider — ' : '') + (p.rationale ?? '') }));
   });
   return h('article', { },
     h('h3', { textContent: f.description ?? f.id }),

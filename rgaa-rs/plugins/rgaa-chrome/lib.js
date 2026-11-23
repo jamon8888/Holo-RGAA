@@ -1,6 +1,7 @@
-// Contrat partagé avec la skill visual-remediation (input.json) :
-// { url, findings: [{ id, criterion_id, target, description, tier?, proposals: [{ label, rationale, attributes?, css?, html? }] }] }
-// `tier` (optionnel) : "automatique" | "assiste" | "irreductible" — niveaux d'automatisation du glossaire.
+// Contrat partagé avec la skill visual-remediation : voir
+// ../rgaa-consultant/skills/visual-remediation/CONTRACT.md (version 1).
+
+export const CONTRACT_VERSION = 1;
 
 export const TIERS = {
   automatique: 'Verdict automatique : la machine a tranché, la remédiation est à appliquer.',
@@ -17,10 +18,11 @@ export function fromAnalyze(resp) {
   if (!Array.isArray(r?.findings)) throw new Error('réponse analyze sans "findings"');
   const tierOf = { fail: 'automatique', needs_review: 'assiste' };
   return {
+    contract_version: CONTRACT_VERSION,
     url: r.url,
     findings: r.findings.filter((f) => f.status in tierOf).map((f) => ({
       id: f.id, criterion_id: f.criterion_id ?? undefined, target: f.target,
-      description: f.description ?? f.rule, tier: tierOf[f.status],
+      description: f.description ?? f.rule, tier: f.tier ?? tierOf[f.status], // tier du catalogue si le serveur le fournit
       guidance: f.remediation ?? undefined, proposals: [],
     })),
   };
@@ -40,6 +42,7 @@ export async function analyzeUrl(base, token, url, fetchImpl = fetch) {
 
 export function parseContract(text) {
   const spec = JSON.parse(text);
+  if ((spec.contract_version ?? 1) > CONTRACT_VERSION) throw new Error(`contract_version ${spec.contract_version} non pris en charge (max ${CONTRACT_VERSION})`);
   if (!Array.isArray(spec.findings)) throw new Error('"findings" est requis');
   for (const f of spec.findings) {
     if (!f.id || !f.target) throw new Error(`finding invalide (id et target requis) : ${JSON.stringify(f).slice(0, 80)}`);

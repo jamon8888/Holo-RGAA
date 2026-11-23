@@ -44,3 +44,11 @@ test('analyzeUrl envoie le jeton et propage les erreurs du serveur', async () =>
   await assert.rejects(analyzeUrl('http://s', '', 'u', async () => ({ ok: false, status: 401 })), /401/);
   await assert.rejects(analyzeUrl('http://s', '', 'u', async () => ({ ok: true, json: async () => ({ error: { message: 'boom' } }) })), /boom/);
 });
+
+test('contract_version : absent = 1, supérieure refusée ; tier du serveur prioritaire', () => {
+  assert.doesNotThrow(() => parseContract('{"contract_version":1,"findings":[]}'));
+  assert.throws(() => parseContract('{"contract_version":2,"findings":[]}'), /contract_version/);
+  const spec = fromAnalyze({ findings: [{ id: 'a', status: 'fail', rule: 'r', target: 't', tier: 'assiste' }] });
+  assert.equal(spec.findings[0].tier, 'assiste');
+  assert.equal(spec.contract_version, 1);
+});

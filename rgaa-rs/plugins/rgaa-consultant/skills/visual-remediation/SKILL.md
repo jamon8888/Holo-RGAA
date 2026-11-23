@@ -39,8 +39,11 @@ son approbation.
    sans le signaler comme à valider dans la `rationale`.
 3. **Écrire l'entrée** — `.rgaa/visual/input.json` :
 
+   Format complet et règles : `CONTRACT.md` (même dossier). Version 1.
+
    ```json
    {
+     "contract_version": 1,
      "url": "https://site.audite/page",
      "findings": [{
        "id": "fng_abc123", "criterion_id": "1.1", "target": "img.hero",
@@ -58,6 +61,8 @@ son approbation.
    Champ optionnel `tier` d'un finding (`automatique` | `assiste` | `irreductible`,
    les niveaux d'automatisation de `CONTEXT.md`) : l'extension Chrome l'affiche pour
    rappeler qu'un test Assisté reste `review` et un test Irréductible un contrôle humain.
+
+   `needs_human_review: true` est obligatoire sur toute proposition qui invente un contenu métier.
 
    Champs d'une proposition (combinables) : `attributes` (valeur `null` =
    suppression), `css` (feuille injectée), `html` (remplace l'élément cible).

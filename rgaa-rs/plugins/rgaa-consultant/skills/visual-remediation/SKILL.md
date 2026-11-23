@@ -63,7 +63,7 @@ son approbation.
    cd "${CLAUDE_PLUGIN_ROOT}/scripts/visual"
    [ -d node_modules ] || npm ci
    npx playwright install chromium   # une fois par machine
-   node capture.mjs "$CLAUDE_PROJECT_DIR/.rgaa/visual/input.json" "$CLAUDE_PROJECT_DIR/.rgaa/visual"
+   node capture.mjs "${CLAUDE_PROJECT_DIR}/.rgaa/visual/input.json" "${CLAUDE_PROJECT_DIR}/.rgaa/visual"
    ```
 
    Une URL derrière authentification n'est pas prise en charge : le dire et
@@ -94,6 +94,8 @@ son approbation.
   traversés : seul le dernier sélecteur est utilisé.
 - Les critères non visuels (ex. 8.x métadonnées) n'ont pas de cible à encadrer ;
   les traiter dans le rapport plutôt qu'ici.
+- Le HTML des propositions est nettoyé de ses contenus actifs (scripts, gestionnaires
+  d'événements et URL `javascript:`) avant insertion dans la page auditée.
 
 ## Skills liées
 

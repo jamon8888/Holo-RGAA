@@ -3,8 +3,12 @@
 # captures attendues sur une page fixture locale (Chromium Playwright requis).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+command -v jq >/dev/null 2>&1 || { echo "❌ jq est requis mais absent"; exit 1; }
+[[ -f "$ROOT/tests/fixtures/visual/input.json" ]] || { echo "❌ fixture absent : input.json"; exit 1; }
+[[ -f "$ROOT/tests/fixtures/visual/page.html" ]] || { echo "❌ fixture absent : page.html"; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 (cd "$ROOT/scripts/visual" && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npx playwright install ${CI:+--with-deps} chromium >/dev/null)
+node --test "$ROOT/scripts/visual/capture.test.mjs"
 sed "s|__PAGE__|file://$ROOT/tests/fixtures/visual/page.html|" "$ROOT/tests/fixtures/visual/input.json" > "$TMP/input.json"
 node "$ROOT/scripts/visual/capture.mjs" "$TMP/input.json" "$TMP/out"
 fail=0

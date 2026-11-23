@@ -25,6 +25,7 @@
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { apply, highlight, selectorOf } from './capture-dom.mjs';
 
 const [input, outArg] = process.argv.slice(2);
 if (!input) {
@@ -38,42 +39,9 @@ if (!spec.url || !Array.isArray(spec.findings)) {
 }
 const out = outArg ?? '.rgaa/visual';
 const safe = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
-// shortcut: axe donne un tableau de sélecteurs pour iframe/shadow DOM ; on ne prend que le dernier, sans traverser.
-const selectorOf = (t) => (Array.isArray(t) ? t[t.length - 1] : t);
 
 const RED = '#c00000';
 const GREEN = '#006b2d';
-
-// Surligne les éléments correspondant aux sélecteurs et pose une étiquette.
-// Renvoie le rectangle (coordonnées document) englobant les cibles trouvées.
-async function highlight(page, selectors, label, color) {
-  return page.evaluate(({ selectors, label, color }) => {
-    let box = null;
-    for (const sel of selectors) {
-      let els;
-      try { els = document.querySelectorAll(sel); } catch { continue; }
-      for (const el of els) {
-        el.style.setProperty('outline', `4px solid ${color}`, 'important');
-        el.style.setProperty('outline-offset', '2px', 'important');
-        const r = el.getBoundingClientRect();
-        const x = r.left + scrollX, y = r.top + scrollY;
-        const tag = document.createElement('div');
-        tag.textContent = label;
-        tag.setAttribute('data-rgaa-visual', '');
-        Object.assign(tag.style, {
-          position: 'absolute', left: `${x}px`, top: `${Math.max(0, y - 26)}px`,
-          background: color, color: '#fff', font: 'bold 14px/20px sans-serif',
-          padding: '2px 6px', zIndex: 2147483647, pointerEvents: 'none',
-        });
-        document.body.appendChild(tag);
-        box = box
-          ? { x1: Math.min(box.x1, x), y1: Math.min(box.y1, y - 26), x2: Math.max(box.x2, x + r.width), y2: Math.max(box.y2, y + r.height) }
-          : { x1: x, y1: y - 26, x2: x + r.width, y2: y + r.height };
-      }
-    }
-    return box;
-  }, { selectors, label, color });
-}
 
 // Capture zoomée autour de la cible, avec marge pour garder le contexte.
 async function shotAround(page, box, path) {
@@ -88,29 +56,6 @@ async function shotAround(page, box, path) {
 async function load(page) {
   await page.goto(spec.url, { waitUntil: 'load', timeout: 60_000 });
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
-}
-
-// Applique une proposition dans la page. Renvoie le sélecteur à surligner
-// ensuite (le html de remplacement peut changer la cible d'origine).
-async function apply(page, sel, p) {
-  if (p.css) await page.addStyleTag({ content: p.css });
-  return page.evaluate(({ sel, p }) => {
-    let el = document.querySelector(sel);
-    if (!el) return null;
-    for (const [k, v] of Object.entries(p.attributes ?? {})) {
-      v === null ? el.removeAttribute(k) : el.setAttribute(k, String(v));
-    }
-    if (p.html) {
-      const t = document.createElement('template');
-      t.innerHTML = p.html.trim();
-      const repl = t.content.firstElementChild;
-      if (!repl) return null;
-      repl.setAttribute('data-rgaa-applied', '');
-      el.replaceWith(t.content);
-      return '[data-rgaa-applied]';
-    }
-    return sel;
-  }, { sel, p });
 }
 
 const browser = await chromium.launch();

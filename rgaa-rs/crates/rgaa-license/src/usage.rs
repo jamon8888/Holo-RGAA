@@ -1,11 +1,13 @@
 //! Daily quota counting and the asynchronous usage report to the licence service.
 
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
+use fs2::FileExt;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -40,13 +42,11 @@ fn next_midnight(day: NaiveDate) -> DateTime<Utc> {
 
 /// Units consumed today (UTC), for the whole installation.
 ///
-/// A single mutex guards the count, so concurrent requests can never admit
-/// more than the limit. Optionally mirrored to `usage.toml` so a restart does
-/// not reset the quota.
+/// A mutex guards in-process requests; a file lock serializes persistent
+/// read-modify-write operations across processes.
 pub struct UsageCounter {
     state: Mutex<UsageFile>,
     persist: Option<PathBuf>,
-    persist_lock: Mutex<()>,
 }
 
 impl UsageCounter {
@@ -57,7 +57,6 @@ impl UsageCounter {
                 count: 0,
             }),
             persist: None,
-            persist_lock: Mutex::new(()),
         }
     }
 
@@ -82,7 +81,6 @@ impl UsageCounter {
         Self {
             state: Mutex::new(initial),
             persist: Some(path),
-            persist_lock: Mutex::new(()),
         }
     }
 
@@ -103,6 +101,14 @@ impl UsageCounter {
     pub fn peek(&self, limit: u32, now: DateTime<Utc>) -> RateInfo {
         let today = now.date_naive();
         let mut state = self.lock();
+        if let Some(path) = &self.persist {
+            match lock_usage_file(path)
+                .and_then(|_guard| Ok(LicenseCache::load_usage(path)?.unwrap_or(*state)))
+            {
+                Ok(latest) => *state = latest,
+                Err(error) => tracing::warn!(%error, "failed to read persistent usage counter"),
+            }
+        }
         Self::roll(&mut state, today);
         RateInfo {
             limit,
@@ -120,39 +126,76 @@ impl UsageCounter {
         now: DateTime<Utc>,
     ) -> Result<RateInfo, RateInfo> {
         let today = now.date_naive();
-        let (after, reset_at) = {
-            let mut state = self.lock();
-            Self::roll(&mut state, today);
-            let reset_at = next_midnight(state.day);
-            let remaining = limit.saturating_sub(state.count);
-            if cost > remaining {
+        let mut state = self.lock();
+        let persistent_lock = match &self.persist {
+            Some(path) => match lock_usage_file(path) {
+                Ok(lock) => Some(lock),
+                Err(error) => {
+                    tracing::error!(%error, "failed to lock persistent usage counter");
+                    return Err(RateInfo {
+                        limit,
+                        remaining: 0,
+                        reset_at: next_midnight(today),
+                    });
+                }
+            },
+            None => None,
+        };
+        if let Some(path) = &self.persist {
+            match LicenseCache::load_usage(path) {
+                Ok(Some(latest)) => *state = latest,
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "ignoring unreadable usage file"),
+            }
+        }
+        Self::roll(&mut state, today);
+        let reset_at = next_midnight(state.day);
+        let remaining = limit.saturating_sub(state.count);
+        if cost > remaining {
+            return Err(RateInfo {
+                limit,
+                remaining,
+                reset_at,
+            });
+        }
+        let previous = *state;
+        state.count += cost;
+        if let Some(path) = &self.persist {
+            if let Err(error) = LicenseCache::store_usage(path, &state) {
+                *state = previous;
+                tracing::error!(%error, "failed to persist usage counter");
                 return Err(RateInfo {
                     limit,
-                    remaining,
+                    remaining: 0,
                     reset_at,
                 });
             }
-            state.count += cost;
-            (limit.saturating_sub(state.count), reset_at)
-        };
-        self.persist();
+        }
+        drop(persistent_lock);
+        let after = limit.saturating_sub(state.count);
         Ok(RateInfo {
             limit,
             remaining: after,
             reset_at,
         })
     }
+}
 
-    /// Writes the latest snapshot. Serialised by `persist_lock` and re-reading
-    /// the state inside it, so an older count can never overwrite a newer one.
-    fn persist(&self) {
-        let Some(path) = &self.persist else { return };
-        let _guard = self.persist_lock.lock().unwrap_or_else(|p| p.into_inner());
-        let snapshot = *self.lock();
-        if let Err(e) = LicenseCache::store_usage(path, &snapshot) {
-            tracing::warn!(error = %e, "failed to persist usage counter");
-        }
-    }
+fn lock_usage_file(path: &Path) -> Result<File, Box<dyn std::error::Error + Send + Sync>> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let mut lock_path = path.as_os_str().to_os_string();
+    lock_path.push(".lock");
+    let lock = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)?;
+    lock.lock_exclusive()?;
+    Ok(lock)
 }
 
 /// One metered operation, reported to the licence service.
@@ -361,5 +404,40 @@ mod tests {
         std::fs::write(&path, "garbage = [").unwrap();
         let c = UsageCounter::persistent(path);
         assert_eq!(c.peek(10, at(10, 0, 0)).remaining, 10);
+    }
+
+    #[test]
+    fn persistent_counter_process_worker() {
+        let Some(path) = std::env::var_os("RGAA_USAGE_TEST_WORKER") else {
+            return;
+        };
+        let counter = UsageCounter::persistent(PathBuf::from(path));
+        for _ in 0..100 {
+            counter.try_consume(1, 200, at(10, 0, 0)).unwrap();
+        }
+    }
+
+    #[test]
+    fn concurrent_processes_do_not_lose_usage_increments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.toml");
+        let executable = std::env::current_exe().unwrap();
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            workers.push(
+                std::process::Command::new(&executable)
+                    .arg("--exact")
+                    .arg("usage::tests::persistent_counter_process_worker")
+                    .arg("--nocapture")
+                    .env("RGAA_USAGE_TEST_WORKER", &path)
+                    .spawn()
+                    .unwrap(),
+            );
+        }
+        for mut worker in workers {
+            assert!(worker.wait().unwrap().success());
+        }
+        let counter = UsageCounter::persistent(path);
+        assert_eq!(counter.peek(200, at(10, 0, 0)).remaining, 0);
     }
 }

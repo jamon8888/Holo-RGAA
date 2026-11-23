@@ -17,6 +17,7 @@ rgaa-core = { path = "../rgaa-core" }
 async-trait = "0.1"
 axum = { version = "0.7", optional = true }
 chrono = { workspace = true }
+fs2 = "0.4"
 pasetors = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }

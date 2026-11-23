@@ -254,26 +254,6 @@ fn activation_baseline(
         .map_or(now, |file| file.last_validated)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn reactivating_the_same_token_keeps_its_grace_baseline() {
-        let saved_at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-        let reactivated_at = Utc.with_ymd_and_hms(2026, 1, 9, 0, 0, 0).unwrap();
-        let file = LicenseFile {
-            token: "same-token".into(),
-            last_validated: saved_at,
-        };
-        assert_eq!(
-            activation_baseline("same-token", Some(file), reactivated_at),
-            saved_at
-        );
-    }
-}
-
 fn default_path() -> anyhow::Result<PathBuf> {
     LicenseCache::default_dir()
         .map(|d| licence_path(&d))
@@ -315,4 +295,24 @@ pub fn cmd_deactivate() -> anyhow::Result<()> {
 /// The `config show` row from the environment.
 pub fn config_row_from_env() -> String {
     config_row(&rgaa_cli::license::gate_from_env().snapshot())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn reactivating_the_same_token_keeps_its_grace_baseline() {
+        let saved_at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let reactivated_at = Utc.with_ymd_and_hms(2026, 1, 9, 0, 0, 0).unwrap();
+        let file = LicenseFile {
+            token: "same-token".into(),
+            last_validated: saved_at,
+        };
+        assert_eq!(
+            activation_baseline("same-token", Some(file), reactivated_at),
+            saved_at
+        );
+    }
 }

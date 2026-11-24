@@ -381,6 +381,7 @@ pub fn assemble_site_audit(
         audit_id: uuid::Uuid::new_v4().to_string(),
         url,
         pages: all_pages,
+        site_criteria: Vec::new(),
         total_criteria: total,
         passed: pass_count,
         failed: fail_count,
@@ -1017,10 +1018,18 @@ async fn audit_discovered_urls(
         .iter()
         .any(|id| audit_type.contains(id))
     {
-        let page_observations: Vec<site_comparison::PageObservation> = urls
+        let sampled_observations: Vec<(String, Option<site_comparison::PageObservation>)> = urls
             .iter()
-            .filter_map(|page_url| site_contexts.get(page_url))
-            .filter_map(|value| serde_json::from_value(value.clone()).ok())
+            .map(|page_url| {
+                let observation = site_contexts
+                    .get(page_url)
+                    .and_then(|value| serde_json::from_value(value.clone()).ok());
+                (page_url.clone(), observation)
+            })
+            .collect();
+        let page_observations: Vec<site_comparison::PageObservation> = sampled_observations
+            .iter()
+            .filter_map(|(_, observation)| observation.clone())
             .collect();
         let failed_pages = urls
             .iter()
@@ -1031,12 +1040,37 @@ async fn audit_discovered_urls(
         let sample_complete = discovered_count < config.max_pages
             && failed_pages == 0
             && page_observations.len() == urls.len();
-        site_comparison::compare_site(
+        let mut results = site_comparison::compare_site(
             &page_observations,
             urls.len(),
             failed_pages,
             sample_complete,
-        )
+        );
+        let (comparable_pages, exclusions) =
+            site_comparison::select_comparable_pages(&sampled_observations, url);
+        let mut comparable_results = site_comparison::compare_site(
+            &comparable_pages,
+            comparable_pages.len(),
+            0,
+            sample_complete,
+        );
+        site_comparison::apply_comparable_set(
+            &mut comparable_results,
+            comparable_pages.len(),
+            &exclusions,
+        );
+        for comparable in comparable_results
+            .into_iter()
+            .filter(|result| matches!(result.criterion_id, "12.2" | "12.5"))
+        {
+            if let Some(result) = results
+                .iter_mut()
+                .find(|result| result.criterion_id == comparable.criterion_id)
+            {
+                *result = comparable;
+            }
+        }
+        results
     } else {
         tracing::info!(
             audit_type = audit_type.as_str(),
@@ -1488,10 +1522,8 @@ async fn audit_one(
         format!("malformed page context for {url}: {e}")
     })?;
 
-    // 4. Request an automatic estimate for every catalog criterion, including
-    // criteria owned by a deterministic engine or a human. The plan grouping
-    // keeps each primary route visible while the estimator still covers every
-    // routed test key, not just unresolved criterion-level leftovers.
+    // 4. Request estimates only for unresolved criteria owned by Holo. Other
+    // engines provide their own evidence; human-owned criteria remain open.
     on_phase(AuditPhase::AgentIaAssiste);
     let prior_results: Vec<CriterionResult> = axe_results
         .values()
@@ -1499,34 +1531,16 @@ async fn audit_one(
         .chain(keyboard_results.values())
         .cloned()
         .collect();
-    let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
-    for criterion in RgaaCriteria::all() {
-        // One LLM call per out-of-scope criterion is exactly the cost the
-        // rapid audit exists to avoid (#428).
-        if !audit_type.contains(criterion.id) {
-            continue;
-        }
-        if let Some(engine) = EnginePlan::primary(criterion.id) {
-            by_engine.entry(engine).or_default().push(criterion.clone());
-        }
-    }
-    let mut ordered_criteria = Vec::with_capacity(audit_type.count());
-    for engine in [
-        PlanEngine::AxeCore,
-        PlanEngine::Deterministic,
-        PlanEngine::Holo,
-        PlanEngine::Human,
-    ] {
-        if let Some(criteria) = by_engine.remove(&engine) {
-            info!(engine = ?engine, criteria = criteria.len(), "Queueing automatic estimates");
-            ordered_criteria.extend(criteria);
-        }
-    }
+    let holo_criteria = select_holo_candidates(audit_type, &prior_results);
+    info!(
+        criteria = holo_criteria.len(),
+        "Queueing Holo automatic estimates"
+    );
     let estimate_results = if mode == LlmMode::Off {
         HashMap::new()
     } else {
         agent
-            .run_automatic_estimates(&ordered_criteria, &page_context, &prior_results)
+            .run_automatic_estimates(&holo_criteria, &page_context, &prior_results)
             .await
     };
 
@@ -1554,6 +1568,31 @@ async fn audit_one(
         start.elapsed().as_millis() as u64,
         audit_type,
     ))
+}
+
+/// Holo may estimate only its own unresolved criterion routes.
+fn select_holo_candidates(
+    audit_type: AuditType,
+    prior_results: &[CriterionResult],
+) -> Vec<Criterion> {
+    let settled: std::collections::HashSet<&str> = prior_results
+        .iter()
+        .filter(|result| {
+            matches!(
+                result.status,
+                CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
+            )
+        })
+        .map(|result| result.criterion_id.as_str())
+        .collect();
+
+    RgaaCriteria::all()
+        .iter()
+        .filter(|criterion| audit_type.contains(criterion.id))
+        .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
+        .filter(|criterion| !settled.contains(criterion.id))
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -1715,7 +1754,7 @@ mod routing_tests {
             "axe-core",
         )];
 
-        let candidates = select_holo_candidates(&determined);
+        let candidates = select_holo_candidates(rgaa_core::AuditType::Complet, &determined);
         let ids: std::collections::HashSet<&str> =
             candidates.iter().map(|criterion| criterion.id).collect();
 
@@ -1724,6 +1763,16 @@ mod routing_tests {
         assert!(!ids.contains("1.2"));
         assert!(ids.contains("3.1"));
         assert!(!ids.contains("4.2"));
+    }
+
+    #[test]
+    fn holo_dispatch_respects_the_audit_scope() {
+        let candidates = select_holo_candidates(AuditType::Rapide, &[]);
+
+        assert!(candidates
+            .iter()
+            .all(|criterion| AuditType::Rapide.contains(criterion.id)));
+        assert!(candidates.len() < EnginePlan::owned_by(PlanEngine::Holo).len());
     }
 
     #[test]
@@ -2014,25 +2063,5 @@ mod routing_tests {
         );
         assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
         assert_eq!(result.tests.len(), RgaaCatalog::tests("4.2").unwrap().len());
-    }
-
-    fn select_holo_candidates(prior_results: &[CriterionResult]) -> Vec<rgaa_core::Criterion> {
-        let settled: std::collections::HashSet<&str> = prior_results
-            .iter()
-            .filter(|result| {
-                matches!(
-                    result.status,
-                    CriterionStatus::Pass | CriterionStatus::Fail | CriterionStatus::NotApplicable
-                )
-            })
-            .map(|result| result.criterion_id.as_str())
-            .collect();
-
-        RgaaCriteria::all()
-            .iter()
-            .filter(|criterion| EnginePlan::primary(criterion.id) == Some(PlanEngine::Holo))
-            .filter(|criterion| !settled.contains(criterion.id))
-            .cloned()
-            .collect()
     }
 }

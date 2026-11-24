@@ -2597,7 +2597,7 @@ impl ObscuraBridge {
           placeholder: el.placeholder || null
         }))
       }));
-<<    const selectorOf = el => {
+    const selectorOf = el => {
       const parts = [];
       while (el && el.tagName) {
         const tag = el.tagName.toLowerCase();

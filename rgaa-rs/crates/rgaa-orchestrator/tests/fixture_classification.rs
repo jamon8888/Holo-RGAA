@@ -243,7 +243,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
     // The fixtures are served on 127.0.0.1, which Obscura blocks by default (SSRF
     // guard): without this, `obscura scrape` gives up in ~3 ms and the gap-fix batch
     // fails with "missing 'eval'". Child processes inherit the variable.
-    std::env::set_var("OBSCURA_ALLOW_PRIVATE_NETWORK", "1");
+    rgaa_test_corpus::e2e::allow_private_network();
 
     let port = serve(corpus_dir()).expect("fixture server must bind");
     // Never the fixed 9222: this test now runs in `E2E (navigateur)` beside the

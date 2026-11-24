@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
 use rgaa_core::registry::Outcome;
 use rgaa_core::{
-    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry, Outcome,
+    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
     RgaaCatalog, RgaaError, Violation,
 };
 use std::sync::OnceLock;
@@ -84,7 +84,7 @@ impl AxeMapper {
                 if !mechanism.rules.iter().any(|rule| rule == &violation.id) {
                     continue;
                 }
-                let capped = mechanism.outcome_cap == Some(Outcome::Review);
+                let capped = mechanism.review_only;
                 let result = results
                     .entry(rgaa_id.clone())
                     .or_insert_with(|| CriterionResult {
@@ -933,7 +933,7 @@ mod tests {
         assert_eq!(
             rule_refs, 88,
             "expected 88 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-<<             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
+             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
              while focus-order-semantics was removed from its former 7.3 attribution)"
         );
     }
@@ -987,7 +987,5 @@ mod tests {
     #[test]
     fn a_review_capped_mechanism_is_silent_without_violation() {
         assert!(!AxeMapper::map("[]").unwrap().contains_key("12.8"));
-    }
-}
     }
 }

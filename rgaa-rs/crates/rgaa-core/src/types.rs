@@ -287,7 +287,8 @@ pub struct Violation {
     pub impact: String,
     pub description: String,
     pub nodes_affected: usize,
-    /// Affected node evidence retained by the producing mechanism.
+    /// Affected-node evidence retained by mechanisms that cap findings for human
+    /// review.
     ///
     /// Empty for mechanisms that only report a count and for persisted results
     /// created before this field existed.

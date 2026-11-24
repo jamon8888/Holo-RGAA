@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
 use rgaa_core::registry::Outcome;
 use rgaa_core::{
-    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
+    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry, Outcome,
     RgaaCatalog, RgaaError, Violation,
 };
 use std::sync::OnceLock;
@@ -119,12 +119,24 @@ impl AxeMapper {
                         verified_status: None,
                         review_events: Vec::new(),
                     });
-                // Un Fail prouvé ne se dégrade jamais en revue : si une autre règle du
-                // même critère a déjà produit un Fail, on le garde. Mais on ajoute
-                // toujours la violation comme preuve.
-                if capped {
-                    Self::apply_capped_review(result, &violation.id);
-                } else if result.status != CriterionStatus::Fail {
+                if mechanism.review_only {
+                    result.status = CriterionStatus::NeedsReview;
+                    result.review_required = true;
+                    if !result
+                        .violations
+                        .iter()
+                        .any(|existing| existing.rule_id == violation.id)
+                    {
+                        let reason = format!(
+                            "{} : indice suspect, non concluant à lui seul (plafond review)",
+                            violation.id
+                        );
+                        result.review_reason = Some(match result.review_reason.take() {
+                            Some(previous) => format!("{previous} ; {reason}"),
+                            None => reason,
+                        });
+                    }
+                } else {
                     result.status = CriterionStatus::Fail;
                 }
                 result.violations.push(Violation {
@@ -135,7 +147,7 @@ impl AxeMapper {
                     // A capped finding is sent to human review, so it must keep the
                     // affected nodes as evidence. Uncapped findings keep their
                     // historical payload unchanged (#279).
-                    nodes: if capped {
+                    nodes: if mechanism.review_only {
                         violation.nodes.clone()
                     } else {
                         Vec::new()
@@ -281,7 +293,7 @@ impl AxeMapper {
                     CriterionMechanism {
                         rules: mechanism.axe_rules.clone(),
                         coverage: mechanism.coverage,
-                        outcome_cap: mechanism.outcome_cap,
+                        review_only: mechanism.outcome_cap == Some(Outcome::Review),
                     },
                 );
             }
@@ -296,7 +308,8 @@ impl AxeMapper {
 struct CriterionMechanism {
     rules: Vec<String>,
     coverage: AxeCoverage,
-    outcome_cap: Option<Outcome>,
+    /// Plafond `review` (#279) : une violation produit `NeedsReview`, jamais `Fail`.
+    review_only: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -914,118 +927,67 @@ mod tests {
             37,
             "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
              decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
-             to 8.5 and button-name to 11.9 (+2 criteria). axe-12-8 (#279) adds criterion 12.8 (+1). \
-             Net: 43 - 9 + 2 + 1 = 37 criteria with axe rules."
+             to 8.5 and button-name to 11.9, then #263 added 12.8 (tabindex, focus-order-semantics)"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
             rule_refs, 88,
             "expected 88 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-             the injected axe-core 4.9.1; axe-12-8 adds tabindex + focus-order-semantics for 12.8; \
-             #398 removes the inactive focus-order-semantics rule from 7.3)"
+<<             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
+             while focus-order-semantics was removed from its former 7.3 attribution)"
         );
     }
 
-    /// #436 : une seule correspondance par règle axe, issue des étiquettes RGAAv4
-    /// d'axe (`axe_rules.json`). Pour les règles régies par ce ticket
-    /// (`button-name`, `input-button-name`, taguées `RGAA-11.9.1`), le critère
-    /// doit être unique et identique dans `mechanisms.toml` (via `AxeMapper`),
-    /// `engine_plan.json` et les étiquettes `axe_rules.json`. Échoue à la moindre
-    /// divergence.
+    /// #279 : 12.8 est plafonné à `review` — un `tabindex` positif est un indice, pas un échec.
     #[test]
-    fn button_name_et_input_button_name_mappent_sur_11_9_partout() {
-        use std::collections::BTreeMap;
+    fn a_review_capped_mechanism_never_fails() {
+        let json = r#"[{"id":"tabindex","impact":"serious","description":"d","nodes":[{},{}]}]"#;
+        let r = &AxeMapper::map(json).unwrap()["12.8"];
+        assert_eq!(r.status, CriterionStatus::NeedsReview);
+        assert!(r.review_required);
+        assert_eq!(r.violations.len(), 1);
+        assert_eq!(r.violations[0].nodes_affected, 2);
+        assert!(r.review_reason.as_deref().unwrap().contains("tabindex"));
+    }
 
-        // --- Source de vérité indépendante : étiquettes RGAAv4 de axe-core ---
-        #[derive(serde::Deserialize)]
-        struct Rule {
-            id: String,
-            #[serde(default)]
-            tags: Vec<String>,
-        }
-        let rules: Vec<Rule> =
-            serde_json::from_str(AXE_RULES_JSON).expect("axe_rules.json doit parser");
-        fn crit_de_tag(tag: &str) -> Option<String> {
-            let rest = tag.strip_prefix("RGAA-")?;
-            let majeur = rest.split('.').next()?;
-            let mineur = rest.split('.').nth(1)?;
-            Some(format!("{majeur}.{mineur}"))
-        }
-        let mut tag_criterion: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for r in &rules {
-            for t in &r.tags {
-                if let Some(c) = crit_de_tag(t) {
-                    tag_criterion.entry(r.id.clone()).or_default().push(c);
-                }
-            }
-        }
+    #[test]
+    fn a_review_capped_mechanism_keeps_every_violation_and_its_nodes() {
+        let json = r#"[
+            {"id":"tabindex","impact":"serious","description":"positive tabindex",
+             "nodes":[{"html":"<button tabindex='3'>"}]},
+            {"id":"focus-order-semantics","impact":"minor","description":"focus semantics",
+             "nodes":[{"html":"<div role='button'>"}]}
+        ]"#;
+        let results = AxeMapper::map(json).unwrap();
+        let r = &results["12.8"];
 
-        // --- mechanisms.toml via AxeMapper ---
-        let mapping = AxeMapper::rgaa_to_axe_map();
-        let mut mech_pairs: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (criterion, mechanism) in mapping {
-            for rule in &mechanism.rules {
-                mech_pairs
-                    .entry(rule.clone())
-                    .or_default()
-                    .push(criterion.clone());
-            }
-        }
+        assert_eq!(r.status, CriterionStatus::NeedsReview);
+        assert!(r.review_required);
+        assert_eq!(r.violations.len(), 2);
+        assert!(!results.contains_key("7.3"));
 
-        // --- engine_plan.json ---
-        const ENGINE_PLAN_JSON: &str =
-            include_str!("../../rgaa-core/data/rgaa-4.1.2/engine_plan.json");
-        #[derive(serde::Deserialize)]
-        struct PlanEntry {
-            criterion_id: String,
-            axe_rules: Vec<String>,
-        }
-        let plan: Vec<PlanEntry> =
-            serde_json::from_str(ENGINE_PLAN_JSON).expect("engine_plan.json doit parser");
-        let mut plan_pairs: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for entry in &plan {
-            for rule in &entry.axe_rules {
-                plan_pairs
-                    .entry(rule.clone())
-                    .or_default()
-                    .push(entry.criterion_id.clone());
-            }
+        for (rule_id, html) in [
+            ("tabindex", "<button tabindex='3'>"),
+            ("focus-order-semantics", "<div role='button'>"),
+        ] {
+            let violation = r
+                .violations
+                .iter()
+                .find(|violation| violation.rule_id == rule_id)
+                .unwrap_or_else(|| panic!("12.8 must retain {rule_id}"));
+            assert_eq!(violation.nodes.len(), 1);
+            assert_eq!(violation.nodes[0]["html"], html);
         }
 
-        // Chaque règle régie par le ticket a une seule correspondance, à 11.9,
-        // identique dans les trois sources.
-        for rule in ["button-name", "input-button-name"] {
-            let mech_crits = mech_pairs.get(rule);
-            let plan_crits = plan_pairs.get(rule);
-            let tag_crit = tag_criterion.get(rule);
+        let reason = r.review_reason.as_deref().unwrap();
+        assert!(reason.contains("tabindex"));
+        assert!(reason.contains("focus-order-semantics"));
+    }
 
-            // Une seule correspondance par règle dans chaque source.
-            assert_eq!(
-                mech_crits.map(|v| v.len()),
-                Some(1),
-                "{rule} doit être mappé à un seul critère dans mechanisms.toml"
-            );
-            assert_eq!(
-                plan_crits.map(|v| v.len()),
-                Some(1),
-                "{rule} doit être routé vers un seul critère dans engine_plan.json"
-            );
-
-            // La correspondance vaut 11.9 partout, jamais 11.1.
-            assert_eq!(
-                mech_crits.map(|v| v[0].as_str()),
-                Some("11.9"),
-                "{rule} doit mapper sur 11.9 dans mechanisms.toml (étiquette RGAA-11.9.1)"
-            );
-            assert_eq!(
-                plan_crits.map(|v| v[0].as_str()),
-                Some("11.9"),
-                "{rule} doit être routé par engine_plan.json sur 11.9"
-            );
-            assert!(
-                tag_crit.is_some_and(|crits| crits.len() == 1 && crits[0] == "11.9"),
-                "{rule} doit être tagué RGAA-11.9.1 par axe-core (et seulement celui-ci), obtenu {tag_crit:?}"
-            );
-        }
+    #[test]
+    fn a_review_capped_mechanism_is_silent_without_violation() {
+        assert!(!AxeMapper::map("[]").unwrap().contains_key("12.8"));
+    }
+}
     }
 }

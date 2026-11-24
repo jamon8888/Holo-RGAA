@@ -14,11 +14,22 @@ use tracing::{info, warn};
 
 pub mod cdp_pool;
 pub mod config;
+mod contrast;
 pub mod evidence;
 pub mod guided;
 pub mod results;
 
 use crate::cdp_pool::CdpSessionPool;
+
+/// Browser data passed to one native analysis plugin.
+#[derive(Debug, Clone)]
+pub struct AnalysisPageCapture {
+    pub dom_snapshot: rgaa_analysis::DomSnapshot,
+    pub ax_tree: rgaa_analysis::AxTree,
+    pub screenshot: rgaa_analysis::RgbaImage,
+    pub dpr: f32,
+    pub lang_declared: Option<String>,
+}
 
 pub use config::{
     AdvancedRulePolicy, AnalyzeConfig, AnalyzeRequest, CookieReference, CookieSameSite,
@@ -1649,7 +1660,11 @@ impl ObscuraBridge {
         )
         .await?;
 
-        Self::validate_axe_result(&result)
+        let axe_json = Self::validate_axe_result(&result)?;
+
+        // #439 : même complément déterministe que dans le chemin groupé (cdp_pool) —
+        // les deux chemins doivent produire exactement le même verdict.
+        crate::contrast::augment_result(ws, session_id, axe_json).await
     }
 
     /// Validate the resolved axe.run() result and return its violations array. Any
@@ -1928,6 +1943,208 @@ impl ObscuraBridge {
         Self::parse_scrape_results(&stdout)
     }
 
+    /// Captures one live page for a P-00 analysis plugin in one browser target.
+    pub async fn capture_analysis_page(
+        &self,
+        url: &str,
+    ) -> Result<AnalysisPageCapture, ObscuraError> {
+        AnalyzeRequest {
+            url: url.to_owned(),
+            config: AnalyzeConfig::default(),
+        }
+        .validate_supported()?;
+
+        let ws_url = self
+            .get_browser_ws_url()
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|error| ObscuraError::CdpTransport(error.to_string()))?;
+        let target = Self::cdp_send(
+            &mut ws,
+            "Target.createTarget",
+            serde_json::json!({"url": url}),
+        )
+        .await
+        .map_err(ObscuraError::CdpTransport)?;
+        let target_id = target
+            .get("targetId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| ObscuraError::CdpTransport("missing targetId".into()))?
+            .to_owned();
+        let session = Self::cdp_send(
+            &mut ws,
+            "Target.attachToTarget",
+            serde_json::json!({"targetId": target_id, "flatten": true}),
+        )
+        .await
+        .map_err(ObscuraError::CdpTransport)?;
+        let session_id = session
+            .get("sessionId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| ObscuraError::CdpTransport("missing sessionId".into()))?
+            .to_owned();
+
+        let captured = async {
+            Self::wait_for_load(&mut ws, &session_id, Duration::from_secs(15))
+                .await
+                .map_err(ObscuraError::Navigation)?;
+            let cdp_snapshot = Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "DOMSnapshot.captureSnapshot",
+                serde_json::json!({
+                    "computedStyles": ["color", "backgroundColor", "fontSize", "fontWeight", "display", "visibility", "opacity", "position", "zIndex", "textDecoration", "cursor", "borderColor"],
+                    "includeDOMRects": true,
+                    "includePaintOrder": true
+                }),
+            )
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+            let snapshot = Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Runtime.evaluate",
+                serde_json::json!({
+                    "expression": Self::build_page_context_script(),
+                    "returnByValue": true
+                }),
+            )
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+            if let Some(error) = snapshot.get("exceptionDetails") {
+                return Err(ObscuraError::Evaluation(error.to_string()));
+            }
+            let snapshot = snapshot
+                .get("result")
+                .and_then(|result| result.get("value"))
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ObscuraError::Evaluation("DOM capture returned no value".into()))?;
+            let snapshot: serde_json::Value = serde_json::from_str(snapshot)
+                .map_err(|error| ObscuraError::Json(error.to_string()))?;
+            let mut snapshot = snapshot;
+            snapshot["cdp_snapshot"] = cdp_snapshot;
+
+            Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Accessibility.enable",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+            let ax = Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Accessibility.getFullAXTree",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+            let nodes = ax
+                .get("nodes")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| ObscuraError::Json("AX tree has no nodes".into()))?;
+            let ax_tree = rgaa_analysis::AxTree {
+                nodes: nodes
+                    .iter()
+                    .map(|node| rgaa_analysis::AxNode {
+                        role: node
+                            .pointer("/role/value")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        name: node
+                            .pointer("/name/value")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                    })
+                    .collect(),
+            };
+
+            let metrics = Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.getLayoutMetrics",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+            let content = metrics
+                .get("cssContentSize")
+                .ok_or_else(|| ObscuraError::Evidence("page content bounds unavailable".into()))?;
+            let width = content
+                .get("width")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let height = content
+                .get("height")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            if width <= 0.0 || height <= 0.0 {
+                return Err(ObscuraError::Evidence("page content has no area".into()));
+            }
+            let screenshot = Self::cdp_send_session(
+                &mut ws,
+                &session_id,
+                "Page.captureScreenshot",
+                serde_json::json!({
+                    "format": "png",
+                    "captureBeyondViewport": true,
+                    "clip": {"x": 0, "y": 0, "width": width, "height": height, "scale": 1}
+                }),
+            )
+            .await
+            .map_err(ObscuraError::CdpTransport)?;
+            let encoded = screenshot
+                .get("data")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ObscuraError::Evidence("screenshot data unavailable".into()))?;
+            let png = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map_err(|error| {
+                    ObscuraError::Evidence(format!("invalid screenshot data: {error}"))
+                })?;
+            let rgba = image::load_from_memory(&png)
+                .map_err(|error| {
+                    ObscuraError::Evidence(format!("invalid screenshot image: {error}"))
+                })?
+                .to_rgba8();
+            let (width, height) = rgba.dimensions();
+            let dpr = snapshot
+                .get("dpr")
+                .and_then(serde_json::Value::as_f64)
+                .filter(|value| *value > 0.0)
+                .unwrap_or(1.0) as f32;
+
+            Ok(AnalysisPageCapture {
+                dom_snapshot: rgaa_analysis::DomSnapshot::new(snapshot.to_string()),
+                ax_tree,
+                screenshot: rgaa_analysis::RgbaImage {
+                    width,
+                    height,
+                    pixels: rgba.into_raw(),
+                },
+                dpr,
+                lang_declared: snapshot
+                    .get("lang")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|lang| !lang.is_empty())
+                    .map(str::to_owned),
+            })
+        }
+        .await;
+
+        let cleanup = Self::cleanup_target(&mut ws, &session_id, &target_id).await;
+        match (captured, cleanup) {
+            (Ok(capture), Ok(())) => Ok(capture),
+            (Ok(_), Err(error)) => Err(ObscuraError::CdpTransport(error)),
+            (Err(error), _) => Err(error),
+        }
+    }
+
     /// Parse the real Obscura `scrape` output: a single JSON object containing a
     /// `results` array, where each element has a `url` and an `eval` (string) field.
     /// Returns an error if the payload is not in this shape.
@@ -2020,6 +2237,35 @@ impl ObscuraBridge {
       .map(h => ({ level: parseInt(h.tagName[1]), text: h.textContent.trim() }));
     const landmarks = Array.from(document.querySelectorAll('header, nav, main, aside, footer, [role="banner"], [role="navigation"], [role="main"], [role="complementary"], [role="contentinfo"]'))
       .map(el => ({ tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), label: el.getAttribute('aria-label') }));
+    // #429 — normalized subtree descriptions for the three transverse
+    // landmarks. Only tag, role, aria-label and direct text survive: volatile
+    // ids, generated classes and interaction state are excluded, so the same
+    // header/menu/footer yields the same signature on every page.
+    const transverseKind = el => {
+      const role = (el.getAttribute('role') || '').toLowerCase();
+      if (role === 'banner' || role === 'navigation' || role === 'contentinfo') return role;
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'header') return 'banner';
+      if (tag === 'nav') return 'navigation';
+      if (tag === 'footer') return 'contentinfo';
+      return null;
+    };
+    const transverse_landmarks = Array.from(document.querySelectorAll('header, nav, footer, [role="banner"], [role="navigation"], [role="contentinfo"]'))
+      .map(el => {
+        const kind = transverseKind(el);
+        if (!kind) return null;
+        const nodes = Array.from(el.querySelectorAll('*')).map(n => ({
+          tag: n.tagName.toLowerCase(),
+          role: n.getAttribute('role') || '',
+          label: n.getAttribute('aria-label') || '',
+          text: Array.from(n.childNodes)
+            .filter(c => c.nodeType === 3)
+            .map(c => c.textContent)
+            .join(' ')
+        }));
+        return { kind, nodes };
+      })
+      .filter(Boolean);
     // Les sept porteurs d'alternative du critere RGAA 1.3 (tests 1.3.1 a 1.3.8).
     // On lit l'ATTRIBUT alt, jamais la propriete IDL `.alt` : elle n'est pas
     // implementee sous obscura 0.2.4 (`typeof img.alt === 'undefined'`, verifie sur
@@ -2100,7 +2346,91 @@ impl ObscuraBridge {
           placeholder: el.placeholder || null
         }))
       }));
-    return JSON.stringify({ title, lang, headings, landmarks, images, iframes, media, links, navigation, forms, navigation_systems, navigation_positions, sitemap_access, search_access });
+    const selectorOf = el => {
+      const parts = [];
+      while (el && el.tagName) {
+        const tag = el.tagName.toLowerCase();
+        if (el.id) { parts.unshift(tag + '#' + el.id); break; }
+        let index = 1, sibling = el.previousElementSibling;
+        while (sibling) { if (sibling.tagName === el.tagName) index++; sibling = sibling.previousElementSibling; }
+        parts.unshift(tag + ':nth-of-type(' + index + ')');
+        el = el.parentElement;
+      }
+      return parts.join(' > ');
+    };
+    const elements = Array.from(document.querySelectorAll('html, html *'));
+    const ids = new Map(elements.map((el, i) => [el, String(i)]));
+    const nodes = elements.map((el, i) => {
+      const s = getComputedStyle(el), r = el.getBoundingClientRect();
+      const parent = el.parentElement, ps = parent ? getComputedStyle(parent) : s;
+      const attrs = Object.fromEntries(Array.from(el.attributes).map(a => [a.name, a.value]));
+      const text = (el.innerText || el.textContent || '').trim().slice(0, 5000);
+      return {
+        id: String(i), tag: el.tagName.toLowerCase(), parent: ids.get(parent) || null,
+        lang: el.getAttribute('lang'), text, alt: el.getAttribute('alt'), title: el.getAttribute('title'),
+        selector: selectorOf(el), target: selectorOf(el), xpath: selectorOf(el), attrs,
+        bbox: { x: r.x, y: r.y, width: r.width, height: r.height },
+        fontSize: s.fontSize, fontWeight: s.fontWeight, backgroundColor: s.backgroundColor,
+        color: s.color, display: s.display, position: s.position, visibility: s.visibility,
+        cursor: s.cursor, order: Number.parseInt(s.order, 10) || 0, gridArea: s.gridArea,
+        role: el.getAttribute('role'), ariaLabel: el.getAttribute('aria-label'),
+        ariaLive: el.getAttribute('aria-live'), ariaExpanded: el.getAttribute('aria-expanded') === 'true',
+        ariaPressed: el.getAttribute('aria-pressed') === 'true', ariaChecked: el.getAttribute('aria-checked') === 'true',
+        ariaLevel: Number.parseInt(el.getAttribute('aria-level') || '', 10) || null,
+        scope: el.getAttribute('scope'), focusable: el.tabIndex >= 0,
+        handlers: ['click', 'keydown', 'keyup', 'change'].filter(name => typeof el['on' + name] === 'function'),
+        styles: { color: s.color, backgroundColor: s.backgroundColor, fontSize: s.fontSize, fontWeight: s.fontWeight, textDecoration: s.textDecorationLine },
+        parent_styles: { color: ps.color, backgroundColor: ps.backgroundColor, fontSize: ps.fontSize, fontWeight: ps.fontWeight },
+        parent_text: parent ? (parent.innerText || '').trim().slice(0, 5000) : ''
+      };
+    });
+    const cssTexts = elements.filter(el => el !== document.documentElement && el.children.length === 0 && (el.textContent || '').trim())
+      .filter(el => getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden')
+      .map(el => {
+        const s = getComputedStyle(el), r = el.getBoundingClientRect(), layers = [], issues = [];
+        let p = el;
+        while (p && p.nodeType === 1) {
+          const ps = getComputedStyle(p), bg = ps.backgroundColor;
+          if (ps.opacity !== '1') issues.push('opacity < 1');
+          if (ps.backgroundImage && ps.backgroundImage !== 'none') issues.push('background-image');
+          if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'rgba(0,0,0,0)') layers.push(bg);
+          p = p.parentElement;
+        }
+        return { target: selectorOf(el), xpath: selectorOf(el), bbox: { x:r.x, y:r.y, width:r.width, height:r.height },
+          color:s.color, layers, issues, fontSize:s.fontSize, fontWeight:s.fontWeight,
+          disabled:!!el.disabled || el.getAttribute('aria-disabled') === 'true' };
+      });
+    const components = elements.filter(el => /^(INPUT|BUTTON|SELECT|TEXTAREA|SVG|IMG|CANVAS)$/.test(el.tagName) || ['button','checkbox','radio','switch'].includes(el.getAttribute('role')))
+      .map(el => {
+        const s = getComputedStyle(el), r = el.getBoundingClientRect();
+        const icon = /^(SVG|IMG|CANVAS)$/.test(el.tagName);
+        return { target:selectorOf(el), xpath:selectorOf(el), bbox:{x:r.x,y:r.y,width:r.width,height:r.height},
+          color:s.borderColor || s.color, kind:icon ? 'icon' : 'border', present:true, issues:[] };
+      });
+    const imageNodes = elements.filter(el => /^(IMG|SVG|CANVAS|AREA|OBJECT|EMBED)$/.test(el.tagName) || (el.tagName === 'INPUT' && el.type === 'image'))
+      .map(el => {
+        const r = el.getBoundingClientRect(), tag = el.tagName.toLowerCase();
+        return { type_noeud:tag === 'input' ? 'input-image' : tag, selecteur:selectorOf(el), xpath:selectorOf(el),
+          bbox:{x:r.x,y:r.y,width:r.width,height:r.height}, src:el.getAttribute('src') || el.getAttribute('data'),
+          alt:el.getAttribute('alt'), nom_accessible:el.getAttribute('aria-label') || el.getAttribute('alt'),
+          dans_lien:!!el.closest('a'), dans_bouton:!!el.closest('button'), dans_figure:!!el.closest('figure'),
+          texte_adjacent:(el.parentElement?.innerText || '').trim().slice(0,300),
+          legende:el.closest('figure')?.querySelector('figcaption')?.innerText || null,
+          texte_lien:el.closest('a')?.innerText || null, captcha:/captcha/i.test((el.className || '') + ' ' + (el.src || '')),
+          classes:typeof el.className === 'string' ? el.className : '' };
+      });
+    const colorElements = nodes.map(n => ({ ...n, tag:n.tag, selecteur:n.selector }));
+    const main = document.querySelector('main, [role="main"]') || document.body;
+    const page = { url:location.href, titre:title, h1:document.querySelector('h1')?.innerText || '',
+      contenu_principal:(main?.innerText || '').slice(0,50000),
+      liens:links.map((a,i) => ({ id:String(i), intitule:a.text, nom_accessible:'', description_accessible:'',
+        titre_liste:'', titre_section:'', extrait:a.text, cible:a.href, titre_cible:null })),
+      cadres:[], champs:[], boutons:[], tableaux:[], formulaires:[], alternatives:[], versions:[] };
+    return JSON.stringify({ title, lang, dir:document.documentElement.dir || 'ltr', dpr:window.devicePixelRatio || 1,
+      headings, landmarks, transverse_landmarks, images, iframes, media, links, navigation, forms,
+      navigation_systems, navigation_positions, sitemap_access, search_access, nodes,
+      texts:cssTexts, components, images_for_plugins:imageNodes, elements:colorElements,
+      documents:[{nodes:colorElements}], page });
   })()
   "#
     }
@@ -2735,6 +3065,23 @@ impl Drop for ObscuraBridge {
 mod tests {
     use super::*;
 
+    #[test]
+    fn plugin_capture_script_collects_the_page_inputs() {
+        let script = ObscuraBridge::build_page_context_script();
+        for field in [
+            "dpr:window.devicePixelRatio",
+            "texts:cssTexts",
+            "components",
+            "images_for_plugins:imageNodes",
+            "documents:[{nodes:colorElements}]",
+            "page });",
+            "parent_styles",
+            "bbox:{x:r.x,y:r.y,width:r.width,height:r.height}",
+        ] {
+            assert!(script.contains(field), "capture script misses {field}");
+        }
+    }
+
     /// Les sept porteurs d'alternative du critère RGAA 1.3 doivent être interrogés.
     /// Mesuré : le script n'interrogeait que `img`, donc six tests sur sept (1.3.2 à
     /// 1.3.8) n'avaient aucune preuve à juger.
@@ -2755,6 +3102,28 @@ mod tests {
                 "le script d'extraction n'interroge pas le porteur {carrier}"
             );
         }
+    }
+
+    /// #429 : la sonde doit décrire les trois points de repère transverses et
+    /// les inclure dans le contexte sérialisé, sinon l'orchestrateur n'a aucun
+    /// sous-arbre à normaliser et ne peut détecter aucun bloc répété.
+    #[test]
+    fn page_context_script_emits_transverse_landmark_subtrees() {
+        let script = ObscuraBridge::build_page_context_script();
+        for landmark in ["banner", "navigation", "contentinfo"] {
+            assert!(
+                script.contains(&format!("'{landmark}'")),
+                "le point de repère {landmark} doit être reconnu"
+            );
+        }
+        assert!(
+            script.contains("transverse_landmarks"),
+            "champ de sortie absent"
+        );
+        assert!(
+            script.contains("querySelectorAll('*')"),
+            "sous-arbre non décrit"
+        );
     }
 
     /// Garde, et non test de comportement : `.alt` **n'est pas implémentée** comme

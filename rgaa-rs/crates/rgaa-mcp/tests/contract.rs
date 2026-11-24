@@ -28,8 +28,121 @@ fn exposes_every_registered_agent_tool() {
             "lint_static",
             "source_map",
             "verify_fix",
+            "get_test_methodology",
+            "list_analysis_plugins",
+            "run_analysis_plugin",
         ]
     );
+}
+
+/// P-00 acceptance criterion 4: the DTO and the registered tool schema must
+/// not offer `status` or `verdict` to a caller.
+#[test]
+fn run_analysis_plugin_schema_has_no_status_or_verdict() {
+    for schema in [
+        serde_json::to_value(schemars::schema_for!(rgaa_mcp::RunAnalysisPluginInput))
+            .expect("input schema"),
+        serde_json::to_value(schemars::schema_for!(rgaa_mcp::RunAnalysisPluginResponse))
+            .expect("output schema"),
+    ] {
+        let text = schema.to_string();
+        assert!(!text.contains("\"status\""), "{text}");
+        assert!(!text.contains("\"verdict\""), "{text}");
+    }
+    let tool = ToolServer::tool_router()
+        .list_all()
+        .into_iter()
+        .find(|tool| tool.name == "run_analysis_plugin")
+        .expect("registered tool");
+    let text = serde_json::Value::Object((*tool.input_schema).clone()).to_string();
+    assert!(!text.contains("\"status\""), "{text}");
+    assert!(!text.contains("\"verdict\""), "{text}");
+}
+
+/// The skills call `run_analysis_plugin` without `options`. `serde_json::Value`'s
+/// default is `null`, which `PluginOptions` rejects: omitted (and explicit null)
+/// options must arrive at the runner as `{}` instead.
+#[test]
+fn run_analysis_plugin_defaults_omitted_options_to_an_empty_object() {
+    let input: rgaa_mcp::RunAnalysisPluginInput = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "plugin": "echo"
+    }))
+    .expect("omitted options are valid");
+    assert_eq!(input.options, serde_json::json!({}));
+
+    let input: rgaa_mcp::RunAnalysisPluginInput = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "plugin": "echo",
+        "options": null
+    }))
+    .expect("explicit null options are valid");
+    assert_eq!(input.options, serde_json::json!({}));
+
+    serde_json::from_value::<rgaa_analysis::PluginOptions>(input.options)
+        .expect("{} is a valid PluginOptions for the runner");
+}
+
+#[tokio::test]
+async fn run_analysis_plugin_returns_only_proofs() {
+    struct EchoAnalysis(rgaa_analysis::Registry);
+    impl rgaa_mcp::AnalysisService for EchoAnalysis {
+        fn list(&self) -> Vec<rgaa_analysis::PluginInfo> {
+            self.0.list()
+        }
+        fn run(
+            &self,
+            url: &str,
+            plugin: &str,
+            options: &serde_json::Value,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Vec<rgaa_analysis::Preuve>, McpFailure>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            let url = url.to_owned();
+            let plugin_id = plugin.to_owned();
+            let options = options.clone();
+            Box::pin(async move {
+                let plugin = self
+                    .0
+                    .get(&plugin_id)
+                    .ok_or_else(|| McpFailure::invalid("plugin inconnu"))?;
+                rgaa_analysis::run_plugin(plugin, &url, &options)
+                    .await
+                    .map_err(|error| McpFailure::execution(error.to_string()))
+            })
+        }
+    }
+
+    let server = ToolServer::new_with_analysis(
+        Arc::new(PanickingAnalyze),
+        Arc::new(RemediationServiceImpl::default()),
+        Arc::new(PanickingGuided),
+        Arc::new(OrchestrationService::new()),
+        Arc::new(NoOpStorageService),
+        Arc::new(EchoAnalysis(
+            rgaa_analysis::Registry::builder()
+                .with(rgaa_analysis::echo_plugin())
+                .build()
+                .expect("registry"),
+        )),
+    );
+    let response = server
+        .run_analysis_plugin(Parameters(rgaa_mcp::RunAnalysisPluginInput {
+            url: "https://example.test".into(),
+            plugin: "echo".into(),
+            options: serde_json::json!({}),
+        }))
+        .await
+        .expect("echo proof");
+    let json = serde_json::to_value(response.0).expect("serialize");
+    let text = json.to_string();
+    assert_eq!(json["preuves"].as_array().map(Vec::len), Some(1));
+    assert!(!text.contains("\"status\""), "{text}");
+    assert!(!text.contains("\"verdict\""), "{text}");
 }
 
 #[test]

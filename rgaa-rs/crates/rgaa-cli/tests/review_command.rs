@@ -95,6 +95,7 @@ fn audit(page_urls: &[&str], criterion_ids: &[&str]) -> AuditResult {
         etat_conformite: "incomplete".to_owned(),
         duration_ms: 1,
         audit_complete: true,
+        audit_type: rgaa_core::AuditType::Complet,
     }
 }
 
@@ -399,6 +400,22 @@ fn in_place_replacement_preserves_restrictive_file_permissions() {
 
     let mode = fs::metadata(&input).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
+}
+
+#[test]
+fn a_transverse_reference_page_cannot_receive_a_second_decision() {
+    let directory = TestDirectory::new();
+    let input = directory.path("audit.json");
+    let mut audited = audit(&["https://a.test"], &["1.1"]);
+    audited.pages[0].criteria[0].source = rgaa_core::TRANSVERSE_REFERENCE_SOURCE.to_owned();
+    fs::write(&input, serde_json::to_vec(&audited).unwrap()).unwrap();
+
+    let error = run(args(&input, "1.1", ReviewStatus::Pass)).unwrap_err();
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains(rgaa_core::TRANSVERSE_PAGE_URL),
+        "{error}"
+    );
 }
 
 #[test]

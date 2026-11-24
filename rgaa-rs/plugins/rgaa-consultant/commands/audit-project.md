@@ -41,11 +41,11 @@ Run an RGAA accessibility audit against a local project directory. Performs stat
 
 | Test Type | Criteria | Description |
 |-----------|----------|-------------|
-| Static HTML | 1.1, 3.1, 3.3 | HTML structure, lang attribute, headings |
-| JSX/TSX | 1.1, 4.1, 11.1 | React component accessibility |
-| Vue templates | 1.1, 4.1, 11.1 | Vue SFC accessibility |
-| Angular templates | 1.1, 4.1, 11.1 | Angular template accessibility |
-| CSS/Focus | 12.1, 12.2 | Keyboard navigation, focus styles |
+| Static HTML | 1.1, 8.3, 8.5, 9.1 | Image alternatives, page language, page title, headings |
+| JSX/TSX | 1.1, 7.1, 11.1 | Image alternatives, custom components, form labels |
+| Vue templates | 1.1, 7.1, 11.1 | Image alternatives, custom components, form labels |
+| Angular templates | 1.1, 7.1, 11.1 | Image alternatives, custom components, form labels |
+| CSS/Focus | 10.7 | Focus styles not removed (`outline: none` without replacement) |
 
 ## Output
 

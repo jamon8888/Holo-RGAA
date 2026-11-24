@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>3.2 — fond rgba composé sur un ancêtre opaque</title>
+<style>
+body { background: #ffffff; color: #000000; font-size: 18px; margin: 0; }
+.shade { background-color: rgba(0, 0, 0, 0.5); }
+p { color: #ffffff; }
+</style>
+</head>
+<body>
+<div class="shade">
+  <!-- Noir à ~50 % sur blanc = #7f7f7f. Blanc dessus ≈ 4,0:1, sous le seuil 4,5. -->
+  <p>Texte blanc sur un voile noir à 50 % posé sur un fond blanc.</p>
+</div>
+</body>
+</html>

@@ -115,10 +115,13 @@ async fn tools_list_returns_every_registered_tool() {
             "analyze",
             "audit_url",
             "get_audit_result",
+            "get_test_methodology",
             "igt",
             "lint_static",
+            "list_analysis_plugins",
             "list_criteria",
             "remediate",
+            "run_analysis_plugin",
             "source_map",
             "verify_fix",
         ]

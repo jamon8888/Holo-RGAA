@@ -8113,13 +8113,16 @@ dependencies = [
  "clap",
  "dotenvy",
  "futures",
+ "indexmap 2.14.2",
  "reqwest 0.12.28",
  "rgaa-agent",
+ "rgaa-analysis",
  "rgaa-core",
  "rgaa-holo",
  "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
+ "rgaa-plugins",
  "rgaa-remediation",
  "rgaa-report",
  "serde",
@@ -8190,11 +8193,16 @@ dependencies = [
 name = "rgaa-mcp"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "dotenvy",
+ "futures-util",
+ "reqwest 0.12.28",
+ "rgaa-analysis",
  "rgaa-core",
  "rgaa-linter",
  "rgaa-obscura",
  "rgaa-orchestrator",
+ "rgaa-plugins",
  "rgaa-remediation",
  "rmcp",
  "schemars 1.2.3",
@@ -8234,9 +8242,11 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "futures-util",
+ "image",
  "libc",
  "obscura",
  "reqwest 0.12.28",
+ "rgaa-analysis",
  "rgaa-core",
  "rgaa-rules",
  "rgaa-test-corpus",
@@ -8274,6 +8284,21 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "rgaa-plugins"
+version = "0.1.0"
+dependencies = [
+ "rgaa-analysis",
+ "rgaa-analysis-colorvision",
+ "rgaa-analysis-contrast",
+ "rgaa-analysis-images",
+ "rgaa-analysis-lang",
+ "rgaa-analysis-layout",
+ "rgaa-analysis-media",
+ "rgaa-analysis-motion",
+ "rgaa-analysis-text",
 ]
 
 [[package]]

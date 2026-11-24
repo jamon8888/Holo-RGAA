@@ -84,6 +84,7 @@ Claude will ask for a URL, run the full RGAA audit, and present findings with se
 | `/audit-site` | Audit a live URL for RGAA compliance |
 | `/audit-project` | Audit a local project (requires rgaa-cli) |
 | `/generate-report` | Produce a formatted compliance report |
+| `/remediate-visual` | Per-criterion screenshots and live-rendered AI remediation proposals (Playwright), exportable to the `rgaa-chrome` extension |
 
 ## Skills
 
@@ -106,6 +107,7 @@ Skills activate automatically when relevant — no need to invoke them directly.
 | `langue` | `/rgaa:langue` — language proofs from `lang` |
 | `structure` | `/rgaa:structure` — visual-structure proofs from `layout` |
 | `pertinence` | `/rgaa:pertinence` — text-relevance proofs from `text` |
+| `visual-remediation` | Screenshots of the existing site per RGAA criterion, plus several AI remediation proposals rendered side by side in Playwright/Chromium |
 
 All eight analysis-proof skills share the same template: check
 `list_analysis_plugins` first, call `run_analysis_plugin`, present the `Preuve`
@@ -261,29 +263,33 @@ rgaa-consultant/
 │   ├── audit-project.md
 │   └── generate-report.md
 ├── hooks/hooks.json
-├── scripts/check-runtime.sh
+├── scripts/
+│   ├── check-runtime.sh
+│   └── visual/capture.mjs   # Playwright/Chromium screenshots (npm ci)
 ├── tests/
 │   ├── plugin-contract.sh
 │   ├── skills-eval.sh
 │   ├── README-eval.md
 │   ├── fixtures/preuves-analyse.json
+│   ├── visual-capture.sh
 │   └── e2e-local.sh
 └── skills/
     ├── audit/
-    ├── triage/
-    ├── remediate/
-    ├── verify/
-    ├── report/
-    ├── guided-test/
-    ├── criteria/
-    ├── contraste/        # analyse P-09
-    ├── daltonisme/
-    ├── images/
-    ├── medias/
-    ├── mouvement/
-    ├── langue/
-    ├── structure/
-    └── pertinence/
+│   ├── triage/
+│   ├── remediate/
+│   ├── verify/
+│   ├── report/
+│   ├── guided-test/
+│   ├── criteria/
+│   ├── contraste/        # analyse P-09
+│   ├── daltonisme/
+│   ├── images/
+│   ├── medias/
+│   ├── mouvement/
+│   ├── langue/
+│   ├── structure/
+│   ├── pertinence/
+│   └── visual-remediation/
 ```
 
 ## Getting Help

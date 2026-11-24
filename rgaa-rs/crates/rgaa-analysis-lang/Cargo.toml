@@ -1,0 +1,25 @@
+[package]
+description = "Native analysis plugin for language detection (8.3, 8.4, 8.7, 8.8)"
+license = "MIT"
+name = "rgaa-analysis-lang"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+indexmap = { workspace = true }
+lingua = { version = "1.8", default-features = false, features = [
+    "arabic", "basque", "bokmal", "bulgarian", "catalan", "chinese",
+    "croatian", "czech", "danish", "dutch", "english", "estonian",
+    "finnish", "french", "german", "greek", "hungarian", "icelandic",
+    "irish", "italian", "latvian", "lithuanian", "nynorsk", "polish",
+    "portuguese", "romanian", "russian", "slovak", "slovene", "spanish",
+    "swedish", "turkish", "ukrainian",
+] }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

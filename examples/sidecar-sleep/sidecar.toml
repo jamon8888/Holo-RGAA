@@ -1,0 +1,8 @@
+# Sidecar that stalls past its timeout, for P-00 acceptance criterion 7.
+id = "sleep"
+version = "0.1.0"
+tests = ["9.9.9"]
+commande = ["python3", "-I", "sleep.py"]
+mode = "persistant"
+timeout_ms = 200
+licence = "MIT"

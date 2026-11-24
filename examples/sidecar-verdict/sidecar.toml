@@ -1,0 +1,8 @@
+# Sidecar that emits a forbidden `verdict` field, for P-00 acceptance criterion 8.
+id = "verdict"
+version = "0.1.0"
+tests = ["9.9.8"]
+commande = ["python3", "-I", "verdict.py"]
+mode = "persistant"
+timeout_ms = 5000
+licence = "MIT"

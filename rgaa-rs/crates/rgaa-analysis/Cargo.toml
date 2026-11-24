@@ -1,0 +1,50 @@
+[package]
+description = "Analysis plugin contract: Preuve, registry and sidecar protocol"
+license = "MIT"
+name = "rgaa-analysis"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["plugin-echo"]
+# The P-00 dummy plugin. It exercises the contract end to end (CLI, MCP,
+# sidecar parity) until the P-01..P-08 crates land.
+plugin-echo = []
+# Placeholders for the future native plugins. Declared here so downstream
+# crates can expose the same feature names today (acceptance criterion 1).
+plugin-contrast = []
+plugin-colorvision = []
+plugin-images = []
+plugin-media = []
+plugin-motion = []
+plugin-lang = []
+plugin-layout = []
+plugin-text = []
+plugins-all = [
+    "plugin-echo",
+    "plugin-contrast",
+    "plugin-colorvision",
+    "plugin-images",
+    "plugin-media",
+    "plugin-motion",
+    "plugin-lang",
+    "plugin-layout",
+    "plugin-text",
+]
+
+[dependencies]
+async-trait = "0.1"
+indexmap = { workspace = true }
+palette = "0.7.7"
+rgaa-core = { path = "../rgaa-core" }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

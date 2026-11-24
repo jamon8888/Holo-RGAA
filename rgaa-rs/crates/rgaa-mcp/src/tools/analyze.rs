@@ -53,6 +53,21 @@ fn default_audit_type() -> AuditType {
     AuditType::Complet
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn la_configuration_audit_preserve_le_perimetre_demande() {
+        let complete: CrawlConfigInput = serde_json::from_str("{}").expect("configuration");
+        assert_eq!(complete.audit_type, AuditType::Complet);
+
+        let rapide: CrawlConfigInput =
+            serde_json::from_str(r#"{"audit_type":"rapide"}"#).expect("configuration");
+        assert_eq!(CrawlConfig::from(rapide).audit_type, AuditType::Rapide);
+    }
+}
+
 fn default_max_pages() -> usize {
     50
 }

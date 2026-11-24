@@ -3,8 +3,13 @@
 # captures attendues sur une page fixture locale (Chromium Playwright requis).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+command -v jq >/dev/null 2>&1 || { echo "❌ jq est requis mais absent"; exit 1; }
+[[ -f "$ROOT/tests/fixtures/visual/input.json" ]] || { echo "❌ fixture absent : input.json"; exit 1; }
+[[ -f "$ROOT/tests/fixtures/visual/page.html" ]] || { echo "❌ fixture absent : page.html"; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 (cd "$ROOT/scripts/visual" && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npx playwright install ${CI:+--with-deps} chromium >/dev/null)
+
+# Test 1 — future contract version must be rejected (#497)
 jq '. + {contract_version: 2}' "$ROOT/tests/fixtures/visual/input.json" > "$TMP/unsupported.json"
 if node "$ROOT/scripts/visual/capture.mjs" "$TMP/unsupported.json" "$TMP/unsupported-out" > "$TMP/unsupported.log" 2>&1; then
   echo "❌ version de contrat future acceptée"; exit 1
@@ -13,6 +18,10 @@ else
   [[ $status -eq 2 ]] && grep -q 'contract_version 2 non pris en charge' "$TMP/unsupported.log" \
     && echo "✅ version de contrat future refusée" || { cat "$TMP/unsupported.log"; exit 1; }
 fi
+
+# Test 2 — node --test on capture.test.mjs (#484)
+node --test "$ROOT/scripts/visual/capture.test.mjs"
+
 sed "s|__PAGE__|file://$ROOT/tests/fixtures/visual/page.html|" "$ROOT/tests/fixtures/visual/input.json" > "$TMP/input.json"
 node "$ROOT/scripts/visual/capture.mjs" "$TMP/input.json" "$TMP/out"
 fail=0
@@ -23,6 +32,8 @@ for f in index.html manifest.json criteres/1.1.png criteres/3.2.png \
 done
 jq -e '.findings[] | select(.id=="fng_missing") | .error' "$TMP/out/manifest.json" >/dev/null \
   && echo "✅ cible absente signalée" || { echo "❌ cible absente non signalée"; fail=1; }
+jq -e 'all(.criteria[].targets[]; length > 0)' "$TMP/out/manifest.json" >/dev/null \
+  && echo "✅ sélecteurs vides exclus du manifeste" || { echo "❌ sélecteur vide dans le manifeste"; fail=1; }
 jq -e '[.findings[].proposals[] | select(.error)] | length == 0' "$TMP/out/manifest.json" >/dev/null \
   && echo "✅ toutes les propositions appliquées" || { echo "❌ proposition en erreur"; fail=1; }
 exit $fail

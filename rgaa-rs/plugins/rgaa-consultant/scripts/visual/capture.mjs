@@ -25,6 +25,7 @@
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { apply, highlight, selectorOf } from './capture-dom.mjs';
 
 const [input, outArg] = process.argv.slice(2);
 if (!input) {
@@ -40,44 +41,21 @@ if (!spec.url || !Array.isArray(spec.findings)) {
   console.error('entrée invalide : "url" et "findings" sont requis');
   process.exit(2);
 }
+const isSafePageUrl = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().replace(/[\u0000-\u0020\u007f]+/g, '').toLowerCase();
+  const scheme = normalized.match(/^([a-z][a-z0-9+.-]*):/);
+  return Boolean(scheme && ['file', 'http', 'https'].includes(scheme[1]));
+};
+if (!isSafePageUrl(spec.url)) {
+  console.error('entrée invalide : "url" doit utiliser file:, http: ou https:');
+  process.exit(2);
+}
 const out = outArg ?? '.rgaa/visual';
 const safe = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
-// shortcut: axe donne un tableau de sélecteurs pour iframe/shadow DOM ; on ne prend que le dernier, sans traverser.
-const selectorOf = (t) => (Array.isArray(t) ? t[t.length - 1] : t);
 
 const RED = '#c00000';
 const GREEN = '#006b2d';
-
-// Surligne les éléments correspondant aux sélecteurs et pose une étiquette.
-// Renvoie le rectangle (coordonnées document) englobant les cibles trouvées.
-async function highlight(page, selectors, label, color) {
-  return page.evaluate(({ selectors, label, color }) => {
-    let box = null;
-    for (const sel of selectors) {
-      let els;
-      try { els = document.querySelectorAll(sel); } catch { continue; }
-      for (const el of els) {
-        el.style.setProperty('outline', `4px solid ${color}`, 'important');
-        el.style.setProperty('outline-offset', '2px', 'important');
-        const r = el.getBoundingClientRect();
-        const x = r.left + scrollX, y = r.top + scrollY;
-        const tag = document.createElement('div');
-        tag.textContent = label;
-        tag.setAttribute('data-rgaa-visual', '');
-        Object.assign(tag.style, {
-          position: 'absolute', left: `${x}px`, top: `${Math.max(0, y - 26)}px`,
-          background: color, color: '#fff', font: 'bold 14px/20px sans-serif',
-          padding: '2px 6px', zIndex: 2147483647, pointerEvents: 'none',
-        });
-        document.body.appendChild(tag);
-        box = box
-          ? { x1: Math.min(box.x1, x), y1: Math.min(box.y1, y - 26), x2: Math.max(box.x2, x + r.width), y2: Math.max(box.y2, y + r.height) }
-          : { x1: x, y1: y - 26, x2: x + r.width, y2: y + r.height };
-      }
-    }
-    return box;
-  }, { selectors, label, color });
-}
 
 // Capture zoomée autour de la cible, avec marge pour garder le contexte.
 async function shotAround(page, box, path) {
@@ -130,7 +108,6 @@ async function apply(page, sel, p) {
     return `[data-rgaa-applied="${marker}"]`;
   }, { sel, p });
 }
-
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const manifest = { url: spec.url, generated_at: new Date().toISOString(), criteria: [], findings: [] };
@@ -139,8 +116,10 @@ try {
   // 1. Une vue d'ensemble par critère : toutes ses cibles surlignées.
   const byCriterion = new Map();
   for (const f of spec.findings) {
+    const selector = selectorOf(f.target);
+    if (!selector) continue;
     const c = f.criterion_id ?? 'non-mappe';
-    byCriterion.set(c, [...(byCriterion.get(c) ?? []), selectorOf(f.target)]);
+    byCriterion.set(c, [...(byCriterion.get(c) ?? []), selector]);
   }
   await mkdir(join(out, 'criteres'), { recursive: true });
   for (const [criterion, selectors] of byCriterion) {
@@ -186,6 +165,7 @@ console.log(JSON.stringify({ out, criteria: manifest.criteria.length, findings: 
 
 function gallery(m) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const auditedUrl = isSafePageUrl(m.url) ? m.url : '#';
   const fig = (src, cap, alt) => `<figure><img src="${esc(src)}" alt="${esc(alt)}"><figcaption>${cap}</figcaption></figure>`;
   const findings = m.findings.map((f) => `
 <section aria-labelledby="f-${esc(f.id)}">
@@ -213,7 +193,7 @@ code{background:#f2f2f2;padding:0 .25rem}
 </style></head><body>
 <main>
 <h1>Preuves visuelles RGAA 4.1.2</h1>
-<p>Page auditée : <a href="${esc(m.url)}">${esc(m.url)}</a> — générée le ${esc(m.generated_at)}.
+<p>Page auditée : <a href="${esc(auditedUrl)}">${esc(m.url)}</a> — générée le ${esc(m.generated_at)}.
 Rouge : existant non conforme. Vert : rendu de la proposition, appliquée en direct dans Chromium (aucune modification du code source).</p>
 <h2>Existant par critère</h2>
 <div class="row">${criteria}</div>

@@ -23,6 +23,15 @@ fn render_markdown(bundle: &AuditBundle) -> String {
     let _ = writeln!(out, "# RGAA Audit Report: {}", bundle.audit_id);
     let _ = writeln!(out);
     let _ = writeln!(out, "- URL: {}", bundle.url);
+    let _ = writeln!(
+        out,
+        "- Audit type: {} ({} criteria)",
+        bundle.config.audit_type.label(),
+        bundle.config.audit_type.count()
+    );
+    if let Some(notice) = bundle.config.audit_type.partial_notice() {
+        let _ = writeln!(out, "- Mention : {notice}");
+    }
     let _ = writeln!(out, "- Schema: {}", bundle.schema_version);
     let _ = writeln!(
         out,
@@ -42,6 +51,7 @@ fn render_markdown(bundle: &AuditBundle) -> String {
     let _ = writeln!(out);
 
     write_markdown_sources(&mut out, bundle);
+    crate::non_conformity::write_markdown_non_conformities(&mut out, bundle);
 
     let findings = all_findings(bundle);
     if findings.is_empty() {
@@ -237,7 +247,43 @@ fn escape_xml(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::AuditConfig;
+    use rgaa_core::{
+        AuditConfig, NonConformity, UserImpact, TRANSVERSE_PAGE_URL, TRANSVERSE_REFERENCE_SOURCE,
+    };
+
+    /// The rendered report, not just the helper, presents reviewed impact and
+    /// quick win in priority order (ticket #431).
+    #[test]
+    fn rendered_markdown_contains_prioritized_non_conformities() {
+        let mut bundle =
+            AuditBundle::new("audit-1", "https://example.test", AuditConfig::default());
+        let mut mineur = NonConformity::new("nc-minor", "1.1", "https://example.test", "Mineur");
+        mineur
+            .record_review(
+                UserImpact::Mineur,
+                false,
+                "auditrice",
+                "2026-11-21T10:00:00Z",
+            )
+            .expect("valid review");
+        let mut bloquant =
+            NonConformity::new("nc-blocking", "12.9", "https://example.test", "Bloquant");
+        bloquant
+            .record_review(
+                UserImpact::Bloquant,
+                true,
+                "auditrice",
+                "2026-11-21T10:00:00Z",
+            )
+            .expect("valid review");
+        bundle.non_conformities = vec![mineur, bloquant];
+
+        let markdown = render_markdown(&bundle);
+        let blocking = markdown.find("nc-blocking").expect("blocking listed");
+        let minor = markdown.find("nc-minor").expect("minor listed");
+        assert!(blocking < minor);
+        assert!(markdown.contains("impact utilisateur : bloquant, quick win : oui"));
+    }
 
     fn sample_bundle() -> AuditBundle {
         let mut bundle =
@@ -387,6 +433,29 @@ mod tests {
         assert!(output.contains("sha256:abc"), "{output}");
     }
 
+    /// Ticket #429: the criteria table has an explicit transverse column,
+    /// like Ara's CSV grid. The transverses page owns the finding; a page of
+    /// the sample only points at it instead of repeating a decision.
+    #[test]
+    fn html_criteria_table_exposes_the_transverse_column() {
+        let mut bundle = bundle_with_citations();
+        let output = render(&bundle, ReportFormat::Html).expect("html");
+        assert!(output.contains("<th>Éléments transverses</th>"), "{output}");
+        assert!(
+            output.contains("—"),
+            "a normal page has no transverse finding"
+        );
+
+        bundle.pages[0].url = TRANSVERSE_PAGE_URL.into();
+        let output = render(&bundle, ReportFormat::Html).expect("html");
+        assert!(output.contains("Page transverses"), "{output}");
+
+        bundle.pages[0].url = "https://example.test/accueil".into();
+        bundle.pages[0].criteria[0].source = TRANSVERSE_REFERENCE_SOURCE.into();
+        let output = render(&bundle, ReportFormat::Html).expect("html");
+        assert!(output.contains("Voir page transverses"), "{output}");
+    }
+
     /// Every criteria row must have as many cells as that table's header has
     /// columns. Adding a column to the header and not the rows (or the
     /// reverse) shifts every value one cell left and is invisible in a diff:
@@ -404,7 +473,7 @@ mod tests {
             .expect("criteria table");
         let header = table.split("<tbody>").next().expect("criteria thead");
         let columns = header.matches("<th>").count();
-        assert_eq!(columns, 8, "criteria header is {columns} columns wide");
+        assert_eq!(columns, 9, "criteria header is {columns} columns wide");
 
         let body = table
             .split("<tbody>")
@@ -429,6 +498,41 @@ mod tests {
         let output = render(&bundle, ReportFormat::Json).expect("json");
         let decoded: AuditBundle = serde_json::from_str(&output).expect("valid bundle");
         assert_eq!(decoded.audit_id, "audit-1");
+    }
+
+    /// #428: a partial audit's report states its scope instead of implying a
+    /// full 106-criterion conformance claim.
+    #[test]
+    fn reports_name_the_audit_type() {
+        use rgaa_core::AuditType;
+
+        for (scope, label, count) in [
+            (AuditType::Rapide, "Audit rapide", 25),
+            (AuditType::Complementaire, "Audit complémentaire", 50),
+        ] {
+            let mut bundle = sample_bundle();
+            bundle.config.audit_type = scope;
+            let markdown = render_markdown(&bundle);
+            assert!(
+                markdown.contains(&format!("- Audit type: {label} ({count} criteria)")),
+                "{markdown}"
+            );
+            assert!(
+                markdown
+                    .contains("- Mention : audit partiel, ne vaut pas déclaration de conformité"),
+                "{markdown}"
+            );
+
+            let html = html::generate_html_report(&bundle);
+            assert!(
+                html.contains(&format!("{label} ({count} critères)")),
+                "{html}"
+            );
+            assert!(
+                html.contains("audit partiel, ne vaut pas déclaration de conformité"),
+                "{html}"
+            );
+        }
     }
 
     #[test]

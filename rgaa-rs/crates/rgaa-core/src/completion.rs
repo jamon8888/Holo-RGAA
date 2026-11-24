@@ -110,6 +110,42 @@ pub fn verdict_schema() -> serde_json::Value {
     })
 }
 
+/// How hard a reasoning model thinks before answering (`reasoning_effort`).
+///
+/// Mistral Large 4 always reasons and defaults to `high` when the field is
+/// absent; reasoning tokens are billed as output, so this is the cost lever.
+/// `none` is deliberately not a variant: Large 4 answers it with HTTP 400.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+}
+
+impl ReasoningEffort {
+    /// Parses `low`, `medium` or `high`, case-insensitively.
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    /// The wire value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
 /// Completion parameters shared by the raw transport and the `rig` agent.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CompletionParams {
@@ -129,6 +165,8 @@ pub struct CompletionParams {
     pub enable_thinking: Option<bool>,
     /// Output constraint. Default [`ResponseFormat::None`].
     pub response_format: ResponseFormat,
+    /// Reasoning effort; `None` sends nothing and the server default applies.
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 impl Default for CompletionParams {
@@ -138,6 +176,7 @@ impl Default for CompletionParams {
             max_tokens: DEFAULT_MAX_TOKENS,
             enable_thinking: None,
             response_format: ResponseFormat::None,
+            reasoning_effort: None,
         }
     }
 }
@@ -175,7 +214,7 @@ impl CompletionParams {
     /// Empty when nothing extra is configured.
     #[must_use]
     pub fn extra_body(&self) -> serde_json::Map<String, serde_json::Value> {
-        let mut map = self.thinking_body();
+        let mut map = self.extra_body_without_response_format();
         if let Some(rf) = self.response_format.body_value() {
             map.insert("response_format".to_string(), rf);
         }
@@ -191,7 +230,14 @@ impl CompletionParams {
     /// thinking keys have no such conflict.
     #[must_use]
     pub fn extra_body_without_response_format(&self) -> serde_json::Map<String, serde_json::Value> {
-        self.thinking_body()
+        let mut map = self.thinking_body();
+        if let Some(effort) = self.reasoning_effort {
+            map.insert(
+                "reasoning_effort".to_string(),
+                serde_json::Value::String(effort.as_str().to_string()),
+            );
+        }
+        map
     }
 }
 
@@ -220,6 +266,9 @@ pub struct LlmProvenance {
     pub enable_thinking: Option<bool>,
     /// Effective output constraint (`none`, `json_object`, `json_schema`).
     pub response_format: String,
+    /// Effective reasoning effort; `None` when the server default applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 impl LlmProvenance {
@@ -239,6 +288,7 @@ impl LlmProvenance {
             max_tokens: params.max_tokens,
             enable_thinking: params.enable_thinking,
             response_format: params.response_format.as_str().to_string(),
+            reasoning_effort: params.reasoning_effort,
         }
     }
 
@@ -250,8 +300,11 @@ impl LlmProvenance {
             Some(false) => "thinking=off",
             None => "thinking=default",
         };
+        let effort = self
+            .reasoning_effort
+            .map_or("default", ReasoningEffort::as_str);
         format!(
-            "{}/{} temp={} max_tokens={} {thinking} response_format={}",
+            "{}/{} temp={} max_tokens={} {thinking} reasoning_effort={effort} response_format={}",
             self.provider, self.model, self.temperature, self.max_tokens, self.response_format
         )
     }

@@ -6,7 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use rgaa_core::{AuditBundle, AuditResult, CrawlConfig, RgaaCriteria};
+use rgaa_core::{AuditBundle, AuditResult, AuditType, CrawlConfig, RgaaCriteria};
 use rgaa_remediation::RemediationPolicy;
 use rgaa_storage::Repository;
 
@@ -15,6 +15,9 @@ use crate::AppState;
 #[derive(Deserialize)]
 pub struct AuditRequest {
     pub url: String,
+    /// Scope of the audit; absent means the full 106-criterion audit.
+    #[serde(default)]
+    pub audit_type: AuditType,
 }
 
 #[derive(Serialize)]
@@ -27,6 +30,10 @@ pub struct AuditResponse {
     pub test_evidence_coverage_percent: f64,
     pub verified_compliance_percent: f64,
     pub etat_conformite: String,
+    /// Scope actually evaluated, echoed from the audit result.
+    pub audit_type: AuditType,
+    /// Mandatory disclaimer for a partial audit; `null` for a full audit.
+    pub audit_notice: Option<String>,
     pub passed: usize,
     pub failed: usize,
     pub na: usize,
@@ -43,6 +50,8 @@ impl From<AuditResult> for AuditResponse {
             test_evidence_coverage_percent: result.test_evidence_coverage_percent,
             verified_compliance_percent: result.verified_compliance_percent,
             etat_conformite: result.etat_conformite,
+            audit_type: result.audit_type,
+            audit_notice: result.audit_type.partial_notice().map(str::to_owned),
             passed: result.passed,
             failed: result.failed,
             na: result.na,
@@ -61,7 +70,10 @@ pub async fn run_audit(
     State(state): State<AppState>,
     Json(payload): Json<AuditRequest>,
 ) -> Result<Json<AuditResponse>, StatusCode> {
-    let config = CrawlConfig::default();
+    let config = CrawlConfig {
+        audit_type: payload.audit_type,
+        ..CrawlConfig::default()
+    };
     let result = state
         .orchestrator
         .run_crawl_and_audit(&payload.url, &config)
@@ -133,6 +145,7 @@ mod tests {
             etat_conformite: "partielle".to_string(),
             duration_ms: 1000,
             audit_complete: false,
+            audit_type: rgaa_core::AuditType::Complet,
         };
 
         let response = AuditResponse::from(result.clone());
@@ -142,6 +155,56 @@ mod tests {
         assert_eq!(response.passed, result.passed);
         assert_eq!(response.failed, result.failed);
         assert_eq!(response.na, result.na);
+        assert_eq!(response.audit_type, AuditType::Complet);
+        assert_eq!(response.audit_notice, None);
+    }
+
+    #[test]
+    fn partial_audit_exposes_the_mandatory_notice() {
+        let mut result = AuditResult {
+            audit_id: "test-id".to_string(),
+            url: "https://example.com".to_string(),
+            pages: vec![],
+            total_criteria: 25,
+            passed: 25,
+            failed: 0,
+            na: 0,
+            overall_compliance: 100.0,
+            taux_global: 100.0,
+            coverage_percent: 100.0,
+            automatic_verdict_coverage_percent: 0.0,
+            test_evidence_coverage_percent: 0.0,
+            verified_compliance_percent: 0.0,
+            etat_conformite: "audit partiel".to_string(),
+            duration_ms: 1000,
+            audit_complete: true,
+            audit_type: rgaa_core::AuditType::Rapide,
+        };
+        let response = AuditResponse::from(result.clone());
+        assert_eq!(
+            response.audit_notice.as_deref(),
+            Some("audit partiel, ne vaut pas déclaration de conformité")
+        );
+
+        result.audit_type = rgaa_core::AuditType::Complementaire;
+        assert!(AuditResponse::from(result).audit_notice.is_some());
+    }
+
+    #[test]
+    fn audit_request_accepts_explicit_scope_and_defaults_to_complet() {
+        let rapide: AuditRequest =
+            serde_json::from_str(r#"{"url":"https://example.test","audit_type":"rapide"}"#)
+                .unwrap();
+        assert_eq!(rapide.audit_type, AuditType::Rapide);
+
+        let implicit: AuditRequest =
+            serde_json::from_str(r#"{"url":"https://example.test"}"#).unwrap();
+        assert_eq!(implicit.audit_type, AuditType::Complet);
+
+        assert!(serde_json::from_str::<AuditRequest>(
+            r#"{"url":"https://example.test","audit_type":"inconnu"}"#
+        )
+        .is_err());
     }
 }
 

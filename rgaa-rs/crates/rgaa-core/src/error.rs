@@ -39,10 +39,19 @@ pub enum RgaaError {
     UnsupportedSchemaVersion(String),
     #[error("duplicate finding ID: {0}")]
     DuplicateFindingId(String),
+    #[error("non-conformity not found: {0}")]
+    NonConformityNotFound(String),
     #[error("invalid status: {0}")]
     InvalidStatus(String),
     #[error("incomplete evidence for {0}")]
     IncompleteEvidence(String),
+    /// An analysis plugin failed, or could not produce a usable proof.
+    ///
+    /// `plugin` names the plugin (or sidecar) responsible so the orchestrator
+    /// can put its tests in review « preuve manquante » without touching the
+    /// status itself (R-P1).
+    #[error("analysis plugin '{plugin}': {message}")]
+    Analysis { plugin: String, message: String },
 }
 
 pub type Result<T> = std::result::Result<T, RgaaError>;

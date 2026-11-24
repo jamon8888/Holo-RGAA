@@ -106,7 +106,7 @@ called conforming on the strength of a clean loop. Report them as residue.
 | 10.12 | `Deterministic` | `avoid-inline-spacing` | conforming |
 | 10.13 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 10.14 | `Deterministic` | — | conforming |
-| 11.1 | `AxeCore` | `label`, `select-name`, `input-button-name`, `form-field-multiple-labels`, `aria-input-field-name` | conforming |
+| 11.1 | `AxeCore` | `label`, `select-name`, `form-field-multiple-labels`, `aria-input-field-name` | conforming |
 | 11.2 | `Holo` | `label-content-name-mismatch`, `label-title-only` | **nothing** — not evaluated here |
 | 11.3 | `Deterministic` | — | **nothing conclusive** — residual judgement |
 | 11.4 | `Deterministic` | — | conforming |

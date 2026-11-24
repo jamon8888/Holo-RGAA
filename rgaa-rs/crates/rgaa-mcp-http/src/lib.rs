@@ -683,10 +683,12 @@ pub enum ServeError {
 ///
 /// The bridge is lazy so that starting the server does not require a browser
 /// substrate to be installed: tools that need one fail when called, rather
-/// than the process refusing to start and taking `/health` down with it.
+/// than the process refusing to start and taking `/health` down with it. For
+/// the same reason its CDP port is ephemeral but allocated only when a tool
+/// first starts the browser: an allocation failure is then that tool's error.
 pub fn default_tool_server() -> ToolServer {
     let bridge = Arc::new(rgaa_mcp::LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::from_env(),
+        rgaa_obscura::ObscuraBridge::from_env().with_deferred_ephemeral_port(),
     ));
     ToolServer::new_with_analysis(
         Arc::new(rgaa_mcp::ObscuraAnalyzeService::new(Arc::clone(&bridge))),

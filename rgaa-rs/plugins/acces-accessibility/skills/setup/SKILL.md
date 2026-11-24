@@ -260,21 +260,26 @@ environment of a server it *spawns*. So a server started earlier without the
 variable keeps blocking localhost, and setting the variable now changes nothing
 for it.
 
-`start_server` no longer attaches to such a server silently: it pre-flights its
-port (default 9222) and refuses an occupied one with a message naming the port,
-rather than accepting any `/json/version` answer there as its own readiness. The
-symptom is therefore a clear startup error, not an unexplained SSRF block — but
-the fix is still to retire the stale server.
+The MCP server no longer attaches to someone else's server at all: it spawns
+its own `obscura serve` on an ephemeral CDP port, allocated on the first browser
+tool call, and never on a fixed port such as 9222 — checking 9222 tells you
+nothing about it. The port it chose is logged on the MCP server's stderr
+(`Starting Obscura CDP server port=…`). A server started earlier without the
+variable therefore cannot be the one the MCP server talks to; if localhost is
+still blocked, the variable did not reach the environment the MCP server itself
+was launched with.
 
 Diagnose it before concluding the variable is wrong:
 
 ```bash
-ss -ltnp | grep 9222        # is a server already bound?
-pgrep -ax obscura           # started with which flags, by whom?
+pgrep -ax obscura                     # which servers run, with which flags, by whom?
+ss -ltnp | grep -i obscura            # and on which ports
+tr '\0' '\n' < /proc/<mcp-pid>/environ | grep OBSCURA_ALLOW_PRIVATE_NETWORK
 ```
 
-An idle pool with no established connections can be retired, and the next call
-spawns a fresh server that inherits the variable. Never kill one that is in use,
+The MCP server keeps its `obscura serve` for its whole life, so the fix is to
+restart the MCP server from an environment that has the variable: its next
+browser call spawns a fresh server that inherits it. Never kill a server in use,
 and never match on `obscura serve` with `pkill -f` — the pattern matches your own
 shell.
 

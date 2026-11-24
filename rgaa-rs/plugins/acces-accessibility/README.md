@@ -94,10 +94,11 @@ export RGAA_SOURCE_MAP_ROOTS=/path/to/project   # source_map is confined to the 
 
 The first has a trap: the flag reaches `obscura` only through the environment of
 a server `rgaa-obscura` itself spawns, so a server started earlier without it
-keeps blocking localhost. `start_server` refuses to attach to a server already
-holding its port (default 9222) and says so, so this surfaces as a startup
-error rather than an unexplained block. Check with `ss -ltnp | grep 9222`. See
-`skills/setup/SKILL.md`.
+keeps blocking localhost. The MCP server never attaches to such a server: it
+spawns its own `obscura serve` on an ephemeral CDP port, allocated on the first
+browser tool call and logged on stderr (`Starting Obscura CDP server port=…`),
+and never uses a fixed port such as 9222. A block therefore means the variable
+did not reach the MCP server's own environment. See `skills/setup/SKILL.md`.
 
 ## Skills
 

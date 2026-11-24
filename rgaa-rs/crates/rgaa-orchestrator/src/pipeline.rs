@@ -2040,7 +2040,7 @@ mod routing_tests {
     }
 
     #[test]
-    fn keyed_site_failure_preserves_model_pass_and_is_counted_as_deterministic() {
+    fn keyed_site_failure_replaces_model_pass_and_is_counted_as_deterministic() {
         let mut results = complete_prediction_set();
         let result = results
             .iter_mut()
@@ -2059,9 +2059,11 @@ mod routing_tests {
 
         assert_eq!(result.status, CriterionStatus::Fail);
         assert_eq!(result.verified_status, Some(CriterionStatus::Fail));
+        // A decided site comparison is the automatic verdict: the model's page-level
+        // Pass must not survive next to a site-level Fail.
         assert_eq!(
             result.automated_verdict,
-            Some(rgaa_core::AutomatedVerdict::Pass)
+            Some(rgaa_core::AutomatedVerdict::Fail)
         );
         assert!(result.verdict_basis.contains(&VerdictBasis::Deterministic));
         assert!(result

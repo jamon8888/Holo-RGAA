@@ -30,6 +30,7 @@ members = [
     "crates/rgaa-tui",
     "crates/rgaa-report",
     "crates/rgaa-linter",
+    "crates/rgaa-license",
 ]
 
 [workspace.package]

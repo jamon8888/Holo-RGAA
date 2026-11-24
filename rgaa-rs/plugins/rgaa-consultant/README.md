@@ -164,6 +164,25 @@ Setting `RGAA_MCP_TOKEN` (or `--auth-token`) additionally requires
 `Authorization: Bearer <token>` on every request — do set it whenever the
 server is not bound to loopback. `GET /health` stays open.
 
+### Licence (#87)
+
+The MCP server, the REST API and the CLI share one licence, held by the
+machine that runs them. Without one they run on the **Free** tier (static
+lint); full audits, guided tests (`igt`) and remediation need
+**Professional** or **Team**.
+
+```bash
+rgaa licence activate <key>   # stores ~/.config/rgaa/license.toml (0600)
+rgaa licence status           # tier, status, expiry, grace baseline, quota
+```
+
+Or set `RGAA_LICENSE_KEY` in the server's environment (see
+[CONNECTORS.md](CONNECTORS.md)). A refused tool call returns JSON-RPC
+`-32002` (licence required: report the `required_tier`, do not retry) or
+`-32003` (daily quota, HTTP servers only: report `retry_after`, once). A
+refused CLI command exits with code `4`. Daily quotas (Free 10,
+Professional 500, Team 5000 units) apply only to the HTTP servers.
+
 ## Agents
 
 Subagents the skills delegate to for bounded, single-purpose work.

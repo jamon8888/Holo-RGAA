@@ -256,6 +256,16 @@ fn run_audit_thread(
     };
 
     rt.block_on(async move {
+        // The wizard is the other advertised audit entry point; gate it with
+        // the same licence check as `rgaa audit` (#87).
+        let gate = rgaa_cli::license::gate_from_env();
+        if let Err(e) =
+            rgaa_cli::license::admit(&gate, rgaa_license::Feature::FullAudit, chrono::Utc::now())
+        {
+            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Err(e.to_string())));
+            return;
+        }
+
         let orchestrator = rgaa_orchestrator::Orchestrator::new();
         let config = rgaa_core::CrawlConfig::default();
         let result = orchestrator

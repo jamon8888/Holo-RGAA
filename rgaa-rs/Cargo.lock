@@ -1738,6 +1738,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ct-codecs"
+version = "1.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fd9f3db6f2cfef61c10613071955154ffdc9e515daebff26de4b54e35038fdd"
+
+[[package]]
 name = "ctr"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3230,6 +3236,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -6687,6 +6703,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "orion"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce166f9a98c32a49ccf0684ea3be1a99cdebc0694d96e487ee5df844591a3403"
+dependencies = [
+ "cmov",
+ "fiat-crypto",
+ "subtle",
+]
+
+[[package]]
 name = "ort"
 version = "2.0.0-rc.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6782,6 +6809,23 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link 0.2.1",
+]
+
+[[package]]
+name = "pasetors"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ec9d69d491936c29fa2684dcb50d4c7503a405f4e972066e344ff2a4f639195"
+dependencies = [
+ "ct-codecs",
+ "ed25519-compact",
+ "getrandom 0.4.3",
+ "orion",
+ "regex",
+ "serde_json",
+ "subtle",
+ "time",
+ "zeroize",
 ]
 
 [[package]]
@@ -8070,6 +8114,7 @@ dependencies = [
  "hmac 0.12.1",
  "reqwest 0.12.28",
  "rgaa-core",
+ "rgaa-license",
  "rgaa-obscura",
  "rgaa-orchestrator",
  "rgaa-remediation",
@@ -8119,6 +8164,7 @@ dependencies = [
  "rgaa-analysis",
  "rgaa-core",
  "rgaa-holo",
+ "rgaa-license",
  "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
@@ -8178,6 +8224,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rgaa-license"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "fs2",
+ "pasetors",
+ "rgaa-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "rgaa-linter"
 version = "0.1.0"
 dependencies = [
@@ -8194,11 +8260,13 @@ name = "rgaa-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "dotenvy",
  "futures-util",
  "reqwest 0.12.28",
  "rgaa-analysis",
  "rgaa-core",
+ "rgaa-license",
  "rgaa-linter",
  "rgaa-obscura",
  "rgaa-orchestrator",
@@ -8219,9 +8287,11 @@ name = "rgaa-mcp-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "clap",
  "futures",
  "reqwest 0.12.28",
+ "rgaa-license",
  "rgaa-mcp",
  "rgaa-obscura",
  "rmcp",
@@ -8398,8 +8468,10 @@ dependencies = [
  "ratatui",
  "reqwest 0.12.28",
  "rgaa-agent",
+ "rgaa-cli",
  "rgaa-core",
  "rgaa-holo",
+ "rgaa-license",
  "rgaa-mcp-http",
  "rgaa-obscura",
  "rgaa-orchestrator",
@@ -8408,6 +8480,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

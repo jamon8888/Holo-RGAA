@@ -27,6 +27,13 @@
       "sensitive": true,
       "required": false
     },
+    "license_key": {
+      "type": "string",
+      "title": "RGAA licence key",
+      "description": "Your RGAA licence (a v4.public.… token), passed to the server as RGAA_LICENSE_KEY. Without one the server runs on the Free tier (static lint only); full audits, guided tests and remediation need Professional or Team. Leave unset if you activated the licence with `rgaa licence activate` (a blank value is ignored and ~/.config/rgaa/license.toml is used), but note a blank value here still shadows an RGAA_LICENSE_KEY set in .env, which is loaded without overriding existing variables.",
+      "sensitive": true,
+      "required": false
+    },
     "obscura_bin": {
       "type": "string",
       "title": "Path to the obscura binary",

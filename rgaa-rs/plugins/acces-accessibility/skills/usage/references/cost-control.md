@@ -18,6 +18,23 @@ Two consequences worth acting on:
 - **A 25-issue `remediate` batch costs the same as a 1-issue batch.** Under
   Deque that is 25 credits against 1. There is no reason to be sparing.
 
+## Licence quotas are a separate meter (#87)
+
+Tokens are what the *LLM provider* bills. The RGAA licence meters something
+else: **units per UTC day** on the HTTP servers (Free 10, Professional 500,
+Team 5000), one unit per metered call regardless of how many tokens it spends.
+`POST /v1/batches` consumes one unit per URL and is refused as a whole if the
+remaining quota cannot cover every URL.
+Local stdio and CLI runs are **not** metered — only the tier is checked.
+
+- A quota refusal is HTTP `429` / JSON-RPC `-32003` with `retry_after`
+  (seconds until 00:00 UTC). It is a daily allowance: tell the user when it
+  resets, once, and do not loop retrying.
+- `X-RateLimit-Remaining` on each response says what is left; check it before
+  launching a multi-page run rather than discovering the limit mid-audit.
+- A tier refusal (`402` / `-32002`) is not a cost problem and waiting does not
+  fix it. Do not retry.
+
 ## What `audit_url` costs
 
 **22 LLM calls per page.** The 106 criteria are batched 5 at a time, and the

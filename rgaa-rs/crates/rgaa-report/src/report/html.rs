@@ -104,6 +104,7 @@ fn write_html_summary(html: &mut String, bundle: &AuditBundle) {
         && bundle.pages.iter().all(|page| {
             page.criteria
                 .iter()
+                .chain(&bundle.site_criteria)
                 .map(|criterion| criterion.criterion_id.as_str())
                 .collect::<std::collections::HashSet<_>>()
                 .is_superset(&expected_ids)
@@ -280,7 +281,51 @@ fn transverse_cell(page: &rgaa_core::PageAudit, criterion: &CriterionResult) -> 
 /// Lists every one of the 106 RGAA criteria for every audited page — pass,
 /// fail, needs human review, not applicable, not tested, error — so the
 /// report is a complete record, not just aggregate scores.
+/// Site-level criteria table (#269): one row per criterion, whatever the page count.
+fn write_html_site_criteria(html: &mut String, bundle: &AuditBundle) {
+    if bundle.site_criteria.is_empty() {
+        return;
+    }
+    let _ = writeln!(
+        html,
+        r#"        <h2 style="margin: 2rem 0 1rem; color: #2c3e50;">Critères de niveau site</h2>
+        <table>
+            <thead>
+                <tr><th>Critère</th><th>Titre</th><th>Statut brut</th><th>Verdict automatique</th><th>Statut vérifié</th><th>Détail</th><th>Évaluation et preuves</th></tr>
+            </thead>
+            <tbody>"#
+    );
+    for criterion in &bundle.site_criteria {
+        let (badge_class, status_label) = status_badge(&criterion.status);
+        let _ = writeln!(
+            html,
+            r#"                <tr>
+                    <td><span class="finding-id">{}</span></td>
+                    <td>{}</td>
+                    <td><span class="status-badge {}">{}</span></td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                    <td>{}</td>
+                </tr>"#,
+            escape_html(&criterion.criterion_id),
+            escape_html(&criterion.title),
+            badge_class,
+            status_label,
+            automated_verdict_cell(criterion),
+            crate::verified_status_for(criterion)
+                .as_ref()
+                .map(status_text)
+                .unwrap_or("Non vérifié"),
+            escape_html(&criterion_detail(criterion)),
+            assessment_cell(criterion)
+        );
+    }
+    let _ = writeln!(html, "            </tbody>\n        </table>");
+}
+
 fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
+    write_html_site_criteria(html, bundle);
     for page in &bundle.pages {
         let _ = writeln!(
             html,
@@ -303,7 +348,7 @@ fn write_html_all_criteria(html: &mut String, bundle: &AuditBundle) {
             escape_html(&page.url)
         );
 
-        let mut criteria = complete_criteria(&page.criteria);
+        let mut criteria = complete_criteria(&page.criteria, &bundle.site_criteria);
         criteria.sort_by(|a, b| {
             status_rank(&a.status)
                 .cmp(&status_rank(&b.status))
@@ -363,7 +408,11 @@ fn bundle_metrics(bundle: &AuditBundle) -> crate::AuditMetrics {
             crawl_depth: 0,
         })
         .collect();
-    crate::compute_audit_metrics(&pages)
+    // Site-level criteria (#269) are expected on every page by the metrics.
+    crate::compute_audit_metrics(&rgaa_core::pages_with_site_criteria(
+        &pages,
+        &bundle.site_criteria,
+    ))
 }
 
 fn automated_verdict_cell(criterion: &CriterionResult) -> String {
@@ -471,14 +520,27 @@ fn assessment_cell(criterion: &CriterionResult) -> String {
 /// criteria appears — a page whose audit only returned a subset (a partial
 /// or failed run) would otherwise silently hide the criteria it never got
 /// to, which is the opposite of what a "Détail complet" table promises.
-fn complete_criteria(results: &[CriterionResult]) -> Vec<CriterionResult> {
+fn complete_criteria(
+    results: &[CriterionResult],
+    site_criteria: &[CriterionResult],
+) -> Vec<CriterionResult> {
     let mut by_id: HashMap<&str, &CriterionResult> = results
         .iter()
         .map(|c| (c.criterion_id.as_str(), c))
         .collect();
 
+    // Site-level criteria (#269) are reported once in the site section, so a page
+    // that no longer carries them must not list them as "missing".
+    let site_ids: std::collections::HashSet<&str> = site_criteria
+        .iter()
+        .map(|criterion| criterion.criterion_id.as_str())
+        .collect();
     let mut completed: Vec<CriterionResult> = RgaaCriteria::all()
         .iter()
+        .filter(|catalog_entry| {
+            !(site_ids.contains(catalog_entry.id)
+                && rgaa_core::is_site_level_criterion(catalog_entry.id))
+        })
         .map(|catalog_entry| match by_id.remove(catalog_entry.id) {
             Some(existing) => existing.clone(),
             None => CriterionResult {
@@ -710,6 +772,45 @@ mod tests {
     }
 
     #[test]
+    fn site_criteria_get_their_own_section_and_leave_the_page_table() {
+        let mut bundle = sample_bundle();
+        bundle.pages.push(PageAudit {
+            page_id: "p1".into(),
+            url: "https://example.test/page".into(),
+            title: None,
+            criteria: vec![],
+            findings: vec![],
+            errors: vec![],
+            completed: false,
+            duration_ms: 0,
+        });
+        let mut site = criterion("12.2", CriterionStatus::NeedsReview);
+        site.justification = Some("non évalué au niveau site".into());
+        bundle.site_criteria.push(site);
+        let html = generate_html_report(&bundle);
+        assert!(html.contains("Critères de niveau site"));
+        assert!(html.contains("non évalué au niveau site"));
+        // 12.2 appears once (site section), not again as "missing" in the page table.
+        assert_eq!(html.matches(r#"finding-id">12.2<"#).count(), 1);
+    }
+
+    #[test]
+    fn site_criteria_render_verified_status_and_evidence() {
+        let mut bundle = sample_bundle();
+        let mut site = criterion("12.2", CriterionStatus::Fail);
+        site.verified_status = Some(CriterionStatus::Fail);
+        site.evidence
+            .push(rgaa_core::EvidenceRef::new("dom", "sha256:site"));
+        bundle.site_criteria.push(site);
+
+        let html = generate_html_report(&bundle);
+
+        assert!(html.contains("Statut vérifié"));
+        assert!(html.contains("Preuve dom"));
+        assert!(html.contains("sha256:site"));
+    }
+
+    #[test]
     fn html_report_contains_audit_id() {
         let bundle = sample_bundle();
         let html = generate_html_report(&bundle);
@@ -775,9 +876,15 @@ mod tests {
     #[test]
     fn complete_criteria_preserves_results_outside_the_catalog() {
         let results = vec![criterion("not-a-real-id", CriterionStatus::Fail)];
-        let completed = complete_criteria(&results);
+        let site = vec![criterion("12.2", CriterionStatus::NeedsReview)];
+        let completed = complete_criteria(&results, &site);
 
-        assert_eq!(completed.len(), RgaaCriteria::all().len() + 1);
+        // Only site criteria actually present in the site section are omitted from each page.
+        assert_eq!(completed.len(), RgaaCriteria::all().len() - 1 + 1);
+        assert!(completed
+            .iter()
+            .any(|c| c.criterion_id == "12.1" && c.status == CriterionStatus::NotTested));
+        assert!(!completed.iter().any(|c| c.criterion_id == "12.2"));
         assert!(completed
             .iter()
             .any(|c| c.criterion_id == "not-a-real-id" && c.status == CriterionStatus::Fail));

@@ -296,6 +296,47 @@ pub struct Violation {
     pub nodes: Vec<serde_json::Value>,
 }
 
+/// Criteria whose statement is about an "ensemble de pages" (RGAA 12.1-12.5): they
+/// cannot be decided on one page and are evaluated once at site level (#269).
+pub const SITE_LEVEL_CRITERIA: &[&str] = &["12.1", "12.2", "12.3", "12.4", "12.5"];
+
+/// Justification of a site criterion for which no comparison mechanism exists yet.
+pub const SITE_LEVEL_NOT_EVALUATED: &str = "non évalué au niveau site";
+
+/// Justification when fewer than two pages can be compared.
+pub const SITE_LEVEL_TOO_FEW_PAGES: &str = "moins de deux pages comparables";
+
+/// Pages with the site-level criteria put back on each of them, for computations that
+/// are defined over every catalog criterion per page (coverage metrics, completeness).
+/// A criterion a page already carries is left as it is.
+#[must_use]
+pub fn pages_with_site_criteria(
+    pages: &[PageResult],
+    site_criteria: &[CriterionResult],
+) -> Vec<PageResult> {
+    pages
+        .iter()
+        .map(|page| {
+            let mut page = page.clone();
+            for site in site_criteria {
+                if !page
+                    .criteria
+                    .iter()
+                    .any(|c| c.criterion_id == site.criterion_id)
+                {
+                    page.criteria.push(site.clone());
+                }
+            }
+            page
+        })
+        .collect()
+}
+
+#[must_use]
+pub fn is_site_level_criterion(criterion_id: &str) -> bool {
+    SITE_LEVEL_CRITERIA.contains(&criterion_id)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PageResult {
     pub url: String,
@@ -310,6 +351,11 @@ pub struct AuditResult {
     pub audit_id: String,
     pub url: String,
     pub pages: Vec<PageResult>,
+    /// Criteria whose RGAA statement concerns a "set of pages" (see
+    /// [`SITE_LEVEL_CRITERIA`]): decided once for the whole site and removed from
+    /// every page's `criteria`, so they are counted once in totals and rates.
+    #[serde(default)]
+    pub site_criteria: Vec<CriterionResult>,
     pub total_criteria: usize,
     pub passed: usize,
     pub failed: usize,

@@ -16,6 +16,7 @@ fn audit(url: &str) -> AuditResult {
         audit_id: format!("audit-for-{url}"),
         url: url.to_string(),
         pages: vec![],
+        site_criteria: Vec::new(),
         total_criteria: 106,
         passed: 50,
         failed: 10,

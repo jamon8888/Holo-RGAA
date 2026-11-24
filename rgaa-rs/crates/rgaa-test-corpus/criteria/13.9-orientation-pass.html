@@ -1,1 +1,14 @@
-<!doctype html><html lang="fr"><body><main><h1>Orientation</h1><p>Contenu disponible en portrait et paysage.</p></main></body></html>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 13.9 - Mise en page adaptative, même contenu</title>
+    <style>main { display: flex; flex-direction: column; } @media (orientation: landscape) { main { flex-direction: row; gap: 1rem; } }</style>
+</head>
+<body>
+    <main>
+        <h1>Critère 13.9</h1>
+        <p>La mise en page change selon l'orientation, pas le contenu.</p>
+    </main>
+</body>
+</html>

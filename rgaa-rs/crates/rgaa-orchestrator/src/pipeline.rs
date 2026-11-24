@@ -2102,7 +2102,7 @@ mod routing_tests {
         assert_eq!(result.status, CriterionStatus::Fail);
         assert_eq!(
             result.automated_verdict,
-            Some(rgaa_core::AutomatedVerdict::Pass)
+            Some(rgaa_core::AutomatedVerdict::Fail)
         );
         assert!(!result
             .tests
@@ -2143,7 +2143,11 @@ mod routing_tests {
             .justification
             .as_deref()
             .is_some_and(|text| text.contains("Site-level comparison returned NeedsReview:")));
-        assert!(validate_automatic_verdict_coverage(&results).is_ok());
+        // The Fail status stands, but an undecided comparison clears the automatic
+        // verdict, so coverage for 12.4 stays open.
+        let error = validate_automatic_verdict_coverage(&results)
+            .expect_err("an undecided site comparison leaves no automatic verdict");
+        assert!(error.missing_criterion_ids.contains(&"12.4".to_string()));
     }
 
     #[test]

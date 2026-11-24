@@ -104,6 +104,22 @@ _Avoid_ : gravité, sévérité, criticité
 Le drapeau d'une non-conformité dont la correction est simple et rapide au regard de son impact utilisateur. Il est posé par le relecteur avec l'impact utilisateur et sert à trier le rapport et le plan de remédiation, après l'impact.
 _Avoid_ : correction facile, quickfix, priorité
 
+### Directive accessibilité européenne (EAA 2019/882)
+
+> Définitions rédigées depuis la directive 2019/882, **à valider juridiquement** (ticket #177).
+
+**Charge disproportionnée** :
+Dérogation à une exigence d'accessibilité lorsqu'elle imposerait une charge excessive (art. 14 et annexe VI). Elle se déclare au cas par cas, jamais globalement : dans l'export, une `Derogation` structurée porte le contenu visé, le motif, l'alternative proposée et la date de réexamen. Les quatre champs sont exigés, sinon l'export est refusé.
+_Avoid_ : exemption générale, dérogation sans motif
+
+**Conservation (de la documentation technique)** :
+Durée pendant laquelle la documentation technique et la déclaration restent disponibles : **5 ans minimum** (champ `conservation`, `debut` + `duree_annees`). Sans rapport avec la revue des packs pays, qui suit un cycle de 12 mois et ne conserve rien.
+_Avoid_ : archivage, péremption (réservé à la revue des packs)
+
+**Présomption de conformité** :
+Un service conforme à une norme harmonisée (par exemple EN 301 549) ou à ses parties pertinentes, dont la référence a été publiée au *Journal officiel de l’Union européenne*, est présumé conforme aux exigences couvertes par cette norme (art. 15, § 1). Champ `presomption` (`norme` + `reference`), à renseigner seulement si la déclaration s'appuie sur cette norme. C'est une présomption, pas une preuve : elle ne change jamais le statut de conformité calculé.
+_Avoid_ : certification, garantie de conformité
+
 ### Analyse
 
 **Plugin d'analyse** :

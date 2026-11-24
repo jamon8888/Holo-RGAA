@@ -15,6 +15,9 @@ use crate::ReportError;
 /// Minimum sample pages (home, contact, legal, accessibility, sitemap).
 pub const ECHANTILLON_MIN: usize = 5;
 
+/// Minimum technical-documentation retention, in years (EAA 2019/882).
+pub const CONSERVATION_MIN_ANS: u8 = 5;
+
 /// Feedback contact of the declaration (UE 2018/1523, mandatory everywhere).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct Contact {
@@ -33,6 +36,25 @@ pub struct Derogation {
     pub motif: String,
     pub alternative: String,
     pub date_reexamen: String,
+}
+
+/// Technical-documentation retention (EAA 2019/882: five years). Distinct from
+/// the 12-month review cycle of the national packs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct Conservation {
+    /// Start of the retention period, as a calendar date `YYYY-MM-DD`.
+    pub debut: String,
+    /// Retention length in years; below [`CONSERVATION_MIN_ANS`] is blocked.
+    pub duree_annees: u8,
+}
+
+/// Presumption of conformity claimed through a standard (EAA art. 15).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct PresomptionConformite {
+    /// Standard relied upon, e.g. "EN 301 549".
+    pub norme: String,
+    /// Reference or version of that standard.
+    pub reference: String,
 }
 
 /// Content outside the obligation (UE off-scope list + national extensions).
@@ -65,6 +87,10 @@ pub struct ExportPack {
     /// Justification when the site holds fewer than [`ECHANTILLON_MIN`] pages.
     #[serde(default)]
     pub site_petit_justification: Option<String>,
+    #[serde(default)]
+    pub conservation: Option<Conservation>,
+    #[serde(default)]
+    pub presomption: Option<PresomptionConformite>,
     #[serde(default)]
     pub extensions: serde_json::Value,
 }
@@ -151,6 +177,22 @@ pub fn validate_export(bundle: &AuditBundle, pack: &ExportPack) -> Result<(), Re
             )));
         }
     }
+    if let Some(conservation) = &pack.conservation {
+        if chrono::NaiveDate::parse_from_str(&conservation.debut, "%Y-%m-%d").is_err()
+            || conservation.duree_annees < CONSERVATION_MIN_ANS
+        {
+            return Err(ReportError::invalid_input(format!(
+                "conservation de la documentation technique : début au format YYYY-MM-DD et {CONSERVATION_MIN_ANS} ans minimum exigés"
+            )));
+        }
+    }
+    if let Some(presomption) = &pack.presomption {
+        if vide(&presomption.norme) || vide(&presomption.reference) {
+            return Err(ReportError::invalid_input(
+                "présomption de conformité : norme et référence exigées".to_string(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -202,6 +244,8 @@ mod tests {
             }],
             non_soumis: Vec::new(),
             site_petit_justification: None,
+            conservation: None,
+            presomption: None,
             extensions: serde_json::json!({}),
         }
     }
@@ -253,6 +297,43 @@ mod tests {
         pack.derogations[0].alternative.clear();
         let bundle = bundle_with(Vec::new());
         assert!(validate_export(&bundle, &pack).is_err());
+    }
+
+    #[test]
+    fn conservation_sous_cinq_ans_bloque() {
+        let mut pack = pack();
+        let bundle = bundle_with(Vec::new());
+        pack.conservation = Some(Conservation {
+            debut: "2026-11-20".into(),
+            duree_annees: 4,
+        });
+        assert!(validate_export(&bundle, &pack).is_err());
+        pack.conservation.as_mut().unwrap().duree_annees = 5;
+        assert!(validate_export(&bundle, &pack).is_ok());
+    }
+
+    #[test]
+    fn conservation_date_invalide_bloque() {
+        let mut pack = pack();
+        let bundle = bundle_with(Vec::new());
+        pack.conservation = Some(Conservation {
+            debut: "2026-13-45".into(),
+            duree_annees: CONSERVATION_MIN_ANS,
+        });
+        assert!(validate_export(&bundle, &pack).is_err());
+    }
+
+    #[test]
+    fn presomption_incomplete_bloque() {
+        let mut pack = pack();
+        let bundle = bundle_with(Vec::new());
+        pack.presomption = Some(PresomptionConformite {
+            norme: "EN 301 549".into(),
+            reference: " ".into(),
+        });
+        assert!(validate_export(&bundle, &pack).is_err());
+        pack.presomption.as_mut().unwrap().reference = "V3.2.1".into();
+        assert!(validate_export(&bundle, &pack).is_ok());
     }
 
     #[test]

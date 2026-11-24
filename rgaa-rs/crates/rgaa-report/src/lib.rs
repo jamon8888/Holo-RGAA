@@ -36,8 +36,8 @@ pub use format::ReportFormat;
 pub use gouvernance::{autoriser_generation, OverrideGouvernance, PackVersion, PEREMPTION_JOURS};
 pub use grille::render_grille_csv;
 pub use guard::{
-    schema_export_pack, validate_export, Contact, ContenuNonSoumis, Derogation, ExportPack,
-    PageEchantillon, ECHANTILLON_MIN,
+    schema_export_pack, validate_export, Conservation, Contact, ContenuNonSoumis, Derogation,
+    ExportPack, PageEchantillon, PresomptionConformite, ECHANTILLON_MIN,
 };
 pub use packs::{mention_fr, pack, PackPays, Pays};
 pub use report::render;

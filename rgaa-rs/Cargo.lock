@@ -8242,6 +8242,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "futures-util",
+ "gif",
  "image",
  "libc",
  "obscura",

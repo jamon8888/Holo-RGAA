@@ -7,7 +7,7 @@
 19 tickets résolus. Cet addendum **consigne** ces décisions ; il n'en prend aucune. Une
 contradiction entre tickets remonte en grilling au lieu d'être arbitrée ici.
 
-**Vocabulaire** : `CONTEXT.md` — *Test RGAA*, *Niveau d'automatisation*, *Automatique*,
+**Vocabulaire** : `GLOSSARY.md` — *Test RGAA*, *Niveau d'automatisation*, *Automatique*,
 *Assisté*, *Irréductible*, *Famille de preuve*, *Calibration*. Les trois niveaux ne sont pas
 des degrés de qualité : « Irréductible » est une réponse légitime, et chaque occurrence
 porte sa justification écrite.

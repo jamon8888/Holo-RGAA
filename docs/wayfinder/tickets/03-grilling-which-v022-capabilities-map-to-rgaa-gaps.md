@@ -11,7 +11,7 @@ Given the two research answers, which v0.2.2 capabilities earn adoption because 
 
 ## Context
 
-Needs both research tickets closed first. Call the Skill tool twice for `grilling` and `domain-modeling` when working this ticket. Sharpen terms (e.g. "fidelity" vs "correctness" vs "robustness") into CONTEXT.md only as they crystallise; offer ADRs only if hard-to-reverse + surprising + real trade-off.
+Needs both research tickets closed first. Call the Skill tool twice for `grilling` and `domain-modeling` when working this ticket. Sharpen terms (e.g. "fidelity" vs "correctness" vs "robustness") into GLOSSARY.md only as they crystallise; offer ADRs only if hard-to-reverse + surprising + real trade-off.
 
 ## Answer (to record on resolution)
 

@@ -12,6 +12,8 @@ TypeScript types for the RGAA backend:
 | `src/tools.d.ts` | **Generated** from the server's own `schemars` schemas |
 | `src/protocol.d.ts` | Hand-written — the JSON-RPC envelope is defined by the transport |
 | `src/rest.d.ts` | Hand-written — the axum handlers have no schemars source |
+| `analysis-schemas.json` | *Planned* — to be generated from `rgaa-analysis` (P-00 §5); that crate does not exist yet |
+| `colorvision-matrices.json` | *Planned* — to be generated from `rgaa-analysis-colorvision` (P-02 §6); that crate does not exist yet |
 
 `tools.d.ts` is generated on purpose. The tool arguments are declared once,
 in Rust; a hand-written copy is a second declaration that nothing keeps in
@@ -27,8 +29,8 @@ registered (#161).
 python3 scripts/generate-ts-types.py
 ```
 
-`src/tools.d.ts` and `schemas.json` are **not committed** — they are
-gitignored and produced on demand.
+`src/tools.d.ts` and `schemas.json` are **not
+committed** — they are gitignored and produced on demand.
 
 That is a deliberate trade. Committing them made the package only as correct
 as the last person to remember to regenerate, and it serialised development:

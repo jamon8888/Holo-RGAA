@@ -31,7 +31,7 @@ Ensemble des tests RGAA qui posent la même question de pertinence sur le même 
 _Avoid_ : groupe, thème, catégorie
 
 **Calibration** :
-Mesure de l'accord d'un modèle avec un étiquetage humain sur une famille de preuve, avec ancres, repère trivial et intervalle de confiance. Un test Assisté est **calibré** quand sa famille l'est, **non calibré** sinon. Le niveau Assisté ne dépend pas de la calibration ; ce qu'on peut affirmer de sa fiabilité en dépend.
+Mesure de l'accord d'un modèle avec un étiquetage humain sur une famille de preuve, avec ancres, repère trivial et intervalle de confiance. **Non retenue pour le pilote (décision du 2026-11-21).** Un test Assisté est **calibré** quand sa famille l'est, **non calibré** sinon. Le niveau Assisté ne dépend pas de la calibration ; ce qu'on peut affirmer de sa fiabilité en dépend.
 _Avoid_ : validation, évaluation, benchmark
 
 ### Alternatives textuelles
@@ -69,3 +69,51 @@ _Avoid_ : description du tableau, synthèse des données, résumé des chiffres
 **Tableau de données complexe** :
 Tableau dont les en-têtes ne sont pas répartis uniquement sur la première ligne et/ou la première colonne, ou dont la portée d'un en-tête ne vaut pas pour toute sa ligne ou toute sa colonne. Seul un tel tableau appelle un résumé (critères 5.1 et 5.2) : des cellules fusionnées dans le corps du tableau ne suffisent pas à le rendre complexe.
 _Avoid_ : grand tableau, tableau à double entrée, tableau multi-niveaux
+
+### Offre et revue
+
+**Offre Souveraine** :
+L'offre dans laquelle aucune donnée du client (code, DOM, captures) ne sort de son infrastructure sans son accord explicite, et qui ne requiert aucun agent d'un éditeur tiers.
+_Avoid_ : offre locale, offre on-premise, version gratuite
+
+**Offre Confort** :
+L'offre dans laquelle l'audit et la remédiation sont guidés dans les agents du client, avec l'IA fournie et refacturée par nous ; des données partent vers l'éditeur de l'agent et vers le fournisseur du modèle.
+_Avoid_ : offre SaaS, offre cloud, offre premium
+
+**Crédit** :
+L'unité prépayée qu'un client achète et que chaque appel de modèle débite. Un solde épuisé arrête les appels.
+_Avoid_ : jeton, token, quota
+
+**Relecteur** :
+La personne authentifiée qui confirme une décision de revue sur un test RGAA. C'est un rôle : un auditeur comme un responsable conformité peut l'endosser.
+_Avoid_ : auditeur (persona, pas rôle), validateur, utilisateur
+
+**Décision de revue** :
+Le statut qu'un relecteur pose sur un test RGAA (`conforme`, `non conforme`, `non applicable`). Seul un humain en prend une.
+_Avoid_ : verdict (réservé à la machine), validation, avis
+
+**Verdict** :
+Ce que la machine (règle ou modèle) rend sur un test RGAA. Sur un test Assisté, il ne sert qu'à ordonner la file de revue.
+_Avoid_ : décision, jugement
+
+**Impact utilisateur** :
+La gravité qu'une non-conformité fait subir à l'utilisateur : `mineur`, `majeur` ou `bloquant`. C'est le relecteur qui la pose dans sa décision de revue ; une proposition de la machine est affichée comme une proposition et ne devient jamais l'impact retenu (R3).
+_Avoid_ : gravité, sévérité, criticité
+
+**Quick win** :
+Le drapeau d'une non-conformité dont la correction est simple et rapide au regard de son impact utilisateur. Il est posé par le relecteur avec l'impact utilisateur et sert à trier le rapport et le plan de remédiation, après l'impact.
+_Avoid_ : correction facile, quickfix, priorité
+
+### Analyse
+
+**Plugin d'analyse** :
+Module qui mesure ou observe une page (contraste, texte dans une image, simulation de daltonisme, transcription, langue…) et en tire des preuves pour un ensemble de tests RGAA, sans jamais rendre de verdict. Il est **natif** quand il est écrit avec une bibliothèque Rust, et **sidecar** quand il pilote un programme externe.
+_Avoid_ : plugin (seul, ambigu avec le plugin agent), analyseur, moteur, module IA
+
+**Plugin agent** :
+Extension de Claude Code ou de Codex qui guide l'utilisateur (audit, remédiation, revue, rapport) en appelant nos outils. Il présente les preuves, il ne les produit pas.
+_Avoid_ : plugin (seul), extension, skill (une skill n'est qu'une partie d'un plugin agent)
+
+**Preuve** :
+Ce qu'un plugin d'analyse rend sur un sujet (élément, média, page) : des mesures et des artefacts, avec leur portée. Une preuve **mesurée** est un calcul exact sur une entrée fiable ; une preuve **estimée** vient d'un échantillonnage ou d'un modèle et mène toujours à une revue.
+_Avoid_ : résultat, finding, constat, verdict

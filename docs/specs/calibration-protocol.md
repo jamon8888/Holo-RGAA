@@ -6,7 +6,7 @@
 **Source** : ticket [#354](https://github.com/jamon8888/Holo-RGAA/issues/354), méthode
 établie par le prototype [#339](https://github.com/jamon8888/Holo-RGAA/issues/339).
 
-**Vocabulaire** : `CONTEXT.md` — *Famille de preuve*, *Calibration*, *Assisté*.
+**Vocabulaire** : `GLOSSARY.md` — *Famille de preuve*, *Calibration*, *Assisté*.
 
 ## 1. Ce que la calibration mesure, et ce qu'elle ne mesure pas
 

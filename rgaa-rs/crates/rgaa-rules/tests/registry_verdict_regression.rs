@@ -47,10 +47,11 @@ const NO_LONGER_COMPLETE: &[&str] = &[
     "13.3", "13.4", "13.5", // #280
 ];
 
-/// Associations retirées par #280.
+/// Associations retirées par #280 et #398.
 const REMOVED_RULES: &[(&str, &[&str])] = &[
     ("1.5", &["image-alt"]),
     ("1.6", &["image-alt"]),
+    ("7.3", &["focus-order-semantics"]),
     ("10.2", &["color-contrast", "image-alt"]),
     ("10.5", &["color-contrast"]),
     ("10.9", &["color-contrast", "image-alt"]),
@@ -74,6 +75,10 @@ struct Entry {
     criterion_id: String,
     coverage: String,
     axe_rules: Vec<String>,
+    /// Plafond `review` (#279) : une violation donne `NeedsReview`, jamais `Fail`.
+    /// Absent de la table gelée, posé seulement par [`reviewed_mapping`].
+    #[serde(default)]
+    review_capped: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -101,12 +106,18 @@ fn injected_rules() -> Vec<String> {
 }
 
 /// Le verdict que la table d'avant donnait : `Pass` pour une couverture complète sans
-/// violation, `Fail` dès qu'une règle du critère a tiré, rien sinon.
+/// violation, `Fail` dès qu'une règle du critère a tiré, rien sinon. Une entrée
+/// plafonnée à `review` (#279) donne `NeedsReview` au lieu de `Fail`.
 fn legacy_verdicts(frozen: &[Entry], fired: Option<&str>) -> Verdicts {
     let mut out = Verdicts::new();
     for entry in frozen {
         if fired.is_some_and(|rule| entry.axe_rules.iter().any(|r| r == rule)) {
-            out.insert(entry.criterion_id.clone(), CriterionStatus::Fail);
+            let status = if entry.review_capped {
+                CriterionStatus::NeedsReview
+            } else {
+                CriterionStatus::Fail
+            };
+            out.insert(entry.criterion_id.clone(), status);
         } else if entry.coverage == "complete" {
             out.insert(entry.criterion_id.clone(), CriterionStatus::Pass);
         }
@@ -173,8 +184,18 @@ fn reviewed_mapping() -> Vec<Entry> {
             criterion_id: id.into(),
             coverage: coverage.into(),
             axe_rules: rules.iter().map(|rule| (*rule).into()).collect(),
+            review_capped: false,
         });
     }
+
+    // #263 / #279 : ordre de tabulation, indice plafonné à `review`.
+    assert!(mapping.iter().all(|entry| entry.criterion_id != "12.8"));
+    mapping.push(Entry {
+        criterion_id: "12.8".into(),
+        coverage: "partial".into(),
+        axe_rules: vec!["tabindex".into(), "focus-order-semantics".into()],
+        review_capped: true,
+    });
     mapping
 }
 

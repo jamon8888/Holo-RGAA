@@ -287,6 +287,12 @@ pub struct Violation {
     pub impact: String,
     pub description: String,
     pub nodes_affected: usize,
+    /// Affected node evidence retained by the producing mechanism.
+    ///
+    /// Empty for mechanisms that only report a count and for persisted results
+    /// created before this field existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nodes: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -402,6 +408,16 @@ mod tests {
         assert_eq!(decoded.review_reason, None);
         assert_eq!(decoded.verified_status, None);
         assert!(decoded.review_events.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_violation_json_without_nodes_still_loads() -> serde_json::Result<()> {
+        let decoded: Violation = serde_json::from_str(
+            r#"{"rule_id":"image-alt","impact":"critical","description":"Missing alt","nodes_affected":1}"#,
+        )?;
+        assert_eq!(decoded.nodes_affected, 1);
+        assert!(decoded.nodes.is_empty());
         Ok(())
     }
 

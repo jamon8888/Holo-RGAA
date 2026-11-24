@@ -241,6 +241,7 @@ fn deterministic_route_candidate(
             impact: "serious".to_owned(),
             description: description.to_owned(),
             nodes_affected: 1,
+            nodes: vec![],
         });
         debug_assert!(deterministic
             .tests

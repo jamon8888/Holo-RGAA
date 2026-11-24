@@ -66,6 +66,11 @@ pub struct Mechanism {
     #[serde(default)]
     pub tests: Vec<String>,
     pub outcomes: Vec<Outcome>,
+    /// Ceiling on the verdict this mechanism may emit. `Some(Outcome::Review)` means
+    /// the mechanism may raise `review` but never `fail`. `None` = no cap (default).
+    /// A `pass` cap is reserved and rejected until the mapper can enforce it safely.
+    #[serde(default)]
+    pub outcome_cap: Option<Outcome>,
     /// Fixture names (file stems in `rgaa-test-corpus/criteria/`).
     #[serde(default)]
     pub fixtures: Vec<String>,
@@ -177,6 +182,28 @@ impl MechanismRegistry {
             for rule in &m.axe_rules {
                 if !known_axe_rules.contains(rule) {
                     problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
+                }
+            }
+            // outcome_cap is a ceiling: the mechanism may not emit anything above it.
+            if let Some(cap) = m.outcome_cap {
+                match cap {
+                    Outcome::Review => {
+                        if m.outcomes.contains(&Outcome::Fail) {
+                            problems.push(format!(
+                                "{}: outcome_cap is \"review\" but outcomes contain \"fail\" — \
+                                 a capped mechanism cannot produce Fail",
+                                m.id
+                            ));
+                        }
+                    }
+                    Outcome::Pass => {
+                        problems.push(format!(
+                            "{}: outcome_cap \"pass\" is not supported — \
+                             AxeMapper cannot yet enforce that ceiling safely",
+                            m.id
+                        ));
+                    }
+                    Outcome::Fail => {}
                 }
             }
             problems.extend(Self::check_declared_tests(m));
@@ -351,6 +378,20 @@ mod tests {
         let problems = check(&t, Path::new("."));
         assert!(
             problems.iter().any(|p| p.contains("\"pass\"")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_pass_outcome_cap_is_rejected_until_the_mapper_supports_it() {
+        let t = "[[mechanism]]\nid=\"axe-1-1\"\ncriterion=\"1.1\"\nkind=\"axe-native\"\n\
+                 engine=\"obscura\"\ncoverage=\"complete\"\noutcomes=[\"pass\"]\n\
+                 outcome_cap=\"pass\"\nlegacy=true\naxe_rules=[\"image-alt\"]\n";
+        let problems = check(t, Path::new("."));
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("outcome_cap \"pass\" is not supported")),
             "{problems:?}"
         );
     }

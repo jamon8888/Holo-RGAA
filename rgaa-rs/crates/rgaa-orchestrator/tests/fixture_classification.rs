@@ -131,7 +131,9 @@ fn cases() -> Vec<Case> {
                 vec![CriterionStatus::NeedsReview]
             } else if expect_pass {
                 vec![CriterionStatus::Pass]
-            } else if declares_review {
+            } else if declares_review && m.kind != MechanismKind::AxeNative {
+                // A probe always answers; a partial axe mechanism stays silent on a
+                // conforming page, and its silence is checked only as "no fail" below.
                 vec![CriterionStatus::Pass, CriterionStatus::NeedsReview]
             } else {
                 Vec::new()
@@ -253,9 +255,13 @@ async fn registry_fixtures_are_classified_under_obscura() {
     let bridge = Arc::new(bridge);
 
     let url_of = |c: &Case| format!("http://127.0.0.1:{port}/{}.html", c.fixture);
-    let urls: Vec<String> = cases.iter().map(url_of).collect();
+    // Several mechanisms may name the same fixture (axe-12-8 and probe-12-8-tab-order):
+    // each page is evaluated once and its result read by every case that names it.
+    let mut urls: Vec<String> = cases.iter().map(url_of).collect();
+    urls.sort();
+    urls.dedup();
 
-    let mut axe_by_url = bridge
+    let axe_by_url = bridge
         .clone()
         .run_axe_batch(urls.clone(), 1)
         .await
@@ -264,14 +270,14 @@ async fn registry_fixtures_are_classified_under_obscura() {
         .iter()
         .map(|(k, v)| (k.clone(), (*v).to_string()))
         .collect();
-    let mut gap_by_url = ObscuraBridge::run_gap_fix_batch(binary, urls, snippets, 1)
+    let gap_by_url = ObscuraBridge::run_gap_fix_batch(binary, urls, snippets, 1)
         .await
         .expect("gap-fix batch");
 
     let mut wrong = Vec::new();
     for case in &cases {
         let url = url_of(case);
-        let Some(axe_json) = axe_by_url.remove(&url) else {
+        let Some(axe_json) = axe_by_url.get(&url).cloned() else {
             wrong.push(format!(
                 "{} / {}: axe batch returned no result for {url}",
                 case.mechanism, case.fixture
@@ -300,7 +306,7 @@ async fn registry_fixtures_are_classified_under_obscura() {
             }
             Err(error) => evidence.push(format!("axe parse error: {error}; raw: {axe_json}")),
         }
-        let Some(gap_js) = gap_by_url.remove(&url) else {
+        let Some(gap_js) = gap_by_url.get(&url).cloned() else {
             wrong.push(format!(
                 "{} / {}: gap-fix batch returned no result for {url}",
                 case.mechanism, case.fixture

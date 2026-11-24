@@ -191,6 +191,20 @@ impl MechanismRegistry {
             if m.kind == MechanismKind::AxeNative && m.axe_rules.is_empty() {
                 problems.push(format!("{}: axe-native mechanism cites no axe rule", m.id));
             }
+            if m.outcome_cap == Some(Outcome::Review) && m.outcomes.contains(&Outcome::Fail) {
+                problems.push(format!(
+                    "{}: outcome_cap \"review\" but outcomes contain \"fail\" — cap must be consistent with outcomes",
+                    m.id
+                ));
+            }
+            if let Some(cap) = m.outcome_cap {
+                if !m.outcomes.contains(&cap) {
+                    problems.push(format!(
+                        "{}: outcome_cap \"{cap:?}\" is not declared in outcomes {:?}",
+                        m.id, m.outcomes
+                    ));
+                }
+            }
             for rule in &m.axe_rules {
                 if !known_axe_rules.contains(rule) {
                     problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
@@ -494,5 +508,51 @@ mod tests {
     #[test]
     fn unknown_criterion_probe_is_not_complete() {
         assert!(!MechanismRegistry::builtin().probe_is_complete("99.99"));
+    }
+
+    /// #279: outcome_cap must be consistent with outcomes — a cap of `review`
+    /// with `outcomes = ["fail"]` is a configuration error.
+    #[test]
+    fn outcome_cap_must_be_declared_in_outcomes() {
+        let toml =
+            entry("coverage=\"partial\"\noutcomes=[\"fail\"]\nlegacy=true\noutcome_cap=\"review\"");
+        let problems = check(&toml, Path::new("."));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("outcome_cap") && p.contains("review")),
+            "outcome_cap not in outcomes must be flagged, obtenu {problems:?}"
+        );
+    }
+
+    /// #279: outcome_cap = review cannot coexist with outcomes containing fail.
+    #[test]
+    fn outcome_cap_review_excludes_fail_outcome() {
+        let toml = entry(
+            "coverage=\"partial\"\noutcomes=[\"fail\",\"review\"]\nlegacy=true\noutcome_cap=\"review\"",
+        );
+        let problems = check(&toml, Path::new("."));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("outcome_cap") && p.contains("fail")),
+            "outcome_cap review with fail outcome must be flagged, obtenu {problems:?}"
+        );
+    }
+
+    /// #279: axe-12-8 has outcome_cap = review.
+    #[test]
+    fn axe_12_8_has_outcome_cap_review() {
+        let registry = MechanismRegistry::builtin();
+        let m = registry
+            .axe_for("12.8")
+            .expect("axe-12-8 must exist in builtin registry");
+        assert_eq!(
+            m.outcome_cap,
+            Some(Outcome::Review),
+            "axe-12-8 must cap verdict at review"
+        );
+        assert!(m.outcomes.contains(&Outcome::Review));
+        assert!(!m.outcomes.contains(&Outcome::Fail));
     }
 }

@@ -14,6 +14,62 @@ pub use policy::*;
 pub use priority::*;
 pub use proposals::*;
 
+/// Convert an [`rgaa_core::Finding`] into a [`RemediationIssue`] so that
+/// `AuditBundle.findings` can be consumed by the remediation engine.
+///
+/// The finding's `html` (rendered element HTML) becomes `element_html`; its
+/// `url` becomes `page_url`; `description` becomes `summary`; `remediation`
+/// (if present) is kept, otherwise a sentence naming the rule is generated; `criterion_id`
+/// (if present) is prefixed with `"RGAA-"` and placed in `criteria`.
+/// `source_locations` is empty — callers must supply source file locations
+/// from their build system or IDE.
+///
+/// # Example
+///
+/// ```rust
+/// use rgaa_remediation::from_finding;
+/// use rgaa_core::{Finding, CriterionStatus};
+///
+/// let mut finding = Finding::new("f-1");
+/// finding.rule = "image-alt".into();
+/// finding.url = "https://example.test/page".into();
+/// finding.html = Some("<img src=\"hero.png\">".into());
+/// finding.description = Some("Image has no alternative text".into());
+/// finding.criterion_id = Some("1.1".into());
+/// finding.status = CriterionStatus::Fail;
+///
+/// let issue = from_finding(&finding);
+/// assert_eq!(issue.rule, "image-alt");
+/// assert_eq!(issue.page_url, "https://example.test/page");
+/// assert_eq!(issue.element_html, "<img src=\"hero.png\">");
+/// assert_eq!(issue.criteria, vec!["RGAA-1.1"]);
+/// ```
+pub fn from_finding(finding: &rgaa_core::Finding) -> RemediationIssue {
+    let criteria = finding
+        .criterion_id
+        .as_ref()
+        .map(|id| vec![format!("RGAA-{id}")])
+        .unwrap_or_default();
+
+    RemediationIssue {
+        id: finding.id.clone(),
+        rule: finding.rule.clone(),
+        element_html: finding.html.clone().unwrap_or_default(),
+        page_url: finding.url.clone(),
+        source_locations: Vec::new(),
+        summary: finding
+            .description
+            .clone()
+            .unwrap_or_else(|| finding.rule.clone()),
+        remediation: finding
+            .remediation
+            .clone()
+            .unwrap_or_else(|| format!("Fix {}-related accessibility issue", finding.rule)),
+        criteria,
+        framework: None,
+    }
+}
+
 #[cfg(test)]
 mod contract_tests {
     use super::*;
@@ -34,6 +90,19 @@ mod contract_tests {
             criteria: vec!["RGAA-1.1".into()],
             framework: Some(Framework::React),
         }
+    }
+
+    /// The documented fallback is a sentence that names the rule, not the bare
+    /// rule id; keep the two in sync so callers know what text to expect.
+    #[test]
+    fn from_finding_documents_its_actual_remediation_fallback() {
+        let mut finding = rgaa_core::Finding::new("f-fallback");
+        finding.rule = "image-alt".into();
+        let issue = from_finding(&finding);
+        assert_eq!(
+            issue.remediation, "Fix image-alt-related accessibility issue",
+            "le texte de repli doit rester une phrase nommant la règle"
+        );
     }
 
     #[test]

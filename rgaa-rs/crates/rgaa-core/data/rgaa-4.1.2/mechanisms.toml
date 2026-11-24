@@ -461,13 +461,17 @@ axe_rules = ["bypass", "skip-link"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
 
 [[mechanism]]
+# §12.8 : tabindex positif est un indice « suspect », jamais un échec ferme.
+# Plafond de verdict `review` : une violation de cette règle produit
+# `NeedsReview` (critère en revue), jamais `Fail` (issue #279). La seule règle
+# axe-core qui signale un tabindex positif est `tabindex` (axe_rules.json).
 id        = "axe-12-8"
 criterion = "12.8"
 kind      = "axe-native"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
+<<# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
 # hard fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
 # on 4.9.1), so today only `tabindex` (positive values) can fire.
 outcomes  = ["review"]
@@ -475,7 +479,7 @@ outcome_cap = "review"
 fixtures  = ["12.8-focus-order-pass", "12.8-focus-order-fail"]
 legacy    = false
 axe_rules = ["tabindex", "focus-order-semantics"]
-provenance = { source = "axe-core rule metadata (axe_rules.json): focus-order-semantics carries tag RGAA-12.8.1; tabindex is best-practice", validated_by = "both rule ids checked against the injected axe 4.9.1 by the registry invariants", validated_at = "2026-11-20", notes = "Partial: neither rule observes the real Tab traversal." }
+provenance = { source = "axe-core rule metadata (axe_rules.json): focus-order-semantics carries tag RGAA-12.8.1; tabindex is best-practice", validated_by = "both rule ids checked against the injected axe 4.9.1 by the registry invariants", validated_at = "2026-11-20", notes = "Plafond review : tabindex positif sur 12.8 est suspect, jamais fail ferme. Règle axe : tabindex. Partial: neither rule observes the real Tab traversal." }
 
 [[mechanism]]
 id        = "axe-13-1"

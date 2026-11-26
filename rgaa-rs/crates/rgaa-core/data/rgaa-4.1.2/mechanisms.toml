@@ -471,7 +471,7 @@ kind      = "axe-native"
 engine    = "obscura"
 coverage  = "partial"
 tests     = []
-<<# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
+# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
 # hard fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
 # on 4.9.1), so today only `tabindex` (positive values) can fire.
 outcomes  = ["review"]

@@ -3,7 +3,7 @@
 //! This module consumes observations from the same crawl. It never treats a
 //! missing page, missing observation, or uniform heuristic as proof of Pass.
 
-#![cfg_attr(not(test), allow(dead_code))]
+#![allow(dead_code)]
 
 use std::collections::BTreeSet;
 

@@ -169,6 +169,7 @@ mod tests {
             audit_id: "test-id".to_string(),
             url: "https://example.com".to_string(),
             pages: vec![],
+            site_criteria: Vec::new(),
             total_criteria: 25,
             passed: 25,
             failed: 0,

@@ -217,6 +217,7 @@ mod tests {
             etat_conformite: "non conforme".into(),
             duration_ms: 0,
             audit_complete: false,
+            audit_type: rgaa_core::AuditType::Complet,
         };
 
         export_html(&audit, &path).expect("HTML export");

@@ -191,7 +191,7 @@ do not control.
 
 ## 3. MCP tools
 
-Nine tools are registered. These names are what the server answers to —
+Twelve tools are registered. These names are what the server answers to —
 verify against `#[tool(name = ...)]` in
 `rgaa-rs/crates/rgaa-mcp/src/server.rs`, or just call `tools/list`.
 
@@ -200,8 +200,11 @@ verify against `#[tool(name = ...)]` in
 | `analyze` | `AnalyzeRequest` | Per-criterion findings for one page: `criterion_id`, `status`, `source`, evidence, justification |
 | `audit_url` | `AuditUrlInput` | **Summary only**: `taux_global`, `etat_conformite`, `sampled_page_urls` |
 | `get_audit_result` | `GetAuditInput` | A previously run audit, by `audit_id` |
+| `get_test_methodology` | `GetTestMethodologyRequest` | The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit; `methodology: null` for unknown keys |
 | `lint_static` | `LintStaticRequest` | Static lint of HTML/JSX/TSX/Vue **source**: `rule`, `severity`, line/column, fix hint. No browser, no build — a first pass over source, not a conformance verdict |
+| `list_analysis_plugins` | *(none)* | Compiled analysis plugins with versions, RGAA tests, required models and presence; call before `run_analysis_plugin` |
 | `list_criteria` | *(none)* | The 106 RGAA criteria: id, title, classification |
+| `run_analysis_plugin` | `RunAnalysisPluginInput` | Run one analysis plugin on a URL and return its `Preuve` values (measurements and artefacts). **No status and no verdict**: the orchestrator and a human reviewer decide |
 | `remediate` | `RemediationRequest` | Approval-gated fix proposals |
 | `source_map` | `SourceMapRequest` | `source_location` (file, line, column, snippet) per finding, mapping a browser finding back to the template that produced it; ambiguous ones return in `unmappable` |
 | `verify_fix` | `VerifyFixRequest` | Re-verification against a reference audit: `fixed` / `remaining` / `new`, plus `unverified` for pages that could not be re-analysed |

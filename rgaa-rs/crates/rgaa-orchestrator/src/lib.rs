@@ -1,8 +1,8 @@
 pub mod merge;
 pub mod pipeline;
 pub(crate) mod site_comparison;
-pub mod transverse;
 pub(crate) mod sitemap_links;
+pub mod transverse;
 
 pub use merge::{merge_candidates, merge_results};
 pub use pipeline::{

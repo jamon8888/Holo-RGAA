@@ -425,6 +425,7 @@ fn extract_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
                             let mut criterion = criterion.clone();
                             criterion.status = CriterionStatus::NeedsReview;
                             criterion.justification = Some(SITE_LEVEL_NOT_EVALUATED.to_string());
+                            criterion.automated_verdict = None;
                             criterion
                         })
                     })

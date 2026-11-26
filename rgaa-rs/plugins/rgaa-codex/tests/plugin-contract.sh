@@ -39,7 +39,9 @@ if command -v jq >/dev/null 2>&1; then
   jq -e '.plugins[] | select(.name == "rgaa-accessibility-codex" and .source.path == "./rgaa-rs/plugins/rgaa-codex")' \
     "$REPO_ROOT/.agents/plugins/marketplace.json" >/dev/null 2>&1 || fail "Codex plugin missing from repo marketplace"
 
-  registered_tools=$(grep -oE 'name = "[a-z_]+"' "$REPO_ROOT/rgaa-rs/crates/rgaa-mcp/src/server.rs" | sed 's/name = "//; s/"//' | sort -u)
+  # `explore` is a dev-only tool (feature `dev-explore`, off by default), not
+  # part of the published plugin surface.
+  registered_tools=$(grep -oE 'name = "[a-z_]+"' "$REPO_ROOT/rgaa-rs/crates/rgaa-mcp/src/server.rs" | sed 's/name = "//; s/"//' | sort -u | sed '/^explore$/d')
   documented_tools=$(grep -oE '^\| *`[a-z_]+` *\|' "$PLUGIN_ROOT/README.md" | tr -d '|` ' | sort -u)
   if [[ "$registered_tools" != "$documented_tools" ]]; then
     fail "README MCP tool table differs from tools registered in rgaa-mcp"

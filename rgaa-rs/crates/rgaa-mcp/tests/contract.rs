@@ -16,23 +16,37 @@ use std::sync::Arc;
 /// server, so growing it is a deliberate act: #166 adds `lint_static`.
 #[test]
 fn exposes_every_registered_agent_tool() {
-    assert_eq!(
-        ToolServer::tool_names(),
-        [
-            "analyze",
-            "remediate",
-            "igt",
-            "audit_url",
-            "get_audit_result",
-            "list_criteria",
-            "lint_static",
-            "source_map",
-            "verify_fix",
-            "get_test_methodology",
-            "list_analysis_plugins",
-            "run_analysis_plugin",
-        ]
-    );
+    let mut expected: Vec<&str> = vec![
+        "analyze",
+        "remediate",
+        "igt",
+        "audit_url",
+        "get_audit_result",
+        "list_criteria",
+        "lint_static",
+        "source_map",
+        "verify_fix",
+        "get_test_methodology",
+        "list_analysis_plugins",
+        "run_analysis_plugin",
+    ];
+    #[cfg(feature = "dev-explore")]
+    expected.insert(0, "explore");
+    assert_eq!(ToolServer::tool_names().to_vec(), expected);
+}
+
+/// The dev exploration tool must be registered only when compiled in.
+#[test]
+fn explore_is_advertised_only_with_the_dev_feature() {
+    let names: Vec<String> = ToolServer::tool_router()
+        .list_all()
+        .into_iter()
+        .map(|tool| tool.name.to_string())
+        .collect();
+    #[cfg(feature = "dev-explore")]
+    assert!(names.iter().any(|name| name == "explore"));
+    #[cfg(not(feature = "dev-explore"))]
+    assert!(!names.iter().any(|name| name == "explore"));
 }
 
 /// P-00 acceptance criterion 4: the DTO and the registered tool schema must

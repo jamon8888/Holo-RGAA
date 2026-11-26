@@ -1,4 +1,6 @@
 pub mod analyze;
+#[cfg(feature = "dev-explore")]
+pub mod explore;
 pub mod export;
 pub mod igt;
 pub mod metrics;

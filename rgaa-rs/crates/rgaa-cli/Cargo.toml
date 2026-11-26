@@ -7,6 +7,8 @@ edition = "2021"
 
 [features]
 default = ["plugin-echo", "plugin-contrast", "plugin-colorvision", "plugin-lang", "plugin-layout"]
+# Dev-only exploration hints. Not part of the audit path; never enabled by default.
+dev-explore = ["dep:rgaa-explore"]
 plugin-echo = ["rgaa-analysis/plugin-echo", "rgaa-mcp-http/plugin-echo", "rgaa-plugins/plugin-echo"]
 plugin-contrast = ["rgaa-analysis/plugin-contrast", "rgaa-mcp-http/plugin-contrast", "rgaa-plugins/plugin-contrast"]
 plugin-colorvision = ["rgaa-analysis/plugin-colorvision", "rgaa-mcp-http/plugin-colorvision", "rgaa-plugins/plugin-colorvision"]
@@ -34,6 +36,7 @@ indexmap = { workspace = true }
 rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
 rgaa-plugins = { path = "../rgaa-plugins", default-features = false }
 rgaa-core = { path = "../rgaa-core" }
+rgaa-explore = { path = "../rgaa-explore", optional = true }
 rgaa-license = { path = "../rgaa-license", default-features = false }
 rgaa-mcp-http = { path = "../rgaa-mcp-http", default-features = false }
 rgaa-obscura = { path = "../rgaa-obscura" }

@@ -66,7 +66,7 @@ pub struct Mechanism {
     #[serde(default)]
     pub tests: Vec<String>,
     pub outcomes: Vec<Outcome>,
-<<    /// Plafond de verdict (#279). `Some(Review)` : une violation de ce mécanisme ne
+    /// Plafond de verdict (#279). `Some(Review)` : une violation de ce mécanisme ne
     /// produit jamais `fail`, seulement `review` (indice « suspect », spec §7.1).
     /// Absent : comportement inchangé.
     #[serde(default)]

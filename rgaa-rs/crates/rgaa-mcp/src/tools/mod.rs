@@ -1,4 +1,6 @@
 pub mod analyze;
+#[cfg(feature = "dev-explore")]
+pub mod explore;
 pub mod igt;
 pub mod lint;
 pub mod remediate;
@@ -6,6 +8,8 @@ pub mod source_map;
 pub mod verify_fix;
 
 pub use analyze::*;
+#[cfg(feature = "dev-explore")]
+pub use explore::*;
 pub use igt::*;
 pub use lint::*;
 pub use remediate::*;

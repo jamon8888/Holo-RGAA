@@ -941,13 +941,33 @@ pub struct ToolServer {
     guided_service: Arc<dyn GuidedService>,
     audit_service: Arc<dyn AuditOrchestrationService>,
     storage_service: Arc<dyn AuditStorageService>,
-<<    analysis_service: Arc<dyn AnalysisService>,
+    analysis_service: Arc<dyn AnalysisService>,
     license: Arc<LicenseGate>,
 }
 
 impl ToolServer {
+    #[cfg(not(feature = "dev-explore"))]
     pub const fn tool_names() -> [&'static str; 12] {
         [
+            "analyze",
+            "remediate",
+            "igt",
+            "audit_url",
+            "get_audit_result",
+            "list_criteria",
+            "lint_static",
+            "source_map",
+            "verify_fix",
+            "get_test_methodology",
+            "list_analysis_plugins",
+            "run_analysis_plugin",
+        ]
+    }
+
+    #[cfg(feature = "dev-explore")]
+    pub const fn tool_names() -> [&'static str; 13] {
+        [
+            "explore",
             "analyze",
             "remediate",
             "igt",
@@ -994,7 +1014,7 @@ impl ToolServer {
             guided_service: guided,
             audit_service: audit,
             storage_service: storage,
-<<            analysis_service: analysis,
+            analysis_service: analysis,
             // Local default: tier gating from the installed licence, no
             // quota (a counter in a user-writable file is not enforceable on
             // the user's own machine). The hosted HTTP server replaces it
@@ -1096,332 +1116,364 @@ impl ToolServer {
     }
 }
 
-#[tool_router(vis = "pub")]
-impl ToolServer {
-    #[tool(
-        name = "analyze",
-        description = "Analyze a URL for RGAA accessibility findings. Returns detailed per-criterion findings with criterion_id, status (Pass/Fail/NeedsReview/NotTested/NotApplicable/Error), source (axe-core/gap-fix/agent/manual), evidence, and justification. Note: Both Manuel and PartiellementAutomatable criteria map to NeedsReview status — watch this single status for human-review items."
-    )]
-    pub async fn analyze(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<AnalyzeRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<AnalyzeResponse>, ErrorData> {
-        self.admit("analyze")?;
-        let domain = request.0.to_domain().map_err(McpFailure::into_error_data)?;
-        let result = self
-            .analyze_service
-            .analyze(domain)
-            .await
-            .map_err(McpFailure::into_error_data)?;
-        if !result.completed && result.errors.is_empty() {
-            return Err(
-                McpFailure::incomplete("analysis returned incomplete empty result")
-                    .into_error_data(),
-            );
-        }
-        Ok(rmcp::handler::server::wrapper::Json(
-            AnalyzeResponse::from_result(result),
-        ))
-    }
-
-    #[tool(
-        name = "remediate",
-        description = "Create approval-gated remediation guidance for accessibility issues."
-    )]
-    pub fn remediate(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<RemediationRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<RemediationResponse>, ErrorData> {
-        self.admit("remediate")?;
-        let inputs = request.0.issues;
-        RemediationRequest::validate_issue_count(inputs.len())
-            .map_err(McpFailure::into_error_data)?;
-        let input_ids: Vec<String> = inputs.iter().map(|issue| issue.id.clone()).collect();
-        let issues: Vec<rgaa_remediation::RemediationIssue> =
-            inputs.into_iter().map(Into::into).collect();
-        let outcomes = self
-            .remediation_service
-            .remediate(issues)
-            .map_err(McpFailure::into_error_data)?;
-        validate_outcomes(&input_ids, &outcomes).map_err(McpFailure::into_error_data)?;
-        Ok(rmcp::handler::server::wrapper::Json(RemediationResponse {
-            outcomes: outcomes.into_iter().map(Into::into).collect(),
-        }))
-    }
-
-    #[tool(
-        name = "igt",
-        description = "[DEPRECATED] Use `analyze` with `config.igt_tools: [\"keyboard\"]` instead. Run a bounded, reproducible intelligent guided accessibility test (keyboard navigation). Reports keyboard-trap after 5 consecutive tabs on the same element. Sets status: incomplete with terminated_reason: ExecutionError on CDP failures."
-    )]
-    pub async fn igt(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<GuidedTestRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<GuidedTestResponse>, ErrorData> {
-        self.admit("igt")?;
-        let test: rgaa_obscura::GuidedTest = request.0.test.into();
-        let result = self
-            .guided_service
-            .run(test)
-            .await
-            .map_err(McpFailure::into_error_data)?;
-        Ok(rmcp::handler::server::wrapper::Json(
-            GuidedTestResponse::from(result),
-        ))
-    }
-
-    #[tool(
-        name = "audit_url",
-        description = "Run an RGAA audit on a URL using the orchestrator pipeline. `audit_type` selects the scope: rapide (25 criteria), complementaire (50) or complet (106, the default). Only in-scope criteria are evaluated — a rapide audit makes no LLM call for the other 81. Returns a summary (audit_type, taux_global, etat_conformite) and sampled_page_urls. A rapide audit never yields a conformity declaration. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
-    )]
-    pub async fn audit_url(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<AuditUrlInput>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<AuditUrlResult>, ErrorData> {
-        self.admit("audit_url")?;
-        let input = request.0;
-        let config = input.config.unwrap_or_default().into();
-        let result = self
-            .audit_service
-            .run_audit(&input.url, &config, input.audit_type)
-            .await
-            .map_err(|e| McpFailure::execution(e).into_error_data())?;
-        Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(
-            result,
-        )))
-    }
-
-    #[tool(
-        name = "get_audit_result",
-        description = "Retrieve a previously run audit by its ID."
-    )]
-    pub async fn get_audit_result(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<GetAuditInput>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<Option<AuditResultDto>>, ErrorData> {
-        self.admit("get_audit_result")?;
-        let result = self
-            .storage_service
-            .get_audit(&request.0.audit_id)
-            .await
-            .map_err(|e| McpFailure::execution(e).into_error_data())?;
-        Ok(rmcp::handler::server::wrapper::Json(
-            result.map(AuditResultDto::from),
-        ))
-    }
-
-    #[tool(
-        name = "source_map",
-        description = "Relocate browser findings to the template that produced them. Takes a source_root directory and findings carrying a CSS selector and/or the element's outerHTML, and returns a source_location (file, line, column, snippet) per mapped finding. Matching is a best-effort literal search — the browser reports the rendered DOM while the repository holds templates, so there is no exact inverse. Supports React JSX, Vue SFC, Angular and vanilla HTML. Findings that stay ambiguous are returned in `unmappable` with a reason instead of a guessed location; always check `confidence` and `matched_on` before editing."
-    )]
-    pub async fn source_map(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<SourceMapRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<SourceMapResponse>, ErrorData> {
-        self.admit("source_map")?;
-        let request = request.0;
-        SourceMapRequest::validate_finding_count(request.findings.len())
-            .map_err(McpFailure::into_error_data)?;
-
-        // The scan walks directories and reads files synchronously. Run
-        // directly, it occupies a Tokio worker for its whole duration without
-        // ever yielding, so a scan on a slow filesystem stalls unrelated
-        // requests and the SSE progress stream on the same worker.
-        let response = tokio::task::spawn_blocking(move || {
-            crate::tools::source_map::map_findings(&request.source_root, &request.findings)
-        })
-        .await
-        .map_err(|error| {
-            McpFailure::execution(format!("source_map scan task failed: {error}")).into_error_data()
-        })?
-        .map_err(McpFailure::into_error_data)?;
-        Ok(rmcp::handler::server::wrapper::Json(response))
-    }
-
-    #[tool(
-        name = "verify_fix",
-        description = "Re-verify corrected files against a reference audit bundle. Re-runs the same analysis used by `analyze` on each corrected file's page and diffs the result against the reference with the shared baseline comparison, returning findings as fixed / remaining / new, plus `unverified` for pages that could not be re-analysed. Citations from the reference audit's criterion verdicts travel with each finding. Each page gets at most 30s."
-    )]
-    pub async fn verify_fix(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<VerifyFixRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<VerifyFixResponse>, ErrorData> {
-        self.admit("verify_fix")?;
-        let input = request.0;
-        if input.files.is_empty() || input.files.len() > MAX_FILES {
-            return Err(McpFailure::invalid(format!(
-                "files must contain between 1 and {MAX_FILES} items"
-            ))
-            .into_error_data());
-        }
-        let reference: rgaa_core::AuditBundle = serde_json::from_value(input.reference_audit)
-            .map_err(|error| {
-                McpFailure::invalid(format!("reference_audit is not an AuditBundle: {error}"))
-                    .into_error_data()
-            })?;
-
-        // Clamp rather than reject: the ceiling is a safety property of this
-        // server, not a caller preference, and a caller asking for longer
-        // should still get an answer.
-        let budget = std::time::Duration::from_millis(
-            input
-                .per_file_timeout_ms
-                .unwrap_or(MAX_PER_FILE_TIMEOUT_MS)
-                .clamp(1, MAX_PER_FILE_TIMEOUT_MS),
-        );
-
-        // Several corrected files routinely live behind one page. Analysing
-        // per distinct URL keeps one browser run per page and, more
-        // importantly, stops the same page's findings entering the diff
-        // twice — duplicates would inflate every category.
-        let mut outcomes: Vec<(String, Result<Vec<rgaa_core::Finding>, FileFailure>)> = Vec::new();
-        for file in &input.files {
-            if outcomes.iter().any(|(url, _)| url == &file.url) {
-                continue;
-            }
-            let outcome = self.verify_one_page(&file.url, budget).await;
-            outcomes.push((file.url.clone(), outcome));
-        }
-
-        let mut scope = VerificationScope {
-            verified_urls: std::collections::HashSet::new(),
-            unverified_urls: std::collections::HashSet::new(),
-        };
-        let mut current_findings = Vec::new();
-        for (url, outcome) in &outcomes {
-            match outcome {
-                Ok(findings) => {
-                    scope.verified_urls.insert(url.clone());
-                    current_findings.extend(findings.iter().cloned());
-                }
-                Err(_) => {
-                    scope.unverified_urls.insert(url.clone());
-                }
-            }
-        }
-
-        let files = input
-            .files
-            .iter()
-            .map(|file| {
-                let outcome = outcomes
-                    .iter()
-                    .find(|(url, _)| url == &file.url)
-                    .map(|(_, outcome)| outcome);
-                let (status, message) = match outcome {
-                    Some(Ok(_)) | None => (FileVerificationStatus::Verified, None),
-                    Some(Err(FileFailure::TimedOut)) => (
-                        FileVerificationStatus::TimedOut,
-                        Some(format!("re-analysis exceeded {} ms", budget.as_millis())),
-                    ),
-                    Some(Err(FileFailure::Failed(message))) => {
-                        (FileVerificationStatus::Failed, Some(redact(message)))
+macro_rules! tool_router_impl {
+    ($($extra_tool:item)*) => {
+        #[tool_router(vis = "pub")]
+        impl ToolServer {
+            $($extra_tool)*
+                #[tool(
+                    name = "analyze",
+                    description = "Analyze a URL for RGAA accessibility findings. Returns detailed per-criterion findings with criterion_id, status (Pass/Fail/NeedsReview/NotTested/NotApplicable/Error), source (axe-core/gap-fix/agent/manual), evidence, and justification. Note: Both Manuel and PartiellementAutomatable criteria map to NeedsReview status — watch this single status for human-review items."
+                )]
+                pub async fn analyze(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<AnalyzeRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<AnalyzeResponse>, ErrorData> {
+                    self.admit("analyze")?;
+                    let domain = request.0.to_domain().map_err(McpFailure::into_error_data)?;
+                    let result = self
+                        .analyze_service
+                        .analyze(domain)
+                        .await
+                        .map_err(McpFailure::into_error_data)?;
+                    if !result.completed && result.errors.is_empty() {
+                        return Err(
+                            McpFailure::incomplete("analysis returned incomplete empty result")
+                                .into_error_data(),
+                        );
                     }
-                };
-                FileVerificationDto {
-                    path: file.path.clone(),
-                    url: file.url.clone(),
-                    status,
-                    message,
+                    Ok(rmcp::handler::server::wrapper::Json(
+                        AnalyzeResponse::from_result(result),
+                    ))
                 }
-            })
-            .collect();
 
-        Ok(rmcp::handler::server::wrapper::Json(categorize(
-            &reference,
-            &scope,
-            current_findings,
-            files,
-        )))
-    }
+                #[tool(
+                    name = "remediate",
+                    description = "Create approval-gated remediation guidance for accessibility issues."
+                )]
+                pub fn remediate(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<RemediationRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<RemediationResponse>, ErrorData> {
+                    self.admit("remediate")?;
+                    let inputs = request.0.issues;
+                    RemediationRequest::validate_issue_count(inputs.len())
+                        .map_err(McpFailure::into_error_data)?;
+                    let input_ids: Vec<String> = inputs.iter().map(|issue| issue.id.clone()).collect();
+                    let issues: Vec<rgaa_remediation::RemediationIssue> =
+                        inputs.into_iter().map(Into::into).collect();
+                    let outcomes = self
+                        .remediation_service
+                        .remediate(issues)
+                        .map_err(McpFailure::into_error_data)?;
+                    validate_outcomes(&input_ids, &outcomes).map_err(McpFailure::into_error_data)?;
+                    Ok(rmcp::handler::server::wrapper::Json(RemediationResponse {
+                        outcomes: outcomes.into_iter().map(Into::into).collect(),
+                    }))
+                }
 
-    #[tool(
-        name = "list_criteria",
-        description = "List all 106 RGAA criteria with their IDs, titles, and classifications."
-    )]
-    pub fn list_criteria(
-        &self,
-    ) -> Result<rmcp::handler::server::wrapper::Json<ListCriteriaResponse>, ErrorData> {
-        self.admit("list_criteria")?;
-        let criteria = rgaa_core::RgaaCriteria::all()
-            .iter()
-            .map(|c| CriterionDto {
-                id: c.id.to_string(),
-                title: c.title.clone(),
-                classification: format!("{:?}", c.classification),
-            })
-            .collect();
-        Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
-            criteria,
-        }))
-    }
+                #[tool(
+                    name = "igt",
+                    description = "[DEPRECATED] Use `analyze` with `config.igt_tools: [\"keyboard\"]` instead. Run a bounded, reproducible intelligent guided accessibility test (keyboard navigation). Reports keyboard-trap after 5 consecutive tabs on the same element. Sets status: incomplete with terminated_reason: ExecutionError on CDP failures."
+                )]
+                pub async fn igt(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<GuidedTestRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<GuidedTestResponse>, ErrorData> {
+                    self.admit("igt")?;
+                    let test: rgaa_obscura::GuidedTest = request.0.test.into();
+                    let result = self
+                        .guided_service
+                        .run(test)
+                        .await
+                        .map_err(McpFailure::into_error_data)?;
+                    Ok(rmcp::handler::server::wrapper::Json(
+                        GuidedTestResponse::from(result),
+                    ))
+                }
 
-    #[tool(
-        name = "get_test_methodology",
-        description = "Return the official RGAA test method for one test key (e.g. \"1.2.3\"): the numbered verification steps from RGAA/methodologies.json (DISIC/accessibilite.numerique.gouv.fr, pinned commit). Skills cite this instead of describing a method from memory. Returns `methodology: null` when the key is not an RGAA 4.1.2 test."
-    )]
-    pub fn get_test_methodology(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<GetTestMethodologyRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<GetTestMethodologyResponse>, ErrorData> {
-        let test = request.0.test;
-        let methodology = rgaa_core::RgaaMethodologies::get(&test);
-        Ok(rmcp::handler::server::wrapper::Json(
-            GetTestMethodologyResponse {
-                test,
-                methodology: methodology.map(|steps| steps.to_string()),
-                source: format!(
-                    "RGAA/methodologies.json @ DISIC/accessibilite.numerique.gouv.fr commit {}",
-                    rgaa_core::METHODOLOGIES_COMMIT
-                ),
-            },
-        ))
-    }
+                #[tool(
+                    name = "audit_url",
+                    description = "Run an RGAA audit on a URL using the orchestrator pipeline. `audit_type` selects the scope: rapide (25 criteria), complementaire (50) or complet (106, the default). Only in-scope criteria are evaluated — a rapide audit makes no LLM call for the other 81. Returns a summary (audit_type, taux_global, etat_conformite) and sampled_page_urls. A rapide audit never yields a conformity declaration. IMPORTANT: This returns a summary only — for per-criterion details with evidence, use the `analyze` tool on URLs from sampled_page_urls."
+                )]
+                pub async fn audit_url(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<AuditUrlInput>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<AuditUrlResult>, ErrorData> {
+                    self.admit("audit_url")?;
+                    let input = request.0;
+                    let config = input.config.unwrap_or_default().into();
+                    let result = self
+                        .audit_service
+                        .run_audit(&input.url, &config, input.audit_type)
+                        .await
+                        .map_err(|e| McpFailure::execution(e).into_error_data())?;
+                    Ok(rmcp::handler::server::wrapper::Json(AuditUrlResult::from(
+                        result,
+                    )))
+                }
 
-    #[tool(
-        name = "list_analysis_plugins",
-        description = "List compiled analysis plugins with their versions, RGAA tests, required models and presence. Sidecars show their exact command and executable digest. Plugins produce proofs, never statuses."
-    )]
-    pub fn list_analysis_plugins(
-        &self,
-    ) -> Result<rmcp::handler::server::wrapper::Json<ListAnalysisPluginsResponse>, ErrorData> {
-        Ok(rmcp::handler::server::wrapper::Json(
-            ListAnalysisPluginsResponse {
-                plugins: self.analysis_service.list(),
-            },
-        ))
-    }
+                #[tool(
+                    name = "get_audit_result",
+                    description = "Retrieve a previously run audit by its ID."
+                )]
+                pub async fn get_audit_result(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<GetAuditInput>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<Option<AuditResultDto>>, ErrorData> {
+                    self.admit("get_audit_result")?;
+                    let result = self
+                        .storage_service
+                        .get_audit(&request.0.audit_id)
+                        .await
+                        .map_err(|e| McpFailure::execution(e).into_error_data())?;
+                    Ok(rmcp::handler::server::wrapper::Json(
+                        result.map(AuditResultDto::from),
+                    ))
+                }
 
-    #[tool(
-        name = "run_analysis_plugin",
-        description = "Run one analysis plugin on a URL and return its Preuve values (measurements, artefacts, hashes). No status or verdict is returned: the orchestrator and a human reviewer decide (R-P1)."
-    )]
-    pub async fn run_analysis_plugin(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<RunAnalysisPluginInput>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<RunAnalysisPluginResponse>, ErrorData> {
-        let input = request.0;
-        let preuves = self
-            .analysis_service
-            .run(&input.url, &input.plugin, &input.options)
-            .await
-            .map_err(McpFailure::into_error_data)?;
-        Ok(rmcp::handler::server::wrapper::Json(
-            RunAnalysisPluginResponse { preuves },
-        ))
-    }
+                #[tool(
+                    name = "source_map",
+                    description = "Relocate browser findings to the template that produced them. Takes a source_root directory and findings carrying a CSS selector and/or the element's outerHTML, and returns a source_location (file, line, column, snippet) per mapped finding. Matching is a best-effort literal search — the browser reports the rendered DOM while the repository holds templates, so there is no exact inverse. Supports React JSX, Vue SFC, Angular and vanilla HTML. Findings that stay ambiguous are returned in `unmappable` with a reason instead of a guessed location; always check `confidence` and `matched_on` before editing."
+                )]
+                pub async fn source_map(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<SourceMapRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<SourceMapResponse>, ErrorData> {
+                    self.admit("source_map")?;
+                    let request = request.0;
+                    SourceMapRequest::validate_finding_count(request.findings.len())
+                        .map_err(McpFailure::into_error_data)?;
 
-    #[tool(
-        name = "lint_static",
-        description = "Lint HTML, JSX/TSX or Vue source for accessibility defects without a browser: missing img alt, unlabelled form controls, nameless buttons and links. Returns line/column, rule, severity and a fix hint per finding, against a selectable profile (rgaa-4.1, wcag-2.1-aa, section-508). Sub-millisecond per file, so it suits an edit loop — it is a first pass over source, NOT a conformance verdict: use `analyze` on a rendered page for that. Pass `source_files` to have the files read from disk and findings mapped onto their real paths."
-    )]
-    pub fn lint_static(
-        &self,
-        request: rmcp::handler::server::wrapper::Parameters<LintStaticRequest>,
-    ) -> Result<rmcp::handler::server::wrapper::Json<LintStaticResponse>, ErrorData> {
-        self.admit("lint_static")?;
-        let report = request.0.run().map_err(McpFailure::into_error_data)?;
-        Ok(rmcp::handler::server::wrapper::Json(report))
-    }
+                    // The scan walks directories and reads files synchronously. Run
+                    // directly, it occupies a Tokio worker for its whole duration without
+                    // ever yielding, so a scan on a slow filesystem stalls unrelated
+                    // requests and the SSE progress stream on the same worker.
+                    let response = tokio::task::spawn_blocking(move || {
+                        crate::tools::source_map::map_findings(&request.source_root, &request.findings)
+                    })
+                    .await
+                    .map_err(|error| {
+                        McpFailure::execution(format!("source_map scan task failed: {error}")).into_error_data()
+                    })?
+                    .map_err(McpFailure::into_error_data)?;
+                    Ok(rmcp::handler::server::wrapper::Json(response))
+                }
+
+                #[tool(
+                    name = "verify_fix",
+                    description = "Re-verify corrected files against a reference audit bundle. Re-runs the same analysis used by `analyze` on each corrected file's page and diffs the result against the reference with the shared baseline comparison, returning findings as fixed / remaining / new, plus `unverified` for pages that could not be re-analysed. Citations from the reference audit's criterion verdicts travel with each finding. Each page gets at most 30s."
+                )]
+                pub async fn verify_fix(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<VerifyFixRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<VerifyFixResponse>, ErrorData> {
+                    self.admit("verify_fix")?;
+                    let input = request.0;
+                    if input.files.is_empty() || input.files.len() > MAX_FILES {
+                        return Err(McpFailure::invalid(format!(
+                            "files must contain between 1 and {MAX_FILES} items"
+                        ))
+                        .into_error_data());
+                    }
+                    let reference: rgaa_core::AuditBundle = serde_json::from_value(input.reference_audit)
+                        .map_err(|error| {
+                            McpFailure::invalid(format!("reference_audit is not an AuditBundle: {error}"))
+                                .into_error_data()
+                        })?;
+
+                    // Clamp rather than reject: the ceiling is a safety property of this
+                    // server, not a caller preference, and a caller asking for longer
+                    // should still get an answer.
+                    let budget = std::time::Duration::from_millis(
+                        input
+                            .per_file_timeout_ms
+                            .unwrap_or(MAX_PER_FILE_TIMEOUT_MS)
+                            .clamp(1, MAX_PER_FILE_TIMEOUT_MS),
+                    );
+
+                    // Several corrected files routinely live behind one page. Analysing
+                    // per distinct URL keeps one browser run per page and, more
+                    // importantly, stops the same page's findings entering the diff
+                    // twice — duplicates would inflate every category.
+                    let mut outcomes: Vec<(String, Result<Vec<rgaa_core::Finding>, FileFailure>)> = Vec::new();
+                    for file in &input.files {
+                        if outcomes.iter().any(|(url, _)| url == &file.url) {
+                            continue;
+                        }
+                        let outcome = self.verify_one_page(&file.url, budget).await;
+                        outcomes.push((file.url.clone(), outcome));
+                    }
+
+                    let mut scope = VerificationScope {
+                        verified_urls: std::collections::HashSet::new(),
+                        unverified_urls: std::collections::HashSet::new(),
+                    };
+                    let mut current_findings = Vec::new();
+                    for (url, outcome) in &outcomes {
+                        match outcome {
+                            Ok(findings) => {
+                                scope.verified_urls.insert(url.clone());
+                                current_findings.extend(findings.iter().cloned());
+                            }
+                            Err(_) => {
+                                scope.unverified_urls.insert(url.clone());
+                            }
+                        }
+                    }
+
+                    let files = input
+                        .files
+                        .iter()
+                        .map(|file| {
+                            let outcome = outcomes
+                                .iter()
+                                .find(|(url, _)| url == &file.url)
+                                .map(|(_, outcome)| outcome);
+                            let (status, message) = match outcome {
+                                Some(Ok(_)) | None => (FileVerificationStatus::Verified, None),
+                                Some(Err(FileFailure::TimedOut)) => (
+                                    FileVerificationStatus::TimedOut,
+                                    Some(format!("re-analysis exceeded {} ms", budget.as_millis())),
+                                ),
+                                Some(Err(FileFailure::Failed(message))) => {
+                                    (FileVerificationStatus::Failed, Some(redact(message)))
+                                }
+                            };
+                            FileVerificationDto {
+                                path: file.path.clone(),
+                                url: file.url.clone(),
+                                status,
+                                message,
+                            }
+                        })
+                        .collect();
+
+                    Ok(rmcp::handler::server::wrapper::Json(categorize(
+                        &reference,
+                        &scope,
+                        current_findings,
+                        files,
+                    )))
+                }
+
+                #[tool(
+                    name = "list_criteria",
+                    description = "List all 106 RGAA criteria with their IDs, titles, and classifications."
+                )]
+                pub fn list_criteria(
+                    &self,
+                ) -> Result<rmcp::handler::server::wrapper::Json<ListCriteriaResponse>, ErrorData> {
+                    self.admit("list_criteria")?;
+                    let criteria = rgaa_core::RgaaCriteria::all()
+                        .iter()
+                        .map(|c| CriterionDto {
+                            id: c.id.to_string(),
+                            title: c.title.clone(),
+                            classification: format!("{:?}", c.classification),
+                        })
+                        .collect();
+                    Ok(rmcp::handler::server::wrapper::Json(ListCriteriaResponse {
+                        criteria,
+                    }))
+                }
+
+                #[tool(
+                    name = "get_test_methodology",
+                    description = "Return the official RGAA test method for one test key (e.g. \"1.2.3\"): the numbered verification steps from RGAA/methodologies.json (DISIC/accessibilite.numerique.gouv.fr, pinned commit). Skills cite this instead of describing a method from memory. Returns `methodology: null` when the key is not an RGAA 4.1.2 test."
+                )]
+                pub fn get_test_methodology(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<GetTestMethodologyRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<GetTestMethodologyResponse>, ErrorData> {
+                    let test = request.0.test;
+                    let methodology = rgaa_core::RgaaMethodologies::get(&test);
+                    Ok(rmcp::handler::server::wrapper::Json(
+                        GetTestMethodologyResponse {
+                            test,
+                            methodology: methodology.map(|steps| steps.to_string()),
+                            source: format!(
+                                "RGAA/methodologies.json @ DISIC/accessibilite.numerique.gouv.fr commit {}",
+                                rgaa_core::METHODOLOGIES_COMMIT
+                            ),
+                        },
+                    ))
+                }
+
+                #[tool(
+                    name = "list_analysis_plugins",
+                    description = "List compiled analysis plugins with their versions, RGAA tests, required models and presence. Sidecars show their exact command and executable digest. Plugins produce proofs, never statuses."
+                )]
+                pub fn list_analysis_plugins(
+                    &self,
+                ) -> Result<rmcp::handler::server::wrapper::Json<ListAnalysisPluginsResponse>, ErrorData> {
+                    Ok(rmcp::handler::server::wrapper::Json(
+                        ListAnalysisPluginsResponse {
+                            plugins: self.analysis_service.list(),
+                        },
+                    ))
+                }
+
+                #[tool(
+                    name = "run_analysis_plugin",
+                    description = "Run one analysis plugin on a URL and return its Preuve values (measurements, artefacts, hashes). No status or verdict is returned: the orchestrator and a human reviewer decide (R-P1)."
+                )]
+                pub async fn run_analysis_plugin(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<RunAnalysisPluginInput>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<RunAnalysisPluginResponse>, ErrorData> {
+                    let input = request.0;
+                    let preuves = self
+                        .analysis_service
+                        .run(&input.url, &input.plugin, &input.options)
+                        .await
+                        .map_err(McpFailure::into_error_data)?;
+                    Ok(rmcp::handler::server::wrapper::Json(
+                        RunAnalysisPluginResponse { preuves },
+                    ))
+                }
+
+                #[tool(
+                    name = "lint_static",
+                    description = "Lint HTML, JSX/TSX or Vue source for accessibility defects without a browser: missing img alt, unlabelled form controls, nameless buttons and links. Returns line/column, rule, severity and a fix hint per finding, against a selectable profile (rgaa-4.1, wcag-2.1-aa, section-508). Sub-millisecond per file, so it suits an edit loop — it is a first pass over source, NOT a conformance verdict: use `analyze` on a rendered page for that. Pass `source_files` to have the files read from disk and findings mapped onto their real paths."
+                )]
+                pub fn lint_static(
+                    &self,
+                    request: rmcp::handler::server::wrapper::Parameters<LintStaticRequest>,
+                ) -> Result<rmcp::handler::server::wrapper::Json<LintStaticResponse>, ErrorData> {
+                    self.admit("lint_static")?;
+                    let report = request.0.run().map_err(McpFailure::into_error_data)?;
+                    Ok(rmcp::handler::server::wrapper::Json(report))
+                }
+        }
+    };
+}
+
+#[cfg(not(feature = "dev-explore"))]
+tool_router_impl!();
+
+#[cfg(feature = "dev-explore")]
+tool_router_impl! {
+        /// Dev-only exploration hints. Never a verdict, finding or evidence.
+        #[tool(
+            name = "explore",
+            description = "Explore a URL with the pinned Obscura substrate via agent-browser. Returns exploration_hints only: no verdict, no finding, no evidence. Candidates require reproduction through the audit tools before any status changes."
+        )]
+        pub async fn explore(
+            &self,
+            request: rmcp::handler::server::wrapper::Parameters<ExploreRequest>,
+        ) -> Result<rmcp::handler::server::wrapper::Json<serde_json::Value>, ErrorData> {
+            let options = request
+                .0
+                .into_options()
+                .map_err(|error| McpFailure::invalid(error).into_error_data())?;
+            let result = rgaa_explore::explore(options)
+                .await
+                .map_err(|error| McpFailure::execution(error.to_string()).into_error_data())?;
+            let value = serde_json::to_value(result)
+                .map_err(|error| McpFailure::execution(error.to_string()).into_error_data())?;
+            Ok(rmcp::handler::server::wrapper::Json(value))
+        }
 }
 
 #[tool_handler]

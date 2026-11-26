@@ -388,6 +388,41 @@ async fn a_presentation_table_is_linearised_against_visual_order() {
 }
 
 #[tokio::test]
+async fn une_cellule_cachee_est_exclue_de_la_linearisation() {
+    let proofs = analyze(
+        r##"{
+            "nodes":[
+              {"selecteur":"td.a","tag":"td","text":"A","bbox":{"x":0,"y":0,"width":50,"height":20}},
+              {"selecteur":"td.b","tag":"td","text":"B","bbox":{"x":100,"y":0,"width":50,"height":20}},
+              {"selecteur":"td.cachee","tag":"td","text":"C","visibility":"hidden","bbox":{"x":200,"y":0,"width":50,"height":20}}
+            ],
+            "tables":[{
+              "selecteur":"table.layout","presentation":true,
+              "rows":[[{"node":0,"tag":"td"},{"node":1,"tag":"td"},{"node":2,"tag":"td"}]]
+            }]
+        }"##,
+        Some("fr"),
+        20,
+    )
+    .await;
+    let linear = proof(&proofs, "linearisation");
+    assert_eq!(
+        linear.mesures["ordre_dom"]
+            .as_array()
+            .expect("ordre DOM")
+            .len(),
+        2
+    );
+    assert_eq!(
+        linear.mesures["ordre_visuel"]
+            .as_array()
+            .expect("ordre visuel")
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn forbidden_actions_are_never_simulated() {
     let proofs = analyze(
         r##"{

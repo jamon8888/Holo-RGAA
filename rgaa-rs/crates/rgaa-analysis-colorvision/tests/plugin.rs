@@ -1,5 +1,6 @@
 //! The plugin produces proofs only (R-P1), with the `mesures` shape of P-02 §5.
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rgaa_analysis::capture::{NoopResourceFetcher, PageCapture, RgbaImage};
 use rgaa_analysis::types::{PluginOptions, Portee};
 use rgaa_analysis::AnalysisPlugin;
@@ -173,6 +174,10 @@ async fn a_simulation_where_information_collapses_yields_vignettes() {
         assert_eq!(artefact.media_type, "image/png");
         assert!(artefact.chemin_bundle.starts_with("analysis/colorvision/"));
         assert_eq!(artefact.sha256.len(), 64);
+        let bytes = STANDARD
+            .decode(artefact.contenu_base64.as_deref().expect("PNG payload"))
+            .expect("base64 PNG");
+        assert_eq!(rgaa_analysis::sha256_hex(&bytes), artefact.sha256);
     }
     assert_eq!(images_for_model(&proofs), 2);
 }

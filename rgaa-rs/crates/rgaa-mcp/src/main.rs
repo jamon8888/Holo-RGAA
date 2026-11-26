@@ -1,6 +1,6 @@
 use rgaa_mcp::{
     LazyObscuraBridge, NoOpStorageService, ObscuraAnalyzeService, ObscuraGuidedService,
-    OrchestrationService, RemediationServiceImpl, ToolServer,
+    OrchestrationService, RegistryAnalysisService, RemediationServiceImpl, ToolServer,
 };
 use rmcp::{transport::io::stdio, ServiceExt};
 use std::sync::Arc;
@@ -29,15 +29,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
+    // Own CDP port, allocated on the first browser tool call: a failed
+    // allocation must not stop browser-free tools from being served.
     let bridge = Arc::new(LazyObscuraBridge::new(
-        rgaa_obscura::ObscuraBridge::from_env(),
+        rgaa_obscura::ObscuraBridge::from_env().with_deferred_ephemeral_port(),
     ));
-    let service = ToolServer::new(
+    let service = ToolServer::new_with_analysis(
         Arc::new(ObscuraAnalyzeService::new(Arc::clone(&bridge))),
         Arc::new(RemediationServiceImpl::default()),
-        Arc::new(ObscuraGuidedService::new(bridge)),
+        Arc::new(ObscuraGuidedService::new(Arc::clone(&bridge))),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
+        Arc::new(RegistryAnalysisService::with_bridge(bridge)),
     );
     service.serve(stdio()).await?.waiting().await?;
     Ok(())

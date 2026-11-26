@@ -54,6 +54,9 @@ pub struct Artefact {
     pub media_type: String,
     pub chemin_bundle: String,
     pub sha256: String,
+    /// Optional payload for storage callers; base64 keeps binary artefacts JSON-safe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contenu_base64: Option<String>,
 }
 
 /// One measurement produced by a plugin for one or more RGAA tests.

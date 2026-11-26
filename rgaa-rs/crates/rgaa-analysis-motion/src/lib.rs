@@ -106,8 +106,8 @@ impl AnalysisPlugin for MotionPlugin {
             })?;
             let empreinte = sha256_hex(&octets);
             let frames = match type_source {
-                TypeSource::Gif => decode_gif(&octets)?,
-                TypeSource::Video => decode_video_avec_donnees(&url, &octets, &empreinte)?,
+                TypeSource::Gif => decode_gif(&octets, duree)?,
+                TypeSource::Video => decode_video_avec_donnees(&url, &octets, &empreinte, duree)?,
             };
             let frames: Vec<Frame> = frames
                 .into_iter()
@@ -205,13 +205,18 @@ fn sources_media(dom_json: &str) -> Result<IndexMap<String, TypeSource>> {
 
 /// Écrit les octets dans un fichier temporaire : `ffmpeg` lit un chemin, jamais
 /// un flux réseau (R-P3). Le fichier est supprimé même en cas d'erreur.
-fn decode_video_avec_donnees(url: &str, octets: &[u8], empreinte: &str) -> Result<Vec<Frame>> {
+fn decode_video_avec_donnees(
+    url: &str,
+    octets: &[u8],
+    empreinte: &str,
+    duree_s: u32,
+) -> Result<Vec<Frame>> {
     let extension = TypeSource::depuis_url(url).map_or("mp4", TypeSource::prefixe);
     let chemin = std::env::temp_dir().join(format!("rgaa-motion-{empreinte}.{extension}"));
     std::fs::write(&chemin, octets).map_err(|erreur| {
         missing_proof(PLUGIN_ID, &format!("fichier vidéo temporaire : {erreur}"))
     })?;
-    let resultat = decode_video(chemin.to_string_lossy().as_ref());
+    let resultat = decode_video(chemin.to_string_lossy().as_ref(), duree_s);
     let _ = std::fs::remove_file(&chemin);
     resultat
 }

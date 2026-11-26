@@ -33,6 +33,12 @@ enum TopCommand {
         #[command(subcommand)]
         sub: Option<ConfigCommand>,
     },
+    /// Manage the RGAA licence (activate, status, deactivate)
+    #[command(alias = "license")]
+    Licence {
+        #[command(subcommand)]
+        sub: LicenceCommand,
+    },
     /// Show how to install rgaa (delegates to install.sh)
     Install,
     /// Serve the MCP tool server (HTTP + SSE, or `--stdio`)
@@ -46,6 +52,23 @@ enum ConfigCommand {
         #[command(subcommand)]
         what: ConfigSetTarget,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum LicenceCommand {
+    /// Verify a licence key and store it in ~/.config/rgaa/license.toml
+    Activate {
+        /// The licence key (v4.public.…)
+        #[arg(conflicts_with = "file", required_unless_present = "file")]
+        token: Option<String>,
+        /// Read the key from a file instead of the command line
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
+    /// Show tier, status, expiry, grace baseline and quota
+    Status,
+    /// Remove the stored licence (back to the Free tier)
+    Deactivate,
 }
 
 #[derive(Debug, Subcommand)]
@@ -80,8 +103,11 @@ async fn main() {
         }
         Some(TopCommand::Audit { url, export }) => {
             if let Err(e) = rgaa_tui::commands::audit(url, export).await {
+                let code = e
+                    .downcast_ref::<rgaa_cli::CliError>()
+                    .map_or(1, rgaa_cli::CliError::exit_code);
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                std::process::exit(code);
             }
         }
         Some(TopCommand::History { limit }) => {
@@ -104,6 +130,20 @@ async fn main() {
             };
             if let Err(e) = result {
                 eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Some(TopCommand::Licence { sub }) => {
+            let result = match sub {
+                LicenceCommand::Activate { token, file } => {
+                    rgaa_tui::licence::cmd_activate(token, file)
+                }
+                LicenceCommand::Status => rgaa_tui::licence::cmd_status(),
+                LicenceCommand::Deactivate => rgaa_tui::licence::cmd_deactivate(),
+            };
+            if let Err(e) = result {
+                // Already French, user-facing copy: no "Error:" prefix.
+                eprintln!("{e:#}");
                 std::process::exit(1);
             }
         }

@@ -66,7 +66,7 @@ documentée ici mais **non implémentée** dans le plugin natif.
    - la couverture des silences de plus de 2 s.
    La pertinence reste humaine, aidée par le LLM.
 7. **Son automatique** (4.10) : quand `autoplay` est présent sans `muted`, on calcule la durée pendant laquelle l'intensité dépasse −50 LUFS. Au-delà de 3 s, sans contrôle accessible repéré par l'arbre AX : `Suspect`.
-8. **LLM** (Mistral Large 4, texte seul). Pour 4.2, 4.4 et 4.9, on envoie :
+8. **LLM** (Mistral Large 4, texte seul), **uniquement si l'utilisateur a explicitement choisi d'envoyer les transcriptions** (Voxtral, Offre Confort ; critère d'acceptation 4). Sinon, aucun appel : le test reste en `review` avec les seules mesures. Pour 4.2, 4.4 et 4.9, on envoie :
    - les passages manquants ou divergents (extrait Whisper face à l'extrait fourni) ;
    - pas le média.
    La question posée est « l'information essentielle est-elle restituée ? ». La réponse va dans `mesures.avis_modele`.
@@ -107,4 +107,4 @@ documentée ici mais **non implémentée** dans le plugin natif.
    - moins de 10 min pour la transcription avec `small`.
    Le temps mesuré avec `large-v3-turbo` est noté dans le ticket.
 3. Les médias de plus de 60 min sont ignorés par défaut (`opts.duree_max_s`). Le test reste en `review`, avec la mention « non analysé : durée ».
-4. Aucun média ni aucune transcription n'est envoyé à la passerelle, sauf si Voxtral est explicitement choisi (Offre Confort). Le rapport l'indique.
+4. Aucun média ni aucune transcription (ni extrait Whisper, étape 8) n'est envoyé à la passerelle, sauf si Voxtral est explicitement choisi (Offre Confort). Le rapport l'indique. Test : sans ce choix, un passage manquant ne déclenche aucun appel à la passerelle.

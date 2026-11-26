@@ -213,7 +213,7 @@ Un statut « Couvert » ne veut pas dire « testé critère par critère » : vo
 | 12.5 | 3 | Dans chaque ensemble de pages, le moteur de recherche est-il atteignab | Déterministe | — | — | **Sonde partielle** | #270 |
 | 12.6 | 1 | Les zones de regroupement de contenus présentes dans plusieurs pages w | Déterministe | axe:partiel | oui | **Couvert** |  |
 | 12.7 | 2 | Dans chaque page web, un lien d’évitement ou d’accès rapide à la zone  | axe-core | axe:complet, sonde JS:complet | oui | **Couvert** |  |
-| 12.8 | 2 | Dans chaque page web, l’ordre de tabulation est-il cohérent ? | Déterministe | — | oui | **Sonde partielle** | #263 #279 |
+| 12.8 | 2 | Dans chaque page web, l’ordre de tabulation est-il cohérent ? | Déterministe | axe:partiel | oui | **Sonde partielle** | #263 #279 |
 | 12.9 | 1 | Dans chaque page web, la navigation ne doit pas contenir de piège au c | Déterministe | sonde JS:partiel | — | **Sonde partielle** | #264 |
 | 12.10 | 1 | Dans chaque page web, les raccourcis clavier n’utilisant qu’une seule  | Déterministe | — | — | **Sonde partielle** | #272 |
 | 12.11 | 1 | Dans chaque page web, les contenus additionnels apparaissant au survol | Déterministe | — | — | **Sonde partielle** |  |

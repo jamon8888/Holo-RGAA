@@ -48,17 +48,19 @@ check_file "README.md" "Documentation"
 check_file "scripts/check-runtime.sh" "Runtime check script"
 check_file "hooks/hooks.json" "Hooks config"
 
-# Skills — the seven general skills plus the eight analysis-proof skills (P-09).
+# Skills — the seven general skills plus the eight analysis-proof skills (P-09)
+# and visual-remediation from #497.
 # Each analysis skill must exist: a missing SKILL.md is a slash command that
 # silently does not exist, exactly as for the canonical commands below.
 for skill in audit triage remediate verify report guided-test criteria \
-             contraste daltonisme images medias mouvement langue structure pertinence; do
+             contraste daltonisme images medias mouvement langue structure pertinence \
+             visual-remediation; do
   check_file "skills/$skill/SKILL.md" "Skill: $skill"
 done
 
 # Commands — only the canonical tree has them, and a missing command file is a
 # slash command that silently does not exist.
-for command in audit-site audit-project generate-report; do
+for command in audit-site audit-project generate-report remediate-visual; do
   check_file "commands/$command.md" "Command: $command"
 done
 
@@ -93,7 +95,8 @@ fi
 
 # Skill files have required front matter
 for skill in audit triage remediate verify report guided-test criteria \
-             contraste daltonisme images medias mouvement langue structure pertinence; do
+             contraste daltonisme images medias mouvement langue structure pertinence \
+             visual-remediation; do
   if ! grep -q "^name:" "$PLUGIN_ROOT/skills/$skill/SKILL.md" 2>/dev/null; then
     echo "❌ MISSING FRONT MATTER 'name' in skills/$skill/SKILL.md"
     FAILURES=$((FAILURES + 1))
@@ -107,7 +110,7 @@ done
 # Command and agent files have front matter too: a command with no
 # `description` shows up unlabelled in `/plugin`, and an agent with no `name`
 # cannot be addressed.
-for command in audit-site audit-project generate-report; do
+for command in audit-site audit-project generate-report remediate-visual; do
   if ! grep -q "^description:" "$PLUGIN_ROOT/commands/$command.md" 2>/dev/null; then
     echo "❌ MISSING FRONT MATTER 'description' in commands/$command.md"
     FAILURES=$((FAILURES + 1))

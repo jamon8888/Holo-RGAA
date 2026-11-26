@@ -1,6 +1,16 @@
 use std::path::PathBuf;
 
 pub async fn audit(url: Option<String>, output: Option<PathBuf>) -> anyhow::Result<()> {
+    // The installed `rgaa` binary lives in this crate, not in rgaa-cli, so the
+    // CLI gate must be applied here too or the tier restriction is bypassed.
+    let gate = rgaa_cli::license::gate_from_env();
+    if let Some(warning) =
+        rgaa_cli::license::admit(&gate, rgaa_license::Feature::FullAudit, chrono::Utc::now())
+            .map_err(anyhow::Error::new)?
+    {
+        eprintln!("{warning}");
+    }
+
     let url = url.ok_or_else(|| anyhow::anyhow!("URL required: rgaa audit <URL>"))?;
 
     println!("Starting RGAA audit for {}", url);
@@ -74,6 +84,7 @@ pub async fn config_show() -> anyhow::Result<()> {
     {
         println!("Keyring: a legacy Holo3 key is stored; it is not used for MyIA");
     }
+    println!("{}", crate::licence::config_row_from_env());
     println!("Storage: ~/.rgaa/audits.db");
 
     Ok(())

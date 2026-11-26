@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "RGAA — Remédiation visuelle",
+  "version": "0.1.0",
+  "description": "Passe en revue les critères RGAA un par un : capture de l'existant, propositions de remédiation de l'IA prévisualisées en direct dans l'onglet.",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "action": { "default_title": "Remédiation RGAA" },
+  "side_panel": { "default_path": "panel.html" },
+  "background": { "service_worker": "background.js" }
+}

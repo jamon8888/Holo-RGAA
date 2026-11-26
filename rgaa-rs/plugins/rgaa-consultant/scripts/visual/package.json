@@ -1,0 +1,10 @@
+{
+  "name": "rgaa-visual-remediation",
+  "private": true,
+  "description": "Captures Playwright/Chromium : existant surligné par critère RGAA et rendu de chaque proposition de remédiation.",
+  "type": "module",
+  "bin": { "rgaa-visual": "./capture.mjs" },
+  "dependencies": {
+    "playwright": "1.65.1"
+  }
+}

@@ -66,6 +66,8 @@ pub struct CriteriaResponse {
     pub classification: String,
 }
 
+/// `POST /audit` — deprecated, unauthenticated and not licence-checked (#87);
+/// see the note on `legacy_routes` in [`crate::build_app_with_api_keys`].
 pub async fn run_audit(
     State(state): State<AppState>,
     Json(payload): Json<AuditRequest>,
@@ -93,6 +95,7 @@ pub async fn run_audit(
     Ok(Json(AuditResponse::from(result)))
 }
 
+/// `GET /audit/:id` — deprecated, unauthenticated and not licence-checked (#87).
 pub async fn get_audit(
     State(state): State<AppState>,
     Path(audit_id): Path<String>,
@@ -132,6 +135,7 @@ mod tests {
             audit_id: "test-id".to_string(),
             url: "https://example.com".to_string(),
             pages: vec![],
+            site_criteria: Vec::new(),
             total_criteria: 106,
             passed: 50,
             failed: 10,
@@ -270,9 +274,49 @@ pub struct PolicyEvaluateResponse {
     pub counts: rgaa_remediation::PolicyCounts,
 }
 
+/// Validates the Bearer key of a `/v1` request.
+///
+/// A seam rather than a direct `Repository` call so the route wiring
+/// (auth before licence, which routes are exempt) can be tested without a
+/// Postgres database. Production uses [`StorageApiKeys`].
+#[async_trait::async_trait]
+pub trait ApiKeyValidator: Send + Sync {
+    /// `true` when `key` exists, has not expired and carries the
+    /// `audit:write` scope (or `*`).
+    async fn is_valid(&self, key: &str) -> bool;
+}
+
+/// The `api_keys` table, through [`Repository::validate_api_key`].
+pub struct StorageApiKeys {
+    storage: Arc<dyn rgaa_storage::Storage>,
+}
+
+impl StorageApiKeys {
+    #[must_use]
+    pub fn new(storage: Arc<dyn rgaa_storage::Storage>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait::async_trait]
+impl ApiKeyValidator for StorageApiKeys {
+    async fn is_valid(&self, key: &str) -> bool {
+        let repo = Repository::new(self.storage.pool());
+        match repo.validate_api_key(key, "audit:write").await {
+            Ok(row) => row.is_some(),
+            Err(e) => {
+                // Refused (401) either way, but a DB outage must not look
+                // like a wrong key in the logs.
+                tracing::error!(error = %e, "API key validation failed");
+                false
+            }
+        }
+    }
+}
+
 // Authentication middleware
 pub async fn auth_middleware(
-    State(storage): State<Arc<dyn rgaa_storage::Storage>>,
+    State(api_keys): State<Arc<dyn ApiKeyValidator>>,
     headers: HeaderMap,
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
@@ -283,8 +327,7 @@ pub async fn auth_middleware(
         .and_then(|h| h.strip_prefix("Bearer "));
 
     if let Some(key) = api_key {
-        let repo = Repository::new(storage.pool());
-        if let Ok(Some(_key_row)) = repo.validate_api_key(key, "audit:write").await {
+        if api_keys.is_valid(key).await {
             return Ok(next.run(request).await);
         }
     }

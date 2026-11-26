@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 13.8 - Carrousel automatique avec bouton pause</title>
+</head>
+<body>
+    <main>
+        <h1>Critère 13.8</h1>
+        <div id="slide">Diapositive 1</div>
+        <button type="button" onclick="clearInterval(timer)">Pause</button>
+    </main>
+    <script>
+        var n = 1;
+        var timer = setInterval(function () {
+            n = (n % 3) + 1;
+            document.getElementById('slide').textContent = 'Diapositive ' + n;
+        }, 1000);
+    </script>
+</body>
+</html>

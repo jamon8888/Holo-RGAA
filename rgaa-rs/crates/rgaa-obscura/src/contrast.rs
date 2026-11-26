@@ -41,26 +41,42 @@ pub(crate) const COLLECT_STYLES_JS: &str = r#"
   // dans une feuille de style. "" n'est donc PAS la valeur spec "none" : on croise les
   // déclarations auteur pour établir positivement l'absence d'image / de filtre, etc.
   var tainted = [], cssomAvailable = true;
+  // @media/@supports/@layer rules have neither selectorText nor style: their
+  // declarations live in nested cssRules. Skipping them would make an image-only
+  // background look image-free (Obscura reports "" for background-image) and
+  // fabricate a contrast violation.
+  function scanRules(rules) {
+    for (var ri = 0; ri < rules.length; ri++) {
+      var rule = rules[ri], nested = null;
+      try { nested = rule.cssRules || rule.rules || null; }
+      catch (e) { cssomAvailable = false; }
+      if (!nested) {
+        try {
+          if (rule.styleSheet && rule.styleSheet.cssRules) nested = rule.styleSheet.cssRules;
+        } catch (e) { cssomAvailable = false; }
+      }
+      if (nested && nested.length) { scanRules(nested); }
+      var style = rule.style;
+      if (!rule.selectorText || !style) { continue; }
+      var img = style.backgroundImage || '';
+      var filter = style.filter || '';
+      var blend = style.mixBlendMode || (style.getPropertyValue ?
+        style.getPropertyValue('mix-blend-mode') : '') || '';
+      var opacity = style.opacity || '';
+      var position = style.position || '';
+      if ((img && img !== 'none') || filter || blend || (opacity && opacity !== '1')
+          || position === 'absolute' || position === 'fixed') {
+        tainted.push(rule.selectorText);
+      }
+    }
+  }
   try {
     var sheets = document.styleSheets;
     for (var si = 0; si < sheets.length; si++) {
       var rules;
       try { rules = sheets[si].cssRules || sheets[si].rules || []; }
       catch (e) { cssomAvailable = false; continue; }
-      for (var ri = 0; ri < rules.length; ri++) {
-        var rule = rules[ri], style = rule.style;
-        if (!rule.selectorText || !style) { continue; }
-        var img = style.backgroundImage || '';
-        var filter = style.filter || '';
-        var blend = style.mixBlendMode || (style.getPropertyValue ?
-          style.getPropertyValue('mix-blend-mode') : '') || '';
-        var opacity = style.opacity || '';
-        var position = style.position || '';
-        if ((img && img !== 'none') || filter || blend || (opacity && opacity !== '1')
-            || position === 'absolute' || position === 'fixed') {
-          tainted.push(rule.selectorText);
-        }
-      }
+      scanRules(rules);
     }
   } catch (e) { cssomAvailable = false; }
 
@@ -159,11 +175,24 @@ pub(crate) const COLLECT_STYLES_JS: &str = r#"
     return false;
   }
 
+  // display:none is not inherited in computed style: a child of a hidden container
+  // still reports its own display (e.g. "block"). Walk the ancestors so invisible
+  // text never turns into a synthetic contrast violation.
+  function isRendered(el) {
+    var node = el;
+    while (node && node.nodeType === 1) {
+      var s = getComputedStyle(node);
+      if (s.display === 'none') { return false; }
+      if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') { return false; }
+      node = node.parentElement;
+    }
+    return true;
+  }
+
   var texts = [], all = document.querySelectorAll('body *');
   for (var i = 0; i < all.length; i++) {
     var el = all[i], style = getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden'
-        || el.getAttribute('aria-hidden') === 'true' || !directText(el)) { continue; }
+    if (style.visibility === 'hidden' || !isRendered(el) || !directText(el)) { continue; }
     var info = pathInfo(el);
     texts.push({
       tag: el.tagName,
@@ -181,8 +210,7 @@ pub(crate) const COLLECT_STYLES_JS: &str = r#"
   var links = [], anchors = document.querySelectorAll('a[href]');
   for (var k = 0; k < anchors.length; k++) {
     var anchor = anchors[k], anchorStyle = getComputedStyle(anchor);
-    if (anchorStyle.display === 'none' || anchorStyle.visibility === 'hidden'
-        || anchor.getAttribute('aria-hidden') === 'true') { continue; }
+    if (anchorStyle.visibility === 'hidden' || !isRendered(anchor)) { continue; }
     var parent = anchor.parentElement, around = '';
     if (parent) {
       var siblings = parent.childNodes;

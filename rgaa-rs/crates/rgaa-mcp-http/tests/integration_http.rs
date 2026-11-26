@@ -21,6 +21,7 @@ fn test_tool_server() -> ToolServer {
         Arc::new(rgaa_mcp::OrchestrationService::new()),
         Arc::new(rgaa_mcp::NoOpStorageService),
     )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()))
 }
 
 #[tokio::test]

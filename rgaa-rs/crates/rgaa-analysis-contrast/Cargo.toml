@@ -13,6 +13,7 @@ plugins-all = ["plugin-contrast"]
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
 imageproc = "0.27"
 indexmap = { workspace = true }

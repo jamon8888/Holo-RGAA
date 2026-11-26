@@ -100,6 +100,28 @@ export REMOTE_API_URL="https://your-api.example.com"
 export DATABASE_URL="postgres://localhost/rgaa"
 ```
 
+### 5. Activate your licence
+
+Without a licence, rgaa runs on the **Free** tier (static lint only). Full
+audits (`analyze`), guided tests (`igt`) and remediation (`verify`,
+`report`, `review`, `policy`) need **Professional** or **Team**:
+
+```bash
+rgaa licence activate <key>          # or: --file path/to/key.txt
+rgaa licence status                  # tier, status, expiry, quota
+rgaa licence deactivate              # back to Free
+```
+
+The key is stored in `~/.config/rgaa/license.toml` (mode 0600). In CI or a
+container, set `RGAA_LICENSE_KEY` instead (it overrides the file); in the
+plugins, fill the `license_key` setting, which maps to it. Until a built-in
+verification key ships, also set `RGAA_LICENSE_PUBLIC_KEYS` to the
+`k4.public.…` key provided with your licence.
+
+A command refused for licensing exits with code **4** and a French message
+(e.g. « Fonctionnalité réservée à l'offre Professional … »). Local CLI and
+stdio runs check the tier only; daily quotas apply to the HTTP servers.
+
 ## Usage
 
 ### Local Audit (Offline)

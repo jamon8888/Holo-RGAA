@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/rgaa-core",
     "crates/rgaa-analysis",
-    "crates/rgaa-sidecar-screenreader",
     "crates/rgaa-analysis-colorvision",
     "crates/rgaa-analysis-contrast",
     "crates/rgaa-analysis-images",
@@ -31,6 +30,7 @@ members = [
     "crates/rgaa-tui",
     "crates/rgaa-report",
     "crates/rgaa-linter",
+    "crates/rgaa-license",
 ]
 
 [workspace.package]

@@ -1,0 +1,32 @@
+[package]
+name = "rgaa-license"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Licence validation, tier enforcement and usage metering for RGAA servers and CLI (#87)"
+rust-version.workspace = true
+
+[features]
+default = ["axum"]
+# The Axum middleware. CLI and stdio callers that only need `LicenseGate`
+# can turn it off.
+axum = ["dep:axum"]
+
+[dependencies]
+rgaa-core = { path = "../rgaa-core" }
+async-trait = "0.1"
+axum = { version = "0.7", optional = true }
+chrono = { workspace = true }
+fs2 = "0.4"
+pasetors = "0.8"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tempfile = "3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tower = { version = "0.5", features = ["util"] }

@@ -13,8 +13,8 @@ use rgaa_cli::commands::review::apply_review;
 use rgaa_cli::commands::CommonArgs;
 use rgaa_core::test_plan::{CoverageLevel, TestRoutePlan};
 use rgaa_core::{
-    AuditBundle, AuditResult, Classification, CriterionResult, CriterionStatus, RgaaCatalog,
-    RgaaCriteria, TestOutcome, VerdictBasis, Violation,
+    AuditBundle, AuditResult, AuditType, Classification, CriterionResult, CriterionStatus,
+    RgaaCatalog, RgaaCriteria, TestOutcome, VerdictBasis, Violation,
 };
 use rgaa_orchestrator::pipeline::{
     assemble_page_audit, assemble_site_audit, validate_automatic_verdict_coverage,
@@ -241,6 +241,7 @@ fn deterministic_route_candidate(
             impact: "serious".to_owned(),
             description: description.to_owned(),
             nodes_affected: 1,
+            nodes: vec![],
         });
         debug_assert!(deterministic
             .tests
@@ -386,10 +387,20 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             candidates,
             &na_map,
             1,
-            rgaa_core::AuditType::Complet,
+            AuditType::Complet,
         );
-        assert_eq!(page_audit.pages[0].criteria.len(), 106);
-        assert!(page_audit.audit_complete);
+        // 12.1-12.5 are decided once at site level (#269), not per page.
+        assert_eq!(
+            page_audit.pages[0].criteria.len(),
+            106 - rgaa_core::SITE_LEVEL_CRITERIA.len()
+        );
+        assert_eq!(
+            page_audit.site_criteria.len(),
+            rgaa_core::SITE_LEVEL_CRITERIA.len()
+        );
+        // No site comparison runs on a single mocked page, so 12.1-12.5 stay unresolved
+        // and the audit cannot be complete (#269).
+        assert!(!page_audit.audit_complete);
 
         if page_index == 0 {
             let human_review = page_audit.pages[0]
@@ -415,7 +426,12 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
             assert_eq!(human_review.review_events.len(), 1);
         }
 
-        pages.extend(page_audit.pages);
+        // The engine hands site-level criteria back separately (#269); put them back so
+        // the multi-page assembly sees the full per-page set it would get from a crawl.
+        pages.extend(rgaa_core::pages_with_site_criteria(
+            &page_audit.pages,
+            &page_audit.site_criteria,
+        ));
     }
 
     assert!(
@@ -426,7 +442,7 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         "https://example.test".to_owned(),
         pages,
         4,
-        rgaa_core::AuditType::Complet,
+        AuditType::Complet,
     );
     let row_count: usize = audit.pages.iter().map(|page| page.criteria.len()).sum();
     let verdict_count: usize = audit
@@ -435,10 +451,30 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
         .flat_map(|page| &page.criteria)
         .filter(|criterion| criterion.automated_verdict.is_some())
         .count();
-    assert_eq!(row_count, 4 * 106);
-    assert_eq!(verdict_count, 424);
-    assert!(audit.audit_complete);
-    assert_eq!(audit.automatic_verdict_coverage_percent, 100.0);
+    // 12.1-12.5 are reported once at site level (#269), so each page carries 101 rows.
+    let page_rows = 106 - rgaa_core::SITE_LEVEL_CRITERIA.len();
+    assert_eq!(row_count, 4 * page_rows);
+    assert_eq!(verdict_count, 4 * page_rows);
+    assert_eq!(
+        audit.site_criteria.len(),
+        rgaa_core::SITE_LEVEL_CRITERIA.len()
+    );
+    // The mock runs no site comparison: 12.1-12.5 carry no automatic verdict, so the
+    // site-level criteria keep the audit incomplete and below full verdict coverage.
+    assert!(!audit.audit_complete);
+    assert!(audit
+        .site_criteria
+        .iter()
+        .all(|criterion| criterion.automated_verdict.is_none()));
+    assert_eq!(
+        audit.automatic_verdict_coverage_percent,
+        rgaa_report::compute_audit_metrics(&rgaa_core::pages_with_site_criteria(
+            &audit.pages,
+            &audit.site_criteria
+        ))
+        .automatic_verdict_coverage_percent
+    );
+    assert!(audit.automatic_verdict_coverage_percent < 100.0);
     let complete_route_count = TestRoutePlan::builtin()
         .routes()
         .iter()
@@ -483,7 +519,7 @@ async fn four_page_mock_audit_keeps_predictions_evidence_and_human_review_separa
     let report = rgaa_report::render(&AuditBundle::from(audit.clone()), ReportFormat::Html)
         .expect("native report should render");
     assert!(report.contains("Couverture des verdicts automatiques"));
-    assert!(report.contains("100.0%"));
+    assert!(report.contains(&format!("{:.1}%", audit.automatic_verdict_coverage_percent)));
     assert!(report.contains("estimation"));
     assert_cli_report_does_not_claim_conformance(&audit);
 }
@@ -553,14 +589,13 @@ async fn one_required_provider_failure_remains_incomplete_in_metrics_and_cli_rep
         candidates,
         &std::collections::HashMap::new(),
         1,
-        rgaa_core::AuditType::Complet,
+        AuditType::Complet,
     );
     assert!(!incomplete.audit_complete);
     assert!(incomplete.automatic_verdict_coverage_percent < 100.0);
-    assert!(validate_automatic_verdict_coverage(
-        &incomplete.pages[0].criteria,
-        rgaa_core::AuditType::Complet
-    )
-    .is_err());
+    assert!(
+        validate_automatic_verdict_coverage(&incomplete.pages[0].criteria, AuditType::Complet)
+            .is_err()
+    );
     assert_cli_report_does_not_claim_conformance(&incomplete);
 }

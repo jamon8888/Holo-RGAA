@@ -1,12 +1,16 @@
 use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
+use rgaa_core::registry::Outcome;
 use rgaa_core::{
-    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry,
+    Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry, Outcome,
     RgaaCatalog, RgaaError, Violation,
 };
 use std::sync::OnceLock;
 
 pub struct AxeMapper;
+
+const CAPPED_REVIEW_JUSTIFICATION: &str =
+    "axe-core violation sur une entrée plafonnée à review : l'indice est réel mais le verdict est plafonné à needs_review";
 
 impl AxeMapper {
     /// Map axe-core output to RGAA criterion results.
@@ -71,26 +75,37 @@ impl AxeMapper {
 
         // Map violations to criteria. A partial-coverage criterion enters the results
         // here and only here, which is why a violation may have to create its entry.
+        //
+        // A mechanism capped at `review` (outcome_cap) turns a violation into
+        // `NeedsReview` instead of `Fail`: the evidence is real, but the verdict
+        // ceiling forbids a hard failure.
         for violation in &violations {
             for (rgaa_id, mechanism) in mapping {
                 if !mechanism.rules.iter().any(|rule| rule == &violation.id) {
                     continue;
                 }
+                let capped = mechanism.outcome_cap == Some(Outcome::Review);
                 let result = results
                     .entry(rgaa_id.clone())
                     .or_insert_with(|| CriterionResult {
                         criterion_id: rgaa_id.clone(),
                         title: String::new(),
                         classification: Classification::Deterministe,
-                        status: CriterionStatus::Fail,
+                        status: if capped {
+                            CriterionStatus::NeedsReview
+                        } else {
+                            CriterionStatus::Fail
+                        },
                         violations: vec![],
                         confidence: None,
                         raw_confidence: None,
-                        justification: Some(
+                        justification: Some(if capped {
+                            CAPPED_REVIEW_JUSTIFICATION.to_string()
+                        } else {
                             "Partial axe coverage: a violation was found, but axe does not \
-                             decide every test of this criterion"
-                                .to_string(),
-                        ),
+                                 decide every test of this criterion"
+                                .to_string()
+                        }),
                         source: "axe-core".to_string(),
                         citations: vec![],
                         considered_sources: vec![],
@@ -104,12 +119,39 @@ impl AxeMapper {
                         verified_status: None,
                         review_events: Vec::new(),
                     });
-                result.status = CriterionStatus::Fail;
+                if mechanism.review_only {
+                    result.status = CriterionStatus::NeedsReview;
+                    result.review_required = true;
+                    if !result
+                        .violations
+                        .iter()
+                        .any(|existing| existing.rule_id == violation.id)
+                    {
+                        let reason = format!(
+                            "{} : indice suspect, non concluant à lui seul (plafond review)",
+                            violation.id
+                        );
+                        result.review_reason = Some(match result.review_reason.take() {
+                            Some(previous) => format!("{previous} ; {reason}"),
+                            None => reason,
+                        });
+                    }
+                } else {
+                    result.status = CriterionStatus::Fail;
+                }
                 result.violations.push(Violation {
                     rule_id: violation.id.clone(),
                     impact: violation.impact.clone(),
                     description: violation.description.clone(),
                     nodes_affected: violation.nodes.len(),
+                    // A capped finding is sent to human review, so it must keep the
+                    // affected nodes as evidence. Uncapped findings keep their
+                    // historical payload unchanged (#279).
+                    nodes: if mechanism.review_only {
+                        violation.nodes.clone()
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
         }
@@ -117,6 +159,25 @@ impl AxeMapper {
         Self::apply_incomplete(&mut results, mapping, &incomplete);
 
         Ok(results)
+    }
+
+    /// Applique le plafond `review` à un résultat, qu'il vienne d'être créé pour une
+    /// couverture partielle ou qu'il ait déjà été initialisé à `Pass` pour une
+    /// couverture complète. Un `Fail` prouvé ne se dégrade jamais.
+    fn apply_capped_review(result: &mut CriterionResult, violation_id: &str) {
+        if result.status == CriterionStatus::Fail {
+            return;
+        }
+        result.status = CriterionStatus::NeedsReview;
+        result.review_required = true;
+        if result.review_reason.is_none() {
+            result.review_reason = Some(format!(
+                "verdict plafonné à review par une entrée axe — violation {violation_id} n'est pas un Fail ferme"
+            ));
+        }
+        if result.justification.is_none() {
+            result.justification = Some(CAPPED_REVIEW_JUSTIFICATION.to_string());
+        }
     }
 
     /// Accepte le tableau de violations nu comme l'objet complet d'`axe.run()`.
@@ -232,6 +293,7 @@ impl AxeMapper {
                     CriterionMechanism {
                         rules: mechanism.axe_rules.clone(),
                         coverage: mechanism.coverage,
+                        review_only: mechanism.outcome_cap == Some(Outcome::Review),
                     },
                 );
             }
@@ -240,11 +302,14 @@ impl AxeMapper {
     }
 }
 
-/// What axe-core can say about one criterion: the rules mapped to it, and whether
-/// they decide it completely enough for silence to count as a `Pass`.
+/// What axe-core can say about one criterion: the rules mapped to it, whether
+/// they decide it completely enough for silence to count as a `Pass`, and the
+/// verdict ceiling (`outcome_cap`) that caps how severe a violation may be.
 struct CriterionMechanism {
     rules: Vec<String>,
     coverage: AxeCoverage,
+    /// Plafond `review` (#279) : une violation produit `NeedsReview`, jamais `Fail`.
+    review_only: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -489,7 +554,7 @@ mod tests {
     const PARTIAL_COVERAGE_CRITERIA: &[&str] = &[
         "1.1", "1.2", "3.2", "3.3", "4.10", "5.4", "5.6", "5.7", "6.1", "7.1", "7.3", "8.2", "8.4",
         "8.8", "9.1", "9.3", "10.4", "10.6", "10.8", "10.11", "11.2", "11.9", "11.13", "12.1",
-        "12.4", "12.6", "12.7", "13.1", "13.8", "13.9",
+        "12.4", "12.6", "12.7", "12.8", "13.1", "13.8", "13.9",
     ];
 
     /// RGAAv4-tagged axe rules deliberately left unmapped, each with the reason.
@@ -570,7 +635,6 @@ mod tests {
         ("label-content-name-mismatch", "11.2"),
         ("scrollable-region-focusable", "7.3"),
         ("server-side-image-map", "7.3"),
-        ("focus-order-semantics", "7.3"),
         ("blink", "13.8"),
         ("marquee", "13.8"),
         ("meta-refresh", "13.1"),
@@ -706,6 +770,99 @@ mod tests {
         }
     }
 
+    /// Issue #279 : une violation d'une règle d'une entrée plafonnée à `review`
+    /// produit `NeedsReview`, jamais `Fail`. Le critère 12.8 est plafonné : `tabindex`
+    /// positif est un indice « suspect », pas un échec ferme.
+    #[test]
+    fn a_violation_on_a_review_capped_mechanism_yields_needs_review_not_fail() {
+        // tabindex > 0 sur 12.8 : le critère sort needs_review, pas Fail
+        let axe_json = r#"[
+            {"id":"tabindex","impact":"serious",
+             "description":"Ensure tabindex attribute values are not greater than 0",
+             "nodes":[{"html":"<button tabindex='3'>"}]}
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        let r = results
+            .get("12.8")
+            .expect("12.8 doit être présent avec axe-12-8");
+        assert_eq!(
+            r.status,
+            CriterionStatus::NeedsReview,
+            "une violation sur une entrée plafonnée à review donne needs_review, pas Fail"
+        );
+        assert!(r.review_required, "le critère doit exiger une revue");
+        assert!(
+            r.review_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("plafonné")),
+            "la raison de revue doit mentionner le plafond, obtenu {:?}",
+            r.review_reason
+        );
+        let violation = r
+            .violations
+            .iter()
+            .find(|violation| violation.rule_id == "tabindex")
+            .expect("12.8 doit porter la violation tabindex comme preuve");
+        assert_eq!(violation.impact, "serious");
+        assert!(violation.description.contains("tabindex"));
+        assert_eq!(violation.nodes_affected, 1);
+        assert_eq!(violation.nodes.len(), 1);
+        assert_eq!(violation.nodes[0]["html"], "<button tabindex='3'>");
+    }
+
+    /// Un mécanisme complet plafonné à `review` existe déjà dans les résultats sous la
+    /// forme d'un `Pass` initialisé. Une violation doit y ajouter la justification et la
+    /// raison de revue qui manquent au chemin de création d'un mécanisme partiel.
+    #[test]
+    fn a_complete_result_updated_by_a_capped_violation_gets_review_context() {
+        let mut result = AxeMapper::map("[]")
+            .expect("axe sans violation doit être accepté")
+            .shift_remove("2.1")
+            .expect("2.1 doit avoir une couverture axe complète");
+        assert_eq!(result.status, CriterionStatus::Pass);
+        assert!(result.justification.is_none());
+
+        AxeMapper::apply_capped_review(&mut result, "tabindex");
+
+        assert_eq!(result.status, CriterionStatus::NeedsReview);
+        assert!(result.review_required);
+        assert!(result
+            .justification
+            .as_deref()
+            .is_some_and(|reason| reason.contains("plafonnée")));
+        assert!(result
+            .review_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("tabindex")));
+    }
+
+    /// Issue #279 : les entrées sans plafond gardent leur comportement exact — une
+    /// violation produit toujours `Fail`.
+    #[test]
+    fn an_uncapped_mechanism_still_fails_on_violation() {
+        let axe_json = r#"[
+            {"id":"color-contrast","impact":"serious",
+             "description":"Elements must have sufficient color contrast",
+             "nodes":[{"html":"<p>Low contrast</p>"}]}
+        ]"#;
+        let results = AxeMapper::map(axe_json).unwrap();
+        // 3.2 et 3.3 partagent color-contrast, aucun n'est plafonné
+        for criterion_id in ["3.2", "3.3"] {
+            let r = results
+                .get(criterion_id)
+                .unwrap_or_else(|| panic!("{criterion_id} doit être présent"));
+            assert_eq!(
+                r.status,
+                CriterionStatus::Fail,
+                "{criterion_id} sans plafond doit Fail sur une violation prouvée"
+            );
+            assert!(
+                !r.violations.is_empty(),
+                "{criterion_id} doit porter la violation"
+            );
+        }
+    }
+
     /// The #201 guard: adding rules to a criterion must not create a criterion-level
     /// `Pass` the rules cannot justify. A partial-coverage criterion appears in the
     /// results only when one of its rules actually fired (#201 AC3).
@@ -767,120 +924,70 @@ mod tests {
         let mapping = AxeMapper::rgaa_to_axe_map();
         assert_eq!(
             mapping.len(),
-            36,
+            37,
             "43 criteria carried axe rules after #201; the engine plan (#280) removed nine that could not \
              decide their criterion (1.5, 1.6, 10.2, 10.5, 10.9, 11.4, 13.3-13.5) and added document-title \
-             to 8.5 and button-name to 11.9"
+             to 8.5 and button-name to 11.9, then #263 added 12.8 (tabindex, focus-order-semantics)"
         );
         let rule_refs: usize = mapping.values().map(|m| m.rules.len()).sum();
         assert_eq!(
-            rule_refs, 85,
-            "expected 85 criterion/rule pairs (button-name et input-button-name retirés de 11.1 \
-             car tagués RGAA-11.9.1 par axe-core ; aria-tab-name laissé 7.1 en #261: absent de \
-             l'axe-core injecté 4.9.1)"
+            rule_refs, 88,
+            "expected 88 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
+<<             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
+             while focus-order-semantics was removed from its former 7.3 attribution)"
         );
     }
 
-    /// #436 : une seule correspondance par règle axe, issue des étiquettes RGAAv4
-    /// d'axe (`axe_rules.json`). Pour les règles régies par ce ticket
-    /// (`button-name`, `input-button-name`, taguées `RGAA-11.9.1`), le critère
-    /// doit être unique et identique dans `mechanisms.toml` (via `AxeMapper`),
-    /// `engine_plan.json` et les étiquettes `axe_rules.json`. Échoue à la moindre
-    /// divergence.
+    /// #279 : 12.8 est plafonné à `review` — un `tabindex` positif est un indice, pas un échec.
     #[test]
-    fn button_name_et_input_button_name_mappent_sur_11_9_partout() {
-        use std::collections::BTreeMap;
+    fn a_review_capped_mechanism_never_fails() {
+        let json = r#"[{"id":"tabindex","impact":"serious","description":"d","nodes":[{},{}]}]"#;
+        let r = &AxeMapper::map(json).unwrap()["12.8"];
+        assert_eq!(r.status, CriterionStatus::NeedsReview);
+        assert!(r.review_required);
+        assert_eq!(r.violations.len(), 1);
+        assert_eq!(r.violations[0].nodes_affected, 2);
+        assert!(r.review_reason.as_deref().unwrap().contains("tabindex"));
+    }
 
-        // --- Source de vérité indépendante : étiquettes RGAAv4 de axe-core ---
-        #[derive(serde::Deserialize)]
-        struct Rule {
-            id: String,
-            #[serde(default)]
-            tags: Vec<String>,
-        }
-        let rules: Vec<Rule> =
-            serde_json::from_str(AXE_RULES_JSON).expect("axe_rules.json doit parser");
-        fn crit_de_tag(tag: &str) -> Option<String> {
-            let rest = tag.strip_prefix("RGAA-")?;
-            let majeur = rest.split('.').next()?;
-            let mineur = rest.split('.').nth(1)?;
-            Some(format!("{majeur}.{mineur}"))
-        }
-        let mut tag_criterion: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for r in &rules {
-            for t in &r.tags {
-                if let Some(c) = crit_de_tag(t) {
-                    tag_criterion.entry(r.id.clone()).or_default().push(c);
-                }
-            }
-        }
+    #[test]
+    fn a_review_capped_mechanism_keeps_every_violation_and_its_nodes() {
+        let json = r#"[
+            {"id":"tabindex","impact":"serious","description":"positive tabindex",
+             "nodes":[{"html":"<button tabindex='3'>"}]},
+            {"id":"focus-order-semantics","impact":"minor","description":"focus semantics",
+             "nodes":[{"html":"<div role='button'>"}]}
+        ]"#;
+        let results = AxeMapper::map(json).unwrap();
+        let r = &results["12.8"];
 
-        // --- mechanisms.toml via AxeMapper ---
-        let mapping = AxeMapper::rgaa_to_axe_map();
-        let mut mech_pairs: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (criterion, mechanism) in mapping {
-            for rule in &mechanism.rules {
-                mech_pairs
-                    .entry(rule.clone())
-                    .or_default()
-                    .push(criterion.clone());
-            }
-        }
+        assert_eq!(r.status, CriterionStatus::NeedsReview);
+        assert!(r.review_required);
+        assert_eq!(r.violations.len(), 2);
+        assert!(!results.contains_key("7.3"));
 
-        // --- engine_plan.json ---
-        const ENGINE_PLAN_JSON: &str =
-            include_str!("../../rgaa-core/data/rgaa-4.1.2/engine_plan.json");
-        #[derive(serde::Deserialize)]
-        struct PlanEntry {
-            criterion_id: String,
-            axe_rules: Vec<String>,
-        }
-        let plan: Vec<PlanEntry> =
-            serde_json::from_str(ENGINE_PLAN_JSON).expect("engine_plan.json doit parser");
-        let mut plan_pairs: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for entry in &plan {
-            for rule in &entry.axe_rules {
-                plan_pairs
-                    .entry(rule.clone())
-                    .or_default()
-                    .push(entry.criterion_id.clone());
-            }
+        for (rule_id, html) in [
+            ("tabindex", "<button tabindex='3'>"),
+            ("focus-order-semantics", "<div role='button'>"),
+        ] {
+            let violation = r
+                .violations
+                .iter()
+                .find(|violation| violation.rule_id == rule_id)
+                .unwrap_or_else(|| panic!("12.8 must retain {rule_id}"));
+            assert_eq!(violation.nodes.len(), 1);
+            assert_eq!(violation.nodes[0]["html"], html);
         }
 
-        // Chaque règle régie par le ticket a une seule correspondance, à 11.9,
-        // identique dans les trois sources.
-        for rule in ["button-name", "input-button-name"] {
-            let mech_crits = mech_pairs.get(rule);
-            let plan_crits = plan_pairs.get(rule);
-            let tag_crit = tag_criterion.get(rule);
+        let reason = r.review_reason.as_deref().unwrap();
+        assert!(reason.contains("tabindex"));
+        assert!(reason.contains("focus-order-semantics"));
+    }
 
-            // Une seule correspondance par règle dans chaque source.
-            assert_eq!(
-                mech_crits.map(|v| v.len()),
-                Some(1),
-                "{rule} doit être mappé à un seul critère dans mechanisms.toml"
-            );
-            assert_eq!(
-                plan_crits.map(|v| v.len()),
-                Some(1),
-                "{rule} doit être routé vers un seul critère dans engine_plan.json"
-            );
-
-            // La correspondance vaut 11.9 partout, jamais 11.1.
-            assert_eq!(
-                mech_crits.map(|v| v[0].as_str()),
-                Some("11.9"),
-                "{rule} doit mapper sur 11.9 dans mechanisms.toml (étiquette RGAA-11.9.1)"
-            );
-            assert_eq!(
-                plan_crits.map(|v| v[0].as_str()),
-                Some("11.9"),
-                "{rule} doit être routé par engine_plan.json sur 11.9"
-            );
-            assert!(
-                tag_crit.is_some_and(|crits| crits.len() == 1 && crits[0] == "11.9"),
-                "{rule} doit être tagué RGAA-11.9.1 par axe-core (et seulement celui-ci), obtenu {tag_crit:?}"
-            );
-        }
+    #[test]
+    fn a_review_capped_mechanism_is_silent_without_violation() {
+        assert!(!AxeMapper::map("[]").unwrap().contains_key("12.8"));
+    }
+}
     }
 }

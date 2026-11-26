@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 13.1 - Redirection par script après délai</title>
+</head>
+<body>
+    <main>
+        <h1>Critère 13.1</h1>
+        <p>Cette page redirige par script, sans action de l'utilisateur, au bout de 2 secondes.</p>
+    </main>
+    <script>
+        setTimeout(function () { location.replace('13.1-script-redirect-pass.html'); }, 2000);
+    </script>
+</body>
+</html>

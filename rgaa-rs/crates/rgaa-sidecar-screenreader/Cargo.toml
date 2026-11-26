@@ -1,0 +1,25 @@
+[package]
+description = "P-10.a sidecar: capture NVDA speech logged by Speech Logger"
+license = "MIT"
+name = "rgaa-sidecar-screenreader"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rgaa-sidecar-screenreader"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { workspace = true }
+indexmap = { workspace = true }
+rgaa-analysis = { path = "../rgaa-analysis", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+rgaa-report = { path = "../rgaa-report" }
+tempfile = "3"
+tokio = { workspace = true }

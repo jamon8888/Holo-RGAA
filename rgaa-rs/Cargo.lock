@@ -8314,12 +8314,14 @@ dependencies = [
  "chrono",
  "indexmap 2.14.2",
  "krilla",
+ "rgaa-analysis",
  "rgaa-core",
  "rustybuzz",
  "schemars 1.2.3",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -8331,6 +8333,23 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "rgaa-sidecar-screenreader"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap 2.14.2",
+ "rgaa-analysis",
+ "rgaa-report",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

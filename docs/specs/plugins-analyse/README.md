@@ -50,7 +50,7 @@ Versions, étoiles, dernier push, licences et bibliothèques écartées : **[bib
 | P-07 | [Structure visuelle et accessibilité exposée](07-structure-visuelle.md) | 5.3, 5.6, 7.1, 7.5, 9.1, 9.2, 10.3, 10.9, 10.10 | CDP (`Accessibility`, `DOMSnapshot`), `imageproc` | P-00 |
 | P-08 | [Pertinence textuelle](08-pertinence-textuelle.md) | 1.5, 2.2, 5.2, 5.5, 6.1, 7.2, 8.6, 11.2, 11.7, 11.9 à 11.13, 12.3, 13.4, 13.6 | `fastembed` (texte), `strsim`, `lingua` | P-00, P-06 |
 | P-09 | [Plugins agents et page de revue](09-plugins-agents-revue.md) | tous (présentation) | — (skills Claude Code / Codex, page de revue) | P-00, au moins un plugin |
-| P-10 | Lecteur d'écran (sidecar, spec dans le ticket [#437](https://github.com/jamon8888/Holo-RGAA/issues/437)) | appui 7.1, 7.5, noms accessibles | sidecar NVDA (journal de parole), puis VoiceOver | P-00 |
+| P-10 | [Lecteur d'écran (sidecar NVDA, P-10.a)](10-lecteur-ecran.md) — suivi [#437](https://github.com/jamon8888/Holo-RGAA/issues/437) | appui 7.1, 7.5, noms accessibles | sidecar Rust `screenreader-nvda` (journal Speech Logger), puis VoiceOver/Orca | P-00, P-07, #430 |
 
 Ordre conseillé : **P-00 → P-01 → P-02** (ce sont les plus rapides et ils ne dépendent d'aucun modèle), puis **P-03**, **P-06**, **P-08**, **P-07**, **P-04**, **P-05**, et **P-09** au fil de l'eau.
 

@@ -28,8 +28,9 @@ pub mod sources;
 pub mod ue;
 
 pub use declaration::{
-    environnements_en_texte, environnements_utilises, refuse_partial_declaration,
-    render_declaration_fr, DeclarationFrInput, NcEntry, TestEnvironment,
+    environnements_depuis_preuves, environnements_en_texte, environnements_utilises,
+    environnements_utilises_avec_preuves, refuse_partial_declaration, render_declaration_fr,
+    DeclarationFrInput, NcEntry, TestEnvironment,
 };
 pub use depot::url_canonique;
 pub use format::ReportFormat;

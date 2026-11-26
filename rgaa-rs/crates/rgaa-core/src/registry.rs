@@ -178,58 +178,37 @@ impl MechanismRegistry {
                 ));
             }
             if let Some(cap) = m.outcome_cap {
-                if cap != Outcome::Review {
-                    problems.push(format!("{}: outcome_cap only supports \"review\"", m.id));
-                } else if m.outcomes.contains(&Outcome::Fail) || m.outcomes.contains(&Outcome::Pass)
-                {
-                    problems.push(format!(
-                        "{}: capped at \"review\" but outcomes declare fail or pass",
-                        m.id
-                    ));
-                }
-            }
-            if m.kind == MechanismKind::AxeNative && m.axe_rules.is_empty() {
-                problems.push(format!("{}: axe-native mechanism cites no axe rule", m.id));
-            }
-            if m.outcome_cap == Some(Outcome::Review) && m.outcomes.contains(&Outcome::Fail) {
-                problems.push(format!(
-                    "{}: outcome_cap \"review\" but outcomes contain \"fail\" — cap must be consistent with outcomes",
-                    m.id
-                ));
-            }
-            if let Some(cap) = m.outcome_cap {
-                if !m.outcomes.contains(&cap) {
-                    problems.push(format!(
-                        "{}: outcome_cap \"{cap:?}\" is not declared in outcomes {:?}",
-                        m.id, m.outcomes
-                    ));
-                }
-            }
-            for rule in &m.axe_rules {
-                if !known_axe_rules.contains(rule) {
-                    problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
-                }
-            }
-            // outcome_cap is a ceiling: the mechanism may not emit anything above it.
-            if let Some(cap) = m.outcome_cap {
                 match cap {
                     Outcome::Review => {
-                        if m.outcomes.contains(&Outcome::Fail) {
+                        if m.outcomes.contains(&Outcome::Fail)
+                            || m.outcomes.contains(&Outcome::Pass)
+                        {
                             problems.push(format!(
-                                "{}: outcome_cap is \"review\" but outcomes contain \"fail\" — \
-                                 a capped mechanism cannot produce Fail",
+                                "{}: outcome_cap \"review\" but outcomes declare fail or pass — capped at review, mechanism cannot produce Fail/Pass",
                                 m.id
+                            ));
+                        } else if !m.outcomes.contains(&Outcome::Review) {
+                            problems.push(format!(
+                                "{}: outcome_cap \"review\" is not declared in outcomes {:?}",
+                                m.id, m.outcomes
                             ));
                         }
                     }
                     Outcome::Pass => {
                         problems.push(format!(
-                            "{}: outcome_cap \"pass\" is not supported — \
-                             AxeMapper cannot yet enforce that ceiling safely",
+                            "{}: outcome_cap \"pass\" is not supported — AxeMapper cannot yet enforce that ceiling safely",
                             m.id
                         ));
                     }
                     Outcome::Fail => {}
+                }
+            }
+            if m.kind == MechanismKind::AxeNative && m.axe_rules.is_empty() {
+                problems.push(format!("{}: axe-native mechanism cites no axe rule", m.id));
+            }
+            for rule in &m.axe_rules {
+                if !known_axe_rules.contains(rule) {
+                    problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
                 }
             }
             problems.extend(Self::check_declared_tests(m));

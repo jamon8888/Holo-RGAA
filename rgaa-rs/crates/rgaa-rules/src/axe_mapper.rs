@@ -1,6 +1,5 @@
 use indexmap::IndexMap;
 use rgaa_core::catalog::AxeCoverage;
-use rgaa_core::registry::Outcome;
 use rgaa_core::{
     Classification, CriterionResult, CriterionStatus, MechanismKind, MechanismRegistry, Outcome,
     RgaaCatalog, RgaaError, Violation,
@@ -84,7 +83,7 @@ impl AxeMapper {
                 if !mechanism.rules.iter().any(|rule| rule == &violation.id) {
                     continue;
                 }
-                let capped = mechanism.outcome_cap == Some(Outcome::Review);
+                let capped = mechanism.review_only;
                 let result = results
                     .entry(rgaa_id.clone())
                     .or_insert_with(|| CriterionResult {

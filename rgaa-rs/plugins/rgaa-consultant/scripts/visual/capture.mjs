@@ -72,42 +72,6 @@ async function load(page) {
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
 }
 
-// Applique une proposition dans la page. Renvoie le sélecteur à surligner
-// ensuite (le html de remplacement peut changer la cible d'origine).
-async function apply(page, sel, p) {
-  if (p.css) await page.addStyleTag({ content: p.css });
-  return page.evaluate(({ sel, p }) => {
-    let el = document.querySelector(sel);
-    if (!el) return null;
-    const marker = Math.random().toString(36).slice(2);
-    let target = el;
-    let roots = [el];
-    const unsafe = (k, v) => {
-      const url = String(v).replace(/[\t\n\r]/g, '').trim();
-      return /^on/i.test(k) || /^srcdoc$/i.test(k) || (/^(href|src|action|formaction|xlink:href)$/i.test(k) && (/^javascript:/i.test(url) || (/^(href|xlink:href)$/i.test(k) && /^data:/i.test(url))));
-    };
-    if (p.html) {
-      const t = document.createElement('template');
-      t.innerHTML = p.html.trim();
-      t.content.querySelectorAll('script,iframe,object,embed,style,link,meta,base').forEach((n) => n.remove());
-      for (const n of t.content.querySelectorAll('*')) {
-        for (const a of [...n.attributes]) {
-          if (unsafe(a.name, a.value)) n.removeAttribute(a.name);
-        }
-      }
-      roots = [...t.content.children];
-      if (!roots.length) return null;
-      target = roots[0];
-      el.replaceWith(t.content);
-    }
-    for (const [k, v] of Object.entries(p.attributes ?? {})) {
-      if (unsafe(k, v)) continue;
-      v === null ? target.removeAttribute(k) : target.setAttribute(k, String(v));
-    }
-    for (const root of roots) root.setAttribute('data-rgaa-applied', marker);
-    return `[data-rgaa-applied="${marker}"]`;
-  }, { sel, p });
-}
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const manifest = { url: spec.url, generated_at: new Date().toISOString(), criteria: [], findings: [] };

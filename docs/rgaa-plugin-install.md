@@ -150,9 +150,9 @@ server actually registers — call them exactly as written:
 - `analyze` - Per-criterion findings for one page, with evidence and justification
 - `audit_url` - Full site audit through the orchestrator; returns a summary (`taux_global`, `etat_conformite`) plus `sampled_page_urls`
 - `get_audit_result` - Retrieve a previously run audit by `audit_id`
-- `get_test_methodology` - The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit. Skills cite this instead of describing a method from memory
+- `get_test_methodology` - The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit. Skills cite this instead of describing a method from memory; unknown keys return `methodology: null`
 - `lint_static` - Static accessibility lint of HTML/JSX/TSX/Vue source: rule, severity, line/column and a fix hint, against a selectable profile (`rgaa-4.1`, `wcag-2.1-aa`, `section-508`). No browser and no build, so it suits an edit loop — a first pass over source, not a conformance verdict
-- `list_analysis_plugins` - Compiled analysis plugins, their RGAA tests, required models and whether each model is cached. Call this **before** `run_analysis_plugin`; a missing model is reported as `present: false`
+- `list_analysis_plugins` - Compiled analysis plugins with their versions, RGAA tests, required models and presence. Call this **before** `run_analysis_plugin`; a missing model is reported as `present: false`
 - `list_criteria` - The 106 RGAA criteria with id, title, and classification
 - `remediate` - Approval-gated remediation proposals
 - `run_analysis_plugin` - Run one analysis plugin on a URL and return its `Preuve` values (measurements and artefacts). Returns **no status and no verdict**: a human reviewer decides (R7)

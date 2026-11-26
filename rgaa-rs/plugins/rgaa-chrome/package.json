@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.mjs && node tests/preview.pw.mjs && node tests/panel.pw.mjs"
+    "test": "node --test tests/*.test.mjs && node tests/preview.pw.mjs && node tests/panel.pw.mjs",
+    "dist": "python3 dist.py"
   },
   "devDependencies": {
     "playwright": "^1.65.1"

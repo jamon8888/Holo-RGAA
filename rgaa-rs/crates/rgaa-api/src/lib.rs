@@ -179,10 +179,7 @@ pub fn parse_cors_origins(
 
 /// Production entry point: API keys are checked against the `api_keys`
 /// table of `state.storage`.
-pub fn build_app(
-    state: AppState,
-    license: Arc<LicenseGate>,
-) -> Result<Router, CorsConfigError> {
+pub fn build_app(state: AppState, license: Arc<LicenseGate>) -> Result<Router, CorsConfigError> {
     let api_keys: Arc<dyn ApiKeyValidator> = Arc::new(StorageApiKeys::new(state.storage.clone()));
     build_app_with_api_keys(state, license, api_keys)
 }

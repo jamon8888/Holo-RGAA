@@ -933,7 +933,7 @@ mod tests {
         assert_eq!(
             rule_refs, 88,
             "expected 88 criterion/rule pairs (aria-tab-name left 7.1 in #261: absent from \
-<<             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
+             the injected axe-core 4.9.1; #263 added tabindex and focus-order-semantics to 12.8, \
              while focus-order-semantics was removed from its former 7.3 attribution)"
         );
     }
@@ -987,7 +987,5 @@ mod tests {
     #[test]
     fn a_review_capped_mechanism_is_silent_without_violation() {
         assert!(!AxeMapper::map("[]").unwrap().contains_key("12.8"));
-    }
-}
     }
 }

@@ -941,7 +941,7 @@ pub struct ToolServer {
     guided_service: Arc<dyn GuidedService>,
     audit_service: Arc<dyn AuditOrchestrationService>,
     storage_service: Arc<dyn AuditStorageService>,
-<<    analysis_service: Arc<dyn AnalysisService>,
+    analysis_service: Arc<dyn AnalysisService>,
     license: Arc<LicenseGate>,
 }
 
@@ -994,7 +994,7 @@ impl ToolServer {
             guided_service: guided,
             audit_service: audit,
             storage_service: storage,
-<<            analysis_service: analysis,
+            analysis_service: analysis,
             // Local default: tier gating from the installed licence, no
             // quota (a counter in a user-writable file is not enforceable on
             // the user's own machine). The hosted HTTP server replaces it

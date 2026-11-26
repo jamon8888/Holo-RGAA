@@ -212,7 +212,7 @@ outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
 axe_rules = ["scrollable-region-focusable", "server-side-image-map"]
-<<provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-11-23", notes = "Partial: covers scrollable regions and server-side image maps, not keyboard control of every script. focus-order-semantics removed (#398): it is experimental, disabled by default in axe 4.9.1, and tagged RGAA-12.8.1 rather than 7.3." }
+provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-11-23", notes = "Partial: covers scrollable regions and server-side image maps, not keyboard control of every script. focus-order-semantics removed (#398): it is experimental, disabled by default in axe 4.9.1, and tagged RGAA-12.8.1 rather than 7.3." }
 
 [[mechanism]]
 id        = "axe-8-2"

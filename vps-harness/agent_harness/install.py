@@ -43,6 +43,10 @@ def source_manifest(source_root: Path) -> dict[str, str]:
     if not launcher.is_file():
         raise RuntimeError(f"missing launcher in source: {launcher}")
     manifest["bin/agent-harness"] = sha256_file(launcher)
+    gatekeeper = source_root / "bin" / "gatekeeper"
+    if not gatekeeper.is_file():
+        raise RuntimeError(f"missing gatekeeper in source: {gatekeeper}")
+    manifest["bin/gatekeeper"] = sha256_file(gatekeeper)
     if not (source_root / "agent_harness").is_dir():
         raise RuntimeError(f"no installable package found under {source_root}")
     return manifest
@@ -106,6 +110,8 @@ def install(
             (staging / "bin").mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_root / "bin" / "agent-harness", staging / "bin" / "agent-harness")
             os.chmod(staging / "bin" / "agent-harness", 0o755)
+            shutil.copy2(source_root / "bin" / "gatekeeper", staging / "bin" / "gatekeeper")
+            os.chmod(staging / "bin" / "gatekeeper", 0o755)
             (staging / "MANIFEST.json").write_text(
                 json.dumps(desired, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )

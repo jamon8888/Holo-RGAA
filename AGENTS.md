@@ -16,6 +16,14 @@ and naked `git log`/`blame`. Full routing table, memory policy, and rescan autom
 [CLAUDE.md](CLAUDE.md#basemind--prefer-it-over-grep--read--git); kept there, not duplicated
 here, so one place stays authoritative.
 
+### Live code map
+
+`docs/CODEMAP.md` is a generated snapshot of the current tree and basemind index — read it
+before opening source files to learn the repo's shape (crates, entry points, largest and
+most-imported files, routes, recent commits). It is refreshed fleet-wide by the Orca
+automation `Refresh CODEMAP (fleet)`. Setup, per-VPS-profile instructions and operating
+commands: [docs/code-map-harness.md](docs/code-map-harness.md).
+
 ---
 
 ## Project: rgaa-rs

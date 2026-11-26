@@ -35,7 +35,7 @@ class FakeRunner:
         return handler  # type: ignore[return-value]
 
 
-def healthy_programs(basemind_version: str = "basemind 0.33.0") -> dict[str, object]:
+def healthy_programs(basemind_version: str = "basemind 0.34.0") -> dict[str, object]:
     """Return the standard program map for a healthy VPS."""
     help_text = "\n".join(
         [

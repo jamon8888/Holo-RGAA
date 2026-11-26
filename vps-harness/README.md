@@ -13,7 +13,11 @@ agent-harness bootstrap --check --json      # read-only config drift report
 agent-harness bootstrap --apply --json      # narrow merge + backup, idempotent
 agent-harness setup --root /path/to/repo    # validate repo index/tools, fail closed
 agent-harness self-test --agent claude      # live proof or actionable `unsupported`
-agent-harness install                       # install versioned package + launcher symlink
+agent-harness install                       # install versioned package + launchers
+agent-harness agentic rules --json          # strict Rust/TypeScript rules for prompts
+agent-harness agentic plan --spec-file s.json --json   # isolated task plan
+agent-harness agentic compact --kind cargo --input out.txt --json
+agent-harness agentic gatekeeper --root /repo          # verify_changes() gate
 ```
 
 Run from this source tree with `bin/agent-harness <command>` or
@@ -33,7 +37,7 @@ Run from this source tree with `bin/agent-harness <command>` or
 
 ## Behaviour guarantees
 
-* `doctor` checks basemind 0.33.0, Orca >= 1.4.263 and the six CLIs. An absent
+* `doctor` checks basemind 0.34.0, Orca >= 1.4.263 and the six CLIs. An absent
   optional CLI is `not_installed` and never fails the doctor.
 * `bootstrap --check` performs no writes. `--apply` merges only the managed
   entry, writes a timestamped backup before each write, and re-verifies.
@@ -46,6 +50,23 @@ Run from this source tree with `bin/agent-harness <command>` or
   supplies proof. Static detection is explicitly labelled as non-proof.
 * `install` copies a versioned package to the data dir, repoints `current`, and
   symlinks `~/.local/bin/agent-harness`. No sudo; re-running is idempotent.
+
+## Agentic hardening (0.2.0)
+
+`agent-harness agentic` turns the four hardening levels into data an orchestrator can
+enforce, with no process launched inside the library:
+
+* one isolated task per worktree, shared build cache (`sccache`, pnpm store), and
+  strictly separated roles — agent A writes only tests, agent B may not touch test paths;
+* strict Rust/TypeScript rules injected into both prompts (`unwrap`/`expect`/`panic`/
+  `unsafe` and `any`/`@ts-ignore`/non-null banned; property-based tests required);
+* a `verify_changes()` gatekeeper: static checks, unit/property tests, then mutation
+  restricted to the diff (`cargo mutants --in-diff`, `stryker --mutate`);
+* a circuit breaker (5 correction loops, reflection after two identical errors,
+  escalation afterwards) and JSON log compaction down to file/line/mutant.
+
+All 91 unit tests are offline. `bin/gatekeeper --print-plan` shows the exact stage
+commands without running them.
 
 ## Tests
 

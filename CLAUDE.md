@@ -372,3 +372,9 @@ invisible to others.
 - None of this replaces running `basemind rescan` yourself after a large out-of-band change
   (a rebase, a branch switch) if you need the index current *right now* rather than on the
   next edit.
+
+**Live code map.** `docs/CODEMAP.md` is the generated, agent-facing state-of-code snapshot
+(languages, crates, entry points, largest/most-imported files, routes, recent commits).
+Read it before opening source files. The Orca automation `Refresh CODEMAP (fleet)` rebuilds
+it across every Orca worktree on a cron, with a fingerprint precheck so unchanged repos are
+skipped. Setup for each VPS profile and all commands: [docs/code-map-harness.md](docs/code-map-harness.md).

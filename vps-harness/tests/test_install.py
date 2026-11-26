@@ -20,6 +20,7 @@ class InstallTests(TempEnvTestCase):
         (self.source / "bin").mkdir()
         (self.source / "agent_harness" / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
         (self.source / "bin" / "agent-harness").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+        (self.source / "bin" / "gatekeeper").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
         self.data_home = self.root / "data"
         self.bin_home = self.root / "bin"
 
@@ -94,7 +95,7 @@ class InstallTests(TempEnvTestCase):
         (cache / "junk.pyc").write_text("junk", encoding="utf-8")
         manifest = source_manifest(self.source)
         self.assertNotIn("agent_harness/__pycache__/junk.pyc", manifest)
-        self.assertEqual(len(manifest), 2)
+        self.assertEqual(len(manifest), 3)
 
     def test_empty_source_raises(self):
         empty = self.root / "empty"

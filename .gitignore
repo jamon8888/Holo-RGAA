@@ -33,3 +33,7 @@ types/analysis-schemas.json
 .rgaa/env
 .rgaa/state/
 rgaa-rs/logs/
+
+# Generated live code map (scripts/codemap.sh), refreshed fleet-wide by the
+# Orca automation. Per-checkout runtime state: committing it guarantees drift.
+docs/CODEMAP.md

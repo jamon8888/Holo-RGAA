@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# verify_changes() gatekeeper for one isolated worktree.
+# Stages: static checks -> unit/property tests -> diff-targeted mutation.
+# Never declares success unless every executed stage exits 0.
+set -uo pipefail
+
+root="$PWD"
+print_plan=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --root)
+      root="$2"
+      shift 2
+      ;;
+    --print-plan)
+      print_plan=1
+      shift
+      ;;
+    *)
+      printf 'gatekeeper: unknown argument: %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+cd "$root" || exit 2
+
+rust=0
+ts=0
+[ -f Cargo.toml ] && rust=1
+[ -f package.json ] && ts=1
+[ -n "${GATEKEEPER_RUST:-}" ] && rust="$GATEKEEPER_RUST"
+[ -n "${GATEKEEPER_TS:-}" ] && ts="$GATEKEEPER_TS"
+
+patch="git-diff.patch"
+trap 'rm -f "$patch"' EXIT
+git diff --binary HEAD > "$patch" 2>/dev/null || :
+ts_mutate=$(git diff --name-only HEAD 2>/dev/null | grep -E '\.tsx?$' | paste -sd, - || true)
+
+names=()
+steps=()
+if [ "$rust" = 1 ]; then
+  names+=("static-rust" "lint-rust" "unit-rust")
+  steps+=(
+    "cargo fmt --check"
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+    "cargo nextest run --workspace"
+  )
+  if [ -s "$patch" ]; then
+    names+=("mutation-rust")
+    steps+=("cargo mutants --in-diff $patch --minimum-test-suite-success-rate 85")
+  fi
+fi
+if [ "$ts" = 1 ]; then
+  names+=("static-ts" "lint-ts" "unit-ts")
+  steps+=(
+    "pnpm exec tsc --noEmit"
+    "pnpm exec eslint . --max-warnings 0"
+    "pnpm exec vitest run --bail 1"
+  )
+  if [ -n "$ts_mutate" ]; then
+    names+=("mutation-ts")
+    steps+=("pnpm exec stryker run --mutate \"$ts_mutate\"")
+  fi
+fi
+
+if [ "$print_plan" = 1 ]; then
+  for command in "${steps[@]+"${steps[@]}"}"; do
+    printf '%s\n' "$command"
+  done
+  exit 0
+fi
+
+results=()
+failed=0
+run_stage() {
+  local name="$1"
+  local command="$2"
+  local tmp
+  tmp=$(mktemp)
+  printf '=== [%s] %s ===\n' "$name" "$command"
+  set +e
+  bash -c "$command" > "$tmp" 2>&1
+  local rc=$?
+  set -e
+  sed -n '1,60p' "$tmp"
+  rm -f "$tmp"
+  results+=("{\"stage\":\"$name\",\"exit_code\":$rc}")
+  if [ "$rc" -ne 0 ]; then
+    failed=1
+  fi
+}
+
+for index in "${!names[@]}"; do
+  run_stage "${names[$index]}" "${steps[$index]}"
+done
+
+if [ "${#results[@]}" -gt 0 ]; then
+  joined=$(IFS=,; printf '%s' "${results[*]}")
+else
+  joined='{"stage":"none","exit_code":0}'
+  failed=1
+fi
+printf '{"schema":"agent-harness/gatekeeper/1","EXIT_CODE":%d,"stages":[%s]}\n' "$failed" "$joined"
+exit "$failed"

@@ -8,8 +8,9 @@ import os
 import sys
 from pathlib import Path
 
+from . import agentic as agentic_mod
 from . import bootstrap as bootstrap_mod
-from . import health, install as install_mod, selftest, setup as setup_mod
+from . import health, install as install_mod, paths, selftest, setup as setup_mod
 from .runners import SubprocessRunner
 
 
@@ -55,6 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
     installer.add_argument("--bin-home", default=None, help="override launcher dir (for testing)")
     _add_json(installer)
 
+    agentic = sub.add_parser("agentic", help="hardened, role-separated agent pipeline")
+    agsub = agentic.add_subparsers(dest="agentic_command", required=True)
+    rules = agsub.add_parser("rules", help="print the strict Rust/TypeScript rules")
+    _add_json(rules)
+    plan_parser = agsub.add_parser("plan", help="build an isolated task plan")
+    plan_parser.add_argument("--spec-file", required=True, help="JSON file of TaskSpec fields")
+    _add_json(plan_parser)
+    compact = agsub.add_parser("compact", help="compact raw tool output")
+    compact.add_argument("--kind", required=True, choices=["cargo", "vitest", "stryker", "mutants"])
+    compact.add_argument("--input", required=True, help="file containing the raw output")
+    _add_json(compact)
+    gatekeeper = agsub.add_parser("gatekeeper", help="run the verify_changes() gatekeeper")
+    gatekeeper.add_argument("--root", default=".", help="repository root")
+    gatekeeper.add_argument("--print-plan", action="store_true", help="print commands only")
+    _add_json(gatekeeper)
+
     return parser
 
 
@@ -85,7 +102,38 @@ def _human(payload: dict) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _dispatch_agentic(args: argparse.Namespace, runner) -> tuple[dict, int]:
+    """Dispatch the hardened agentic helpers; all process calls use the Runner."""
+    command = args.agentic_command
+    if command == "rules":
+        return {"schema": "agent-harness/strict-rules/1", "rules": agentic_mod.STRICT_RULES}, 0
+    if command == "plan":
+        data = json.loads(Path(args.spec_file).read_text(encoding="utf-8"))
+        return agentic_mod.plan(agentic_mod.TaskSpec(**data)), 0
+    if command == "compact":
+        raw = Path(args.input).read_text(encoding="utf-8")
+        return agentic_mod.compact_output(raw, args.kind), 0
+    if command == "gatekeeper":
+        script = paths.data_home() / "current" / "bin" / "gatekeeper"
+        argv = [str(script), "--root", str(Path(args.root).resolve())]
+        if args.print_plan:
+            argv.append("--print-plan")
+            return {"schema": "agent-harness/gatekeeper/1", "EXIT_CODE": 0, "argv": argv}, 0
+        if not script.is_file():
+            raise RuntimeError(f"gatekeeper not installed: {script} (run agent-harness install)")
+        code, out, err = runner.run(argv, timeout=600)
+        return {
+            "schema": "agent-harness/gatekeeper/1",
+            "EXIT_CODE": code,
+            "stdout": out[-8000:],
+            "stderr": err[-2000:],
+        }, code
+    raise ValueError(f"unhandled agentic command {command!r}")  # pragma: no cover
+
+
 def _dispatch(args: argparse.Namespace, runner) -> tuple[dict, int]:
+    if args.command == "agentic":
+        return _dispatch_agentic(args, runner)
     if args.command == "doctor":
         report = health.doctor(runner)
         return report, health.doctor_exit_code(report)

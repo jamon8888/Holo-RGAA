@@ -11,10 +11,11 @@ procédure à reproduire.
 
 ```
 <HOME>/.local/share/agent-harness/        # paquet versionné (données de l'utilisateur)
-  versions/0.1.0/agent_harness/           # code Python
-  versions/0.1.0/bin/agent-harness        # lanceur copié
-  versions/0.1.0/MANIFEST.json            # empreintes SHA-256
-  current -> versions/0.1.0               # pointeur vers la version active
+  versions/0.2.0/agent_harness/           # code Python
+  versions/0.2.0/bin/agent-harness        # lanceur copié
+  versions/0.2.0/bin/gatekeeper           # verify_changes() gate
+  versions/0.2.0/MANIFEST.json            # empreintes SHA-256
+  current -> versions/0.2.0               # pointeur vers la version active
 <HOME>/.local/bin/agent-harness -> .../current/bin/agent-harness   # commande dans PATH
 ```
 
@@ -27,7 +28,7 @@ est repointé. Aucun fichier système (`/usr/local`, `/etc`) n'est modifié.
 À vérifier avec le compte de l'utilisateur :
 
 ```sh
-basemind --version     # doit afficher 0.33.0 (version épinglée)
+basemind --version     # doit afficher 0.34.0 (version épinglée)
 orca --version         # doit être >= 1.4.263
 python3 --version      # >= 3.11 (nécessaire pour tomllib du stdlib)
 ```
@@ -84,7 +85,7 @@ Points de contrôle :
 
 | Élément | Attendu |
 |---|---|
-| `basemind` | `0.33.0` (toute autre version → `version_mismatch` / `degraded`) |
+| `basemind` | `0.34.0` (toute autre version → `version_mismatch` / `degraded`) |
 | `orca` | `>= 1.4.263` |
 | `python` | `>= 3.11` |
 | CLI absente | `not_installed`, **sans** faire échouer le doctor |

@@ -144,10 +144,14 @@ pub fn build_app(state: AppState) -> Router {
     let legacy_routes = Router::new()
         .route("/audit", post(routes::run_audit))
         .route("/audit/:id", get(routes::get_audit));
-    let legacy_routes = apply_resilience(legacy_routes, max_concurrent_audits(), request_timeout());
+    let legacy_routes = apply_resilience(legacy_routes, max_concurrent_audits(), request_timeout())
+        .route_layer(middleware::from_fn_with_state(
+            state.storage.clone(),
+            routes::auth_middleware,
+        ));
 
     // Same Bearer-key gate as `/v1/audit-bundles`: a batch fans out up to
-    // `MAX_BATCH_URLS` full audits from one unauthenticated POST, which is
+    // `MAX_BATCH_URLS` full audits from a single POST, which is
     // by far the most expensive thing this server can be asked to do.
     // Deliberately outside `apply_resilience`: creation returns immediately
     // and the audits themselves run under the orchestrator's own

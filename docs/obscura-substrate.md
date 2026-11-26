@@ -49,6 +49,78 @@ Then set the pin sites above back to `0.2.2` (and the Cargo `rev` to
 the upgrade commit. Upgrade history: `0.2.0` → `0.2.2` (2026-09-06, rollback
 exercised in both directions) → `0.2.4` (2026-10-12).
 
+## Agent-browser study workflow
+
+[`vercel-labs/agent-browser`](https://github.com/vercel-labs/agent-browser)
+can drive the same Obscura binary for interactive page studies. Install its CLI
+separately (`npm install -g agent-browser`), then launch a study with the
+repository-pinned binary:
+
+```bash
+agent-browser --engine obscura --executable-path "$PWD/obscura" open https://example.com
+agent-browser snapshot -i
+agent-browser a11y
+agent-browser screenshot
+agent-browser close
+```
+
+Use this for exploratory browsing, snapshots, and manual follow-up on candidate
+issues. The RGAA audit pipeline still uses `rgaa-obscura` and
+`ObscuraBridge`: agent-browser's Obscura adapter is experimental and does not
+provide the structured DOM, AX tree, and evidence contract consumed by the
+analysis plugins. It also documents accessibility naming, hidden-element,
+iframe, and screenshot fidelity gaps, so agent-browser observations are not
+audit evidence and do not establish Chrome parity. Keep public URLs as the
+default; local development pages require `OBSCURA_ALLOW_PRIVATE_NETWORK=1` in
+the environment before starting the session.
+
+### Repository-integrated study tool (dev only)
+
+Two opt-in entry points drive the same pinned binary through a shared hint
+contract. Both are compiled out of default builds:
+
+```bash
+# Hidden CLI subcommand, feature `dev-explore`
+cargo run -p rgaa-cli --features dev-explore -- \
+  explore https://example.com --executable-path ./obscura --json --keep-open
+```
+
+`rgaa-mcp --features dev-explore` adds the `explore` MCP tool (13 tools instead
+of the usual 12). Either way the output is `kind: "exploration_hints"` with
+`evidence: false`, `not_audit_evidence: true` and `audit_verdict: null`; there
+is no `status`, `verdict` or `finding` field. Every candidate carries
+`review_required: true` and must be reproduced through `ObscuraBridge` before
+it can affect a result.
+
+Pins are enforced before launch: `obscura --version` must be exactly
+`obscura 0.2.4` (a prefix match would accept `0.2.40`) and agent-browser must be
+`0.45.0`. The Obscura adapter rejects proxy-bypass settings, so `NO_PROXY` and
+`AGENT_BROWSER_PROXY_BYPASS` are removed from the browser child process. Run
+state, npm cache and sockets live in a per-run directory under `$TMPDIR`;
+`--artifact-dir` persists screenshots when the run dir is cleaned up. Public
+URLs are the default; localhost needs the explicit private-network opt-in.
+
+### Parity study (2026-11-26)
+
+The experimental adapter was compared with `ObscuraBridge` on 16 pages
+(`example.com` plus fixtures for images, hidden elements, iframes, focus order,
+naming, forms and language), both at 1920x1080:
+
+| Measure | Result |
+|---|---|
+| Role-qualified name Jaccard (mean) | 0.614 |
+| Role-agnostic, deduplicated name Jaccard | 1.000 (16/16 pages) |
+| Expected-name coverage | 0.917 |
+| Screenshot dimensions | 16/16 equal |
+| Mean absolute RGB difference | 1.38 / 255 |
+
+Every role-qualified difference was the same structural pattern: the bridge
+emits a redundant `StaticText` child next to the named node, which
+agent-browser omits. The go/no-go gate passed, so the MCP tool was added behind
+its feature. This measures name and screenshot parity only — the adapter is
+still experimental, the AX tree shapes differ, and none of it constitutes
+audit evidence or Chrome parity.
+
 ## Production ops
 
 Decisions from the Scale #8 (#48, part of #42) research pass over

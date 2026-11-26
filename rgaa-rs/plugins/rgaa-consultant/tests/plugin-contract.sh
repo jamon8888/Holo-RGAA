@@ -213,7 +213,9 @@ word_to_num() {
 }
 
 if [[ -f "$SERVER_RS" ]]; then
-  registered=$(grep -oE 'name = "[a-z_]+"' "$SERVER_RS" | sed 's/name = "//; s/"//' | sort -u)
+  # `explore` is a dev-only tool (feature `dev-explore`, off by default), not
+  # part of the published MCP surface documented by these plugins.
+  registered=$(grep -oE 'name = "[a-z_]+"' "$SERVER_RS" | sed 's/name = "//; s/"//' | sort -u | sed '/^explore$/d')
   if [[ -z "$registered" ]]; then
     echo "❌ TOOL CONTRACT: found no registered tools in server.rs (parser drifted?)"
     FAILURES=$((FAILURES + 1))

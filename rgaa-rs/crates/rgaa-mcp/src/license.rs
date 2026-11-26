@@ -45,6 +45,10 @@ pub enum ToolLicense {
 pub fn tool_license(tool: &str) -> Option<ToolLicense> {
     use ToolLicense::*;
     Some(match tool {
+        // Dev-only exploration is unlicensed by design: it produces no verdict
+        // or evidence and is compiled out of the default build.
+        #[cfg(feature = "dev-explore")]
+        "explore" => Exempt,
         "lint_static" => Metered(Feature::StaticLint, 1),
         "analyze" | "audit_url" => Metered(Feature::FullAudit, 1),
         "igt" => Metered(Feature::Igt, 1),
@@ -54,7 +58,8 @@ pub fn tool_license(tool: &str) -> Option<ToolLicense> {
         // ToolServer methods, but keeping them classified documents the
         // transport policy and prevents future dispatch code from metering
         // the handshake or tool catalogue.
-        "list_criteria" | "initialize" | "tools/list" => Exempt,
+        "list_criteria" | "get_test_methodology" | "list_analysis_plugins"
+        | "run_analysis_plugin" | "initialize" | "tools/list" => Exempt,
         _ => return None,
     })
 }

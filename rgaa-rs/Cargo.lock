@@ -2878,6 +2878,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519-compact"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9547879431a90e352a35863a54416d92898a787b9af09e6ae2e09a96bd78be80"
+dependencies = [
+ "getrandom 0.4.3",
+]
+
+[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3102,6 +3111,12 @@ checksum = "187df1a888981457401efeb1b36596aa97f34d0bbb6ab24d70a2226803b3fd52"
 dependencies = [
  "anyhow",
 ]
+
+[[package]]
+name = "fiat-crypto"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "find-msvc-tools"
@@ -8163,6 +8178,7 @@ dependencies = [
  "rgaa-agent",
  "rgaa-analysis",
  "rgaa-core",
+ "rgaa-explore",
  "rgaa-holo",
  "rgaa-license",
  "rgaa-mcp-http",
@@ -8186,6 +8202,7 @@ dependencies = [
 name = "rgaa-core"
 version = "0.1.0"
 dependencies = [
+ "reqwest 0.12.28",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -8206,6 +8223,21 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "rgaa-explore"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "rgaa-obscura",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -8236,7 +8268,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror 2.0.21",
  "tokio",
  "toml",
  "tower",
@@ -8266,6 +8298,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rgaa-analysis",
  "rgaa-core",
+ "rgaa-explore",
  "rgaa-license",
  "rgaa-linter",
  "rgaa-obscura",

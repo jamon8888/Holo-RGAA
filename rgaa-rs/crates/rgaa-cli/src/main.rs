@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+#[cfg(feature = "dev-explore")]
+use rgaa_cli::commands::explore::ExploreArgs;
 use rgaa_cli::commands::metrics::ReouvertureArgs;
 use rgaa_cli::commands::{AuditCommand, ExportCommand};
 use rgaa_cli::CliError;
@@ -12,6 +14,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum TopCommand {
+    /// Dev-only exploration hints. Never an audit result or evidence.
+    #[cfg(feature = "dev-explore")]
+    #[command(
+        name = "explore",
+        about = "Explore a URL with pinned Obscura (dev only, not audit evidence)",
+        hide = true
+    )]
+    Explore(ExploreArgs),
     /// Print the active offer (Souverain / Confort) and LLM route.
     #[command(about = "Show the active offer and LLM route")]
     Status,
@@ -77,6 +87,8 @@ async fn main() {
 
     let cli = Cli::parse();
     let log_file = match &cli.command {
+        #[cfg(feature = "dev-explore")]
+        TopCommand::Explore(_) => None,
         TopCommand::Status => None,
         TopCommand::Audit(args) => args.command.common().log_file.clone(),
         TopCommand::Export(args) => args.command.common().log_file.clone(),
@@ -87,6 +99,12 @@ async fn main() {
         TopCommand::Plugins(_) | TopCommand::Models(_) => None,
     };
     let action = match cli.command {
+        // Exploration is not an audit: it skips the licence gate, the audit
+        // header and the monitoring log, and can never produce a finding.
+        #[cfg(feature = "dev-explore")]
+        TopCommand::Explore(args) => {
+            exit_with(rgaa_cli::commands::explore::run(args).await);
+        }
         TopCommand::Status => match rgaa_cli::commands::status::run() {
             Ok(code) => std::process::exit(code),
             Err(error) => {
@@ -144,9 +162,15 @@ async fn main() {
     };
     eprintln!("Monitoring log: {}", log_path.display());
 
-    let result =
-        rgaa_cli::commands::dispatch_licensed(args.command, &rgaa_cli::license::gate_from_env())
-            .await;
+    let result = match action {
+        Action::Audit(command) => {
+            rgaa_cli::commands::dispatch_licensed(command, &rgaa_cli::license::gate_from_env())
+                .await
+        }
+        Action::Export(command) => {
+            exit_with(rgaa_cli::commands::dispatch_export(command).await);
+        }
+    };
     let code = match &result {
         Ok(code) => *code,
         Err(error) => {
@@ -181,6 +205,29 @@ fn exit_code(error: &CliError) -> i32 {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[cfg(feature = "dev-explore")]
+    #[test]
+    fn explore_is_a_top_level_dev_command() {
+        let cli = Cli::try_parse_from([
+            "rgaa",
+            "explore",
+            "https://example.com",
+            "--executable-path",
+            "/tmp/obscura",
+            "--json",
+            "--keep-open",
+        ])
+        .expect("explore command parses");
+        match cli.command {
+            TopCommand::Explore(args) => {
+                assert_eq!(args.url, "https://example.com");
+                assert!(args.json);
+                assert!(args.keep_open);
+            }
+            other => panic!("expected explore, got {other:?}"),
+        }
+    }
 
     #[test]
     fn metrics_reouverture_est_une_commande_de_premier_niveau() {

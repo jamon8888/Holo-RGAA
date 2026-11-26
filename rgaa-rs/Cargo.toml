@@ -24,6 +24,7 @@ members = [
     "crates/rgaa-mcp-http",
     "crates/rgaa-cli",
     "crates/rgaa-browser-tools",
+    "crates/rgaa-explore",
     "crates/rgaa-data",
     "crates/rgaa-test-corpus",
     "crates/rgaa-spider",

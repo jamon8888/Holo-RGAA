@@ -25,6 +25,31 @@ jobs:
       - run: shellcheck -S warning install.sh
       - run: bash -n install.sh
 
+  explore-boundary:
+    name: Exploration tool boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `rgaa-explore` produces hints, not evidence. Only the interface crates
+      # may depend on it; an audit-path crate pulling it in would blur the
+      # boundary with findings and statuses.
+      - name: No audit-path crate depends on rgaa-explore
+        run: |
+          set -euo pipefail
+          allowed='^(rgaa-explore|rgaa-cli|rgaa-mcp|rgaa-mcp-http)$'
+          status=0
+          for manifest in rgaa-rs/crates/*/Cargo.toml; do
+            crate=$(basename "$(dirname "$manifest")")
+            if [[ "$crate" =~ $allowed ]]; then
+              continue
+            fi
+            if grep -q 'rgaa-explore' "$manifest"; then
+              echo "::error::$crate must not depend on rgaa-explore"
+              status=1
+            fi
+          done
+          exit "$status"
+
   plugin-contract:
     name: Plugin contract
     runs-on: ubuntu-latest
@@ -108,9 +133,12 @@ jobs:
           # below can explain why. An empty list is a real condition here
           # (the generator produced nothing, or the attribute shape changed)
           # and it deserves the message, not a bare exit 1.
+          # `explore` is dev-only (feature `dev-explore`, off by default) and
+          # never appears in the published TypeScript types; ignore it here.
           registered=$(grep -oE 'name = "[a-z_]+"' \
               rgaa-rs/crates/rgaa-mcp/src/server.rs \
-            | sed 's/name = "//; s/"//' | sort -u || true)
+            | sed 's/name = "//; s/"//' | sort -u \
+            | sed '/^explore$/d' || true)
           declared=$(grep -oE '^  \| "[a-z_]+"' types/src/tools.d.ts \
             | sed 's/^  | "//; s/"//' | sort -u || true)
           if [ -z "$registered" ] || [ -z "$declared" ]; then

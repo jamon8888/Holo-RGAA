@@ -1,0 +1,24 @@
+[package]
+description = "Dev-only exploration hints driven by agent-browser and the pinned Obscura substrate"
+license = "MIT"
+name = "rgaa-explore"
+version = "0.1.0"
+edition = "2021"
+
+# Deliberately not a dependency of any audit crate: exploration hints must never
+# become evidence or verdicts. Consumers opt in explicitly.
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["process", "time", "io-util", "macros"] }
+tempfile = "3"
+url = "2"
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Only the parity example needs the real audit-side browser contract. This is
+# a dev target: the library itself still has no audit-path dependencies.
+rgaa-obscura = { path = "../rgaa-obscura" }
+base64 = "0.22"
+tokio = { workspace = true, features = ["full"] }

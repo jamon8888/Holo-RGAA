@@ -119,6 +119,7 @@ impl AxeMapper {
                         review_events: Vec::new(),
                     });
                 if mechanism.review_only {
+                    Self::apply_capped_review(result, &violation.id);
                     result.status = CriterionStatus::NeedsReview;
                     result.review_required = true;
                     if !result

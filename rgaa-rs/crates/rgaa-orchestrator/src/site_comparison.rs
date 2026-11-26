@@ -3,6 +3,8 @@
 //! This module consumes observations from the same crawl. It never treats a
 //! missing page, missing observation, or uniform heuristic as proof of Pass.
 
+#![allow(dead_code)]
+
 use std::collections::BTreeSet;
 
 use rgaa_core::CriterionStatus;

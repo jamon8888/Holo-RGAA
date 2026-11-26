@@ -19,7 +19,7 @@ pub const AGENT_BROWSER_PACKAGE: &str = "agent-browser@0.45.0";
 /// the gate in `install.sh` and `ObscuraBridge::start_server`.
 #[must_use]
 pub fn obscura_version_matches(output: &str) -> bool {
-    let mut reported = output.trim().split_whitespace();
+    let mut reported = output.split_whitespace();
     let mut pinned = OBSCURA_PINNED_VERSION.split_whitespace();
     (reported.next(), reported.next()) == (pinned.next(), pinned.next())
 }
@@ -27,7 +27,7 @@ pub fn obscura_version_matches(output: &str) -> bool {
 /// Accept only `agent-browser <pinned version>` from `--version`.
 #[must_use]
 pub fn agent_browser_version_matches(output: &str) -> bool {
-    let mut reported = output.trim().split_whitespace();
+    let mut reported = output.split_whitespace();
     match (reported.next(), reported.next()) {
         (Some(name), Some(version)) => {
             name == "agent-browser" && version == AGENT_BROWSER_PINNED_VERSION

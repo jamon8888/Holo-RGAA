@@ -612,10 +612,9 @@ pub struct Orchestrator {
 
 /// Events emitted by the audit pipeline for progress tracking.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum AuditEvent {
     Phase(AuditPhase),
-    Done(Result<AuditResult, String>),
+    Done(Box<Result<AuditResult, String>>),
 }
 
 impl Default for Orchestrator {

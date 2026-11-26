@@ -5,11 +5,29 @@ Pour chaque finding : surlignage de l'existant, capture de l'onglet, et **aperç
 de chaque proposition de remédiation de l'IA, annulable. Rien n'est jamais écrit dans le code
 source du site ; l'application réelle passe par `remediate` (approbation) puis `verify`.
 
-## Utiliser
+## Télécharger
 
-1. `chrome://extensions` → mode développeur → « Charger l'extension non empaquetée » → ce dossier.
-2. Ouvrir la page auditée, cliquer sur l'icône : le panneau s'ouvre (`activeTab` accordé à cet onglet).
-3. Charger `.rgaa/visual/input.json`, produit par `/remediate-visual` (contrat : en-tête de `lib.js`).
+L'extension se distribue sous forme d'archive Chrome compatible (Manifest V3) :
+`rgaa-chrome-<version>.zip`, publiée à chaque [GitHub Release](
+https://github.com/jamon8888/Holo-RGAA/releases) en tant qu'élément joint
+(asset).
+
+Depuis une release :
+1. Télécharger `rgaa-chrome-<version>.zip` et le décompresser.
+2. `chrome://extensions` → mode développeur → « Charger l'extension non empaquetée »
+   → le dossier décompressé.
+3. Ouvrir la page auditée, cliquer sur l'icône : le panneau s'ouvre
+   (`activeTab` accordé à cet onglet).
+4. Charger `.rgaa/visual/input.json`, produit par `/remediate-visual`
+   (contrat : en-tête de `lib.js`).
+
+Depuis les sources (développement) :
+```
+cd rgaa-rs/plugins/rgaa-chrome
+npm run dist   # produit dist/rgaa-chrome-<version>.zip
+```
+puis charger le contenu du dossier (ou le zip décompressé) via « Charger
+l'extension non empaquetée ».
 
 ## Tester
 

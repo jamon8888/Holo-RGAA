@@ -173,7 +173,7 @@ pub fn export(audit: &rgaa_core::AuditResult, path: &Path) -> Result<ExportForma
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rgaa_core::{Classification, CriterionResult, CriterionStatus};
+    use rgaa_core::{AuditType, Classification, CriterionResult, CriterionStatus};
 
     #[test]
     fn html_export_includes_site_level_criteria() {
@@ -217,6 +217,7 @@ mod tests {
             etat_conformite: "non conforme".into(),
             duration_ms: 0,
             audit_complete: false,
+            audit_type: AuditType::Complet,
         };
 
         export_html(&audit, &path).expect("HTML export");

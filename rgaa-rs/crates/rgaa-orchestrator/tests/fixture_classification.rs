@@ -99,7 +99,7 @@ fn cases() -> Vec<Case> {
         // axe/gap-fix on an isolated page. The comparator's logic is unit-tested on
         // synthetic observations in `site_comparison`; their fixture files are not
         // classified anywhere yet (docs/testing-layers.md).
-        if m.kind == MechanismKind::Site {
+        if matches!(m.kind, MechanismKind::Site | MechanismKind::JsBehavioural) {
             continue;
         }
         for f in &m.fixtures {

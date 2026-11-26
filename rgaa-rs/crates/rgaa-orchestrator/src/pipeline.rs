@@ -328,7 +328,7 @@ pub fn assemble_site_audit(
     // The scope is enforced at the aggregation boundary too: a caller that
     // hands us an unfiltered page must not be able to inflate the rate with
     // criteria outside the requested audit type.
-    let all_pages: Vec<PageResult> = all_pages
+    let mut all_pages: Vec<PageResult> = all_pages
         .into_iter()
         .map(|mut page| {
             page.criteria

@@ -123,26 +123,35 @@ pub fn run(args: ReviewArgs) -> Result<i32, CliError> {
     let mut audit: AuditResult = serde_json::from_str(&raw)
         .map_err(|error| CliError::invalid_input(format!("invalid audit JSON: {error}")))?;
 
-    let (page_index, criterion_index) =
-        locate_criterion(&audit, &args.criterion, args.url.as_deref())?;
-
-    // #429 / R5 : un élément transverse porte une seule décision nominative,
-    // sur la page `transverses`. Une page de l'échantillon ne fait que renvoyer
-    // à cette page ; elle ne peut pas recevoir une seconde décision.
-    if audit.pages[page_index].criteria[criterion_index].source == TRANSVERSE_REFERENCE_SOURCE {
-        return Err(CliError::invalid_input(format!(
-            "ce critère est évalué une seule fois sur la page '{TRANSVERSE_PAGE_URL}'; \
-             utilisez --url {TRANSVERSE_PAGE_URL} pour la décision nominative unique"
-        )));
+    match locate_criterion(&audit, &args.criterion, args.url.as_deref())? {
+        ReviewTarget::Page(page_index, criterion_index) => {
+            // #429 / R5 : un élément transverse porte une seule décision nominative,
+            // sur la page `transverses`. Une page de l'échantillon ne fait que renvoyer
+            // à cette page ; elle ne peut pas recevoir une seconde décision.
+            if audit.pages[page_index].criteria[criterion_index].source
+                == TRANSVERSE_REFERENCE_SOURCE
+            {
+                return Err(CliError::invalid_input(format!(
+                    "ce critère est évalué une seule fois sur la page '{TRANSVERSE_PAGE_URL}'; \
+                     utilisez --url {TRANSVERSE_PAGE_URL} pour la décision nominative unique"
+                )));
+            }
+            apply_review(
+                &mut audit.pages[page_index].criteria[criterion_index],
+                args.status.into(),
+                &args.author,
+                Utc::now(),
+                &args.reason,
+            )
+        }
+        ReviewTarget::Site(criterion_index) => apply_review(
+            &mut audit.site_criteria[criterion_index],
+            args.status.into(),
+            &args.author,
+            Utc::now(),
+            &args.reason,
+        ),
     }
-
-    apply_review(
-        &mut audit.pages[page_index].criteria[criterion_index],
-        args.status.into(),
-        &args.author,
-        Utc::now(),
-        &args.reason,
-    )
     .map_err(|error| CliError::invalid_input(error.to_string()))?;
     refresh_status_aggregates(&mut audit);
 

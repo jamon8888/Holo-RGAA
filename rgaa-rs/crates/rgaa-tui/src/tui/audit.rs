@@ -273,7 +273,9 @@ fn run_audit_thread(
         if let Err(e) =
             rgaa_cli::license::admit(&gate, rgaa_license::Feature::FullAudit, chrono::Utc::now())
         {
-            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Err(e.to_string())));
+            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Box::new(Err(
+                e.to_string()
+            ))));
             return;
         }
 

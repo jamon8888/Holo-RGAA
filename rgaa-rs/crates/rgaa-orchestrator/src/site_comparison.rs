@@ -3,6 +3,8 @@
 //! This module consumes observations from the same crawl. It never treats a
 //! missing page, missing observation, or uniform heuristic as proof of Pass.
 
+#![allow(dead_code)]
+
 use std::collections::BTreeSet;
 
 use rgaa_core::CriterionStatus;
@@ -427,6 +429,50 @@ fn site_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rgaa_obscura::ObscuraBridge;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::path::{Path, PathBuf};
+
+    fn corpus_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../rgaa-test-corpus/criteria")
+    }
+
+    fn serve(dir: PathBuf) -> std::io::Result<u16> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let port = listener.local_addr()?.port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                let mut request = [0_u8; 2048];
+                let read = stream.read(&mut request).unwrap_or(0);
+                let name = String::from_utf8_lossy(&request[..read])
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .trim_start_matches('/')
+                    .to_owned();
+                let body = (!name.contains("..") && !name.contains('/'))
+                    .then(|| std::fs::read(dir.join(name)).ok())
+                    .flatten();
+                let _ = match body {
+                    Some(body) => stream
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                body.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .and_then(|()| stream.write_all(&body)),
+                    None => stream.write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    ),
+                };
+            }
+        });
+        Ok(port)
+    }
 
     #[test]
     fn absent_access_signals_require_review_instead_of_proving_failure() {
@@ -699,5 +745,69 @@ mod tests {
             nav(&compare_site(&[a, one], 2, 0, true)),
             CriterionStatus::Fail
         );
+    }
+
+    #[tokio::test]
+    async fn site_fixtures_are_classified_by_the_multi_page_comparator() {
+        if !rgaa_test_corpus::e2e::enabled("site_fixture_classification") {
+            return;
+        }
+
+        rgaa_test_corpus::e2e::allow_private_network();
+        let port = serve(corpus_dir()).expect("fixture server must bind");
+        let binary = ObscuraBridge::from_env().binary_path().to_owned();
+
+        for (criterion, passing, failing) in [
+            (
+                "12.1",
+                "12.1-site-navigation-pass",
+                "12.1-site-navigation-fail",
+            ),
+            ("12.2", "12.2-site-position-pass", "12.2-site-position-fail"),
+            ("12.4", "12.4-site-sitemap-pass", "12.4-site-sitemap-fail"),
+            ("12.5", "12.5-site-search-pass", "12.5-site-search-fail"),
+        ] {
+            let pass_url = format!("http://127.0.0.1:{port}/{passing}.html");
+            let fail_url = format!("http://127.0.0.1:{port}/{failing}.html");
+            let contexts = ObscuraBridge::extract_page_context_batch(
+                binary.clone(),
+                vec![pass_url.clone(), fail_url.clone()],
+                1,
+            )
+            .await
+            .expect("site fixture contexts");
+            let passing: PageObservation = serde_json::from_value(
+                contexts
+                    .get(&pass_url)
+                    .expect("passing fixture context")
+                    .clone(),
+            )
+            .expect("passing site observation");
+            let failing: PageObservation = serde_json::from_value(
+                contexts
+                    .get(&fail_url)
+                    .expect("failing fixture context")
+                    .clone(),
+            )
+            .expect("failing site observation");
+            let status = |pages: &[PageObservation]| {
+                compare_site(pages, pages.len(), 0, true)
+                    .into_iter()
+                    .find(|result| result.criterion_id == criterion)
+                    .expect("site criterion result")
+                    .status
+            };
+
+            assert_eq!(
+                status(&[passing.clone(), passing.clone()]),
+                CriterionStatus::NeedsReview,
+                "{criterion} conforming fixtures must not claim Pass"
+            );
+            assert_eq!(
+                status(&[passing, failing]),
+                CriterionStatus::Fail,
+                "{criterion} contradictory fixture pair must fail"
+            );
+        }
     }
 }

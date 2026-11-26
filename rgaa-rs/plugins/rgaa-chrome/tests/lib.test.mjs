@@ -6,7 +6,7 @@ import { analyzeUrl, byCriterion, fromAnalyze, parseContract } from '../lib.js';
 const fixture = readFileSync(new URL('../../rgaa-consultant/tests/fixtures/visual/input.json', import.meta.url), 'utf8');
 
 test('le contrat de la skill visual-remediation est accepté tel quel', () => {
-  assert.equal(parseContract(fixture).findings.length, 3);
+  assert.equal(parseContract(fixture).findings.length, 4);
 });
 
 test('critères triés numériquement, findings regroupés', () => {

@@ -18,18 +18,37 @@
   code { background: #f2f2f2; padding: 0 .25em; }
   [role=status] { min-height: 1.4em; }
   @media (prefers-color-scheme: dark) { body { color: #eee; background: #1b1b1b; } button { color: #eee; background: #1b1b1b; border-color: #eee; } code { background: #333; } }
+.tier-filter { margin: .5em 0; }
+.tier-filter input { margin-right: .5em; }
+.mark-btn { padding: .2em .4em; font-size: .85em; }
+.skip-link { position: absolute; left: -999px; top: auto; right: 0; width: fit-content; z-index: 100; }
+.skip-link:focus { left: 0; padding: .5em; background: #1a1a1a; color: #fff; }
 </style>
 </head>
 <body>
 <h1>Remédiation RGAA</h1>
+<nav aria-label="Actions principales">
+  <button id="prev" aria-label="Critère précédent">&larr; précédent</button>
+  <span id="pos" aria-live="polite"></span>
+  <button id="next" aria-label="Critère suivant">suivant →</button>
+</nav>
 <details>
   <summary>Serveur d'audit (rgaa-mcp-http)</summary>
   <p><label>URL du serveur <input id="server" type="url" placeholder="http://127.0.0.1:8080" size="30"></label></p>
   <p><label>Jeton (<code>RGAA_MCP_TOKEN</code>, gardé le temps de la session) <input id="token" type="password" autocomplete="off"></label></p>
   <p><button id="analyze">Analyser l'onglet courant</button></p>
 </details>
+<p><a href="#review" class="skip-link">Aller à la revue de critères</a></p>
 <p><label>Ou fichier de findings (<code>input.json</code>) <input id="file" type="file" accept="application/json,.json"></label></p>
 <p role="status" id="status"></p>
+<div class="tier-filter" role="radiogroup" aria-label="Filtre par niveau d'automatisation">
+  <input type="radio" name="tier-filter" value="automatique" id="filter-auto" hidden>
+  <label for="filter-auto">Automatique</label>
+  <input type="radio" name="tier-filter" value="assiste" id="filter-assiste" hidden>
+  <label for="filter-assiste">Assisté</label>
+  <input type="radio" name="tier-filter" value="irreductible" id="filter-irreductible" hidden>
+  <label for="filter-irreductible">Irréductible</label>
+</div>
 <div id="review" hidden>
   <nav aria-label="Navigation entre critères">
     <button id="prev">← Critère précédent</button>

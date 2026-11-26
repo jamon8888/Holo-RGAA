@@ -61,6 +61,7 @@ fn audit() -> AuditResult {
                 crawl_depth: 0,
             },
         ],
+        site_criteria: Vec::new(),
         total_criteria: 106,
         passed: 0,
         failed: 0,

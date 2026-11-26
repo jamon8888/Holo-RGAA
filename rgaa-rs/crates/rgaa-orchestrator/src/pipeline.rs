@@ -425,6 +425,7 @@ fn extract_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
                             let mut criterion = criterion.clone();
                             criterion.status = CriterionStatus::NeedsReview;
                             criterion.justification = Some(SITE_LEVEL_NOT_EVALUATED.to_string());
+                            criterion.automated_verdict = None;
                             criterion
                         })
                     })
@@ -1528,6 +1529,137 @@ async fn audit_one(
         HashMap::new()
     };
 
+    // 13.1 redirects by script (#265): a hook installed before the page's scripts, then ~6 s
+    // of observation without interaction. Only runs when the plan routes it.
+    let redirect_is_routed = criterion_has_routed_mechanism("13.1", "probe-13-1-script-redirect");
+    let script_hook_results = if redirect_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::REDIRECT_HOOK,
+                rgaa_rules::script_hooks::REDIRECT_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::redirect_results(
+                rgaa_rules::script_hooks::parse_redirect_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura redirect probe failed; 13.1 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 13.2 popups without user action (#266), same hook infrastructure as 13.1.
+    let popup_is_routed = criterion_has_routed_mechanism("13.2", "probe-13-2-popup-hook");
+    let popup_results = if popup_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::POPUP_HOOK,
+                rgaa_rules::script_hooks::REDIRECT_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::popup_results(
+                rgaa_rules::script_hooks::parse_popup_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura popup probe failed; 13.2 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // Listener inventory (#272): one hooked load covers 12.10, 13.10, 13.11 and 13.12.
+    let listeners_are_routed = ["12.10", "13.10", "13.11", "13.12"]
+        .iter()
+        .any(|criterion_id| {
+            criterion_has_routed_mechanism(
+                criterion_id,
+                &format!(
+                    "probe-{}-listener-inventory",
+                    criterion_id.replace('.', "-")
+                ),
+            )
+        });
+    let listener_results = if listeners_are_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::LISTENER_HOOK,
+                rgaa_rules::script_hooks::LISTENER_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::LISTENER_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::listener_results(&observation),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura listener inventory failed; criteria keep their fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 13.9 portrait/landscape (#268): render at two viewports and compare the visible content.
+    let orientation_is_routed =
+        criterion_has_routed_mechanism("13.9", "probe-13-9-orientation-render");
+    let orientation_results = if orientation_is_routed {
+        match bridge
+            .observe_viewports(
+                &url,
+                rgaa_rules::script_hooks::ORIENTATION_HOOK,
+                rgaa_rules::script_hooks::ORIENTATION_READ,
+                &rgaa_rules::script_hooks::ORIENTATION_VIEWPORTS,
+            )
+            .await
+        {
+            Ok(snapshots) => rgaa_rules::script_hooks::orientation_results(
+                rgaa_rules::script_hooks::parse_orientation_observation(&snapshots).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura orientation probe failed; 13.9 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
+    // 13.8 automatic movement by script (#267): DOM mutations without interaction. CSS
+    // animations are not detectable on Obscura 0.2.4 and are left to the existing mechanisms.
+    let motion_is_routed = criterion_has_routed_mechanism("13.8", "probe-13-8-script-motion");
+    let motion_results = if motion_is_routed {
+        match bridge
+            .observe_with_hook(
+                &url,
+                rgaa_rules::script_hooks::MOTION_HOOK,
+                rgaa_rules::script_hooks::MOTION_READ,
+                std::time::Duration::from_millis(rgaa_rules::script_hooks::REDIRECT_OBSERVATION_MS),
+            )
+            .await
+        {
+            Ok(observation) => rgaa_rules::script_hooks::motion_results(
+                rgaa_rules::script_hooks::parse_motion_observation(&observation).as_ref(),
+            ),
+            Err(error) => {
+                tracing::warn!(url, error = %error, "Obscura motion probe failed; 13.8 keeps its fallback");
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    };
+
     // 3. Extract page context for LLM evaluation prompts
     on_phase(AuditPhase::PageContext);
     info!("Extracting page context");
@@ -1558,6 +1690,11 @@ async fn audit_one(
         .values()
         .chain(gap_results.values())
         .chain(keyboard_results.values())
+        .chain(script_hook_results.values())
+        .chain(popup_results.values())
+        .chain(listener_results.values())
+        .chain(orientation_results.values())
+        .chain(motion_results.values())
         .cloned()
         .collect();
     let mut by_engine: HashMap<PlanEngine, Vec<Criterion>> = HashMap::new();
@@ -1606,6 +1743,11 @@ async fn audit_one(
         .into_iter()
         .chain(gap_results)
         .chain(keyboard_results)
+        .chain(script_hook_results)
+        .chain(popup_results)
+        .chain(listener_results)
+        .chain(orientation_results)
+        .chain(motion_results)
         .chain(estimate_results);
     Ok(assemble_page_audit(
         url,

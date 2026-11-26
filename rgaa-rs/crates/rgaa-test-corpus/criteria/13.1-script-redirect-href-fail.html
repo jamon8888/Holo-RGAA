@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 13.1 - Redirection par affectation de location.href</title>
+</head>
+<body>
+    <main>
+        <h1>Critère 13.1</h1>
+        <p>Cette page change d'adresse par affectation de <code>window.location.href</code> après 2 secondes.</p>
+    </main>
+    <script>
+        setTimeout(function () { window.location.href = '13.1-script-redirect-pass.html'; }, 2000);
+    </script>
+</body>
+</html>

@@ -222,8 +222,9 @@ fn surface_touchee(etats: &[EtatPixel], maintenant: u16) -> (f64, [u32; 4]) {
             let haut = y as usize * LARGE as usize;
             let droite = (x + FENETRE_LARGEUR) as usize;
             let gauche = x as usize;
-            let touche = integral[bas + droite] - integral[bas + gauche] - integral[haut + droite]
-                + integral[haut + gauche];
+            let colonne_droite = integral[bas + droite] - integral[haut + droite];
+            let colonne_gauche = integral[bas + gauche] - integral[haut + gauche];
+            let touche = colonne_droite - colonne_gauche;
             let fraction = touche as f64 / aire as f64;
             if fraction > meilleure {
                 meilleure = fraction;

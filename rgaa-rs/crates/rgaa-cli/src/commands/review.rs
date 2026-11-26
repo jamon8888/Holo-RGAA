@@ -165,6 +165,13 @@ fn refresh_status_aggregates(audit: &mut AuditResult) {
         page.compliance_rate = rgaa_report::compliance_rate(&page.criteria);
         all_criteria.extend(page.criteria.iter().cloned());
     }
+    all_criteria.retain(|criterion| {
+        !audit
+            .site_criteria
+            .iter()
+            .any(|site| site.criterion_id == criterion.criterion_id)
+    });
+    all_criteria.extend(audit.site_criteria.iter().cloned());
 
     audit.passed = all_criteria
         .iter()
@@ -184,15 +191,22 @@ fn refresh_status_aggregates(audit: &mut AuditResult) {
     audit.taux_global = metrics.taux_global;
     audit.coverage_percent = metrics.coverage_percent;
     audit.etat_conformite = metrics.etat_conformite;
-    audit.verified_compliance_percent =
-        rgaa_report::compute_audit_metrics(&audit.pages).verified_compliance_percent;
+    audit.verified_compliance_percent = rgaa_report::compute_audit_metrics(
+        &rgaa_core::pages_with_site_criteria(&audit.pages, &audit.site_criteria),
+    )
+    .verified_compliance_percent;
+}
+
+enum ReviewTarget {
+    Page(usize, usize),
+    Site(usize),
 }
 
 fn locate_criterion(
     audit: &AuditResult,
     criterion_id: &str,
     url: Option<&str>,
-) -> Result<(usize, usize), CliError> {
+) -> Result<ReviewTarget, CliError> {
     let mut matches = Vec::new();
     for (page_index, page) in audit.pages.iter().enumerate() {
         if url.is_some_and(|expected_url| page.url != expected_url) {
@@ -206,6 +220,13 @@ fn locate_criterion(
     }
 
     match matches.as_slice() {
+        [] if let Some(index) = audit
+            .site_criteria
+            .iter()
+            .position(|c| c.criterion_id == criterion_id) =>
+        {
+            Ok(ReviewTarget::Site(index))
+        }
         [] if url.is_some() => Err(CliError::invalid_input(format!(
             "criterion '{}' was not found on page '{}'",
             criterion_id,
@@ -215,7 +236,7 @@ fn locate_criterion(
             "criterion '{}' was not found in the audit",
             criterion_id
         ))),
-        [target] => Ok(*target),
+        [target] => Ok(ReviewTarget::Page(target.0, target.1)),
         _ if url.is_none() => Err(CliError::invalid_input(format!(
             "criterion '{}' appears on multiple pages; provide --url",
             criterion_id

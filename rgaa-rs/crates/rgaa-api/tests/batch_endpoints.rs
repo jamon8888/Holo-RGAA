@@ -12,6 +12,7 @@ use rgaa_api::batch::{
     batch_router, BatchRunner, BatchService, Clock, InMemoryBatchStore, MAX_BATCH_URLS,
 };
 use rgaa_core::{AuditResult, CrawlConfig};
+use rgaa_license::LicenseGate;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -23,6 +24,7 @@ fn audit(url: &str, taux: f64) -> AuditResult {
         audit_id: format!("audit-for-{url}"),
         url: url.to_string(),
         pages: vec![],
+        site_criteria: Vec::new(),
         total_criteria: 106,
         passed: 50,
         failed: 10,
@@ -95,7 +97,13 @@ impl TestClock {
 }
 
 async fn spawn(runner: ScriptedRunner, clock: Clock) -> SocketAddr {
-    let service = BatchService::new(Arc::new(InMemoryBatchStore::new()), Arc::new(runner), clock);
+    // Licensing is not under test here (see `license_wiring.rs`): admit all.
+    let service = BatchService::new(
+        Arc::new(InMemoryBatchStore::new()),
+        Arc::new(runner),
+        clock,
+        Arc::new(LicenseGate::unrestricted()),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");

@@ -66,6 +66,11 @@ pub struct Mechanism {
     #[serde(default)]
     pub tests: Vec<String>,
     pub outcomes: Vec<Outcome>,
+<<    /// Plafond de verdict (#279). `Some(Review)` : une violation de ce mécanisme ne
+    /// produit jamais `fail`, seulement `review` (indice « suspect », spec §7.1).
+    /// Absent : comportement inchangé.
+    #[serde(default)]
+    pub outcome_cap: Option<Outcome>,
     /// Fixture names (file stems in `rgaa-test-corpus/criteria/`).
     #[serde(default)]
     pub fixtures: Vec<String>,
@@ -146,7 +151,8 @@ impl MechanismRegistry {
     /// * `legacy = false` implies fixtures present on disk under `fixtures_dir`: a
     ///   `-pass` and a `-fail` one, or such a pair per test when `complete`;
     /// * every cited axe rule is in `known_axe_rules`;
-    /// * an `axe-native` mechanism cites at least one rule.
+    /// * an `axe-native` mechanism cites at least one rule;
+    /// * a mechanism capped at `review` declares neither `fail` nor `pass`.
     /// * every catalog test has exactly one valid route in the embedded test plan.
     pub fn check(&self, fixtures_dir: &Path, known_axe_rules: &HashSet<String>) -> Vec<String> {
         let mut problems = self.check_mechanisms(fixtures_dir, known_axe_rules);
@@ -171,12 +177,59 @@ impl MechanismRegistry {
                     m.id
                 ));
             }
+            if let Some(cap) = m.outcome_cap {
+                if cap != Outcome::Review {
+                    problems.push(format!("{}: outcome_cap only supports \"review\"", m.id));
+                } else if m.outcomes.contains(&Outcome::Fail) || m.outcomes.contains(&Outcome::Pass)
+                {
+                    problems.push(format!(
+                        "{}: capped at \"review\" but outcomes declare fail or pass",
+                        m.id
+                    ));
+                }
+            }
             if m.kind == MechanismKind::AxeNative && m.axe_rules.is_empty() {
                 problems.push(format!("{}: axe-native mechanism cites no axe rule", m.id));
+            }
+            if m.outcome_cap == Some(Outcome::Review) && m.outcomes.contains(&Outcome::Fail) {
+                problems.push(format!(
+                    "{}: outcome_cap \"review\" but outcomes contain \"fail\" — cap must be consistent with outcomes",
+                    m.id
+                ));
+            }
+            if let Some(cap) = m.outcome_cap {
+                if !m.outcomes.contains(&cap) {
+                    problems.push(format!(
+                        "{}: outcome_cap \"{cap:?}\" is not declared in outcomes {:?}",
+                        m.id, m.outcomes
+                    ));
+                }
             }
             for rule in &m.axe_rules {
                 if !known_axe_rules.contains(rule) {
                     problems.push(format!("{}: unknown axe rule \"{rule}\"", m.id));
+                }
+            }
+            // outcome_cap is a ceiling: the mechanism may not emit anything above it.
+            if let Some(cap) = m.outcome_cap {
+                match cap {
+                    Outcome::Review => {
+                        if m.outcomes.contains(&Outcome::Fail) {
+                            problems.push(format!(
+                                "{}: outcome_cap is \"review\" but outcomes contain \"fail\" — \
+                                 a capped mechanism cannot produce Fail",
+                                m.id
+                            ));
+                        }
+                    }
+                    Outcome::Pass => {
+                        problems.push(format!(
+                            "{}: outcome_cap \"pass\" is not supported — \
+                             AxeMapper cannot yet enforce that ceiling safely",
+                            m.id
+                        ));
+                    }
+                    Outcome::Fail => {}
                 }
             }
             problems.extend(Self::check_declared_tests(m));
@@ -356,6 +409,20 @@ mod tests {
     }
 
     #[test]
+    fn a_pass_outcome_cap_is_rejected_until_the_mapper_supports_it() {
+        let t = "[[mechanism]]\nid=\"axe-1-1\"\ncriterion=\"1.1\"\nkind=\"axe-native\"\n\
+                 engine=\"obscura\"\ncoverage=\"complete\"\noutcomes=[\"pass\"]\n\
+                 outcome_cap=\"pass\"\nlegacy=true\naxe_rules=[\"image-alt\"]\n";
+        let problems = check(t, Path::new("."));
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("outcome_cap \"pass\" is not supported")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
     fn non_legacy_mechanism_without_fixtures_fails() {
         let t = entry("coverage=\"partial\"\noutcomes=[\"fail\"]\nlegacy=false\nfixtures=[]");
         let problems = check(&t, Path::new("."));
@@ -377,6 +444,20 @@ mod tests {
         let problems = check(&t, &dir);
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(problems[0].contains("11.6-x-fail.html"));
+    }
+
+    #[test]
+    fn a_review_cap_forbids_fail_and_pass_outcomes() {
+        let dir = tmp_dir("cap", &[]);
+        let t =
+            entry("coverage=\"partial\"\noutcomes=[\"fail\"]\noutcome_cap=\"review\"\nlegacy=true");
+        let problems = check(&t, &dir);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("capped"));
+        let ok = entry(
+            "coverage=\"partial\"\noutcomes=[\"review\"]\noutcome_cap=\"review\"\nlegacy=true",
+        );
+        assert!(check(&ok, &dir).is_empty());
     }
 
     #[test]
@@ -427,5 +508,51 @@ mod tests {
     #[test]
     fn unknown_criterion_probe_is_not_complete() {
         assert!(!MechanismRegistry::builtin().probe_is_complete("99.99"));
+    }
+
+    /// #279: outcome_cap must be consistent with outcomes — a cap of `review`
+    /// with `outcomes = ["fail"]` is a configuration error.
+    #[test]
+    fn outcome_cap_must_be_declared_in_outcomes() {
+        let toml =
+            entry("coverage=\"partial\"\noutcomes=[\"fail\"]\nlegacy=true\noutcome_cap=\"review\"");
+        let problems = check(&toml, Path::new("."));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("outcome_cap") && p.contains("review")),
+            "outcome_cap not in outcomes must be flagged, obtenu {problems:?}"
+        );
+    }
+
+    /// #279: outcome_cap = review cannot coexist with outcomes containing fail.
+    #[test]
+    fn outcome_cap_review_excludes_fail_outcome() {
+        let toml = entry(
+            "coverage=\"partial\"\noutcomes=[\"fail\",\"review\"]\nlegacy=true\noutcome_cap=\"review\"",
+        );
+        let problems = check(&toml, Path::new("."));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("outcome_cap") && p.contains("fail")),
+            "outcome_cap review with fail outcome must be flagged, obtenu {problems:?}"
+        );
+    }
+
+    /// #279: axe-12-8 has outcome_cap = review.
+    #[test]
+    fn axe_12_8_has_outcome_cap_review() {
+        let registry = MechanismRegistry::builtin();
+        let m = registry
+            .axe_for("12.8")
+            .expect("axe-12-8 must exist in builtin registry");
+        assert_eq!(
+            m.outcome_cap,
+            Some(Outcome::Review),
+            "axe-12-8 must cap verdict at review"
+        );
+        assert!(m.outcomes.contains(&Outcome::Review));
+        assert!(!m.outcomes.contains(&Outcome::Fail));
     }
 }

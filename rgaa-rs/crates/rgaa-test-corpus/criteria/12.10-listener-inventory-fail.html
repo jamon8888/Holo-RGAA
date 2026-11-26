@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 12.10 - Écouteur: raccourci clavier global</title>
+</head>
+<body>
+    <main>
+        <h1>Critère 12.10</h1>
+        <p>Un écouteur <code>keydown</code> global déclenche une action sur la touche « s ».</p>
+    </main>
+    <script>
+        document.addEventListener('keydown', function (e) { if (e.key === 's') { document.title = 'search'; } });
+    </script>
+</body>
+</html>

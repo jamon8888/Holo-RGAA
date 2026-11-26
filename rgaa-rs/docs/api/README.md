@@ -29,6 +29,57 @@ DATABASE_URL=postgres://user:pass@localhost/rgaa rgaa-api
 |----------|-------------|---------|
 | `LISTEN_ADDR` | Address to bind to | `0.0.0.0:3000` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://localhost/rgaa` |
+| `RGAA_LICENSE_KEY` | Licence token (overrides `~/.config/rgaa/license.toml`) | none: Free tier |
+| `RGAA_LICENSE_PUBLIC_KEYS` | Extra `k4.public.…` keys trusted to sign licences | none |
+| `RGAA_LICENSE_SERVER` | Non-empty toggle for the offline grace period; its value is not read and no revalidation request is made | unset (grace disabled) |
+| `RGAA_LICENSE_GRACE_DAYS` | Offline grace period, in days | `7` |
+
+## Licensing (#87)
+
+The server's licence decides which routes it serves and how many metered
+units it accepts per UTC day (Free 10, Professional 500, Team 5000). Clients
+send nothing extra; activate the licence on the server host with
+`rgaa licence activate <key>` or set `RGAA_LICENSE_KEY`.
+
+**Response headers** on every licence-checked route (exposed through CORS):
+
+| Header | Value |
+|--------|-------|
+| `X-License-Tier` | `free`, `professional`, `team` |
+| `X-License-Status` | `unlicensed`, `valid`, `grace`, `expired`, `grace_exceeded`, `invalid` |
+| `X-License-Grace-Remaining` | Seconds of offline grace left (status `grace` only) |
+| `X-RateLimit-Limit` / `X-RateLimit-Remaining` | Daily units |
+| `X-RateLimit-Reset` | Unix seconds of the next reset (00:00 UTC) |
+| `Retry-After` | Seconds to wait (429 only) |
+
+**Refusals:**
+
+| Status | `code` | Meaning | Retry? |
+|--------|--------|---------|--------|
+| `401` | `license_invalid` | Licence present but unusable (signature, format, not yet valid) | No: fix the licence |
+| `402` | `feature_not_in_tier` | Route needs a higher tier (`required_tier`) | No: upgrade (`upgrade_url`) |
+| `402` | `license_expired` | Licence expired, or offline grace exceeded | Renew the licence |
+| `429` | `quota_exceeded` | Daily quota used up | After `Retry-After` |
+
+```json
+{
+  "error": "daily quota of 500 reached; resets at 2026-11-20T00:00:00Z",
+  "code": "quota_exceeded",
+  "tier": "professional",
+  "feature": "full_audit",
+  "limit": 500,
+  "remaining": 0,
+  "reset_at": "2026-11-20T00:00:00Z",
+  "retry_after": 11520
+}
+```
+
+The body extends the existing `{"error": "..."}` shape, so clients that read
+only `error` keep working. TypeScript: `LicenseErrorBody` in
+`@holo-rgaa/mcp-types`.
+
+The legacy `POST /audit` and `GET /audit/{id}` routes are **not**
+licence-checked (nor authenticated) and are **deprecated**; use `/v1/*`.
 
 ## Base URL
 
@@ -41,6 +92,8 @@ http://localhost:3000
 ---
 
 ### `POST /audit`
+
+> **Deprecated.** Not authenticated and not licence-checked; use `/v1/*`.
 
 Run a new RGAA accessibility audit.
 
@@ -70,6 +123,8 @@ Run a new RGAA accessibility audit.
 ---
 
 ### `GET /audit/{id}`
+
+> **Deprecated.** Not licence-checked; use `/v1/*`.
 
 Retrieve a previously run audit by its ID.
 
@@ -141,7 +196,8 @@ OK
 
 ## CORS
 
-The API has CORS enabled for all origins, methods, and headers.
+The API has CORS enabled for all origins, methods, and headers. The licence
+and rate-limit headers above are listed in `Access-Control-Expose-Headers`.
 
 ## Example Usage
 

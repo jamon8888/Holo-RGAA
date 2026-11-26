@@ -84,6 +84,7 @@ Claude will ask for a URL, run the full RGAA audit, and present findings with se
 | `/audit-site` | Audit a live URL for RGAA compliance |
 | `/audit-project` | Audit a local project (requires rgaa-cli) |
 | `/generate-report` | Produce a formatted compliance report |
+| `/remediate-visual` | Per-criterion screenshots and live-rendered AI remediation proposals (Playwright), exportable to the `rgaa-chrome` extension |
 
 ## Skills
 
@@ -106,6 +107,7 @@ Skills activate automatically when relevant — no need to invoke them directly.
 | `langue` | `/rgaa:langue` — language proofs from `lang` |
 | `structure` | `/rgaa:structure` — visual-structure proofs from `layout` |
 | `pertinence` | `/rgaa:pertinence` — text-relevance proofs from `text` |
+| `visual-remediation` | Screenshots of the existing site per RGAA criterion, plus several AI remediation proposals rendered side by side in Playwright/Chromium |
 
 All eight analysis-proof skills share the same template: check
 `list_analysis_plugins` first, call `run_analysis_plugin`, present the `Preuve`
@@ -161,6 +163,25 @@ gets `403` even on a `text/plain` POST that triggers no CORS preflight.
 Setting `RGAA_MCP_TOKEN` (or `--auth-token`) additionally requires
 `Authorization: Bearer <token>` on every request — do set it whenever the
 server is not bound to loopback. `GET /health` stays open.
+
+### Licence (#87)
+
+The MCP server, the REST API and the CLI share one licence, held by the
+machine that runs them. Without one they run on the **Free** tier (static
+lint); full audits, guided tests (`igt`) and remediation need
+**Professional** or **Team**.
+
+```bash
+rgaa licence activate <key>   # stores ~/.config/rgaa/license.toml (0600)
+rgaa licence status           # tier, status, expiry, grace baseline, quota
+```
+
+Or set `RGAA_LICENSE_KEY` in the server's environment (see
+[CONNECTORS.md](CONNECTORS.md)). A refused tool call returns JSON-RPC
+`-32002` (licence required: report the `required_tier`, do not retry) or
+`-32003` (daily quota, HTTP servers only: report `retry_after`, once). A
+refused CLI command exits with code `4`. Daily quotas (Free 10,
+Professional 500, Team 5000 units) apply only to the HTTP servers.
 
 ## Agents
 
@@ -261,29 +282,33 @@ rgaa-consultant/
 │   ├── audit-project.md
 │   └── generate-report.md
 ├── hooks/hooks.json
-├── scripts/check-runtime.sh
+├── scripts/
+│   ├── check-runtime.sh
+│   └── visual/capture.mjs   # Playwright/Chromium screenshots (npm ci)
 ├── tests/
 │   ├── plugin-contract.sh
 │   ├── skills-eval.sh
 │   ├── README-eval.md
 │   ├── fixtures/preuves-analyse.json
+│   ├── visual-capture.sh
 │   └── e2e-local.sh
 └── skills/
     ├── audit/
-    ├── triage/
-    ├── remediate/
-    ├── verify/
-    ├── report/
-    ├── guided-test/
-    ├── criteria/
-    ├── contraste/        # analyse P-09
-    ├── daltonisme/
-    ├── images/
-    ├── medias/
-    ├── mouvement/
-    ├── langue/
-    ├── structure/
-    └── pertinence/
+│   ├── triage/
+│   ├── remediate/
+│   ├── verify/
+│   ├── report/
+│   ├── guided-test/
+│   ├── criteria/
+│   ├── contraste/        # analyse P-09
+│   ├── daltonisme/
+│   ├── images/
+│   ├── medias/
+│   ├── mouvement/
+│   ├── langue/
+│   ├── structure/
+│   ├── pertinence/
+│   └── visual-remediation/
 ```
 
 ## Getting Help

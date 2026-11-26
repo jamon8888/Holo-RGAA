@@ -108,16 +108,77 @@ shares the machine.
 process that spawned it.
 
 Neither is a **licence** check, and the token is a single shared secret, not
-a per-caller identity. Per-caller auth and licence enforcement are tracked
-in #87 and are not implemented.
+a per-caller identity. Per-caller auth is not implemented.
+
+### Licensing (#87)
+
+The licence belongs to the **installation running the server**, not to the
+caller: clients send nothing extra. Install it once on that machine:
+
+Set `RGAA_LICENSE_PUBLIC_KEYS` to the trusted signing key before activation;
+there is no built-in key yet.
+
+```bash
+export RGAA_LICENSE_PUBLIC_KEYS='k4.public.…'
+rgaa licence activate <key>        # or: rgaa licence activate --file key.txt
+rgaa licence status
+```
+
+or set `RGAA_LICENSE_KEY` (containers, CI; it overrides `license.toml`). The
+key is a signed PASETO token verified offline against
+`RGAA_LICENSE_PUBLIC_KEYS`. Without a licence the server runs as **Free**.
+The grace baseline is set at activation and re-activating the same token does
+not extend it. `RGAA_LICENSE_SERVER` only enables grace; this code does not
+perform online revalidation.
+
+| Tier | Features | Daily quota (HTTP servers) |
+|---|---|---|
+| Free | `static_lint` | 10 |
+| Professional | + `full_audit`, `remediation`, `igt`, `batch` | 500 |
+| Team | same as Professional | 5000 |
+
+Quotas are counted per UTC day and enforced only by the HTTP servers
+(`rgaa-api`, `rgaa-mcp-http`). Local CLI and stdio runs check the tier only.
+Each URL in `POST /v1/batches` consumes one unit; the whole batch is refused
+without consuming units if the remaining quota cannot cover every URL.
+Units are consumed at admission and never refunded: if the server then fails
+to record the batch (`500`), the units stay spent, so a client should retry a
+`500` only if the remaining quota covers it. A `503` with code `usage_storage`
+means the usage counter itself is unavailable and nothing was consumed.
+
+Every gated response carries `X-License-Tier`, `X-License-Status`
+(`unlicensed`, `valid`, `grace`, `expired`, `grace_exceeded`, `invalid`),
+`X-License-Grace-Remaining` (seconds, in `grace` only) and, where quotas
+apply, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+(Unix seconds). A refusal is `401` / `402` / `429` with this body, which is
+also the JSON-RPC `error.data` on MCP (`-32002` licence required, `-32003`
+quota exceeded):
+
+```json
+{
+  "error": "`full_audit` requires the professional tier (current tier: free)",
+  "code": "feature_not_in_tier",
+  "tier": "free",
+  "feature": "full_audit",
+  "required_tier": "professional",
+  "upgrade_url": "https://…"
+}
+```
+
+`code` is one of `license_invalid` (401), `license_expired` (402),
+`feature_not_in_tier` (402), `quota_exceeded` (429, adds `limit`,
+`remaining`, `reset_at`, `retry_after` and a `Retry-After` header). Do not
+retry a 402: waiting does not change a tier. Retry a 429 only after
+`Retry-After`, and do not loop on a daily quota. TypeScript:
+`LicenseErrorBody` in `@holo-rgaa/mcp-types`.
 
 The **REST API** is split:
 
 | Routes | Auth |
 |---|---|
 | `GET /health`, `GET /criteria` | none |
-| `POST /audit`, `GET /audit/{id}` | **none** |
-| `/v1/*` | `Authorization: Bearer <api-key>` |
+| `POST /audit`, `GET /audit/{id}` | **none**, no licence check (deprecated) |
+| `/v1/*` | `Authorization: Bearer <api-key>`, plus the server's licence |
 
 `/v1/*` keys are validated against storage for the `audit:write` scope; a
 missing or unknown key returns `401`.
@@ -260,6 +321,8 @@ that look secret (`password`, `secret`, `token`, …) are stripped.
 | `-32700` | Body is not valid JSON |
 | `-32601` | Unknown `method` |
 | `-32602` | `params` missing or undeserializable; unknown tool name |
+| `-32002` | Licence required: invalid, expired, or feature not in tier (`error.data` is a `LicenseErrorBody`) |
+| `-32003` | Daily quota exceeded (`error.data.retry_after` in seconds) |
 
 ### REST status codes
 
@@ -267,8 +330,10 @@ that look secret (`password`, `secret`, `token`, …) are stripped.
 |---|---|
 | `200` / `204` | Success |
 | `400` | Malformed path parameter (e.g. a non-UUID id) |
-| `401` | Missing or unrecognised bearer key on `/v1/*` |
+| `401` | Missing or unrecognised bearer key on `/v1/*`, or `license_invalid` |
+| `402` | `feature_not_in_tier` or `license_expired` — do not retry |
 | `404` | Unknown id |
+| `429` | `quota_exceeded` — honour `Retry-After` |
 | `500` | Storage or internal failure |
 | `503` | Shed by the concurrency limiter, or timed out |
 

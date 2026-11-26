@@ -211,8 +211,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
-axe_rules = ["scrollable-region-focusable", "server-side-image-map", "focus-order-semantics"]
-provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: covers scrollable regions, server-side image maps and focusable semantics, not keyboard control of every script." }
+axe_rules = ["scrollable-region-focusable", "server-side-image-map"]
+<<provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-11-23", notes = "Partial: covers scrollable regions and server-side image maps, not keyboard control of every script. focus-order-semantics removed (#398): it is experimental, disabled by default in axe 4.9.1, and tagged RGAA-12.8.1 rather than 7.3." }
 
 [[mechanism]]
 id        = "axe-8-2"
@@ -461,6 +461,27 @@ axe_rules = ["bypass", "skip-link"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
 
 [[mechanism]]
+# §12.8 : tabindex positif est un indice « suspect », jamais un échec ferme.
+# Plafond de verdict `review` : une violation de cette règle produit
+# `NeedsReview` (critère en revue), jamais `Fail` (issue #279). La seule règle
+# axe-core qui signale un tabindex positif est `tabindex` (axe_rules.json).
+id        = "axe-12-8"
+criterion = "12.8"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+<<# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
+# hard fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
+# on 4.9.1), so today only `tabindex` (positive values) can fire.
+outcomes  = ["review"]
+outcome_cap = "review"
+fixtures  = ["12.8-focus-order-pass", "12.8-focus-order-fail"]
+legacy    = false
+axe_rules = ["tabindex", "focus-order-semantics"]
+provenance = { source = "axe-core rule metadata (axe_rules.json): focus-order-semantics carries tag RGAA-12.8.1; tabindex is best-practice", validated_by = "both rule ids checked against the injected axe 4.9.1 by the registry invariants", validated_at = "2026-11-20", notes = "Plafond review : tabindex positif sur 12.8 est suspect, jamais fail ferme. Règle axe : tabindex. Partial: neither rule observes the real Tab traversal." }
+
+[[mechanism]]
 id        = "axe-13-1"
 criterion = "13.1"
 kind      = "axe-native"
@@ -468,8 +489,11 @@ engine    = "obscura"
 coverage  = "partial"
 tests     = []
 outcomes  = ["fail"]
-fixtures  = []
-legacy    = true
+# meta-refresh-no-exceptions (spec §7.2) is deliberately NOT mapped (#263): it exists in axe 4.9.1
+# but is `enabled: false` (wcag2aaa), so a plain `axe.run()` never runs it, and it fails only for
+# delays > 72000 s (a 5 s refresh passes). Delay detection belongs to the 13.1 script-redirect issue.
+fixtures  = ["13.1-meta-refresh-pass", "13.1-meta-refresh-fail"]
+legacy    = false
 axe_rules = ["meta-refresh"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-refresh catches one mechanism out of the criterion's 15 tests on time limits." }
 
@@ -498,6 +522,20 @@ fixtures  = []
 legacy    = true
 axe_rules = ["css-orientation-lock"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: css-orientation-lock catches a CSS orientation lock, not every portrait/landscape failure." }
+
+[[mechanism]]
+id        = "axe-12-8"
+criterion = "12.8"
+kind      = "axe-native"
+engine    = "obscura"
+coverage  = "partial"
+tests     = []
+outcomes  = ["review"]
+fixtures  = ["12.8-tab-order-pass", "12.8-tab-order-fail"]
+legacy    = false
+axe_rules = ["tabindex", "focus-order-semantics"]
+outcome_cap = "review"
+provenance = { source = "axe-core 4.9.1 rule-descriptions.md + issue #263 (lot B1-L0) + issue #279 (plafond de verdict)", validated_by = "rule ids cross-checked against axe_rules_injected.json (axe 4.9.1)", validated_at = "2026-11-20", notes = "tabindex > 0 est un indice « suspect » sur 12.8, jamais un échec ferme : outcome_cap = review interdit le Fail. focus-order-semantics est rattachée mais inerte (expérimentale, désactivée par défaut sous axe 4.9.1). Le critère reste partial : aucune règle ne décide tous les tests de 12.8, donc jamais de Pass par le silence d'axe." }
 
 [[mechanism]]
 id        = "gapfix-1-1"
@@ -770,6 +808,109 @@ coverage  = "partial"
 tests     = []
 outcomes  = ["review"]
 fixtures  = ["10.11-reflow-pass", "10.11-reflow-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-1-script-redirect"
+criterion = "13.1"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Tests 1 (refresh by script/object) and 3 (redirect by script) of 13.1: a page that moves on
+# its own within ~6 s, or a suspicious navigation timer, is review: the probe cannot tell
+# whether the user can stop or restart the redirect, which 13.1 allows (#265).
+tests     = ["1", "3"]
+outcomes  = ["review"]
+fixtures  = ["13.1-script-redirect-pass", "13.1-script-redirect-fail", "13.1-script-redirect-href-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-2-popup-hook"
+criterion = "13.2"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# `window.open` hooked before page scripts; a call with no prior interaction in ~6 s is the
+# fail. `target="_blank"` alone is never reported (#266).
+tests     = ["1"]
+outcomes  = ["fail", "review"]
+fixtures  = ["13.2-popup-pass", "13.2-popup-load-fail", "13.2-popup-timer-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-12-10-listener-inventory"
+criterion = "12.10"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1"]
+outcomes  = ["review"]
+fixtures  = ["12.10-listener-inventory-pass", "12.10-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-10-listener-inventory"
+criterion = "13.10"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1", "2"]
+outcomes  = ["review"]
+fixtures  = ["13.10-listener-inventory-pass", "13.10-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-11-listener-inventory"
+criterion = "13.11"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1"]
+outcomes  = ["review"]
+fixtures  = ["13.11-listener-inventory-pass", "13.11-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-12-listener-inventory"
+criterion = "13.12"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
+tests     = ["1", "2", "3"]
+outcomes  = ["review"]
+fixtures  = ["13.12-listener-inventory-pass", "13.12-listener-inventory-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-9-orientation-render"
+criterion = "13.9"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# Page rendered at 390x844 and 844x390 (Emulation.setDeviceMetricsOverride): a lock call or a
+# rotate message is the fail; lost visible text is review, since per-element text cannot prove
+# content loss across markup regrouping (#268).
+tests     = ["1"]
+outcomes  = ["fail", "review"]
+fixtures  = ["13.9-orientation-pass", "13.9-orientation-hidden-review", "13.9-orientation-lock-fail", "13.9-orientation-message-fail"]
+legacy    = false
+
+[[mechanism]]
+id        = "probe-13-8-script-motion"
+criterion = "13.8"
+kind      = "js-behavioural"
+engine    = "obscura"
+coverage  = "partial"
+# DOM mutations observed ~8 s without interaction: more than 5 s of motion on a target with no
+# pause/stop control is the fail, anything shorter or uncertain is review (#267). CSS
+# animations are NOT detected: Obscura 0.2.4 returns no animation from document.getAnimations().
+tests     = ["1"]
+outcomes  = ["fail", "review"]
+fixtures  = ["13.8-script-motion-pass", "13.8-script-motion-fail", "13.8-script-motion-spinner-pass", "13.8-script-motion-static-pass"]
 legacy    = false
 
 [[mechanism]]

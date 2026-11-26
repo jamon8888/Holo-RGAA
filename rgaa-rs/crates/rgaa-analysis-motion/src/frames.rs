@@ -39,16 +39,22 @@ impl Frame {
 }
 
 /// Décode un GIF animé et conserve le délai de chaque frame (centièmes de
-/// seconde dans le format, convertis en secondes ici).
+/// seconde dans le format, convertis en secondes ici). Le décodage s'arrête à
+/// la limite d'observation afin de ne pas conserver toutes les frames d'un
+/// GIF long.
 ///
 /// # Errors
 /// Renvoie `RgaaError::Analysis` si le GIF est illisible.
-pub fn decode_gif(octets: &[u8]) -> Result<Vec<Frame>> {
+pub fn decode_gif(octets: &[u8], duree_s: u32) -> Result<Vec<Frame>> {
     let decodeur = GifDecoder::new(Cursor::new(octets))
         .map_err(|erreur| analysis_error(PLUGIN_ID, format!("GIF illisible : {erreur}")))?;
     let mut frames = Vec::new();
-    let mut temps = 0.0f64;
+    let mut temps_ms = 0u64;
+    let limite_ms = u64::from(duree_s) * 1000;
     for resultat in decodeur.into_frames() {
+        if temps_ms >= limite_ms {
+            break;
+        }
         let image_frame = resultat.map_err(|erreur| {
             analysis_error(PLUGIN_ID, format!("frame GIF illisible : {erreur}"))
         })?;
@@ -60,9 +66,9 @@ pub fn decode_gif(octets: &[u8]) -> Result<Vec<Frame>> {
             largeur,
             hauteur,
             rgba: image.into_raw(),
-            t_s: temps,
+            t_s: temps_ms as f64 / 1000.0,
         });
-        temps += f64::from(delai_ms) / 1000.0;
+        temps_ms += u64::from(delai_ms);
     }
     Ok(frames)
 }
@@ -78,16 +84,19 @@ pub fn chemin_ffmpeg() -> PathBuf {
 
 /// Extrait les images d'une vidéo avec `ffmpeg -vf fps=30,scale=1024:-1`.
 ///
+/// La limite d'observation est transmise à ffmpeg pour que le processus
+/// s'arrête sans décoder toute la vidéo.
+///
 /// Le chemin du binaire est injectable pour tester le cas « ffmpeg absent »
 /// sans modifier le `PATH` du processus.
 ///
 /// # Errors
 /// Renvoie « preuve manquante » si le binaire manque ou si ffmpeg échoue.
-pub fn decode_video_avec(ffmpeg: &Path, source: &str) -> Result<Vec<Frame>> {
+pub fn decode_video_avec(ffmpeg: &Path, source: &str, duree_s: u32) -> Result<Vec<Frame>> {
     let mut commande = FfmpegCommand::new_with_path(ffmpeg);
     commande
         .input(source)
-        .args(["-vf", "fps=30,scale=1024:-1"])
+        .args(["-vf", "fps=30,scale=1024:-1", "-t", &duree_s.to_string()])
         .rawvideo();
     let mut enfant = commande.spawn().map_err(|erreur| {
         missing_proof(
@@ -123,7 +132,7 @@ pub fn decode_video_avec(ffmpeg: &Path, source: &str) -> Result<Vec<Frame>> {
 ///
 /// # Errors
 /// Renvoie « preuve manquante » si ffmpeg est absent ou échoue.
-pub fn decode_video(source: &str) -> Result<Vec<Frame>> {
+pub fn decode_video(source: &str, duree_s: u32) -> Result<Vec<Frame>> {
     let chemin = chemin_ffmpeg();
-    decode_video_avec(&chemin, source)
+    decode_video_avec(&chemin, source, duree_s)
 }

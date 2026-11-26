@@ -1,6 +1,7 @@
 //! P-01 plugin oracle — the expected ratios below are hardcoded WebAIM
 //! Contrast Checker values (spec §6). They are never recomputed from the code.
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rgaa_analysis::{
     AnalysisPlugin, DomSnapshot, Indice, NoopResourceFetcher, PageCapture, PluginOptions, Portee,
     Preuve, RgbaImage,
@@ -176,6 +177,15 @@ async fn step_b_white_text_on_a_light_photo_uses_the_worst_percentile() {
         .chemin_bundle
         .starts_with("analysis/contrast/"));
     assert_eq!(proof.artefacts[0].sha256.len(), 64);
+    let bytes = STANDARD
+        .decode(
+            proof.artefacts[0]
+                .contenu_base64
+                .as_deref()
+                .expect("PNG payload"),
+        )
+        .expect("base64 PNG");
+    assert_eq!(rgaa_analysis::sha256_hex(&bytes), proof.artefacts[0].sha256);
 }
 
 #[tokio::test]

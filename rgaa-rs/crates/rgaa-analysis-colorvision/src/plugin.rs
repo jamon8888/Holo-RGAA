@@ -1,6 +1,7 @@
 //! The P-02 native plugin: proofs, never a status (R-P1).
 
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{ImageEncoder, RgbaImage};
 use rgaa_analysis::capture::{PageCapture, RgbaImage as CaptureImage};
 use rgaa_analysis::color::{delta_e_improved_2000, Color};
@@ -294,6 +295,7 @@ fn vignettes(
             media_type: "image/png".to_owned(),
             chemin_bundle: format!("analysis/colorvision/{hash}.png"),
             sha256: hash,
+            contenu_base64: Some(STANDARD.encode(png)),
         });
     }
     Ok(artefacts)

@@ -19,10 +19,13 @@ thiserror = "1.0"
 base64 = "0.22"
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 uuid = { version = "1.0", features = ["v4"] }
 libc = "0.2"
+# Déjà dans l'arbre (transitif via `image`) : aucun nouveau crate.
+gif = "0.14"
 
 [dev-dependencies]
 # Politique partagée du garde-fou E2E (`rgaa_test_corpus::e2e::enabled`).

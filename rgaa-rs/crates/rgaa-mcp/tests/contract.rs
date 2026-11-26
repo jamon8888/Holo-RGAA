@@ -59,6 +59,30 @@ fn run_analysis_plugin_schema_has_no_status_or_verdict() {
     assert!(!text.contains("\"verdict\""), "{text}");
 }
 
+/// The skills call `run_analysis_plugin` without `options`. `serde_json::Value`'s
+/// default is `null`, which `PluginOptions` rejects: omitted (and explicit null)
+/// options must arrive at the runner as `{}` instead.
+#[test]
+fn run_analysis_plugin_defaults_omitted_options_to_an_empty_object() {
+    let input: rgaa_mcp::RunAnalysisPluginInput = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "plugin": "echo"
+    }))
+    .expect("omitted options are valid");
+    assert_eq!(input.options, serde_json::json!({}));
+
+    let input: rgaa_mcp::RunAnalysisPluginInput = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "plugin": "echo",
+        "options": null
+    }))
+    .expect("explicit null options are valid");
+    assert_eq!(input.options, serde_json::json!({}));
+
+    serde_json::from_value::<rgaa_analysis::PluginOptions>(input.options)
+        .expect("{} is a valid PluginOptions for the runner");
+}
+
 #[tokio::test]
 async fn run_analysis_plugin_returns_only_proofs() {
     struct EchoAnalysis(rgaa_analysis::Registry);
@@ -281,7 +305,8 @@ async fn analyze_handler_distinguishes_execution_failure_and_redacts_secrets() {
         Arc::new(PanickingGuided),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
-    );
+    )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()));
     let result = server
         .analyze(Parameters(AnalyzeRequest {
             url: "https://example.test".into(),
@@ -313,7 +338,8 @@ fn remediate_handler_rejects_mismatched_outcomes() {
         Arc::new(PanickingGuided),
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
-    );
+    )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()));
     let result = server.remediate(Parameters(RemediationRequest {
         issues: vec![valid_issue_input("one")],
     }));
@@ -333,6 +359,27 @@ fn remediate_handler_rejects_empty_batch_with_invalid_input() {
 async fn analyze_service_returns_typed_unavailable_error_without_browser() {
     let bridge = Arc::new(LazyObscuraBridge::new(
         rgaa_obscura::ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into()),
+    ));
+    let service = ObscuraAnalyzeService::new(bridge);
+    let request = rgaa_obscura::AnalyzeRequest {
+        url: "https://example.test".into(),
+        config: rgaa_obscura::AnalyzeConfig::default(),
+    };
+    let error = service
+        .analyze(request)
+        .await
+        .expect_err("no browser available");
+    assert_eq!(error.code(), "UNSUPPORTED_CONFIGURATION");
+}
+
+/// The production wiring (`rgaa-mcp`, `rgaa-mcp-http`): a deferred ephemeral
+/// port. Building the service allocates nothing, so it cannot fail at startup;
+/// a browser tool that cannot start its server gets a typed error, not a panic.
+#[tokio::test]
+async fn analyze_service_on_deferred_ephemeral_port_fails_typed_not_at_startup() {
+    let bridge = Arc::new(LazyObscuraBridge::new(
+        rgaa_obscura::ObscuraBridge::with_binary_path("/nonexistent/obscura-binary".into())
+            .with_deferred_ephemeral_port(),
     ));
     let service = ObscuraAnalyzeService::new(bridge);
     let request = rgaa_obscura::AnalyzeRequest {
@@ -397,6 +444,7 @@ fn test_server() -> ToolServer {
         Arc::new(OrchestrationService::new()),
         Arc::new(NoOpStorageService),
     )
+    .with_license(Arc::new(rgaa_license::LicenseGate::unrestricted()))
 }
 
 struct PanickingAnalyze;

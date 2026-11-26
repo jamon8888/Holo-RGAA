@@ -68,7 +68,10 @@ facturés en sortie et comptés dans `max_tokens`. Le commentaire du fichier dé
 **B.6 — `json_schema` strict : forme et support non établis** [code + non trouvé]
 `ResponseFormat::JsonSchema` envoie `{"type":"json_schema","json_schema":{"name","strict":true,"schema"}}`.
 Je n'ai pas trouvé la forme brute attendue par Mistral ni le support de `strict`. Ne pas activer sans test réel ;
-`json_object` + validation locale par `verdict_schema()` est l'option sûre.
+`json_object` + validation locale contre `verdict_schema()` est l'option sûre, **à condition de l'implémenter** :
+aujourd'hui `verdict_schema()` construit le schéma mais rien ne valide la réponse (le transport désérialise
+`HoloResponse` tel quel ; une confiance de `2` passe). Critère d'acceptation : une réponse hors schéma est rejetée
+→ `NeedsReview`.
 
 **B.7 — Image** [code]
 `transport.rs:~188` envoie `{"type":"image_url","image_url":{"url":"data:image/png;base64,…"}}` : valide la base64,
@@ -122,8 +125,9 @@ modèle à utiliser n'a pas été vérifié ici.
    `audits.org_id`, `findings.org_id`, `audit_batches.org_id` + index ; jamais de requête sans `org_id`.
 2. **Extension de requête** : le middleware injecte `AuthContext { org_id, key_id, scopes }` ; chaque handler et
    chaque méthode `Storage` prend `org_id`. Test d'isolation : l'organisation A reçoit 404 sur un audit de B.
-3. **Table `llm_usage`** : `(id, org_id, audit_id, criterion_id, provider, model, reasoning_effort, input_tokens,
-   cached_tokens, output_tokens, latency_ms, status, created_at)`. Une ligne par appel de modèle, écrite aussi sur les
+3. **Table `llm_usage`** : `(id, org_id, audit_id, provider, model, reasoning_effort, input_tokens,
+   cached_tokens, output_tokens, latency_ms, status, created_at)`, plus **`llm_usage_criteria(usage_id, criterion_id)`**
+   car un appel couvre un lot de critères ; les tokens restent comptés une fois par appel. Une ligne par appel de modèle, écrite aussi sur les
    échecs (un appel échoué peut avoir été facturé par le fournisseur — à confirmer côté Mistral).
 4. **Table `price_book`** (versionnée) : `(provider, model, input_per_mtok, cached_per_mtok, output_per_mtok,
    currency, valid_from)` — amorcée avec 0,7 / 0,07 / 2,1 pour `mistral-large-4` et **relue chaque mois** (le

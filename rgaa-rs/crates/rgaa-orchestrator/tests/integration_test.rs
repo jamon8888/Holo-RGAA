@@ -133,6 +133,7 @@ fn build_audit_result(criteria: Vec<CriterionResult>) -> AuditResult {
             compliance_rate: compliance,
             crawl_depth: 0,
         }],
+        site_criteria: Vec::new(),
         total_criteria: total,
         passed: pass_count,
         failed: fail_count,
@@ -724,6 +725,52 @@ mod integration_test {
                 compliance_rate: 0.0,
                 crawl_depth: 0,
             }
+        }
+
+        #[test]
+        fn site_level_fail_is_nc_and_site_level_review_is_not_tested() {
+            use rgaa_orchestrator::pipeline::aggregate_compliance_with_site_criteria;
+            let pages = vec![build_page_result(
+                "https://example.com/",
+                vec![mock_criterion_result("1.1", CriterionStatus::Pass)],
+            )];
+            let review = [mock_criterion_result("12.2", CriterionStatus::NeedsReview)];
+            let (taux_review, _, _) = aggregate_compliance_with_site_criteria(&pages, &review);
+            assert_eq!(taux_review, 100.0, "a site review stays out of the rate");
+
+            let fail = [mock_criterion_result("12.2", CriterionStatus::Fail)];
+            let (taux_fail, _, _) = aggregate_compliance_with_site_criteria(&pages, &fail);
+            assert_eq!(taux_fail, 50.0, "a site fail makes 12.2 non-conforming");
+        }
+
+        #[test]
+        fn site_criteria_leave_pages_and_are_counted_once() {
+            use rgaa_orchestrator::pipeline::assemble_site_audit;
+            let page = |url: &str| {
+                build_page_result(
+                    url,
+                    vec![
+                        mock_criterion_result("1.1", CriterionStatus::Pass),
+                        mock_criterion_result("12.2", CriterionStatus::Pass),
+                    ],
+                )
+            };
+            let audit = assemble_site_audit(
+                "https://example.com".to_string(),
+                vec![page("https://example.com/a"), page("https://example.com/b")],
+                0,
+            );
+            assert!(audit
+                .pages
+                .iter()
+                .all(|p| p.criteria.iter().all(|c| c.criterion_id != "12.2")));
+            assert_eq!(audit.site_criteria.len(), 1, "12.2 is counted once");
+            assert_eq!(audit.site_criteria[0].status, CriterionStatus::NeedsReview);
+            assert_eq!(
+                audit.site_criteria[0].justification.as_deref(),
+                Some("non évalué au niveau site")
+            );
+            assert_eq!(audit.passed, 2, "only the page-level 1.1 passes remain");
         }
 
         #[test]

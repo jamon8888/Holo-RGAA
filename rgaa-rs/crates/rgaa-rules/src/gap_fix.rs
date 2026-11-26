@@ -611,6 +611,7 @@ impl GapFixRules {
                         impact: "serious".into(),
                         description: details.to_string(),
                         nodes_affected: nodes,
+                        nodes: vec![],
                     }],
                     Some(format!("gap-fix mechanism: {details}")),
                 ),
@@ -632,6 +633,7 @@ impl GapFixRules {
                             impact: "review".into(),
                             description: text.clone(),
                             nodes_affected: nodes,
+                            nodes: vec![],
                         }],
                         Some(format!("gap-fix review: {text}")),
                     )

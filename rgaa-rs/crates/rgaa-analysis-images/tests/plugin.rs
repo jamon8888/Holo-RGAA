@@ -289,7 +289,7 @@ async fn similarite_clip_under_chance_anchor_is_suspect() {
 }
 
 #[tokio::test]
-async fn logo_repete_sur_41_pages_n_est_analyse_qu_une_fois() {
+async fn logo_repete_sur_41_pages_rejoue_les_preuves_ocr() {
     let appels = Arc::new(AtomicUsize::new(0));
     let ocr = FakeOcr {
         mesures: OcrMesures {
@@ -326,20 +326,15 @@ async fn logo_repete_sur_41_pages_n_est_analyse_qu_une_fois() {
             .analyze(&page, &PluginOptions::default())
             .await
             .expect("preuves");
-        let réutilisé = preuves
-            .iter()
-            .any(|p| p.mesures.get("reutilisation_cache").is_some());
-        if page_numero == 0 {
-            assert!(!réutilisé, "la première page doit être analysée");
-            assert!(preuves.iter().any(|p| p
+        assert!(
+            preuves.iter().any(|p| p
                 .mesures
                 .get("ocr")
-                .is_some_and(|ocr| ocr.get("texte").is_some())));
-        } else {
-            assert!(réutilisé, "page {page_numero} : cache non utilisé");
-        }
+                .is_some_and(|ocr| ocr.get("texte").is_some())),
+            "page {page_numero}: OCR proof missing"
+        );
     }
-    assert_eq!(appels.load(Ordering::SeqCst), 1);
+    assert_eq!(appels.load(Ordering::SeqCst), 41);
     let cache = plugin.cache();
     assert_eq!(
         cache.lock().expect("verrou").occurrences(

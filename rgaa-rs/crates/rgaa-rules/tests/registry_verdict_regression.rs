@@ -47,10 +47,11 @@ const NO_LONGER_COMPLETE: &[&str] = &[
     "13.3", "13.4", "13.5", // #280
 ];
 
-/// Associations retirées par #280.
+/// Associations retirées par #280 et #398.
 const REMOVED_RULES: &[(&str, &[&str])] = &[
     ("1.5", &["image-alt"]),
     ("1.6", &["image-alt"]),
+    ("7.3", &["focus-order-semantics"]),
     ("10.2", &["color-contrast", "image-alt"]),
     ("10.5", &["color-contrast"]),
     ("10.9", &["color-contrast", "image-alt"]),
@@ -64,6 +65,10 @@ const REMOVED_RULES: &[(&str, &[&str])] = &[
 /// ne décidaient rien. `aria-tab-name` a quitté 7.1 avec #261 pour cette raison.
 const NOT_INJECTED: &[&str] = &["aria-tab-name"];
 
+/// Mécanismes axe ajoutés après la migration (#263), dont le verdict est plafonné à
+/// `review` par `outcome_cap` (#279) : une violation y donne `needs_review`, jamais `fail`.
+const NEW_REVIEW_CAPPED: &[(&str, &[&str])] = &[("12.8", &["tabindex", "focus-order-semantics"])];
+
 #[derive(serde::Deserialize)]
 struct Frozen {
     mapping: Vec<Entry>,
@@ -74,6 +79,10 @@ struct Entry {
     criterion_id: String,
     coverage: String,
     axe_rules: Vec<String>,
+    /// Plafond `review` (#279) : une violation donne `NeedsReview`, jamais `Fail`.
+    /// Absent de la table gelée, posé seulement par [`reviewed_mapping`].
+    #[serde(default)]
+    review_capped: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -101,12 +110,18 @@ fn injected_rules() -> Vec<String> {
 }
 
 /// Le verdict que la table d'avant donnait : `Pass` pour une couverture complète sans
-/// violation, `Fail` dès qu'une règle du critère a tiré, rien sinon.
+/// violation, `Fail` dès qu'une règle du critère a tiré, rien sinon. Une entrée
+/// plafonnée à `review` (#279) donne `NeedsReview` au lieu de `Fail`.
 fn legacy_verdicts(frozen: &[Entry], fired: Option<&str>) -> Verdicts {
     let mut out = Verdicts::new();
     for entry in frozen {
         if fired.is_some_and(|rule| entry.axe_rules.iter().any(|r| r == rule)) {
-            out.insert(entry.criterion_id.clone(), CriterionStatus::Fail);
+            let status = if entry.review_capped {
+                CriterionStatus::NeedsReview
+            } else {
+                CriterionStatus::Fail
+            };
+            out.insert(entry.criterion_id.clone(), status);
         } else if entry.coverage == "complete" {
             out.insert(entry.criterion_id.clone(), CriterionStatus::Pass);
         }
@@ -173,8 +188,18 @@ fn reviewed_mapping() -> Vec<Entry> {
             criterion_id: id.into(),
             coverage: coverage.into(),
             axe_rules: rules.iter().map(|rule| (*rule).into()).collect(),
+            review_capped: false,
         });
     }
+
+    // #263 / #279 : ordre de tabulation, indice plafonné à `review`.
+    assert!(mapping.iter().all(|entry| entry.criterion_id != "12.8"));
+    mapping.push(Entry {
+        criterion_id: "12.8".into(),
+        coverage: "partial".into(),
+        axe_rules: vec!["tabindex".into(), "focus-order-semantics".into()],
+        review_capped: true,
+    });
     mapping
 }
 
@@ -208,7 +233,13 @@ fn verdicts_are_unchanged_except_reviewed_changes() {
     let mapping = reviewed_mapping();
     let mut regressions = Vec::new();
     for (axe_json, fired) in probes() {
-        let expected = legacy_verdicts(&mapping, fired.as_deref());
+        let mut expected = legacy_verdicts(&mapping, fired.as_deref());
+        // #263/#279 : mécanismes nouveaux, plafonnés à `review` (jamais `fail`).
+        for (id, rules) in NEW_REVIEW_CAPPED {
+            if fired.as_deref().is_some_and(|rule| rules.contains(&rule)) {
+                expected.insert((*id).into(), CriterionStatus::NeedsReview);
+            }
+        }
         let actual = current_verdicts(&axe_json);
         for difference in differences(&expected, &actual) {
             regressions.push(format!(

@@ -98,6 +98,20 @@ pub async fn dispatch(command: AuditCommand) -> Result<i32, crate::CliError> {
     }
 }
 
+/// [`dispatch`] behind the licence gate: refuses with
+/// [`crate::CliError::License`] (exit code 4) before any work starts, and
+/// prints the offline-grace warning to stderr when there is one.
+pub async fn dispatch_licensed(
+    command: AuditCommand,
+    gate: &rgaa_license::LicenseGate,
+) -> Result<i32, crate::CliError> {
+    let feature = crate::license::feature_for(&command);
+    if let Some(warning) = crate::license::admit(gate, feature, chrono::Utc::now())? {
+        eprintln!("{warning}");
+    }
+    dispatch(command).await
+}
+
 pub(crate) fn parse_format(value: Option<String>) -> Result<crate::ReportFormat, crate::CliError> {
     match value {
         Some(format) => format

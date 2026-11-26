@@ -109,7 +109,6 @@ fn executable_sha256(manifest: &SidecarManifest, manifest_dir: &Path) -> Option<
 }
 
 /// A discovered sidecar, presented to the orchestrator as any other plugin.
-#[derive(Clone)]
 pub struct SidecarPlugin {
     manifest: SidecarManifest,
     manifest_dir: PathBuf,
@@ -117,10 +116,6 @@ pub struct SidecarPlugin {
     version: &'static str,
     tests: &'static [&'static str],
     executable_sha256: Option<String>,
-    /// Extra `analyser` parameters (file paths, timed actions) set by the
-    /// caller. P-10 uses this to hand a speech journal to its sidecar without
-    /// changing the shared `PluginOptions` contract.
-    parametres_analyser: Value,
 }
 
 impl std::fmt::Debug for SidecarPlugin {
@@ -158,31 +153,11 @@ impl SidecarPlugin {
             manifest,
             manifest_dir: manifest_dir.to_path_buf(),
             executable_sha256,
-            parametres_analyser: Value::Null,
         })
     }
 
     pub fn manifest(&self) -> &SidecarManifest {
         &self.manifest
-    }
-
-    /// Merges extra JSON parameters into every `analyser` request, so a
-    /// sidecar can receive heavy inputs by path (P-00 §7 bis) and the timed
-    /// actions needed by P-10's correlation. Later keys win; object keys are
-    /// merged shallowly while arrays replace earlier arrays.
-    #[must_use]
-    pub fn avec_parametres(mut self, parametres: Value) -> Self {
-        if let (Some(existant), Some(ajoutes)) = (
-            self.parametres_analyser.as_object_mut(),
-            parametres.as_object(),
-        ) {
-            for (cle, valeur) in ajoutes {
-                existant.insert(cle.clone(), valeur.clone());
-            }
-        } else {
-            self.parametres_analyser = parametres;
-        }
-        self
     }
 
     /// Discovers `sidecar.toml` files directly under `root`, or one level down
@@ -388,18 +363,11 @@ impl AnalysisPlugin for SidecarPlugin {
         page: &PageCapture<'_>,
         options: &PluginOptions,
     ) -> Result<Vec<Preuve>> {
-        let mut params = json!({
+        let params = json!({
             "url": page.url,
             "sujets": [{ "type": "Page" }],
             "fichiers": {},
         });
-        if let (Some(base), Some(extra)) =
-            (params.as_object_mut(), self.parametres_analyser.as_object())
-        {
-            for (key, value) in extra {
-                base.insert(key.clone(), value.clone());
-            }
-        }
         let result = self.exchange("analyser", params, options).await?;
         let proofs = result
             .get("preuves")

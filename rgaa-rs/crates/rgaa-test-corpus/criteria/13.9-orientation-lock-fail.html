@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 13.9 - Verrouillage de l'orientation</title>
+</head>
+<body>
+    <main>
+        <h1>Critère 13.9</h1>
+        <p>Cette page verrouille l'orientation en portrait.</p>
+    </main>
+    <script>
+        if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('portrait'); }
+    </script>
+</body>
+</html>

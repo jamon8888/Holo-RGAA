@@ -170,7 +170,7 @@ fn app(gate: Arc<LicenseGate>) -> Router {
             Arc::new(LicenseGate::unrestricted()),
         ),
     };
-    build_app_with_api_keys(state, gate, Arc::new(Keys))
+    build_app_with_api_keys(state, gate, Arc::new(Keys)).expect("test CORS config is valid")
 }
 
 fn bundle_body() -> Value {

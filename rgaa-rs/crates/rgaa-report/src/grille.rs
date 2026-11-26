@@ -182,6 +182,7 @@ mod tests {
             audit_type: AuditType::Complet,
             url: "https://example.test".into(),
             pages,
+            site_criteria: Vec::new(),
             total_criteria: 106,
             passed: 0,
             failed: 0,

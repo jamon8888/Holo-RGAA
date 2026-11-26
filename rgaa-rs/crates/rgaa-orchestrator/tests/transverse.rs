@@ -171,6 +171,7 @@ fn page_with_fail(url: &str, rule: &str) -> PageResult {
                 impact: "critical".into(),
                 description: "Missing alt".into(),
                 nodes_affected: 1,
+                nodes: vec![],
             }],
             confidence: None,
             raw_confidence: None,

@@ -6,8 +6,9 @@ use rgaa_core::na_detection;
 use rgaa_core::test_plan::CoverageLevel;
 use rgaa_core::types::{is_deterministic_source, TestOutcome, VerdictBasis};
 use rgaa_core::{
-    AuditResult, AuditType, Classification, CrawlConfig, Criterion, CriterionResult,
-    CriterionStatus, EnginePlan, PageResult, PlanEngine, RgaaCatalog, RgaaCriteria,
+    is_site_level_criterion, pages_with_site_criteria, AuditResult, AuditType, Classification,
+    CrawlConfig, Criterion, CriterionResult, CriterionStatus, EnginePlan, PageResult, PlanEngine,
+    RgaaCatalog, RgaaCriteria, SITE_LEVEL_NOT_EVALUATED,
 };
 use rgaa_holo::PageContext;
 use rgaa_rules::{AxeMapper, GapFixRules};
@@ -327,7 +328,7 @@ pub fn assemble_site_audit(
     // The scope is enforced at the aggregation boundary too: a caller that
     // hands us an unfiltered page must not be able to inflate the rate with
     // criteria outside the requested audit type.
-    let all_pages: Vec<PageResult> = all_pages
+    let mut all_pages: Vec<PageResult> = all_pages
         .into_iter()
         .map(|mut page| {
             page.criteria
@@ -336,7 +337,9 @@ pub fn assemble_site_audit(
             page
         })
         .collect();
-    let (taux_global, coverage_percent, etat_conformite) = aggregate_site_compliance(&all_pages);
+    let site_criteria = extract_site_criteria(&mut all_pages);
+    let (taux_global, coverage_percent, etat_conformite) =
+        aggregate_compliance_with_site_criteria(&all_pages, &site_criteria);
     // A rapid audit is a partial measurement, never a conformance statement —
     // not even when every criterion in its 25-criterion scope passes.
     let etat_conformite = if audit_type.allows_conformity_declaration() {
@@ -348,6 +351,7 @@ pub fn assemble_site_audit(
     let all_criteria: Vec<CriterionResult> = all_pages
         .iter()
         .flat_map(|page| page.criteria.clone())
+        .chain(site_criteria.iter().cloned())
         .collect();
     let total = audit_type.count();
     let pass_count = all_criteria
@@ -363,7 +367,10 @@ pub fn assemble_site_audit(
         .filter(|criterion| criterion.status == CriterionStatus::NotApplicable)
         .count();
     let compliance = calculate_compliance(&all_criteria);
-    let audit_complete = pages_have_complete_automatic_coverage(&all_pages, audit_type);
+    let audit_complete = pages_have_complete_automatic_coverage(
+        &pages_with_site_criteria(&all_pages, &site_criteria),
+        audit_type,
+    );
 
     info!(
         pass = pass_count,
@@ -381,7 +388,7 @@ pub fn assemble_site_audit(
         audit_id: uuid::Uuid::new_v4().to_string(),
         url,
         pages: all_pages,
-        site_criteria: Vec::new(),
+        site_criteria,
         total_criteria: total,
         passed: pass_count,
         failed: fail_count,
@@ -397,6 +404,59 @@ pub fn assemble_site_audit(
         audit_complete,
         audit_type,
     }
+}
+
+fn extract_site_criteria(pages: &mut [PageResult]) -> Vec<CriterionResult> {
+    let mut site_criteria = Vec::new();
+    for criterion_id in rgaa_core::SITE_LEVEL_CRITERIA {
+        let site_criterion = pages
+            .iter()
+            .flat_map(|page| &page.criteria)
+            .find_map(|criterion| {
+                (criterion.criterion_id == *criterion_id && criterion.source == "site-comparison")
+                    .then(|| criterion.clone())
+            })
+            .or_else(|| {
+                pages
+                    .iter()
+                    .flat_map(|page| &page.criteria)
+                    .find_map(|criterion| {
+                        (criterion.criterion_id == *criterion_id).then(|| {
+                            let mut criterion = criterion.clone();
+                            criterion.status = CriterionStatus::NeedsReview;
+                            criterion.justification = Some(SITE_LEVEL_NOT_EVALUATED.to_string());
+                            criterion
+                        })
+                    })
+            });
+        if let Some(criterion) = site_criterion {
+            site_criteria.push(criterion);
+        }
+    }
+    for page in pages {
+        page.criteria
+            .retain(|criterion| !is_site_level_criterion(&criterion.criterion_id));
+    }
+    site_criteria
+}
+
+/// Aggregates page criteria and criteria evaluated once for the whole site.
+#[must_use]
+pub fn aggregate_compliance_with_site_criteria(
+    page_results: &[PageResult],
+    site_criteria: &[CriterionResult],
+) -> (f64, f64, String) {
+    let mut all_pages = page_results.to_vec();
+    if !site_criteria.is_empty() {
+        all_pages.push(PageResult {
+            url: rgaa_core::TRANSVERSE_PAGE_URL.to_string(),
+            title: None,
+            criteria: site_criteria.to_vec(),
+            compliance_rate: calculate_compliance(site_criteria),
+            crawl_depth: 0,
+        });
+    }
+    aggregate_site_compliance(&all_pages)
 }
 
 fn outcome_is_allowed(outcome: &TestOutcome, coverage: CoverageLevel) -> bool {
@@ -612,6 +672,7 @@ pub struct Orchestrator {
 
 /// Events emitted by the audit pipeline for progress tracking.
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum AuditEvent {
     Phase(AuditPhase),
     Done(Result<AuditResult, String>),

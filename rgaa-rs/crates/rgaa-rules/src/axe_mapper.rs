@@ -164,6 +164,7 @@ impl AxeMapper {
     /// Applique le plafond `review` à un résultat, qu'il vienne d'être créé pour une
     /// couverture partielle ou qu'il ait déjà été initialisé à `Pass` pour une
     /// couverture complète. Un `Fail` prouvé ne se dégrade jamais.
+    #[cfg(test)]
     fn apply_capped_review(result: &mut CriterionResult, violation_id: &str) {
         if result.status == CriterionStatus::Fail {
             return;

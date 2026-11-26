@@ -182,6 +182,7 @@ mod tests {
             audit_id: "test".into(),
             url: "https://example.test".into(),
             pages: vec![],
+            audit_type: rgaa_core::AuditType::Complet,
             site_criteria: vec![CriterionResult {
                 criterion_id: "12.2".into(),
                 title: "Plan du site".into(),

@@ -390,6 +390,7 @@ async fn malformed_batch_costs_nothing() {
 
 #[tokio::test]
 async fn cors_exposes_licence_headers_even_on_refusals() {
+    std::env::set_var("RGAA_API_CORS_ORIGINS", "https://client.test");
     let app = app(gate(Licence::None));
 
     let preflight = Request::builder()
@@ -401,7 +402,10 @@ async fn cors_exposes_licence_headers_even_on_refusals() {
         .expect("request");
     let r = app.clone().oneshot(preflight).await.expect("response");
     assert!(r.status().is_success(), "preflight: {}", r.status());
-    assert_eq!(hdr(&r, "access-control-allow-origin"), Some("*"));
+    assert_eq!(
+        hdr(&r, "access-control-allow-origin"),
+        Some("https://client.test")
+    );
 
     let req = Request::builder()
         .method(Method::POST)
@@ -413,7 +417,10 @@ async fn cors_exposes_licence_headers_even_on_refusals() {
         .expect("request");
     let r = app.clone().oneshot(req).await.expect("response");
     assert_eq!(r.status(), StatusCode::PAYMENT_REQUIRED);
-    assert_eq!(hdr(&r, "access-control-allow-origin"), Some("*"));
+    assert_eq!(
+        hdr(&r, "access-control-allow-origin"),
+        Some("https://client.test")
+    );
     let exposed = hdr(&r, "access-control-expose-headers")
         .expect("expose-headers")
         .to_ascii_lowercase();

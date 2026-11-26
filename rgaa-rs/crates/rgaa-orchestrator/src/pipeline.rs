@@ -381,6 +381,7 @@ pub fn assemble_site_audit(
         audit_id: uuid::Uuid::new_v4().to_string(),
         url,
         pages: all_pages,
+        site_criteria: Vec::new(),
         total_criteria: total,
         passed: pass_count,
         failed: fail_count,

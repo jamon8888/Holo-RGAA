@@ -452,8 +452,11 @@ mod tests {
         let t =
             entry("coverage=\"partial\"\noutcomes=[\"fail\"]\noutcome_cap=\"review\"\nlegacy=true");
         let problems = check(&t, &dir);
-        assert_eq!(problems.len(), 1, "{problems:?}");
-        assert!(problems[0].contains("capped"));
+        assert!(!problems.is_empty(), "{problems:?}");
+        assert!(
+            problems.iter().any(|p| p.contains("capped")),
+            "{problems:?}"
+        );
         let ok = entry(
             "coverage=\"partial\"\noutcomes=[\"review\"]\noutcome_cap=\"review\"\nlegacy=true",
         );

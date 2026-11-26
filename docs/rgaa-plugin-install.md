@@ -150,12 +150,12 @@ server actually registers — call them exactly as written:
 - `analyze` - Per-criterion findings for one page, with evidence and justification
 - `audit_url` - Full site audit through the orchestrator; returns a summary (`taux_global`, `etat_conformite`) plus `sampled_page_urls`
 - `get_audit_result` - Retrieve a previously run audit by `audit_id`
-- `get_test_methodology` - The official RGAA verification method for one test key (e.g. `1.2.3`), from `RGAA/methodologies.json` at the pinned upstream commit. Skills cite this instead of describing a method from memory; unknown keys return `methodology: null`
+- `get_test_methodology` - Official RGAA method for one test key, or `null` when it is outside RGAA 4.1.2
 - `lint_static` - Static accessibility lint of HTML/JSX/TSX/Vue source: rule, severity, line/column and a fix hint, against a selectable profile (`rgaa-4.1`, `wcag-2.1-aa`, `section-508`). No browser and no build, so it suits an edit loop — a first pass over source, not a conformance verdict
-- `list_analysis_plugins` - Compiled analysis plugins with their versions, RGAA tests, required models and presence. Call this before `run_analysis_plugin`; sidecars show their exact command and executable digest
-- `run_analysis_plugin` - Run one analysis plugin on a URL and return its `Preuve` values (measurements, artefacts, hashes). Returns no status and no verdict: the orchestrator and a human reviewer decide
+- `list_analysis_plugins` - Compiled analysis plugins, their tests, models and sidecar commands
 - `list_criteria` - The 106 RGAA criteria with id, title, and classification
 - `remediate` - Approval-gated remediation proposals
+- `run_analysis_plugin` - Run one analysis plugin and return proofs, never a status or verdict
 - `source_map` - Map a browser finding back to the template that produced it: `source_location` (file, line, column, snippet) per finding. Best-effort literal match over React JSX, Vue SFC, Angular and vanilla HTML; ambiguous findings return in `unmappable` rather than guessed
 - `verify_fix` - Re-verify corrected files against a reference audit (`fixed` / `remaining` / `new` / `unverified`)
 - `igt` - Guided keyboard test (**deprecated**: use `analyze` with `config.igt_tools: ["keyboard"]`)

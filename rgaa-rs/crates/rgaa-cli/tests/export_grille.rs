@@ -38,7 +38,6 @@ fn audit() -> AuditResult {
         audit_id: "audit-1".into(),
         audit_type: rgaa_core::AuditType::Complet,
         url: "https://example.test".into(),
-        site_criteria: Vec::new(),
         pages: vec![
             PageResult {
                 url: "https://example.test/".into(),
@@ -62,6 +61,7 @@ fn audit() -> AuditResult {
                 crawl_depth: 0,
             },
         ],
+        site_criteria: Vec::new(),
         total_criteria: 106,
         passed: 0,
         failed: 0,

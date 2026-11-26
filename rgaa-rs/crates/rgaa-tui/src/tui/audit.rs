@@ -189,7 +189,7 @@ fn audit_loop(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<()> {
                         };
                     }
                     Ok(rgaa_orchestrator::AuditEvent::Done(result)) => {
-                        pending.done = Some(result);
+                        pending.done = Some(*result);
                         break;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -259,9 +259,9 @@ fn run_audit_thread(
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
-            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Err(format!(
+            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Box::new(Err(format!(
                 "failed to start the audit runtime: {e}"
-            ))));
+            )))));
             return;
         }
     };
@@ -273,7 +273,9 @@ fn run_audit_thread(
         if let Err(e) =
             rgaa_cli::license::admit(&gate, rgaa_license::Feature::FullAudit, chrono::Utc::now())
         {
-            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Err(e.to_string())));
+            let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Box::new(Err(
+                e.to_string()
+            ))));
             return;
         }
 
@@ -289,7 +291,7 @@ fn run_audit_thread(
             crate::storage::record_audit(audit).await;
         }
 
-        let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(result));
+        let _ = tx_done.send(rgaa_orchestrator::AuditEvent::Done(Box::new(result)));
     });
 }
 

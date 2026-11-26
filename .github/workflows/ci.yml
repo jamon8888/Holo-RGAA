@@ -466,7 +466,11 @@ jobs:
         # Obscura, et un mauvais classement bloque la PR. Ce test n'a besoin que
         # d'Obscura et du CDN d'axe, pas d'une clé LLM : il vivait dans le job
         # `e2e` (jamais activé), donc ne tournait nulle part.
-        run: cargo nextest run -p rgaa-orchestrator --no-tests=fail -E 'binary(=fixture_classification)'
+        run: |
+          cargo nextest run -p rgaa-orchestrator --lib --no-tests=fail \
+            -E 'test(site_fixtures_are_classified_by_the_multi_page_comparator)'
+          cargo nextest run -p rgaa-orchestrator --no-tests=fail \
+            -E 'binary(=fixture_classification)'
 
   spider-e2e:
     name: E2E (spider, serveur local)

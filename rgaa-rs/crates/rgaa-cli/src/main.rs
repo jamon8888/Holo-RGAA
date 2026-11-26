@@ -149,7 +149,7 @@ async fn main() {
             rgaa_cli::commands::dispatch_licensed(command, &rgaa_cli::license::gate_from_env())
                 .await
         }
-        Action::Export(command) => rgaa_cli::commands::dispatch_export(command).await,
+        Action::Export(command) => rgaa_cli::commands::export::dispatch(command).await,
     };
     let code = match &result {
         Ok(code) => *code,

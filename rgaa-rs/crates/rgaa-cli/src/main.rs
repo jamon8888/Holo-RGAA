@@ -144,9 +144,11 @@ async fn main() {
     };
     eprintln!("Monitoring log: {}", log_path.display());
 
-    let result =
-        rgaa_cli::commands::dispatch_licensed(args.command, &rgaa_cli::license::gate_from_env())
-            .await;
+    let gate = rgaa_cli::license::gate_from_env();
+    let result = match action {
+        Action::Audit(command) => rgaa_cli::commands::dispatch_licensed(command, &gate).await,
+        Action::Export(command) => rgaa_cli::commands::dispatch_export(command).await,
+    };
     let code = match &result {
         Ok(code) => *code,
         Err(error) => {

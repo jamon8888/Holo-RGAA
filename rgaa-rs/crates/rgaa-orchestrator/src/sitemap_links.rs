@@ -5,6 +5,8 @@
 //! `fail` with the list (URL, HTTP status); everything else is `review`, never `pass`,
 //! because whether the map is representative (test 1) stays a human judgement.
 
+#![cfg_attr(not(test), allow(dead_code))]
+
 use std::collections::BTreeSet;
 use std::time::Duration;
 

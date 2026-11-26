@@ -182,6 +182,7 @@ mod tests {
             audit_id: "test".into(),
             url: "https://example.test".into(),
             pages: vec![],
+            audit_type: rgaa_core::AuditType::Complet,
             site_criteria: vec![CriterionResult {
                 criterion_id: "12.2".into(),
                 title: "Plan du site".into(),
@@ -217,7 +218,6 @@ mod tests {
             etat_conformite: "non conforme".into(),
             duration_ms: 0,
             audit_complete: false,
-            audit_type: rgaa_core::AuditType::Complet,
         };
 
         export_html(&audit, &path).expect("HTML export");

@@ -1,5 +1,6 @@
 use rgaa_core::{
-    AuditResult, Classification, CriterionResult, CriterionStatus, PageResult, RgaaCriteria,
+    AuditResult, AuditType, Classification, CriterionResult, CriterionStatus, PageResult,
+    RgaaCriteria,
 };
 
 fn mock_criterion_result(criterion_id: &str, status: CriterionStatus) -> CriterionResult {
@@ -759,6 +760,7 @@ mod integration_test {
                 "https://example.com".to_string(),
                 vec![page("https://example.com/a"), page("https://example.com/b")],
                 0,
+                AuditType::Complet,
             );
             assert!(audit
                 .pages

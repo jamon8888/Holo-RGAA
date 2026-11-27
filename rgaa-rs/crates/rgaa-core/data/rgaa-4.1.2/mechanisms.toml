@@ -1,16 +1,14 @@
 # Registre unique des mécanismes (spec criteria-coverage-expansion §5, issue #261).
+
+# Remplace axe_mapping.json (couverture axe) et COMPLETE_COVERAGE de gap_fix.rs.
+# Une entrée [[mechanism]] par mécanisme actif.
 #
-# Remplace `axe_mapping.json` (couverture axe) et `COMPLETE_COVERAGE` de `gap_fix.rs`.
-# Une entrée `[[mechanism]]` par mécanisme actif. Invariants vérifiés en CI
-# (`rgaa_core::registry`, `rgaa-test-corpus/tests/registry_invariants.rs`) :
-#   - "pass" dans `outcomes` => `coverage = "complete"` ;
-#   - `legacy = false` => fixtures présentes dans `rgaa-test-corpus/criteria/`
-#     (une paire `-pass`/`-fail`, ou une paire par test si `complete`) ;
-#   - toute règle axe citée existe dans axe-core ;
+# Invariants vérifiés en CI:
+#   - "pass" dans outcomes => coverage = "complete"
+#   - legacy = false => fixtures présentes dans rgaa-test-corpus/criteria/
+#   - toute règle axe citée existe dans axe-core
 #   - aucun mécanisme actif sans entrée ici.
-# `legacy = true` : hérité, exempté de fixtures. Les critères sans mécanisme
-# (anciennes entrées `partial` à `axe_rules: []`) n'apparaissent pas : ils
-# retombent dans le repli du pipeline.
+# legacy = true: hérité, exempté de fixtures.
 
 [[mechanism]]
 id        = "axe-1-1"
@@ -52,15 +50,6 @@ axe_rules = ["frame-title", "frame-title-unique", "frame-focusable-content"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Complete: the criterion has one test - every frame has a frame title - and frame-title decides exactly that, so axe's silence proves it. This is what disproves the NotAutomatable label (#201 AC4)." }
 
 [[mechanism]]
-# 3.2 est resté « complète » jusqu'ici pour deux raisons distinctes, chacune suffisante :
-# (1) 3.2.5 porte sur le mécanisme d'affichage de contraste une fois activé — un scan
-# statique au chargement ne clique jamais sur rien ; (2) en instrumentant l'exécution
-# réelle, `color-contrast` ne se déclenche carrément jamais via ce pipeline (ni violation,
-# ni `incomplete` — toujours `inapplicable`), alors que la même version d'axe-core la
-# détecte sans ambiguïté dans un Chrome normal sur une violation flagrante (#371, défaut
-# d'infrastructure du navigateur piloté par obscura, hors du périmètre de ce fichier). Un
-# `Pass` sur le silence d'axe y était fabriqué dans les deux cas (voir
-# `criterion_3_2_coverage.rs`).
 id        = "axe-3-2"
 criterion = "3.2"
 kind      = "axe-native"
@@ -139,17 +128,6 @@ axe_rules = ["td-headers-attr"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "Invalid rules found: [\"table-header\"]. Coverage corrected complete -> partial (#256): its only rule, td-headers-attr, does not decide the criterion's 4 tests, so axe's silence must not produce a Pass for 5.6." }
 
 [[mechanism]]
-# Aucune des trois règles ne vérifie ce que 5.7.1/5.7.2/5.7.3/5.7.5 demandent : la
-# cohérence entre la valeur de `scope` (ou le rôle rowheader/columnheader) et l'orientation
-# réelle du <th> dans le tableau. Confirmé contre axe-core lui-même (pas seulement contre
-# ce pipeline) : un vrai Chrome laisse aussi passer un scope="col" posé sur un <th> qui est
-# sans ambiguïté un en-tête de ligne. Seul 5.7.4 (headers référence des id valides) a un
-# appui partiel via td-headers-attr. En plus de cette limite propre à axe-core, ce
-# pipeline souffre ici aussi du défaut d'infrastructure #371 : td-headers-attr et
-# th-has-data-cells tombent en incomplete sur un témoin qu'un vrai Chrome classe en
-# violation — ce qui montre que #371 ne se limite pas aux règles de couleur/contraste.
-# Un `Pass` sur le silence d'axe y était fabriqué dans tous les cas
-# (`criterion_5_7_coverage`).
 id        = "axe-5-7"
 criterion = "5.7"
 kind      = "axe-native"
@@ -280,12 +258,6 @@ axe_rules = ["heading-order", "landmark-one-main", "region", "p-as-heading"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Extends heading-order/landmark-one-main/region with p-as-heading." }
 
 [[mechanism]]
-# 9.3 est resté « complète » jusqu'ici : list/listitem/definition-list/dlitem ne valident
-# que la *structure* d'un élément déjà balisé comme liste — ils ne regardent jamais un
-# contenu qui n'est pas balisé comme tel. Or 9.3.1/9.3.2/9.3.3 portent sur « les
-# informations regroupées **visuellement** sous forme de liste », balisage ou non : une
-# liste à puces faite en CSS sur des `<p>` est exactement le cas visé, et le silence
-# d'axe n'y prouve rien (fabriquait un `Pass`, voir `criterion_9_3_coverage.rs`).
 id        = "axe-9-3"
 criterion = "9.3"
 kind      = "axe-native"
@@ -312,13 +284,6 @@ axe_rules = ["meta-viewport"]
 provenance = { source = "axe-core rule metadata, tag RGAAv4 (axe_rules.json) + issue #201 assignment table", validated_by = "every rule id cross-checked against axe_rules.json; criterion number checked against criteres.json topic maxima", validated_at = "2026-09-27", notes = "Partial: meta-viewport catches a viewport blocking zoom, a precondition for 200% text rather than the whole criterion." }
 
 [[mechanism]]
-# `link-in-text-block` souffre du même défaut d'infrastructure que `color-contrast` (#371),
-# sous une forme plus trompeuse : au lieu de se classer `inapplicable`, elle rend un faux
-# `passes` sur une violation flagrante (lien distingué uniquement par une couleur proche,
-# ratio < 3:1, sans soulignement ni gras ni indication au survol/focus) — confirmé en
-# comparant la même page dans un vrai Chrome, où la règle la classe correctement en
-# violation. Un `Pass` sur le silence (ou le faux `passes`) d'axe y était fabriqué
-# (`criterion_10_6_coverage`).
 id        = "axe-10-6"
 criterion = "10.6"
 kind      = "axe-native"
@@ -332,13 +297,6 @@ axe_rules = ["link-in-text-block"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 1 axe rules validated" }
 
 [[mechanism]]
-# `aria-hidden-focus` catche une contradiction structurelle précise (aria-hidden contenant
-# un focalisable), jamais un contenu masqué par CSS et non marqué aria-hidden.
-# `hidden-content` (tags axe : experimental, review-item, sans aucun tag RGAAv4 ni wcag)
-# se contente de signaler du contenu caché pour revue — elle ne tranche jamais sa
-# conformité. 10.8.1 pose un jugement d'intention (ignoré par les AT, ou restituable via
-# une action clavier) que ni l'une ni l'autre règle ne lit dans le DOM statique. Un `Pass`
-# sur leur silence y était fabriqué (`criterion_10_8_coverage`).
 id        = "axe-10-8"
 criterion = "10.8"
 kind      = "axe-native"
@@ -443,11 +401,6 @@ axe_rules = ["landmark-one-main", "region", "bypass"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 3 axe rules validated" }
 
 [[mechanism]]
-# 12.7 est resté « complète » jusqu'ici, alors qu'axe (bypass, skip-link) comme la sonde
-# gapfix-12-7 n'examinent chacun jamais qu'une seule page. 12.7.2 porte sur « chaque
-# ensemble de pages » : la cohérence du lien d'évitement à travers tout un site, que rien
-# ici ne compare entre deux pages. Le silence (ou même la réussite) d'une seule page n'y
-# prouve rien (fabriquait un `Pass`, voir `criterion_12_7_coverage.rs`).
 id        = "axe-12-7"
 criterion = "12.7"
 kind      = "axe-native"
@@ -461,27 +414,6 @@ axe_rules = ["bypass", "skip-link"]
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md", validated_by = "automated cross-reference", validated_at = "2026-08-24", notes = "All 2 axe rules validated" }
 
 [[mechanism]]
-# §12.8 : tabindex positif est un indice « suspect », jamais un échec ferme.
-# Plafond de verdict `review` : une violation de cette règle produit
-# `NeedsReview` (critère en revue), jamais `Fail` (issue #279). La seule règle
-# axe-core qui signale un tabindex positif est `tabindex` (axe_rules.json).
-id        = "axe-12-8"
-criterion = "12.8"
-kind      = "axe-native"
-engine    = "obscura"
-coverage  = "partial"
-tests     = []
-# Verdict ceiling "review" (spec §7.1, #279): a positive tabindex is a "suspect" hint, never a
-# hard fail. focus-order-semantics is axe-experimental (disabled in a plain `axe.run()`
-# on 4.9.1), so today only `tabindex` (positive values) can fire.
-outcomes  = ["review"]
-outcome_cap = "review"
-fixtures  = ["12.8-focus-order-pass", "12.8-focus-order-fail"]
-legacy    = false
-axe_rules = ["tabindex", "focus-order-semantics"]
-provenance = { source = "axe-core rule metadata (axe_rules.json): focus-order-semantics carries tag RGAA-12.8.1; tabindex is best-practice", validated_by = "both rule ids checked against the injected axe 4.9.1 by the registry invariants", validated_at = "2026-11-20", notes = "Plafond review : tabindex positif sur 12.8 est suspect, jamais fail ferme. Règle axe : tabindex. Partial: neither rule observes the real Tab traversal." }
-
-[[mechanism]]
 id        = "axe-13-1"
 criterion = "13.1"
 kind      = "axe-native"
@@ -489,9 +421,6 @@ engine    = "obscura"
 coverage  = "partial"
 tests     = []
 outcomes  = ["fail"]
-# meta-refresh-no-exceptions (spec §7.2) is deliberately NOT mapped (#263): it exists in axe 4.9.1
-# but is `enabled: false` (wcag2aaa), so a plain `axe.run()` never runs it, and it fails only for
-# delays > 72000 s (a 5 s refresh passes). Delay detection belongs to the 13.1 script-redirect issue.
 fixtures  = ["13.1-meta-refresh-pass", "13.1-meta-refresh-fail"]
 legacy    = false
 axe_rules = ["meta-refresh"]
@@ -531,10 +460,10 @@ engine    = "obscura"
 coverage  = "partial"
 tests     = []
 outcomes  = ["review"]
+outcome_cap = "review"
 fixtures  = ["12.8-tab-order-pass", "12.8-tab-order-fail"]
 legacy    = false
 axe_rules = ["tabindex", "focus-order-semantics"]
-outcome_cap = "review"
 provenance = { source = "axe-core 4.9.1 rule-descriptions.md + issue #263 (lot B1-L0) + issue #279 (plafond de verdict)", validated_by = "rule ids cross-checked against axe_rules_injected.json (axe 4.9.1)", validated_at = "2026-11-20", notes = "tabindex > 0 est un indice « suspect » sur 12.8, jamais un échec ferme : outcome_cap = review interdit le Fail. focus-order-semantics est rattachée mais inerte (expérimentale, désactivée par défaut sous axe 4.9.1). Le critère reste partial : aucune règle ne décide tous les tests de 12.8, donc jamais de Pass par le silence d'axe." }
 
 [[mechanism]]
@@ -547,6 +476,8 @@ tests     = ["1.1.1", "1.1.4", "1.1.7", "1.1.8"]
 outcomes  = ["fail", "review"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-1-2"
@@ -558,6 +489,8 @@ tests     = ["1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5", "1.2.6"]
 outcomes  = ["fail", "review"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-2-1"
@@ -569,15 +502,10 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
-# Le snippet (`gap_fix.rs`) renvoie `pass: true` sans condition, quel que soit le contenu
-# de la page — il compte un nombre de « paires de couleurs suspectes » puis l'ignore
-# totalement pour le verdict. En couverture complète, ce `pass` systématique suffisait à
-# lui seul à fabriquer un `Pass` sur 3.2, indépendamment d'axe. Passé en partiel, ce `pass`
-# codé en dur est neutralisé (`covers_whole_criterion` ne l'emporte plus jamais) ; la
-# logique du snippet elle-même reste à revoir séparément si on veut qu'il serve à quelque
-# chose.
 id        = "gapfix-3-2"
 criterion = "3.2"
 kind      = "js-static"
@@ -587,6 +515,8 @@ tests     = ["3.2.1", "3.2.2", "3.2.3", "3.2.4"]
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-6-1"
@@ -598,6 +528,8 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-8-3"
@@ -609,6 +541,8 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-8-5"
@@ -620,6 +554,8 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-11-1"
@@ -631,6 +567,8 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-11-4"
@@ -642,10 +580,10 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
-# Même raison que axe-12-7 : repérage de texte sur une seule page, jamais une comparaison
-# entre pages. Ne peut jamais établir 12.7.2.
 id        = "gapfix-12-7"
 criterion = "12.7"
 kind      = "js-static"
@@ -655,6 +593,8 @@ tests     = ["12.7.1"]
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-10-2"
@@ -666,6 +606,8 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-10-1"
@@ -677,6 +619,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-11-5"
@@ -688,6 +632,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-1-9"
@@ -699,6 +645,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "gapfix-10-14"
@@ -710,6 +658,8 @@ tests     = []
 outcomes  = ["fail", "pass"]
 fixtures  = []
 legacy    = true
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-1-7-description-relevance"
@@ -721,6 +671,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["1.7-image-description-pass", "1.7-image-description-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-7-2-script-alternative"
@@ -732,6 +684,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["7.2-script-alternative-pass", "7.2-script-alternative-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-8-1"
@@ -743,6 +697,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["8.1-doctype-pass", "8.1-doctype-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-8-9"
@@ -754,6 +710,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["8.9-presentational-tags-pass", "8.9-presentational-tags-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-8-10"
@@ -765,6 +723,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["8.10-reading-direction-pass", "8.10-reading-direction-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-9-4"
@@ -776,6 +736,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["9.4-quotation-pass", "9.4-quotation-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-7-3"
@@ -787,6 +749,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["7.3-scripted-interaction-pass", "7.3-scripted-interaction-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-4"
@@ -798,6 +762,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["10.4-text-resize-pass", "10.4-text-resize-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-11"
@@ -809,6 +775,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["10.11-reflow-pass", "10.11-reflow-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-1-script-redirect"
@@ -816,13 +784,12 @@ criterion = "13.1"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Tests 1 (refresh by script/object) and 3 (redirect by script) of 13.1: a page that moves on
-# its own within ~6 s, or a suspicious navigation timer, is review: the probe cannot tell
-# whether the user can stop or restart the redirect, which 13.1 allows (#265).
 tests     = ["1", "3"]
 outcomes  = ["review"]
 fixtures  = ["13.1-script-redirect-pass", "13.1-script-redirect-fail", "13.1-script-redirect-href-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-2-popup-hook"
@@ -830,12 +797,12 @@ criterion = "13.2"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# `window.open` hooked before page scripts; a call with no prior interaction in ~6 s is the
-# fail. `target="_blank"` alone is never reported (#266).
 tests     = ["1"]
 outcomes  = ["fail", "review"]
 fixtures  = ["13.2-popup-pass", "13.2-popup-load-fail", "13.2-popup-timer-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-12-10-listener-inventory"
@@ -843,11 +810,12 @@ criterion = "12.10"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
 tests     = ["1"]
 outcomes  = ["review"]
 fixtures  = ["12.10-listener-inventory-pass", "12.10-listener-inventory-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-10-listener-inventory"
@@ -855,11 +823,12 @@ criterion = "13.10"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
 tests     = ["1", "2"]
 outcomes  = ["review"]
 fixtures  = ["13.10-listener-inventory-pass", "13.10-listener-inventory-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-11-listener-inventory"
@@ -867,11 +836,12 @@ criterion = "13.11"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
 tests     = ["1"]
 outcomes  = ["review"]
 fixtures  = ["13.11-listener-inventory-pass", "13.11-listener-inventory-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-12-listener-inventory"
@@ -879,11 +849,12 @@ criterion = "13.12"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Inventory of `addEventListener` calls (hook before page scripts, #272): review hints only.
 tests     = ["1", "2", "3"]
 outcomes  = ["review"]
 fixtures  = ["13.12-listener-inventory-pass", "13.12-listener-inventory-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-9-orientation-render"
@@ -891,13 +862,12 @@ criterion = "13.9"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# Page rendered at 390x844 and 844x390 (Emulation.setDeviceMetricsOverride): a lock call or a
-# rotate message is the fail; lost visible text is review, since per-element text cannot prove
-# content loss across markup regrouping (#268).
 tests     = ["1"]
 outcomes  = ["fail", "review"]
 fixtures  = ["13.9-orientation-pass", "13.9-orientation-hidden-review", "13.9-orientation-lock-fail", "13.9-orientation-message-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-8-script-motion"
@@ -905,13 +875,12 @@ criterion = "13.8"
 kind      = "js-behavioural"
 engine    = "obscura"
 coverage  = "partial"
-# DOM mutations observed ~8 s without interaction: more than 5 s of motion on a target with no
-# pause/stop control is the fail, anything shorter or uncertain is review (#267). CSS
-# animations are NOT detected: Obscura 0.2.4 returns no animation from document.getAnimations().
 tests     = ["1"]
 outcomes  = ["fail", "review"]
 fixtures  = ["13.8-script-motion-pass", "13.8-script-motion-fail", "13.8-script-motion-spinner-pass", "13.8-script-motion-static-pass"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-1"
@@ -923,6 +892,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.1-time-limits-pass", "13.1-time-limits-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-7"
@@ -934,6 +905,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.7-flashes-pass", "13.7-flashes-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-8"
@@ -945,6 +918,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.8-movement-pass", "13.8-movement-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-9"
@@ -956,6 +931,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.9-orientation-pass", "13.9-orientation-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-5-1"
@@ -967,6 +944,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["5.1-complex-table-summary-pass", "5.1-complex-table-summary-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-5-8"
@@ -978,6 +957,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["5.8-layout-table-pass", "5.8-layout-table-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-1"
@@ -989,6 +970,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["4.1-media-transcript-pass", "4.1-media-transcript-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-5"
@@ -1000,6 +983,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["4.5-audio-description-pass", "4.5-audio-description-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-7"
@@ -1011,6 +996,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["4.7-media-identified-pass", "4.7-media-identified-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-8"
@@ -1022,6 +1009,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["4.8-non-temporal-alternative-pass", "4.8-non-temporal-alternative-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-11"
@@ -1033,6 +1022,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["4.11-media-controls-pass", "4.11-media-controls-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-7-4"
@@ -1044,6 +1035,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["7.4-context-change-pass", "7.4-context-change-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-5"
@@ -1055,6 +1048,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["10.5-css-colors-paired-pass", "10.5-css-colors-paired-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-7"
@@ -1066,6 +1061,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["10.7-focus-outline-pass", "10.7-focus-outline-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-11-6"
@@ -1077,6 +1074,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["11.6-fieldset-legend-pass", "11.6-fieldset-legend-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-2"
@@ -1088,6 +1087,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.2-new-window-warning-pass", "13.2-new-window-warning-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-5"
@@ -1099,6 +1100,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["13.5-cryptic-content-pass", "13.5-cryptic-content-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "axe-8-5"
@@ -1136,6 +1139,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["1.6-long-description-pass", "1.6-long-description-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-3-3-graphic-contrast"
@@ -1147,6 +1152,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["3.3-graphic-contrast-pass", "3.3-graphic-contrast-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-8-7-language-change-candidates"
@@ -1158,6 +1165,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["8.7-language-change-pass", "8.7-language-change-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-11-3-visible-accessible-labels"
@@ -1169,6 +1178,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["11.3-label-match-pass", "11.3-label-match-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-11-8-list-grouping"
@@ -1180,6 +1191,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["11.8-list-groups-pass", "11.8-list-groups-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-3-document-download-inventory"
@@ -1191,6 +1204,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.3-document-download-pass", "13.3-document-download-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-12-nontemporal-keyboard-control"
@@ -1202,6 +1217,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["4.12-keyboard-control-pass", "4.12-keyboard-control-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-13-media-accessibility-inventory"
@@ -1213,6 +1230,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["4.13-media-accessibility-pass", "4.13-media-accessibility-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-9-visual-cue-inventory"
@@ -1224,6 +1243,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["10.9-visual-cues-pass", "10.9-visual-cues-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-12-text-spacing-override"
@@ -1235,6 +1256,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["10.12-spacing-pass", "10.12-spacing-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-10-13-focus-hover-disclosure"
@@ -1246,6 +1269,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["10.13-disclosure-pass", "10.13-disclosure-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-11-11-form-validation-guidance"
@@ -1257,6 +1282,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["11.11-validation-guidance-pass", "11.11-validation-guidance-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-12-8-tab-order"
@@ -1268,6 +1295,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["12.8-tab-order-pass", "12.8-tab-order-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-12-9-keyboard-trap"
@@ -1279,6 +1308,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["12.9-keyboard-trap-pass", "12.9-keyboard-trap-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-12-10-single-key-shortcuts"
@@ -1290,6 +1321,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["12.10-shortcuts-pass", "12.10-shortcuts-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-12-11-supplemental-keyboard-access"
@@ -1301,6 +1334,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["12.11-keyboard-access-pass", "12.11-keyboard-access-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-10-gesture-alternatives"
@@ -1312,6 +1347,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.10-gesture-alternative-pass", "13.10-gesture-alternative-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-11-pointer-cancellation"
@@ -1323,6 +1360,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.11-pointer-cancel-pass", "13.11-pointer-cancel-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-13-12-motion-alternative"
@@ -1334,6 +1373,8 @@ tests     = []
 outcomes  = ["review"]
 fixtures  = ["13.12-motion-alternative-pass", "13.12-motion-alternative-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "site-12-1-navigation-systems"
@@ -1345,6 +1386,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["12.1-site-navigation-pass", "12.1-site-navigation-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "site-12-2-navigation-position"
@@ -1356,6 +1399,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["12.2-site-position-pass", "12.2-site-position-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "site-12-4-sitemap-access"
@@ -1367,6 +1412,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["12.4-site-sitemap-pass", "12.4-site-sitemap-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "site-12-5-search-access"
@@ -1378,6 +1425,8 @@ tests     = []
 outcomes  = ["fail", "review"]
 fixtures  = ["12.5-site-search-pass", "12.5-site-search-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-12-9-keydown-sweep"
@@ -1389,6 +1438,8 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["12.9-no-trap-pass", "12.9-modal-escape-exit-pass", "12.9-escapable-trap-pass", "12.9-modal-focus-cycle-pass", "12.9-keydown-trap-autofocus-fail", "12.9-keydown-trap-no-autofocus-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }
 
 [[mechanism]]
 id        = "probe-4-12-keydown-sweep"
@@ -1400,3 +1451,5 @@ tests     = []
 outcomes  = ["fail"]
 fixtures  = ["4.12-media-no-trap-pass", "4.12-media-keydown-trap-fail"]
 legacy    = false
+axe_rules = []
+provenance = { source = "", validated_by = "", validated_at = "", notes = "" }

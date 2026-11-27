@@ -46,7 +46,7 @@ pub fn tool_license(tool: &str) -> Option<ToolLicense> {
     use ToolLicense::*;
     Some(match tool {
         "lint_static" => Metered(Feature::StaticLint, 1),
-        "analyze" | "audit_url" => Metered(Feature::FullAudit, 1),
+        "analyze" | "audit_url" | "run_analysis_plugin" => Metered(Feature::FullAudit, 1),
         "igt" => Metered(Feature::Igt, 1),
         "remediate" | "source_map" | "verify_fix" => Metered(Feature::Remediation, 1),
         "get_audit_result" => Access(Feature::FullAudit),
@@ -54,7 +54,11 @@ pub fn tool_license(tool: &str) -> Option<ToolLicense> {
         // ToolServer methods, but keeping them classified documents the
         // transport policy and prevents future dispatch code from metering
         // the handshake or tool catalogue.
-        "list_criteria" | "initialize" | "tools/list" => Exempt,
+        "list_criteria"
+        | "initialize"
+        | "tools/list"
+        | "get_test_methodology"
+        | "list_analysis_plugins" => Exempt,
         _ => return None,
     })
 }
